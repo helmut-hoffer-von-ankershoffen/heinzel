@@ -14,7 +14,7 @@ from typing import Never
 from heinzel import Kernel, Progress, Settings
 from heinzel.kernel import Installation
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
-from heinzel.modules.system.daemon._service import (
+from heinzel.modules.system.daemon._manager_commands import (
     _linux_user_manager_identity,
     _quiescence_command,
     _systemd_quiescent_unit,

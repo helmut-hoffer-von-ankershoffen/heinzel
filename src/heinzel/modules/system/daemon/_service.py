@@ -13,7 +13,6 @@ import logging
 import os
 import re
 import secrets
-import selectors
 import shutil
 import stat
 import subprocess
@@ -25,7 +24,7 @@ from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta, tzinfo
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO, Never, cast
+from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
 from pydantic import JsonValue, TypeAdapter
@@ -70,7 +69,20 @@ from heinzel.kernel.install._tool_uninstall import OwnedFile, owned_file, remove
 from heinzel.modules.system.daemon import _process_birth
 from heinzel.modules.system.daemon import _schedule as schedule
 from heinzel.modules.system.daemon._abandoned_mutation import host_boot, marker_token_matches, mutation_record
+from heinzel.modules.system.daemon._handover_files import (
+    _handover_absolute_path,
+    _invalid_handover,
+    _open_verified_handover_file,
+    _safely_absent,
+)
 from heinzel.modules.system.daemon._ledger import Ledger
+from heinzel.modules.system.daemon._manager_commands import (
+    _launchctl_quiescent_output,
+    _launchctl_records,
+    _linux_user_manager_identity,
+    _quiescence_command,
+    _systemd_quiescent_unit,
+)
 from heinzel.modules.system.daemon._models import (
     DaemonSettings,
     DaemonStatus,
@@ -85,6 +97,7 @@ from heinzel.modules.system.daemon._models import (
     Uninstalled,
     Wake,
 )
+from heinzel.modules.system.daemon._mutation_scope import DaemonRemoval, _MutationAuthority, _MutationScope
 from heinzel.modules.system.daemon._ownership import (
     ManagerState,
     launchd_owned,
@@ -137,10 +150,6 @@ LOAD_FIX = "run `hz system daemon status` in a terminal for what the service man
 PLATFORMS = ("darwin", "linux")
 """launchd and systemd read unit files; they hold no secrets."""
 MODULE_SECTION = "system.daemon"
-MAX_SERVICE_MANAGER_OUTPUT = 1_000_000
-MANAGER_TIMEOUT = 5
-# launchd can defer a respawn for ten seconds (launchd.plist(5)); allow time for its reply as well.
-OWNED_KICKSTART_TIMEOUT = 15
 LIFECYCLE_POLL_SECONDS = 2.0
 MAX_HANDOVER_FILE_BYTES = 256 * 1024
 MAX_HANDOVER_CONTRIBUTIONS = 512
@@ -200,66 +209,6 @@ def _platform_boot_identity(platform: str, runner: Runner, linux_path: Path = LI
         return None
 
 
-def _handover_absolute_path(path: Path) -> Path:
-    absolute = path if path.is_absolute() else Path.cwd() / path
-    if ".." in absolute.parts:
-        _invalid_handover()
-    # These root-owned aliases are part of macOS's filesystem layout. Other symlinks
-    # are refused, including aliases in user-controlled directories.
-    if sys.platform == "darwin" and len(absolute.parts) > 1 and absolute.parts[1] in {"tmp", "var", "etc"}:
-        alias = Path("/") / absolute.parts[1]
-        info = os.lstat(alias)
-        if not stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or alias.readlink() != Path(f"private/{alias.name}"):
-            _invalid_handover()
-        absolute = Path("/private") / absolute.relative_to("/")
-    return absolute
-
-
-def _check_handover_directory(descriptor: int) -> None:
-    info = os.fstat(descriptor)
-    sticky_root = info.st_uid == 0 and bool(info.st_mode & stat.S_ISVTX)
-    if info.st_uid not in (0, os.getuid()) or (info.st_mode & 0o022 and not sticky_root):
-        _invalid_handover()
-
-
-@contextmanager
-def _open_verified_handover_file(path: Path) -> Generator[BinaryIO]:
-    """Open through trusted directories.
-
-    Yields:
-        The opened file while directory and entry identities remain checked.
-    """
-    parts = _handover_absolute_path(path).parts[1:]
-    with ExitStack() as stack:
-        root = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        stack.callback(os.close, root)
-        parents: list[tuple[int, int | None, str | None]] = [(root, None, None)]
-        current = root
-        for name in parts[:-1]:
-            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=current)
-            stack.callback(os.close, child)
-            parents.append((child, current, name))
-            current = child
-        for directory, _, _ in parents:
-            _check_handover_directory(directory)
-        descriptor = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=current)
-        with os.fdopen(descriptor, "rb") as handle:
-            yield handle
-            for directory, _, _ in parents:
-                _check_handover_directory(directory)
-            for child, parent, child_name in parents[1:]:
-                if parent is None or child_name is None:
-                    _invalid_handover()
-                current_info = os.stat(child_name, dir_fd=parent, follow_symlinks=False)
-                initial = os.fstat(child)
-                if (current_info.st_dev, current_info.st_ino) != (initial.st_dev, initial.st_ino):
-                    _invalid_handover()
-            entry = os.stat(parts[-1], dir_fd=current, follow_symlinks=False)
-            file_info = os.fstat(handle.fileno())
-            if (entry.st_dev, entry.st_ino) != (file_info.st_dev, file_info.st_ino):
-                _invalid_handover()
-
-
 def _failed_once_after_success(ledger: Ledger, job: str) -> bool:
     """Whether the job's newest run failed and the run before it worked; skipped slots don't count as runs."""
     try:
@@ -279,185 +228,6 @@ def _heartbeat_covers(heartbeat: dict[str, str | int], tick_at: str, version: st
         return False
 
 
-def _safely_absent(path: Path) -> bool:
-    """Confirm absence through physical, trusted parents without following directory links."""
-    try:
-        parts = _handover_absolute_path(path).parts[1:]
-        with ExitStack() as stack:
-            current = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-            stack.callback(os.close, current)
-            _check_handover_directory(current)
-            for part in parts[:-1]:
-                try:
-                    child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=current)
-                except FileNotFoundError:
-                    return True
-                stack.callback(os.close, child)
-                _check_handover_directory(child)
-                current = child
-            try:
-                os.stat(parts[-1], dir_fd=current, follow_symlinks=False)
-            except FileNotFoundError:
-                return True
-            return False
-    except (OSError, HeinzelError):
-        return False
-
-
-def _launchctl_quiescent_output(output: str) -> bool:
-    """Whether the documented legacy list format holds no daemon record."""
-    labels = _launchctl_records(output)
-    return labels is not None and LABEL not in labels
-
-
-def _launchctl_records(output: str) -> dict[str, str] | None:
-    """Each label's PID column from the documented legacy list format; any unexpected record fails closed."""
-    if len(output.encode("utf-8")) > MAX_SERVICE_MANAGER_OUTPUT:
-        return None
-    lines = output.splitlines()
-    if not lines or lines[0].split() != ["PID", "Status", "Label"]:
-        return None
-    labels: dict[str, str] = {}
-    expected_columns = 3
-    for line in lines[1:]:
-        parts = line.split()
-        if (
-            len(parts) != expected_columns
-            or (parts[0] != "-" and not parts[0].isdigit())
-            or not re.fullmatch(r"-?[0-9]+", parts[1])
-            or parts[2] in labels
-        ):
-            return None
-        labels[parts[2]] = parts[0]
-    return labels
-
-
-def _manager_environment(command: list[str]) -> dict[str, str]:
-    if command[0] != "/usr/bin/systemctl":
-        return {"PATH": "/usr/bin:/bin", "LANG": "C", "HOME": str(Path.home())}
-    runtime = f"/run/user/{os.getuid()}"
-    return {
-        "PATH": "/usr/bin:/bin",
-        "LANG": "C",
-        "XDG_RUNTIME_DIR": runtime,
-    }
-
-
-def _manager_deadline(command: list[str]) -> float:
-    own_kickstart = command == ["/bin/launchctl", "kickstart", f"gui/{os.getuid()}/{LABEL}"]
-    return time.monotonic() + (OWNED_KICKSTART_TIMEOUT if own_kickstart else MANAGER_TIMEOUT)
-
-
-def bounded_manager_command(
-    command: list[str], *, deadline: float | None = None, env: dict[str, str] | None = None
-) -> ProcessOutcome:
-    """Bound a manager child; never signal a reaped or unknown process."""
-    process = subprocess.Popen(  # noqa: S603 - fixed absolute launchctl and fixed subcommands
-        command,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        env=env if env is not None else _manager_environment(command),
-    )
-    deadline = deadline if deadline is not None else _manager_deadline(command)
-    captured = bytearray()
-    truncated = False
-    try:
-        if process.stdout is None:
-            return ProcessOutcome(None, "", "")
-        with selectors.DefaultSelector() as selector:
-            selector.register(process.stdout, selectors.EVENT_READ)
-            while time.monotonic() < deadline:
-                events = selector.select(max(0, deadline - time.monotonic()))
-                if not events:
-                    break
-                chunk = os.read(process.stdout.fileno(), 65536)
-                if not chunk:
-                    break
-                captured.extend(chunk)
-                if len(captured) > MAX_SERVICE_MANAGER_OUTPUT:
-                    truncated = True
-                    break
-        if truncated or time.monotonic() >= deadline:
-            return ProcessOutcome(None, "", "", truncated=truncated)
-        try:
-            status = process.wait(timeout=max(0.01, deadline - time.monotonic()))
-        except subprocess.TimeoutExpired:
-            return ProcessOutcome(None, "", "")
-        return ProcessOutcome(status, captured.decode("utf-8"), "")
-    finally:
-        if process.poll() is None:
-            with suppress(ProcessLookupError, PermissionError):
-                process.kill()
-            with suppress(subprocess.TimeoutExpired):
-                process.wait(timeout=1)
-        if process.stdout is not None:
-            process.stdout.close()
-
-
-# Retain the internal lifecycle probe name used by the Linux session acceptance harness.
-_quiescence_command = bounded_manager_command
-
-
-def _linux_user_manager_identity(run_root: Path = Path("/run")) -> tuple[int, ...] | None:
-    """Observe the private manager socket and its physical, safely owned parent directories."""
-    try:
-        uid = os.getuid()
-        parents = [run_root, run_root / "user"]
-        runtime = run_root / "user" / str(uid)
-        for path in parents:
-            info = path.lstat()
-            if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
-                return None
-        directory = runtime.lstat()
-        systemd = (runtime / "systemd").lstat()
-        socket = (runtime / "systemd/private").lstat()
-        if (
-            not stat.S_ISDIR(directory.st_mode)
-            or directory.st_uid != uid
-            or directory.st_mode & 0o022
-            or not stat.S_ISDIR(systemd.st_mode)
-            or systemd.st_uid != uid
-            or systemd.st_mode & 0o022
-            or not stat.S_ISSOCK(socket.st_mode)
-            or socket.st_uid != uid
-        ):
-            return None
-    except OSError:
-        return None
-    else:
-        return directory.st_dev, directory.st_ino, systemd.st_dev, systemd.st_ino, socket.st_dev, socket.st_ino
-
-
-def _systemd_quiescent_unit(output: str, name: str) -> bool:
-    """Require the documented unit properties, including an empty queued-job property."""
-    values: dict[str, str] = {}
-    for line in output.splitlines():
-        key, separator, value = line.partition("=")
-        if not separator or key in values:
-            return False
-        values[key] = value
-    required = {"Id", "LoadState", "ActiveState", "SubState", "Job"}
-    if not required.issubset(values) or set(values) - required - {"MainPID", "ControlPID"}:
-        return False
-    if (
-        values["Id"] != name
-        or values["LoadState"] not in {"loaded", "not-found"}
-        or values["ActiveState"] != "inactive"
-        or values["SubState"] != "dead"
-        or values["Job"] != ""
-    ):
-        return False
-    if name.endswith(".service") and values["LoadState"] == "loaded":
-        return values.get("MainPID") == values.get("ControlPID") == "0"
-    return all(values.get(key, "0") == "0" for key in ("MainPID", "ControlPID"))
-
-
-def _invalid_handover() -> Never:
-    msg = "The existing daemon unit could not be verified; no handover was requested."
-    raise HeinzelError(msg)
-
-
 _HOLDERS = {"tick": "the background service's current run of its jobs", "other": "an update or another Heinzel change"}
 """Plain words for who holds the lifecycle lock, by the stable token the log records."""
 
@@ -468,148 +238,6 @@ _SECONDS_SHOWN_BELOW = 90
 def _budget(seconds: float) -> str:
     """A wait budget in plain words: seconds below 90, else whole minutes."""
     return f"{seconds:g} s" if seconds < _SECONDS_SHOWN_BELOW else f"{round(seconds / 60)} min"
-
-
-@dataclass(frozen=True, slots=True)
-class _MutationAuthority:
-    pending_path: Path
-    token_matches: Callable[[str], bool]
-    capture: Callable[[], DaemonHandoverPlan]
-    request: Callable[[DaemonHandoverPlan], DaemonHandoverRequest]
-    fingerprint: Callable[[], str | None] | None
-    checkpoint: Callable[[], bool]
-    had_checkpoint: bool
-    original_fingerprint: str
-    original_identity: str
-    rollback_identity: Callable[[], str]
-
-
-class _MutationScope:
-    """One lock-held mutation; only trusted host callers can supply checkpoint evidence."""
-
-    def __init__(self, token: str, authority: _MutationAuthority) -> None:
-        self.token = token
-        self.authority = authority
-        self.active = True
-        self.plan: DaemonHandoverPlan | None = None
-        self.expected: str | None = None
-        self.requested = False
-        self.aborted = False
-
-    @property
-    def checkpoint_matched(self) -> bool:
-        self._require_active()
-        return self.authority.had_checkpoint
-
-    def _require_active(self) -> None:
-        if not self.active or not self.authority.token_matches(self.token):
-            msg = "The daemon mutation scope is unavailable or its pending token changed."
-            raise HeinzelError(msg)
-
-    def capture(self) -> DaemonHandoverPlan:
-        self._require_active()
-        if self.plan is not None:
-            msg = "The daemon mutation state was already captured."
-            raise HeinzelError(msg)
-        self.plan = self.authority.capture()
-        return self.plan
-
-    def verified_complete(self, expected: str) -> None:
-        self._require_active()
-        if self.plan is None or self.expected is not None or not re.fullmatch(r"[a-f0-9]{64}", expected):
-            msg = "The verified daemon mutation generation is invalid or already recorded."
-            raise HeinzelError(msg)
-        self._verify(expected)
-        self.expected = expected
-
-    def _verify(self, expected: str) -> None:
-        fingerprint = self.authority.fingerprint
-        if (
-            fingerprint is None
-            or fingerprint() != expected
-            or self.authority.checkpoint() is not self.authority.had_checkpoint
-            or fingerprint() != expected
-        ):
-            msg = "The installation generation or its durable checkpoint could not be verified."
-            raise HeinzelError(msg)
-        self._require_active()
-
-    def abort_unchanged(self) -> None:
-        self._require_active()
-        if self.plan is None or self.expected is not None or self.requested:
-            msg = "The mutation cannot be aborted after verification or handover."
-            raise HeinzelError(msg)
-        self._verify(self.authority.original_fingerprint)
-        if self.authority.rollback_identity() != self.authority.original_identity:
-            msg = "The installation identity changed; explicit recovery is required."
-            raise HeinzelError(msg)
-        self._require_active()
-        self.authority.pending_path.unlink()
-        self.aborted = True
-        self.active = False
-
-    def request(self, plan: DaemonHandoverPlan) -> DaemonHandoverRequest:
-        self._require_active()
-        if self.expected is None or self.plan is not plan or self.requested or self.aborted:
-            msg = "The daemon handover does not match this verified mutation."
-            raise HeinzelError(msg)
-        self._verify(self.expected)
-        result = self.authority.request(plan)
-        if plan.active and not result.requested:
-            msg = "The captured active daemon could not be handed over; mutation recovery is required."
-            raise HeinzelError(msg)
-        self.requested = True
-        return result
-
-    def finish_without_handover(self) -> None:
-        self._require_active()
-        if self.expected is None or self.requested or self.aborted:
-            msg = "The mutation was not verified, or it was already handed over."
-            raise HeinzelError(msg)
-        self._verify(self.expected)
-        self.authority.pending_path.unlink()
-        self.aborted = True  # nothing is left to commit; the daemon keeps running what it loaded
-
-    def commit(self) -> None:
-        if self.aborted:
-            return
-        self._require_active()
-        if self.expected is None or not self.requested:
-            msg = "The mutation was not verified and handed over; explicit recovery is required."
-            raise HeinzelError(msg)
-        self._verify(self.expected)
-        self.authority.pending_path.unlink()
-
-
-@dataclass(frozen=True)
-class DaemonRemoval:
-    """One held owned daemon plan; its durable coordinator controls stop and final cleanup."""
-
-    files: tuple[OwnedFile, ...]
-    stop: Callable[[str], None]
-    finish: Callable[[], None]
-    manager_units: dict[str, dict[str, object]]
-
-
-def handover_absolute_path(path: Path) -> Path:
-    """Resolve the existing physical handover path for sibling recovery code."""
-    return _handover_absolute_path(path)
-
-
-@contextmanager
-def verified_handover_file(path: Path) -> Generator[BinaryIO]:
-    """Open a file through the existing bounded handover authority boundary.
-
-    Yields:
-        The physically verified bounded handover file handle.
-    """
-    with _open_verified_handover_file(path) as handle:
-        yield handle
-
-
-def launchctl_records(output: str) -> dict[str, str] | None:
-    """Parse the same complete service-manager listing used by normal lifecycle checks."""
-    return _launchctl_records(output)
 
 
 class DaemonService:

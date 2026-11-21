@@ -2574,7 +2574,7 @@ def test_linux_quiescence_requires_own_bus_and_both_inactive_units(make, tmp_pat
 
 
 def test_linux_quiescence_denies_missing_properties_and_queued_jobs():
-    from heinzel.modules.system.daemon._service import _systemd_quiescent_unit
+    from heinzel.modules.system.daemon._manager_commands import _systemd_quiescent_unit
 
     unit = "hz-daemon.service"
     base = f"Id={unit}\nLoadState=loaded\nActiveState=inactive\nSubState=dead\nJob=\nMainPID=0\nControlPID=0\n"
@@ -2613,7 +2613,7 @@ def test_linux_quiescence_guard_keeps_pending_if_install_is_interrupted(make, tm
 
 
 def test_linux_manager_environment_ignores_ambient_bus(monkeypatch, tmp_path):
-    from heinzel.modules.system.daemon._service import _manager_environment
+    from heinzel.modules.system.daemon._manager_commands import _manager_environment
 
     monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", f"unix:path={tmp_path}/foreign")
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))

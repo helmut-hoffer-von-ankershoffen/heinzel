@@ -27,7 +27,8 @@ from heinzel.kernel.install._offline_uv import VerifiedUV, stage
 from heinzel.kernel.install._uninstall_journal import RemovalCapture, RemovalJournal
 
 if TYPE_CHECKING:
-    from heinzel.modules.system.daemon._service import DaemonRemoval, DaemonService
+    from heinzel.modules.system.daemon._mutation_scope import DaemonRemoval
+    from heinzel.modules.system.daemon._service import DaemonService
     from heinzel.modules.system.lifecycle._service import WebRemoval, WebService
 
 
