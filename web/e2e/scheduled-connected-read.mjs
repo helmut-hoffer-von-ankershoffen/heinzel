@@ -321,17 +321,30 @@ try {
     await revoke.hover();
     const target = await revoke.elementHandle();
     assert.ok(target);
+    // The reload's ?chat= link starts a smooth scroll to the chat, whose first frames move by less than half a pixel,
+    // so two equal frames do not mean it ended. Settled is: the control and every scrolled ancestor unchanged for ten
+    // frames and a quarter second, else the scroll resumes under the press and revoke leaves the pointer (bead z2i2b).
     await target.evaluate(async (node) => {
       const deadline = performance.now() + 3000;
       const geometry = () => {
         const rect = node.getBoundingClientRect();
-        return [rect.left, rect.top, rect.width, rect.height];
+        const scrolls = [];
+        for (let element = node.parentElement; element; element = element.parentElement) scrolls.push(element.scrollTop);
+        return [rect.left, rect.top, rect.width, rect.height, ...scrolls];
       };
       let before = geometry();
+      let still = 0;
+      let since = performance.now();
       while (performance.now() < deadline) {
         await new Promise((resolve) => requestAnimationFrame(resolve));
         const after = geometry();
-        if (after.every((value, index) => Math.abs(value - before[index]) < 0.5)) return;
+        if (after.every((value, index) => Math.abs(value - before[index]) < 0.5)) {
+          still += 1;
+          if (still >= 10 && performance.now() - since >= 250) return;
+        } else {
+          still = 0;
+          since = performance.now();
+        }
         before = after;
       }
       throw new Error("Revoke geometry did not settle before the press.");
