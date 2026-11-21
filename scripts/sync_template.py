@@ -298,7 +298,7 @@ def _without_main_lanes(text: str) -> str:
         text = text.replace(f" && needs.changes.outputs.lane != '{lane}'", "")
     text = re.sub(r"(?m)^(    if: )\((.*)\)((?: # [^\n]*)?)$", r"\1\2\3", text)
     text = text.replace("needs.changes.outputs.lane == 'linux' && '[]' || ", "")
-    text = re.sub(r"(?m)^ *- id: lane # main lanes\n(?:          [^\n]*\n|        [^\n]*\n)+(?= *- id: )", "", text)
+    text = re.sub(r"(?m)^ *- id: lane # main lanes\n(?:        [^\n]*\n)+(?= *- id: )", "", text)
     text = re.sub(r"(?m)^[^\n]*# main lanes\n", "", text)
     return text.replace(", focused-tests, macos-main]", ", focused-tests]")
 
