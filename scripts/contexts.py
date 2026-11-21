@@ -67,6 +67,13 @@ def contracts_block(config: dict) -> str:
         'type = "independence"\n'
         f"modules = {inner!r}\n".replace("'", '"')
         + _ignores(allow.get("contexts", [])),
+        (
+            "[[tool.importlinter.contracts]]\n"
+            'name = "The ports import no head and no module: they are spec (contexts.toml)"\n'
+            'type = "forbidden"\n'
+            'source_modules = ["heinzel.ports"]\n'
+            'forbidden_modules = ["heinzel.heads", "heinzel.modules"]\n'
+        ),
         "[[tool.importlinter.contracts]]\n"
         'name = "Heads import the spec and the head kit, not each other (contexts.toml)"\n'
         'type = "independence"\n'

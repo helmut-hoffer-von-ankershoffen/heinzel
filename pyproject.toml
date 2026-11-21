@@ -427,6 +427,12 @@ ignore_imports = [
 ]
 
 [[tool.importlinter.contracts]]
+name = "The ports import no head and no module: they are spec (contexts.toml)"
+type = "forbidden"
+source_modules = ["heinzel.ports"]
+forbidden_modules = ["heinzel.heads", "heinzel.modules"]
+
+[[tool.importlinter.contracts]]
 name = "Heads import the spec and the head kit, not each other (contexts.toml)"
 type = "independence"
 modules = ["heinzel.heads.cli", "heinzel.heads.api", "heinzel.heads.mcp", "heinzel.heads.web"]
