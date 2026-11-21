@@ -37,7 +37,7 @@ def requirements(tmp_path, text):
 @pytest.fixture
 def commands(monkeypatch):
     """Record every external command; curl writes the given bytes, uv build leaves the given wheels."""
-    state = SimpleNamespace(calls=[], source=b"reviewed", wheels=["pyyaml-6.0.3-py3-none-any.whl"])
+    state = SimpleNamespace(calls=[], source=b"reviewed", wheels=["pyyaml-6.0.4-py3-none-any.whl"])
 
     def run(command, **options):
         state.calls.append((command, options))
@@ -138,8 +138,8 @@ def test_requirements_that_differ_from_the_reviewed_source_are_refused(tmp_path,
 def test_build_only_copies_the_wheel_and_installs_nothing(tmp_path, commands, capsys):
     out = tmp_path / "wheels"
     assert bootstrap.main(["build", "--lock", str(uv_lock(tmp_path)), "--wheel-dir", str(out)]) == 0
-    assert [path.name for path in out.iterdir()] == ["pyyaml-6.0.3-py3-none-any.whl"]
-    assert capsys.readouterr().out.strip() == str(out / "pyyaml-6.0.3-py3-none-any.whl")
+    assert [path.name for path in out.iterdir()] == ["pyyaml-6.0.4-py3-none-any.whl"]
+    assert capsys.readouterr().out.strip() == str(out / "pyyaml-6.0.4-py3-none-any.whl")
     curl, venv, backend, build = (command for command, _ in commands.calls)
     assert curl[0] == "curl"
     assert bootstrap.SOURCE_URL in curl
