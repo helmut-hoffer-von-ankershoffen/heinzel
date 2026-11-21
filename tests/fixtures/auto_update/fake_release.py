@@ -22,8 +22,9 @@ if FOLDER:
     from heinzel import __version__
     from heinzel.heads.web import _auto_update
     from heinzel.kernel import CorePin, Installation, PluginNews, PluginRelease, ReleaseFacts
-    from heinzel.modules.system import _plugin_releases, _service, _update
+    from heinzel.modules.system import _service
     from heinzel.modules.system._models import AnnouncedUpdate
+    from heinzel.modules.system.updater import _plugin_releases, _update
 
     folder = Path(FOLDER)
     LONG_AGO = datetime(2026, 1, 1, tzinfo=UTC)  # old enough for any minimum age

@@ -24,10 +24,10 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 from heinzel.kernel import CorePin, Installation, Kernel, PluginNews, PluginRelease, PluginReleases
-from heinzel.modules.system._announced import plugin_requires
 from heinzel.modules.system._pypi import PYPI
 from heinzel.modules.system._pypi import fetch as _fetch
 from heinzel.modules.system.plugin._sources import JsonGetter, PluginSource, github_getter, github_project_at
+from heinzel.modules.system.updater._announced import plugin_requires
 
 MAX_TAGS = 1000
 """At most this many release tags of one plugin are read; a repository with more is read only that far."""

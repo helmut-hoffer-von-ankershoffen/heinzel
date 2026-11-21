@@ -46,6 +46,6 @@ upgrades and resolves their dependencies.
 
 `tests/unit/kernel/installation_test.py::test_requirement_from_receipt`, `tests/unit/modules/plugin_service_test.py`
 (`test_add_in_tool_env_reinstalls_with_plugins`, `test_add_replaces_older_copy_of_same_plugin`,
-`test_outside_tool_env_uses_uv_pip`), `tests/unit/modules/system_update_test.py` and
+`test_outside_tool_env_uses_uv_pip`), `tests/unit/runtime/updater/system_update_test.py` and
 `tests/integration/update_test.py` (`hz system update` per pin, a blocking plugin) and the e2e test of the full lifecycle on macOS and Linux,
 `tests/e2e/tool_install_test.py::test_direct_lifecycle`.

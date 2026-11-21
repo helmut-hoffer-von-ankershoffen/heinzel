@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from heinzel.modules.ui._historical_launcher import HistoricalLauncher
+from heinzel.modules.system.lifecycle._historical_launcher import HistoricalLauncher
 
 pytestmark = pytest.mark.unit
 

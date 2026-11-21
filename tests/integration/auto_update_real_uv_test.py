@@ -25,8 +25,8 @@ import pytest
 from heinzel import HeinzelError, Progress
 from heinzel.kernel import Installation, ReleaseSource, _installation_continuity
 from heinzel.kernel._installation import _run
-from heinzel.modules.system._announced import Announcement, environment_versions
-from heinzel.modules.system._update import UpdateService
+from heinzel.modules.system.updater._announced import Announcement, environment_versions
+from heinzel.modules.system.updater._update import UpdateService
 
 pytestmark = pytest.mark.integration
 

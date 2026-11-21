@@ -7,7 +7,7 @@ import pytest
 from heinzel import HeinzelError, Progress
 from heinzel.kernel import Installation, ReleaseSource
 from heinzel.modules.system._service import GitHubReleases
-from heinzel.modules.system._update import UpdateService
+from heinzel.modules.system.updater._update import UpdateService
 
 pytestmark = pytest.mark.unit
 
@@ -255,7 +255,7 @@ class Recreated:
 
 @pytest.mark.parametrize(("after", "same"), [("same files", True), ("other files", False)])
 def test_a_restore_into_a_recreated_folder_counts_by_content_and_renews_the_record(after, same):
-    from heinzel.modules.system._update import _ORIGINALS
+    from heinzel.modules.system.updater._update import _ORIGINALS
 
     tool = Recreated("same files")
     updates = UpdateService(tool, None)  # type: ignore[arg-type] - only the generation seams are used

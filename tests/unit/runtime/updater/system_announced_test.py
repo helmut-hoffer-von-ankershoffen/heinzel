@@ -17,9 +17,9 @@ import pytest
 from heinzel import HeinzelError, Progress
 from heinzel.kernel import DaemonHandoverPlan, DaemonHandoverRequest, Installation
 from heinzel.kernel._installation import _core_by_tag
-from heinzel.modules.system import _announced as announced
-from heinzel.modules.system._announced import Announcement, ToolSnapshot, environment_versions
-from heinzel.modules.system._update import UpdateService
+from heinzel.modules.system.updater import _announced as announced
+from heinzel.modules.system.updater._announced import Announcement, ToolSnapshot, environment_versions
+from heinzel.modules.system.updater._update import UpdateService
 
 pytestmark = pytest.mark.unit
 SITE = Path("lib", "python3.13", "site-packages")
@@ -265,7 +265,7 @@ def service(tmp_path, monkeypatch, *, moves=None, crm=None, **folder):
         lambda *, expected, original, names: retagged.append(("receipt", tuple(names))) or expected,
     )
     monkeypatch.setattr(announced, "installed_commit", lambda prefix: TAG_COMMIT)
-    monkeypatch.setattr("heinzel.modules.system._update.installed_commit", lambda prefix: TAG_COMMIT)
+    monkeypatch.setattr("heinzel.modules.system.updater._update.installed_commit", lambda prefix: TAG_COMMIT)
     lifecycle = Lifecycle()
     update = UpdateService(tool, Releases(), lifecycle=lifecycle)
     update.retagged = retagged

@@ -10,7 +10,7 @@ from heinzel.kernel import CorePin
 from heinzel.modules.system import _render
 from heinzel.modules.system._models import PluginUpdate, UpdateResult
 from heinzel.modules.system._render import render_update, standing
-from heinzel.modules.system._update import _pinned, _plugin_step
+from heinzel.modules.system.updater._update import _pinned, _plugin_step
 
 pytestmark = pytest.mark.unit
 

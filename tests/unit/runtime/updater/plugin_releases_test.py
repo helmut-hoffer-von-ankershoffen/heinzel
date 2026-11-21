@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 import pytest
 
 from heinzel.kernel import CorePin, Installation, PluginRelease
-from heinzel.modules.system._plugin_releases import PyPIPluginReleases, closure
+from heinzel.modules.system.updater._plugin_releases import PyPIPluginReleases, closure
 
 pytestmark = pytest.mark.unit
 UPLOAD = {"upload_time_iso_8601": "2026-10-01T08:00:00.000000Z", "yanked": False}

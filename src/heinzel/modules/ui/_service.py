@@ -41,8 +41,8 @@ from heinzel.kernel import (
 from heinzel.kernel._offline_uv import verified_installed_path
 from heinzel.kernel._tool_uninstall import OwnedFile, owned_file, remove_owned_file
 from heinzel.kernel._uv_locate import find_uv
-from heinzel.modules.ui._historical_launcher import HistoricalLauncher
-from heinzel.modules.ui._launcher_transition import Action, LauncherTransition
+from heinzel.modules.system.lifecycle._historical_launcher import HistoricalLauncher
+from heinzel.modules.system.lifecycle._launcher_transition import Action, LauncherTransition
 from heinzel.modules.ui._profile import (
     default_profile,
     environment_command,

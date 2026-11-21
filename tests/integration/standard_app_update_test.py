@@ -38,7 +38,7 @@ def test_standard_receipt_preserves_ordinary_index_updates(tmp_path, monkeypatch
     from heinzel import Progress
     from heinzel.heads._tool_install import ToolTarget
     from heinzel.kernel import Installation, ReleaseSource
-    from heinzel.modules.system._update import UpdateService
+    from heinzel.modules.system.updater._update import UpdateService
 
     monkeypatch.delenv("UV_NO_MANAGED_PYTHON", raising=False)
     monkeypatch.delenv("UV_PYTHON_PREFERENCE", raising=False)
@@ -139,7 +139,7 @@ def test_standard_receipt_preserves_ordinary_index_updates(tmp_path, monkeypatch
 def test_plain_index_receipt_can_update_with_real_installed_metadata(tmp_path, monkeypatch):
     from heinzel import Progress
     from heinzel.kernel import Installation, ReleaseSource
-    from heinzel.modules.system._update import UpdateService
+    from heinzel.modules.system.updater._update import UpdateService
 
     prefix = tmp_path / "tools" / "heinzel"
     (prefix / "bin").mkdir(parents=True)

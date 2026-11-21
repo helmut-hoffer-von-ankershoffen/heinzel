@@ -11,11 +11,11 @@ import pytest
 from heinzel import HeinzelError
 from heinzel.heads.web._auto_update import AutoUpdater
 from heinzel.kernel import DaemonRecoverySelection, ProcessOutcome, private_write
-from heinzel.modules.system._announced import Announcement
-from heinzel.modules.system._update import UpdateService
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings, _installation_lifecycle, _service
 from heinzel.modules.system.daemon import _package_handover_recovery as recovery_module
 from heinzel.modules.system.daemon._runtime import lock
+from heinzel.modules.system.updater._announced import Announcement
+from heinzel.modules.system.updater._update import UpdateService
 from tests.fixtures.daemon_manager import RecordedManager, record_tool
 
 pytestmark = pytest.mark.unit

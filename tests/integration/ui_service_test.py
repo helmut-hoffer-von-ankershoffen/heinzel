@@ -1095,7 +1095,7 @@ def test_explicit_restart_migrates_before_requesting_any_old_runtime_restart(ser
 
 @pytest.mark.parametrize("boundary", ["stopped", "launcher-replaced", "loaded", "compatibility-cleared"])
 def test_interrupted_historical_migration_keeps_exact_fences_and_can_resume(service, monkeypatch, boundary):
-    from heinzel.modules.ui._launcher_transition import LauncherTransition
+    from heinzel.modules.system.lifecycle._launcher_transition import LauncherTransition
 
     selected, manager, port, _old = seed_released_service(service, "published015")
     original_phase, original_replace, original_unlink = LauncherTransition.phase, Path.replace, Path.unlink
@@ -1141,7 +1141,7 @@ def test_interrupted_historical_migration_keeps_exact_fences_and_can_resume(serv
 
 @pytest.mark.parametrize("change", ["foreign", "missing", "edited-launcher", "edited-journal"])
 def test_interrupted_historical_transition_refuses_changed_authority_before_new_effects(service, monkeypatch, change):
-    from heinzel.modules.ui._launcher_transition import LauncherTransition
+    from heinzel.modules.system.lifecycle._launcher_transition import LauncherTransition
 
     selected, manager, port, _old = seed_released_service(service, "main505-canonical")
     original = LauncherTransition.phase

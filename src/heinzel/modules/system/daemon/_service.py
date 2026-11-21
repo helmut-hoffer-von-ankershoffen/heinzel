@@ -65,7 +65,6 @@ from heinzel.kernel import (
 )
 from heinzel.kernel._logging import log_event
 from heinzel.kernel._tool_uninstall import OwnedFile, owned_file, remove_owned_file
-from heinzel.modules.system._phases import Phases
 from heinzel.modules.system.daemon import _process_birth
 from heinzel.modules.system.daemon import _schedule as schedule
 from heinzel.modules.system.daemon._abandoned_mutation import host_boot, marker_token_matches, mutation_record
@@ -119,6 +118,7 @@ from heinzel.modules.system.daemon._units import (
     systemd_service,
     systemd_timer,
 )
+from heinzel.modules.system.updater._phases import Phases
 
 if TYPE_CHECKING:
     import threading

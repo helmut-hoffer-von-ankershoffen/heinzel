@@ -25,7 +25,7 @@ spec.loader.exec_module(review_tier)
         "src/heinzel/heads/bootstrap.py",
         "src/heinzel/heads/cli/_update.py",
         "src/heinzel/heads/web/_updates.py",
-        "src/heinzel/modules/system/_update.py",
+        "src/heinzel/modules/system/updater/_update.py",
         "src/heinzel/modules/system/lifecycle/_uninstall.py",
         "src/heinzel/modules/system/daemon/_service.py",
         "docs/install.sh",

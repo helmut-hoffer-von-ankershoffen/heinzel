@@ -9,7 +9,7 @@ until a manual `hz ui restart`.
 
 | Entry point | Code | Who runs it | Mutation boundary |
 | --- | --- | --- | --- |
-| `hz system update` (CLI) | `modules/system/_update.py` `UpdateService.update` | the person's shell, old code | `DaemonInstallationLifecycle.mutation` (marker `daemon/mutation-pending.json`) |
+| `hz system update` (CLI) | `modules/system/updater/_update.py` `UpdateService.update` | the person's shell, old code | `DaemonInstallationLifecycle.mutation` (marker `daemon/mutation-pending.json`) |
 | Footer "Update" (PWA) | same operation over REST, then `restartAndApply` in `web/src/updates/controller.ts` | the web server, old code | same |
 | Automatic update | `heads/web/_auto_update.py` `AutoUpdater.apply` → `system.apply-announced` → `UpdateService.apply_announced` | the web server, old code | same, plus a tool-folder snapshot (`ToolSnapshot`) |
 | Interrupted automatic update | `system.recover-announced` at web start | the web server | snapshot restore |

@@ -58,7 +58,10 @@ from heinzel.kernel import (
 )
 from heinzel.kernel._logging import get_logger, log_event, step
 from heinzel.kernel._tool_python import PythonNeed, newer_python
-from heinzel.modules.system._announced import (
+from heinzel.modules.system._models import AnnouncedUpdate, PluginPlan, PluginUpdate, UpdatePlan, UpdateResult
+from heinzel.modules.system._service import DEFAULT_REPOSITORY, RELEASE_TIMEOUT
+from heinzel.modules.system.plugin._sources import dependents, git_credentials, required_by
+from heinzel.modules.system.updater._announced import (
     Announcement,
     ToolSnapshot,
     allows_core,
@@ -67,12 +70,9 @@ from heinzel.modules.system._announced import (
     installed_identity,
     plugin_commit,
 )
-from heinzel.modules.system._models import AnnouncedUpdate, PluginPlan, PluginUpdate, UpdatePlan, UpdateResult
-from heinzel.modules.system._phases import Phases, State
-from heinzel.modules.system._plugin_releases import PinnedPlugins
-from heinzel.modules.system._plugin_standing import standing
-from heinzel.modules.system._service import DEFAULT_REPOSITORY, RELEASE_TIMEOUT
-from heinzel.modules.system.plugin._sources import dependents, git_credentials, required_by
+from heinzel.modules.system.updater._phases import Phases, State
+from heinzel.modules.system.updater._plugin_releases import PinnedPlugins
+from heinzel.modules.system.updater._plugin_standing import standing
 
 log = get_logger("update")
 DEFAULT_BRANCH = "main"

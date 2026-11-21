@@ -15,13 +15,13 @@ from heinzel import HeinzelError
 from heinzel.kernel import PluginRelease
 from heinzel.kernel._head_refresh import HeadRefresh
 from heinzel.modules import system
-from heinzel.modules.system import _update
 from heinzel.modules.system._models import PluginPlan, PluginUpdate, UpdatePlan, UpdateResult
-from heinzel.modules.system._plugin_releases import PinnedPlugins, PyPIPluginReleases
-from heinzel.modules.system._plugin_standing import standing
 from heinzel.modules.system._render import plan_text, render_update
-from heinzel.modules.system._update import UpdateService
-from tests.unit.modules.system_update_test import (
+from heinzel.modules.system.updater import _update
+from heinzel.modules.system.updater._plugin_releases import PinnedPlugins, PyPIPluginReleases
+from heinzel.modules.system.updater._plugin_standing import standing
+from heinzel.modules.system.updater._update import UpdateService
+from tests.unit.runtime.updater.system_update_test import (
     REPO,
     FakeReleases,
     FakeUv,
