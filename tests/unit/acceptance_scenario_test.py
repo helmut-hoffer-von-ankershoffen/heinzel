@@ -107,6 +107,10 @@ def test_scenario_workflow_is_advisory_and_never_named_like_release_acceptance()
     assert job["permissions"] == {"contents": "read"}
     assert job["strategy"]["matrix"]["os"] == ["ubuntu-24.04", "macos-latest"]
     assert "secrets." not in json.dumps(workflow)
+    run = next(step for step in job["steps"] if step.get("name") == "Run the scenario")
+    assert run["continue-on-error"] is True  # advisory: reported, never a red check
+    ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    assert not any("Scenario" in str(need) for need in ci["jobs"]["ci-ok"]["needs"])
 
 
 @pytest.mark.parametrize("platform", ["linux", "darwin"])

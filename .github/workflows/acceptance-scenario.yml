@@ -74,7 +74,11 @@ jobs:
         with:
           enable-cache: false
       - run: uv python install 3.15
+      # Advisory: a failing scenario is reported (the summary, a warning and the receipt), never a red check, until
+      # the scenario gates a release. Its jobs are in no required set (CI OK lives in ci.yml).
       - name: Run the scenario
+        id: scenario
+        continue-on-error: true
         timeout-minutes: 25
         env:
           TMPDIR: /tmp
@@ -85,6 +89,9 @@ jobs:
           --expect-wheel-sha256 "$EXPECTED_WHEEL_SHA256"
           --plugin-age-hours "$PLUGIN_AGE_HOURS"
           --diagnostics reports/acceptance/scenario-diagnostics
+      - name: Report an advisory failure
+        if: steps.scenario.outcome != 'success'
+        run: echo "::warning title=Advisory scenario failed::See the job summary and the uploaded receipt and diagnostics."
       - name: Summarize the scenario
         if: always()
         run: >-
