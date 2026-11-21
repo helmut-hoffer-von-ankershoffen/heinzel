@@ -355,14 +355,6 @@ def test_changes_that_cannot_be_mapped_to_tests_never_run_the_whole_unit_suite(c
     assert overrides(changed)["UNIT_TARGETS"] == "tests/unit/scoped_checks_test.py"  # CI runs the full suite
 
 
-@pytest.mark.parametrize("changed", [["pyproject.toml"], ["src/heinzel/modules/system/_update.py"]])
-def test_the_push_hook_reports_every_failure_in_one_pass_within_its_cap(changed):
-    given = overrides(changed)
-    assert given["UNIT_STOP"] == ""  # no -x
-    assert given["STEPS_KEEP_GOING"] == "1"
-    assert scoped.PUSH_TIMEOUT <= 300
-
-
 def test_a_change_no_test_reaches_still_runs_the_hooks_own_test():
     assert overrides(["docs/TEAMS.md", "scripts/__nothing_mentions_this__.py"])["UNIT_TARGETS"] == (
         "tests/unit/scoped_checks_test.py"

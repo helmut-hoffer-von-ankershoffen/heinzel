@@ -856,15 +856,13 @@ def main() -> None:
             return
         selected = configured_python_selection(parser, changed, base, show=args.show_python_push_plan)
         run_scoped_push(changed, parser)
-        if changed and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed):
-            # Python, scripts, tests and documents: everything of the fast gate but the web app's tests and the managed
-            # backend's check, which read nothing of it (the generated client is still checked by web-lint).
-            command = ["make", "check-fast", *python_overrides(changed, selected)]
-            sys.exit(run_check(command, check=False, timeout=PUSH_TIMEOUT).returncode)
         if changed and not all(path.startswith("plugins/") for path in changed):
-            # Web, desktop and root build files: the web checks stay, but the unit tests are the related ones too.
-            web_owned = ("WEB_TESTS=", "MANAGED_CHECK=")
-            overrides = [item for item in python_overrides(changed, selected) if not item.startswith(web_owned)]
+            # Everything of the fast gate, with the related unit tests only (never the whole suite). Python, scripts,
+            # tests and documents also drop the web app's tests and the managed backend's check, which read nothing of
+            # them (the generated client is still checked by web-lint); web, desktop and root build files keep them.
+            overrides = python_overrides(changed, selected)
+            if touches_web(changed):
+                overrides = [item for item in overrides if not item.startswith(("WEB_TESTS=", "MANAGED_CHECK="))]
             sys.exit(run_check(["make", "check-fast", *overrides], check=False, timeout=PUSH_TIMEOUT).returncode)
         args.mode = "fast"  # everything else is the full fast gate
     if not changed or not all(path.startswith("plugins/") for path in changed):

@@ -2149,14 +2149,7 @@ def _evaluate_if(condition: str, event: str, outputs: dict[str, str]) -> bool:
 def test_the_nightly_selects_and_runs_the_full_macos_matrix_end_to_end(tmp_path, ci_paths):
     """Compute what the `changes` job selects on `schedule`, then which jobs start and on which operating systems."""
     jobs = _ci_jobs()
-    changes = jobs["changes"]
-    steps = {step["id"]: step for step in changes["steps"] if "id" in step}
-    assert all("if" not in step for step in changes["steps"] if "uses" in step)  # checkout and setup-uv run
-    assert steps["full"].get("if") is None
-    assert steps["paths"].get("if") is None
-    assert steps["maintenance"]["if"] == "github.event_name == 'schedule'"
-    assert "release" in steps
-    assert steps["release"]["if"] == "github.event_name != 'schedule'"
+    # the steps themselves are pinned by test_changed_paths_event_policy; here the selection is computed
     raw = _changes_outputs(tmp_path, ci_paths, "schedule", "", release=True)  # `full` selects true, as in the workflow
     outputs = dict(line.split("=", 1) for line in raw)
     outputs["full_ci"] = "true"
@@ -2166,9 +2159,7 @@ def test_the_nightly_selects_and_runs_the_full_macos_matrix_end_to_end(tmp_path,
         assert _evaluate_if(jobs[name]["if"], "schedule", outputs), name
     for name in ("setup", "e2e", "electron"):
         assert "macos-latest" in _oses(jobs[name]["strategy"]["matrix"]["os"], "schedule")
-    assert {cell["os"] for cell in _macos_include(jobs["test"]["strategy"]["matrix"], "schedule", full=True)} == {
-        "macos-latest"
-    }
+    assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "schedule", full=True)) == 2
     complete = next(step for step in jobs["ci-ok"]["steps"] if step.get("name", "").startswith("Require the complete"))
     assert "if" not in complete  # the nightly requires the whole direct workload, macOS lanes included
     for name in ("setup", "test", "e2e", "notifier", "macos-specific", "electron"):

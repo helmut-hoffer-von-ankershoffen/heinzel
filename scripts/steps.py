@@ -155,17 +155,31 @@ def stop_steps(steps: list[Step], note: str, code: int = -1) -> None:
         step.code, step.note = code, note
 
 
-def run_group(  # noqa: C901 - bounded child lifecycle
+def start_group(group: list[Step], interruption: Interruption, *, verbose: bool) -> None:
+    """Start every step of the group, unless a termination signal arrived first."""
+    for step in group:
+        if interruption.signum:
+            return
+        if verbose:
+            print(f"--- {step.name}: {step.command}", flush=True)
+        step.start(verbose=verbose)
+
+
+def report_finished(group: list[Step], reported: int, *, verbose: bool) -> int:
+    """Report the finished steps in declared order, and return how many have been reported."""
+    while reported < len(group) and group[reported].code is not None:
+        if not verbose:
+            group[reported].report()
+        reported += 1
+    return reported
+
+
+def run_group(
     group: list[Step], timeout: float, interruption: Interruption, *, verbose: bool = False, keep_going: bool = False
 ) -> int:
     """Run owned steps together and cancel their process groups on failure or termination."""
     try:
-        for step in group:
-            if interruption.signum:
-                break
-            if verbose:
-                print(f"--- {step.name}: {step.command}", flush=True)
-            step.start(verbose=verbose)
+        start_group(group, interruption, verbose=verbose)
         reported = 0
         while reported < len(group):
             if interruption.signum:
@@ -175,10 +189,7 @@ def run_group(  # noqa: C901 - bounded child lifecycle
                 step.poll(timeout)
             if not keep_going and any(step.code for step in group):
                 stop_steps([step for step in group if step.code is None], "cancelled")
-            while reported < len(group) and group[reported].code is not None:
-                if not verbose:
-                    group[reported].report()
-                reported += 1
+            reported = report_finished(group, reported, verbose=verbose)
             time.sleep(POLL)
         return next((step.code for step in group if step.code and step.note != "cancelled"), 0) or 0
     except BaseException:
@@ -186,25 +197,32 @@ def run_group(  # noqa: C901 - bounded child lifecycle
         raise
 
 
+def report_unrun(groups_after: list[list[Step]]) -> None:
+    """Name the steps that did not run because an earlier group failed."""
+    for step in (step for group in groups_after for step in group):
+        step.report()
+
+
 def run_plan(execution: list[list[Step]], timeout: float, interruption: Interruption, *, verbose: bool) -> int:
     """Run the groups in order; the first failure stops them, or with `STEPS_KEEP_GOING` every group runs."""
     keep_going = os.environ.get("STEPS_KEEP_GOING", "") not in {"", "0"}
     first_failure = 0
     for index, group in enumerate(execution):
-        if interrupted := interruption.exit_code():
-            return interrupted
-        if code := run_group(group, timeout, interruption, verbose=verbose, keep_going=keep_going):
-            if interrupted := interruption.exit_code():
-                return interrupted
-            if keep_going:
-                first_failure = first_failure or code
-                continue
+        code = (
+            0
+            if interruption.signum
+            else run_group(group, timeout, interruption, verbose=verbose, keep_going=keep_going)
+        )
+        if interruption.signum:
+            return interruption.exit_code()
+        if not code:
+            continue
+        first_failure = first_failure or code
+        if not keep_going:
             if not verbose:
-                for later in execution[index + 1 :]:
-                    for step in later:
-                        step.report()
+                report_unrun(execution[index + 1 :])
             return code
-    return interruption.exit_code() or first_failure
+    return first_failure
 
 
 def main(argv: list[str]) -> int:
