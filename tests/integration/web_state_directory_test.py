@@ -11,9 +11,9 @@ from fastapi.testclient import TestClient
 from heinzel import HeinzelError
 from heinzel.heads import web
 from heinzel.heads.web import _auto_update as auto
-from heinzel.heads.web import _state_directory as storage
 from heinzel.heads.web._auto_update import AutoUpdater
-from heinzel.heads.web._devices import Devices
+from heinzel.modules.system.client import _state_directory as storage
+from heinzel.modules.system.client._devices import Devices
 
 pytestmark = pytest.mark.integration
 TOKEN = "shared-directory-session"
@@ -247,7 +247,7 @@ def test_concurrent_path_replacement_cannot_redirect_verified_descriptor(make_ke
             yield folder
 
     monkeypatch.setattr(auto, "private_directory", replace_after_verification)
-    from heinzel.heads.web import _devices
+    from heinzel.modules.system.client import _devices
 
     monkeypatch.setattr(_devices, "private_directory", replace_after_verification)
     worker = threading.Thread(target=replace_directory)

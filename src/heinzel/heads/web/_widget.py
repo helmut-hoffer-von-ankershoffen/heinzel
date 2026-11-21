@@ -14,11 +14,11 @@ from datetime import UTC, datetime
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._pairing import add_pairing
 from heinzel.heads.web._widget_fence_routes import add_widget_fence, paired_token
 from heinzel.kernel import CallIdentity, CurrentUser, HeinzelError, Kernel, OperationLet
 from heinzel.kernel._identity import LOCAL_READ_PERMISSIONS
+from heinzel.modules.system.client._devices import Devices
 
 NO_STORE = {"Cache-Control": "no-store"}
 

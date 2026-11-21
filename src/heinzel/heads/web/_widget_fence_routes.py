@@ -6,10 +6,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from heinzel.heads.web._devices import Devices
-from heinzel.heads.web._widget_fence import FenceConflictError
-from heinzel.heads.web._widget_fence import Request as FenceRequest
 from heinzel.kernel import CurrentUser, HeinzelError
+from heinzel.modules.system.client._devices import Devices
+from heinzel.modules.system.client._widget_fence import FenceConflictError
+from heinzel.modules.system.client._widget_fence import Request as FenceRequest
 
 NO_STORE = {"Cache-Control": "no-store"}
 MAX_BODY = 4096

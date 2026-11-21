@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 from heinzel import HeinzelError
 from heinzel.heads import web
 from heinzel.heads.cli import build as cli
-from heinzel.heads.web._devices import MAX_DEVICES, PREFIX, Devices, digest
+from heinzel.modules.system.client._devices import MAX_DEVICES, PREFIX, Devices, digest
 
 pytestmark = pytest.mark.integration
 

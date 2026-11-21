@@ -15,8 +15,8 @@ from mcp_types.version import LATEST_PROTOCOL_VERSION
 from heinzel import HeinzelError, Module
 from heinzel.heads import mcp
 from heinzel.heads._exposure import MCP_HTTP, exposed
-from heinzel.heads._mcp_tokens import McpTokens, require_reachable_only_as_asked
 from heinzel.kernel._logging import record_fields
+from heinzel.modules.system.client._mcp_tokens import McpTokens, require_reachable_only_as_asked
 
 pytestmark = [pytest.mark.unit, pytest.mark.timeout(30)]  # subprocess-heavy: past 5 s in a loaded hook
 

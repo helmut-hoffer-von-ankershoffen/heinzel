@@ -5,8 +5,8 @@ import json
 import pytest
 from typer.testing import CliRunner
 
-from heinzel.heads._mcp_tokens import tokens_for_user
 from heinzel.heads.cli import build
+from heinzel.modules.system.client._mcp_tokens import tokens_for_user
 
 pytestmark = pytest.mark.integration
 

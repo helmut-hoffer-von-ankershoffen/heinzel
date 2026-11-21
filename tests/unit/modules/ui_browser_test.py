@@ -21,7 +21,6 @@ from pydantic_ai import BinaryContent, ToolReturn
 from heinzel import HeinzelError, ProposedCall
 from heinzel.heads import mcp
 from heinzel.heads._exposure import MCP_HTTP, exposed
-from heinzel.heads._mcp_tokens import McpTokens
 from heinzel.kernel import ChatToolError, chat_tools, pydantic_ai_tools
 from heinzel.kernel._browser import (
     NEEDS_DESKTOP,
@@ -37,6 +36,7 @@ from heinzel.kernel._browser import (
 from heinzel.kernel._browser_relay import RECORD, REQUEST_LIMIT, REQUEST_SECONDS, peer_uid, relay
 from heinzel.kernel._logging import record_fields
 from heinzel.kernel._private_control import private_socket_directory
+from heinzel.modules.system.client._mcp_tokens import McpTokens
 from heinzel.modules.system.runner.chat._service import PREAMBLE, ChatService
 from heinzel.modules.system.runner.chat._store import ChatStore
 from heinzel.modules.ui.browser._gate import Target

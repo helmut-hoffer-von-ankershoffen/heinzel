@@ -442,7 +442,7 @@ ignore_imports = [
     "heinzel.heads.cli._serve -> heinzel.heads.mcp._http_check",
     "heinzel.heads.cli._serve -> heinzel.heads.mcp._standard_project",
     "heinzel.heads.cli._serve -> heinzel.heads.web",
-    "heinzel.heads.cli._serve -> heinzel.heads.web._devices",
+    "heinzel.heads.cli._serve -> heinzel.modules.system.client._devices",
     "heinzel.heads.cli._serve -> heinzel.heads.web._supervision",
     "heinzel.heads.web -> heinzel.heads.api",
     "heinzel.heads.web._browser_bridge -> heinzel.heads.api",

@@ -30,9 +30,9 @@ from pydantic import BaseModel, Field
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from heinzel.heads._mcp_tokens import McpToken, McpTokens
 from heinzel.heads.web._shutdown import Stopping
 from heinzel.kernel import KERNEL_SECTION, ConfigEditor, HeinzelError, Kernel, Settings
+from heinzel.modules.system.client._mcp_tokens import McpToken, McpTokens
 
 PATH = "/mcp"
 SETTING = "hz.mcp_http"

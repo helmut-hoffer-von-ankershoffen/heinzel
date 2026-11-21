@@ -30,10 +30,10 @@ from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, model_validator
 
-from heinzel.heads.web._state_directory import private_directory
-from heinzel.heads.web._widget_fence import FenceState, Receipt, Request, transition
 from heinzel.kernel import HeinzelError, clean_text
 from heinzel.kernel._identity import CurrentUser
+from heinzel.modules.system.client._state_directory import private_directory
+from heinzel.modules.system.client._widget_fence import FenceState, Receipt, Request, transition
 
 PREFIX = "hzd_"
 """Device tokens start with this, so they are told apart from session tokens at a glance (and in a secret scan)."""

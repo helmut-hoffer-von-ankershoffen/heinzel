@@ -39,7 +39,7 @@ adapters_only = true
 
 [context.client]
 summary = "the workspace handshake, device and MCP tokens: what connected clients present"
-src = ["src/heinzel/heads/web/_workspace_version.py", "src/heinzel/heads/_mcp_tokens.py", "src/heinzel/heads/web/_devices.py"]
+src = ["src/heinzel/heads/web/_workspace_version.py", "src/heinzel/modules/system/client/_mcp_tokens.py", "src/heinzel/modules/system/client/_devices.py"]
 
 [context.daemon]
 summary = "the daemon, its schedule and the runner"
@@ -105,7 +105,7 @@ src = ["src/heinzel/modules/__init__.py", "src/heinzel/modules/system/*.py"]
 [context.head-kit]
 summary = "what every head shares"
 src = ["src/heinzel/heads/*.py"]
-exclude = ["src/heinzel/heads/_mcp_tokens.py", "src/heinzel/heads/daemon_recovery.py"]
+exclude = ["src/heinzel/modules/system/client/_mcp_tokens.py", "src/heinzel/heads/daemon_recovery.py"]
 
 [context.head-cli]
 summary = "the Typer head"
@@ -134,7 +134,7 @@ exclude = [
     "src/heinzel/heads/web/_lifecycle.py",
     "src/heinzel/heads/web/_supervision.py",
     "src/heinzel/heads/web/_workspace_version.py",
-    "src/heinzel/heads/web/_devices.py",
+    "src/heinzel/modules/system/client/_devices.py",
 ]
 package = "heinzel.heads.web"
 head = true
@@ -188,7 +188,7 @@ heads = [
     "heinzel.heads.cli._serve -> heinzel.heads.mcp._http_check",
     "heinzel.heads.cli._serve -> heinzel.heads.mcp._standard_project",
     "heinzel.heads.cli._serve -> heinzel.heads.web",
-    "heinzel.heads.cli._serve -> heinzel.heads.web._devices",
+    "heinzel.heads.cli._serve -> heinzel.modules.system.client._devices",
     "heinzel.heads.cli._serve -> heinzel.heads.web._supervision",
     "heinzel.heads.web -> heinzel.heads.api",
     "heinzel.heads.web._browser_bridge -> heinzel.heads.api",

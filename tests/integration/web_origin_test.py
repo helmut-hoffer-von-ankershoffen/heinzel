@@ -10,7 +10,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from heinzel import Module, Settings
 from heinzel.heads import api, web
-from heinzel.heads.web._devices import Devices
+from heinzel.modules.system.client._devices import Devices
 
 pytestmark = pytest.mark.integration
 TOKEN = "session-for-proxy-origin-tests"
