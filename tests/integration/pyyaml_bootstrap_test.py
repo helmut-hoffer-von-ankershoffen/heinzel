@@ -15,17 +15,24 @@ SCRIPT = ROOT / "scripts/bootstrap-pyyaml.sh"
 MODULE = ROOT / "src/heinzel/bootstrap_pyyaml.py"
 
 
-def test_bootstrap_uses_the_locked_pyyaml_source():
+def reviewed_lock(pins):
+    """What a consumer locked at the reviewed version looks like: the registry sdist, no cp315 wheel."""
+    return (
+        f'[[package]]\nname = "pyyaml"\nversion = "{pins["version"]}"\n'
+        f'sdist = {{ url = "{pins["source_url"]}", hash = "sha256:{pins["source_sha256"]}" }}\n'
+    )
+
+
+def test_core_locks_a_pyyaml_with_wheels_so_the_bootstrap_has_nothing_to_build():
     lock = tomllib.loads((ROOT / "uv.lock").read_text())
     package = next(item for item in lock["package"] if item["name"] == "pyyaml")
+    assert any("-cp315-" in wheel["url"] for wheel in package["wheels"])
     pins = json.loads(
         subprocess.run(
             [sys.executable, "-I", "-S", str(MODULE), "pins"], capture_output=True, text=True, check=True, timeout=10
         ).stdout
     )
-    assert pins["source_url"] == package["sdist"]["url"]
-    assert "sha256:" + pins["source_sha256"] == package["sdist"]["hash"]
-    assert pins["version"] == package["version"]
+    assert pins["version"] == "6.0.3"  # the reviewed source stays for consumers whose lock still selects it
 
 
 def test_the_script_and_the_template_keep_no_copy_of_a_pin():
@@ -47,7 +54,12 @@ def project_environment(tmp_path):
     environment = tmp_path / "project-environment"
     (environment / "bin").mkdir(parents=True)
     (environment / "bin/python").symlink_to(sys.executable)
-    (tmp_path / "uv.lock").write_bytes((ROOT / "uv.lock").read_bytes())
+    pins = json.loads(
+        subprocess.run(
+            [sys.executable, "-I", "-S", str(MODULE), "pins"], capture_output=True, text=True, check=True, timeout=10
+        ).stdout
+    )
+    (tmp_path / "uv.lock").write_text(reviewed_lock(pins))
     return {**os.environ, "UV_PROJECT_ENVIRONMENT": str(environment)}
 
 

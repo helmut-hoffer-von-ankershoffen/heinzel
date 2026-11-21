@@ -153,7 +153,7 @@ class Recorder:
         if command[-1] == "pins":
             return '{"name": "pyyaml"}'
         if "build" in command:
-            return "/work/reviewed/pyyaml-6.0.4-py3-none-any.whl\n"
+            return "/work/reviewed/pyyaml-6.0.3-py3-none-any.whl\n"
         return ""
 
     def subprocess(self, command, **_options):
@@ -161,7 +161,7 @@ class Recorder:
         return type("Done", (), {"returncode": 1 if self.no_wheel is False else 0})()
 
 
-EXPORTED_WITH_PYYAML = EXPORTED + "pyyaml==6.0.4\n"
+EXPORTED_WITH_PYYAML = EXPORTED + "pyyaml==6.0.3\n"
 
 
 @pytest.mark.parametrize("no_wheel", [True, False])
@@ -184,4 +184,4 @@ def test_a_package_without_an_upstream_wheel_comes_from_the_reviewed_pure_python
         assert sum("build" in command and command[0] != "uv" for command in recorder.commands) == 1  # one build
     else:
         assert wheel_installs == []
-        assert all("pyyaml==6.0.4" in listing for listing in recorder.listings.values())
+        assert all("pyyaml==6.0.3" in listing for listing in recorder.listings.values())

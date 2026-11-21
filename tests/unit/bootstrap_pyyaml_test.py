@@ -37,7 +37,7 @@ def requirements(tmp_path, text):
 @pytest.fixture
 def commands(monkeypatch):
     """Record every external command; curl writes the given bytes, uv build leaves the given wheels."""
-    state = SimpleNamespace(calls=[], source=b"reviewed", wheels=["pyyaml-6.0.4-py3-none-any.whl"])
+    state = SimpleNamespace(calls=[], source=b"reviewed", wheels=["pyyaml-6.0.3-py3-none-any.whl"])
 
     def run(command, **options):
         state.calls.append((command, options))
@@ -138,8 +138,8 @@ def test_requirements_that_differ_from_the_reviewed_source_are_refused(tmp_path,
 def test_build_only_copies_the_wheel_and_installs_nothing(tmp_path, commands, capsys):
     out = tmp_path / "wheels"
     assert bootstrap.main(["build", "--lock", str(uv_lock(tmp_path)), "--wheel-dir", str(out)]) == 0
-    assert [path.name for path in out.iterdir()] == ["pyyaml-6.0.4-py3-none-any.whl"]
-    assert capsys.readouterr().out.strip() == str(out / "pyyaml-6.0.4-py3-none-any.whl")
+    assert [path.name for path in out.iterdir()] == ["pyyaml-6.0.3-py3-none-any.whl"]
+    assert capsys.readouterr().out.strip() == str(out / "pyyaml-6.0.3-py3-none-any.whl")
     curl, venv, backend, build = (command for command, _ in commands.calls)
     assert curl[0] == "curl"
     assert bootstrap.SOURCE_URL in curl
@@ -235,3 +235,34 @@ def test_install_records_the_wheel_as_the_registry_package(tmp_path, commands, m
     assert install[-1].endswith(".whl")
     assert not (info / "direct_url.json").exists()
     assert commands.calls[1][0][3] == interpreter  # the backend runs on the Python the wheel is installed into
+
+
+WHEELS_LOCK = (
+    '[[package]]\nname = "pyyaml"\nversion = "6.0.4"\nsdist = {{ url = "https://example/pyyaml-6.0.4.tar.gz", '
+    'hash = "sha256:00" }}\nwheels = [\n    {{ url = "https://example/pyyaml-6.0.4-cp315-cp315-manylinux.whl" }},\n]\n'
+)
+
+
+def test_a_lock_on_6_0_3_builds_the_reviewed_source(commands, tmp_path):
+    out = tmp_path / "out"
+    assert bootstrap.locked_wheel(uv_lock(tmp_path)) is None
+    assert bootstrap.main(["build", "--lock", str(tmp_path / "uv.lock"), "--wheel-dir", str(out)]) == 0
+    assert any(command[:2] == ["uv", "build"] for command, _ in commands.calls)
+    assert [path.name for path in out.iterdir()] == ["pyyaml-6.0.3-py3-none-any.whl"]
+
+
+def test_a_lock_on_6_0_4_builds_nothing_and_installs_the_upstream_wheel(commands, tmp_path):
+    lock = tmp_path / "uv.lock"
+    lock.write_text(WHEELS_LOCK.format())
+    assert bootstrap.locked_wheel(lock) == "6.0.4"
+    out = tmp_path / "out"
+    assert bootstrap.main(["build", "--lock", str(lock), "--wheel-dir", str(out)]) == 0
+    assert list(out.iterdir()) == []
+    assert bootstrap.main(["install", "--lock", str(lock), "--python", "/venv/bin/python"]) == 0
+    names = [command[0] for command, _ in commands.calls]
+    assert "curl" not in names
+    assert not any(command[:2] == ["uv", "build"] for command, _ in commands.calls)
+    install = [command for command, _ in commands.calls if command[:3] == ["uv", "pip", "install"]]
+    assert install == [
+        ["uv", "pip", "install", "--python", "/venv/bin/python", "--no-build", "--no-deps", "pyyaml==6.0.4"]
+    ]
