@@ -1,6 +1,8 @@
 // A paired browser reopens the app without a link: a persistent browser profile, one step per run.
 // node device-reopen.mjs ENGINE PROFILE_DIR STEP URL [stale]   STEP: pair | open | restart
 
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { chromium, webkit } from "playwright-core";
 import { explainOwnedBrowser } from "./reopen-processes.mjs";
 import { until } from "./until.mjs";
@@ -17,6 +19,15 @@ const path = (request) => {
   const address = new URL(request.url());
   return `${request.method()} ${address.origin === new URL(url).origin ? address.pathname : address.origin}`;
 };
+// WebKit holds the first navigation of a relaunched profile until it has imported the service worker registrations
+// it stored and started the worker; on hosted macOS that navigation sometimes never reached the network
+// (connectStart -1, the server answering 200, bead zd4: 3 of 70 web-1 jobs). The killed browser leaves the
+// registration database with an uncheckpointed write-ahead log. The app registers its worker again on every load, and
+// settleWorker below still requires it active with its copies written, so drop only the stored registrations: the
+// profile's local storage (the device token this journey is about) and the worker's caches stay.
+if (engine === webkit) {
+  rmSync(join(profile, "ServiceWorkers"), { recursive: true, force: true });
+}
 note(`launch ${engineName} ${step}${mode ? ` ${mode}` : ""}`);
 const context = await engine.launchPersistentContext(profile, {
   viewport: { width: 1100, height: 800 },
@@ -85,7 +96,7 @@ async function explain(page) {
 }
 // A controlled WebKit replay showed that closing the context interrupted a delayed worker cache write.
 // Wait for the active worker, the cached offline page, and copies of the worker-served assets observed in resource
-// timing before closing. The cause of the blank navigation in #648 (bead zd4) remains unknown.
+// timing before closing.
 async function settleWorker(page) {
   await until(
     () =>
