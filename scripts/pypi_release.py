@@ -109,7 +109,8 @@ def verify_source(root: Path, tag: str, release: dict[str, object]) -> str:
     if (
         release.get("tag_name") != tag
         or release.get("draft") is not False
-        or release.get("prerelease") is not False
+        # A final vX.Y.Z release is held as a pre-release until acceptance promotes it (ADR 0114); either is genuine.
+        or not isinstance(release.get("prerelease"), bool)
         or not isinstance(release.get("published_at"), str)
         or release.get("html_url") != f"https://github.com/{REPOSITORY}/releases/tag/{tag}"
     ):

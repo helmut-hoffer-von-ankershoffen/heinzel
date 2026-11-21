@@ -49,6 +49,11 @@ def test_exact_annotated_tag_on_main_binds_to_the_published_release(candidate):
     assert release.verify_source(root, "v1.2.3", published) == git("rev-parse", "HEAD")
 
 
+def test_a_final_release_held_for_acceptance_still_binds(candidate):
+    root, git, published = candidate
+    assert release.verify_source(root, "v1.2.3", {**published, "prerelease": True}) == git("rev-parse", "HEAD")
+
+
 def test_same_named_branch_cannot_substitute_for_the_actual_tag(candidate):
     root, git, published = candidate
     git("switch", "-c", "v1.2.3")
@@ -74,7 +79,7 @@ def test_release_tag_outside_main_is_refused(candidate):
     "change",
     [
         {"draft": True},
-        {"prerelease": True},
+        {"prerelease": None},
         {"tag_name": "v1.2.4"},
         {"published_at": None},
         {"html_url": "https://example.invalid/release"},
