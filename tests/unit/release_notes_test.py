@@ -38,3 +38,50 @@ def test_extracts_the_section_of_a_version():
 def test_unknown_versions_fail():
     with pytest.raises(ValueError, match=r"no section for v9\.9\.9"):
         release_notes.section(CHANGELOG, "v9.9.9")
+
+
+def test_commits_of_the_tag_missing_from_the_section_are_listed():
+    notes = release_notes.section(CHANGELOG, "v0.2.0") + "- Merged during review (#885)\n"
+    subjects = [
+        "fix: late change (#886)",
+        "feat: Merged during review (#885)",
+        "chore(release): v0.2.0",
+        "docs: no number",
+    ]
+    text = release_notes.with_missing(notes, subjects)
+    assert text.endswith("- fix: late change (#886)\n- docs: no number\n")
+    assert "### Also in this release" in text
+    assert text.count("#885") == 1
+
+
+def test_nothing_missing_leaves_the_notes_unchanged():
+    notes = "- one (#1)\n"
+    assert release_notes.with_missing(notes, ["feat: one (#1)"]) == notes
+
+
+def test_every_commit_between_the_previous_tag_and_the_tag_is_listed(tmp_path, monkeypatch):
+    import subprocess
+
+    def git(*args):
+        subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+
+    git("init", "-q")
+    for subject, tag in (
+        ("feat: first (#1)", "v0.1.0"),
+        ("fix: in the candidate (#886)", None),
+        ("chore(release): v0.2.0", "v0.2.0"),
+    ):
+        git("commit", "-q", "--allow-empty", "-m", subject)
+        if tag:
+            git("tag", tag)
+    monkeypatch.chdir(tmp_path)
+    assert release_notes.tag_subjects("v0.2.0") == ["chore(release): v0.2.0", "fix: in the candidate (#886)"]
+    assert release_notes.tag_subjects("v0.1.0") == []  # no earlier tag: nothing to add
+    assert "- fix: in the candidate (#886)" in release_notes.with_missing(
+        "- other\n", release_notes.tag_subjects("v0.2.0")
+    )
