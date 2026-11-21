@@ -76,7 +76,7 @@ Installed with `hz`: the runtime dependencies of the core and of every first-par
 | [typing-extensions](#typing-extensions-4160) | 4.16.0 | PSF-2.0 |
 | [typing-inspection](#typing-inspection-044) | 0.4.4 | MIT |
 | [tzdata](#tzdata-20265) | 2026.5 | Apache-2.0 |
-| [uv](#uv-0138) | 0.13.8 | MIT OR Apache-2.0 |
+| [uv](#uv-0137) | 0.13.7 | MIT OR Apache-2.0 |
 | [uvicorn](#uvicorn-0540) | 0.54.0 | BSD-3-Clause |
 | [wsproto](#wsproto-132) | 1.3.2 | MIT |
 
@@ -3380,7 +3380,7 @@ limitations under the License.
 
 </details>
 
-### uv 0.13.8
+### uv 0.13.7
 
 - License: MIT OR Apache-2.0
 - Homepage: <https://github.com/astral-sh/uv>

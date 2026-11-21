@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.15"
-# dependencies = ["mkdocs-material==9.8.0", "packaging==26.3"]
+# dependencies = ["mkdocs-material==9.8.1", "packaging==26.3"]
 # ///
 """Build or serve Markdown in an isolated documentation environment, without installing core or providers."""
 
