@@ -75,7 +75,7 @@ def test_cli_passes_selected_swift_flavor_to_installer(monkeypatch, tmp_path, co
     group, _, _ = _group()
     result = CliRunner().invoke(group, [command, "--flavor", "swift"])
     assert result.exit_code == 0, result.output
-    assert install.call_args.kwargs["flavor"] == installer.DesktopFlavor.SWIFT
+    assert install.call_args.kwargs["flavor"] == installer.DesktopFlavor.NATIVE
 
 
 @pytest.mark.parametrize("failure", [OSError("disk is read-only"), _app.HeinzelError("locked by another process")])

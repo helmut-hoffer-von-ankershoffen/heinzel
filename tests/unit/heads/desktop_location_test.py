@@ -70,6 +70,7 @@ def mac(monkeypatch, tmp_path):
     executable.touch(mode=0o700)
     monkeypatch.setattr(desktop, "SYSTEM_APPLICATIONS", system)
     monkeypatch.setattr(desktop, "_check_platform", lambda: None)
+    monkeypatch.setattr(desktop, "NEW_INSTALL_FLAVOR", desktop.DesktopFlavor.ELECTRON)  # these bundles are Electron
     monkeypatch.setattr(desktop, "fetch_archive", _fetch)
     monkeypatch.setattr(desktop, "extract_bundle", _extract)
     monkeypatch.setattr(desktop, "_prepare_for_gatekeeper", lambda _bundle, **_options: None)
@@ -112,9 +113,9 @@ def test_swift_install_and_update_preserve_flavor(mac, monkeypatch):
 
     monkeypatch.setattr(desktop, "fetch_archive", fetch)
     monkeypatch.setattr(desktop, "extract_bundle", extract)
-    assert desktop.install_desktop("1.0.0", executable, home=home, flavor=desktop.DesktopFlavor.SWIFT) == "installed"
+    assert desktop.install_desktop("1.0.0", executable, home=home, flavor=desktop.DesktopFlavor.NATIVE) == "installed"
     assert desktop.install_desktop("1.0.1", executable, home=home, update_only=True) == "updated"
-    assert flavors == [desktop.DesktopFlavor.SWIFT, desktop.DesktopFlavor.SWIFT]
+    assert flavors == [desktop.DesktopFlavor.NATIVE, desktop.DesktopFlavor.NATIVE]
     config = home / ".config" / "heinzel"
     assert desktop._locate(home, config)[1].flavor == "swift"
     assert not (config / desktop._JOURNAL).exists()
@@ -128,7 +129,7 @@ def test_swift_install_and_update_preserve_flavor(mac, monkeypatch):
     monkeypatch.setattr(desktop.widget, "inventory", unavailable_inventory)
     assert desktop.install_desktop("1.0.2", executable, home=home, update_only=True) == "deferred"
     assert (config / desktop._RECEIPT).read_bytes() == before
-    assert flavors == [desktop.DesktopFlavor.SWIFT, desktop.DesktopFlavor.SWIFT]
+    assert flavors == [desktop.DesktopFlavor.NATIVE, desktop.DesktopFlavor.NATIVE]
 
 
 class LegacyReceipt(BaseModel):
@@ -142,7 +143,7 @@ class LegacyReceipt(BaseModel):
     executable: str
 
 
-@pytest.mark.parametrize("original", [desktop.DesktopFlavor.ELECTRON, desktop.DesktopFlavor.SWIFT])
+@pytest.mark.parametrize("original", [desktop.DesktopFlavor.ELECTRON, desktop.DesktopFlavor.NATIVE])
 @pytest.mark.parametrize("after_move", [1, 2, 3])
 def test_interrupted_flavor_switch_restores_original_bundle_and_receipt(  # noqa: PLR0915 - whole interrupted transaction
     mac, monkeypatch, original, after_move
@@ -157,7 +158,7 @@ def test_interrupted_flavor_switch_restores_original_bundle_and_receipt(  # noqa
 
     def extract(archive, staging):
         bundle = _extract(archive, staging)
-        if selected == desktop.DesktopFlavor.SWIFT:
+        if selected == desktop.DesktopFlavor.NATIVE:
             info = bundle / "Contents" / "Info.plist"
             data = plistlib.loads(info.read_bytes())
             data.update(CFBundleIdentifier="team.heinzel.apple", CFBundleExecutable="Heinzel")
@@ -172,7 +173,7 @@ def test_interrupted_flavor_switch_restores_original_bundle_and_receipt(  # noqa
     bundle = system / desktop.BUNDLE_NAME
     receipt = config / desktop._RECEIPT
     before_receipt, before_inode = receipt.read_bytes(), bundle.stat().st_ino
-    if original == desktop.DesktopFlavor.SWIFT:
+    if original == desktop.DesktopFlavor.NATIVE:
         with pytest.raises(ValidationError):
             LegacyReceipt.model_validate_json(before_receipt)
     else:
@@ -180,7 +181,7 @@ def test_interrupted_flavor_switch_restores_original_bundle_and_receipt(  # noqa
         assert "flavor" not in json.loads(before_receipt)
 
     target = (
-        desktop.DesktopFlavor.SWIFT if original == desktop.DesktopFlavor.ELECTRON else desktop.DesktopFlavor.ELECTRON
+        desktop.DesktopFlavor.NATIVE if original == desktop.DesktopFlavor.ELECTRON else desktop.DesktopFlavor.ELECTRON
     )
     apply, recover = desktop._Move.apply, desktop._recover_transaction
     count = 0
@@ -203,7 +204,7 @@ def test_interrupted_flavor_switch_restores_original_bundle_and_receipt(  # noqa
     assert not (config / desktop._JOURNAL).exists()
     assert receipt.read_bytes() == before_receipt
     assert bundle.stat().st_ino == before_inode
-    assert desktop._locate(home, config)[1].flavor == original
+    assert desktop.DesktopFlavor(desktop._locate(home, config)[1].flavor) == original
     desktop._confirm_installed(bundle, config, desktop.SILENT)
     monkeypatch.setattr(desktop._Move, "apply", apply)
     assert desktop.install_desktop("1.0.0", executable, home=home, flavor=target) == "updated"
@@ -284,7 +285,7 @@ def test_a_foreign_app_in_system_applications_is_never_replaced(mac):
     foreign = system / desktop.BUNDLE_NAME
     foreign.mkdir()
     (foreign / "theirs").touch()
-    with pytest.raises(desktop.DesktopInstallationError, match="not installed by hz app install"):
+    with pytest.raises(desktop.DesktopInstallationError, match=r"not a Heinzel app hz may replace: it is another app"):
         desktop.install_desktop("1.0.0", executable, home=home)
     assert (foreign / "theirs").exists()
 
@@ -318,8 +319,10 @@ def test_a_journal_for_an_unknown_folder_fails_closed(mac):
 def test_an_unowned_app_in_system_applications_gets_a_clear_message(mac):
     home, system, executable = mac
     (system / desktop.BUNDLE_NAME).mkdir()
-    with pytest.raises(desktop.DesktopInstallationError, match="not installed by hz app install"):
+    with pytest.raises(desktop.DesktopInstallationError, match="identifier unreadable") as failure:
         desktop.install_desktop("1.0.0", executable, home=home)
+    assert failure.value.problem is not None
+    assert "was left alone: it is another app" in failure.value.problem.happened
 
 
 @pytest.mark.parametrize(
@@ -451,7 +454,7 @@ def test_a_replaced_app_names_the_receipt_it_does_not_match(mac):
     bundle.mkdir()
     receipt, _binding = _record(home)
     with pytest.raises(desktop.DesktopInstallationError) as failure:
-        desktop.install_desktop("1.0.0", executable, home=home)
+        desktop.desktop_installed(home) or desktop._owned_installation(bundle, receipt.parent)
     assert f"{bundle} is not the copy recorded in {receipt}" in str(failure.value)
 
 
@@ -489,6 +492,8 @@ def test_install_and_uninstall_log_a_start_and_an_outcome_per_step(mac, caplog):
         ("desktop.install.run", "start", None),
         ("desktop.install.recover", "start", None),
         ("desktop.install.recover", "end", "ok"),
+        ("desktop.install.replace", "start", None),
+        ("desktop.install.replace", "end", "ok"),
         ("desktop.install.forget", "start", None),
         ("desktop.install.forget", "end", "ok"),
         ("desktop.install.locate", "start", None),
@@ -523,3 +528,101 @@ def test_a_failed_step_logs_the_same_two_lines_the_person_reads(mac, caplog):
     assert (failed.happened, failed.action) == (failure.value.problem.happened, failure.value.problem.action)
     assert failed.error_type == "LeftoverInstallError"
     assert failed.levelname == "ERROR"
+
+
+# A genuine Heinzel app hz did not record is replaced unasked; anything else is refused with its reason.
+
+
+def _copy_of(folder: Path, *, bundle_id: str = "org.heinzelmaennchen.desktop", version: str = "0.9.0") -> Path:
+    """A Heinzel app that arrived by a download, an older hz or its own updater: no install record matches it."""
+    staging = folder.parent / f"staging-{folder.name}"
+    staging.mkdir()
+    archive = staging / "archive"
+    archive.write_text(version)
+    bundle = _extract(archive, staging)
+    info = bundle / "Contents" / "Info.plist"
+    info.write_bytes(plistlib.dumps({**plistlib.loads(info.read_bytes()), "CFBundleIdentifier": bundle_id}))
+    return bundle.rename(folder / desktop.BUNDLE_NAME)
+
+
+@pytest.fixture
+def sealed(monkeypatch):
+    """Every copy's signature checks out (`inspect_bundle` runs codesign, which a fake bundle never passes)."""
+    reports = {"problem": None}
+    monkeypatch.setattr(desktop, "inspect_bundle", lambda bundle: SimpleNamespace(problem=reports["problem"]))
+    return reports
+
+
+def test_a_genuine_app_without_a_record_is_moved_to_the_trash_and_replaced(mac, sealed):
+    home, system, executable = mac
+    (home / ".Trash").mkdir()
+    _copy_of(system)
+    assert desktop.install_desktop("1.0.0", executable, home=home) == "installed"
+    assert (system / desktop.BUNDLE_NAME / "release").read_text() == "1.0.0"
+    (trashed,) = (home / ".Trash").iterdir()
+    assert (trashed / "release").read_text() == "0.9.0"  # nothing is deleted
+    assert desktop.desktop_location(home) == system / desktop.BUNDLE_NAME
+
+
+def test_a_genuine_app_whose_record_does_not_match_is_replaced(mac, sealed):
+    home, system, executable = mac
+    (home / ".Trash").mkdir()
+    desktop.install_desktop("1.0.0", executable, home=home)
+    bundle = system / desktop.BUNDLE_NAME
+    bundle.rename(system / "kept.app")  # its own updater put another copy in place
+    _copy_of(system, version="1.0.1")
+    assert desktop.desktop_installed(home) is None  # the record names the old copy
+    assert desktop.install_desktop("1.1.0", executable, home=home) == "installed"
+    assert desktop.desktop_installed(home) == (bundle, "1.1.0")
+    assert [(path / "release").read_text() for path in (home / ".Trash").iterdir()] == ["1.0.1"]
+
+
+@pytest.mark.parametrize(
+    ("make", "reason"),
+    [
+        (lambda system: _copy_of(system, bundle_id="com.example.other"), "identifier com.example.other, not"),
+        (lambda system: (system / desktop.BUNDLE_NAME).symlink_to(system.parent), "a link to another place"),
+        (lambda system: _copy_of(system, bundle_id="team.heinzel.apple"), "it is the Native app, not the Electron"),
+    ],
+)
+def test_an_app_that_is_not_a_genuine_heinzel_app_is_refused_with_its_reason(mac, sealed, make, reason):
+    home, system, executable = mac
+    make(system)
+    with pytest.raises(desktop.DesktopInstallationError) as failure:
+        desktop.install_desktop("1.0.0", executable, home=home, flavor=desktop.DesktopFlavor.ELECTRON)
+    assert reason in str(failure.value)
+    assert failure.value.problem is not None
+    assert reason in failure.value.problem.happened
+    assert os.path.lexists(system / desktop.BUNDLE_NAME)  # left where it was
+
+
+def test_a_copy_whose_signature_is_broken_is_refused(mac, sealed):
+    home, system, executable = mac
+    _copy_of(system)
+    sealed["problem"] = "code object is not signed at all"
+    with pytest.raises(desktop.DesktopInstallationError, match="signature is broken"):
+        desktop.install_desktop("1.0.0", executable, home=home)
+    assert (system / desktop.BUNDLE_NAME / "release").read_text() == "0.9.0"
+
+
+def test_a_new_mac_gets_the_native_app():
+    assert desktop.NEW_INSTALL_FLAVOR == desktop.DesktopFlavor.NATIVE
+
+
+def test_an_installed_app_keeps_its_flavor_and_a_new_mac_gets_the_default(mac, monkeypatch):
+    home, system, _executable = mac
+    config = home / ".config" / "heinzel"
+    monkeypatch.setattr(desktop, "NEW_INSTALL_FLAVOR", desktop.DesktopFlavor.NATIVE)
+    assert desktop._chosen_flavor(None, home, config) == desktop.DesktopFlavor.NATIVE
+    _copy_of(system)
+    assert desktop._chosen_flavor(None, home, config) == desktop.DesktopFlavor.ELECTRON  # never switched unasked
+    assert desktop._chosen_flavor(desktop.DesktopFlavor.NATIVE, home, config) == desktop.DesktopFlavor.NATIVE
+
+
+def test_the_open_genuine_copy_is_what_an_update_quits(mac, sealed):
+    home, system, _executable = mac
+    assert desktop.desktop_to_update(home) is None
+    _copy_of(system, version="0.9.7")
+    assert desktop.desktop_to_update(home) == (system / desktop.BUNDLE_NAME, "0.9.7")
+    sealed["problem"] = "broken"
+    assert desktop.desktop_to_update(home) is None

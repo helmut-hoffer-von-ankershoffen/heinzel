@@ -373,7 +373,7 @@ def test_failed_download_never_signals_existing_widget(tmp_path, monkeypatch):
     monkeypatch.setattr(desktop, "fetch_archive", fetch)
     with pytest.raises(ConnectionError):
         desktop._install_release(
-            "0.9.51", executable, bundle, config, existing, keep_quarantine=False, flavor=desktop.DesktopFlavor.SWIFT
+            "0.9.51", executable, bundle, config, existing, keep_quarantine=False, flavor=desktop.DesktopFlavor.NATIVE
         )
     assert (bundle / "old-resource").exists()
     assert not (config / desktop._JOURNAL).exists()
@@ -475,7 +475,7 @@ def test_unknown_inventory_is_never_idle_but_verified_gone_or_unrelated_images_a
 
 
 @pytest.mark.parametrize("phase", ["before-staging", "before-commit"])
-@pytest.mark.parametrize("target", [desktop.DesktopFlavor.SWIFT, desktop.DesktopFlavor.ELECTRON])
+@pytest.mark.parametrize("target", [desktop.DesktopFlavor.NATIVE, desktop.DesktopFlavor.ELECTRON])
 def test_native_install_never_uses_false_legacy_comm_guard_to_admit_hidden_main(
     model, monkeypatch, tmp_path, phase, target
 ):

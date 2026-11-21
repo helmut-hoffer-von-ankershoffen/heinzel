@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from heinzel import Config, Kernel, Module, ModuleRecord, Settings
-from heinzel.kernel import Origin, discover
+from heinzel.kernel import Origin, _desktop_app, discover
 from heinzel.modules.org import _discovery as discovery
 from heinzel.modules.system import _github
 from heinzel.modules.system.prerequisite._host import ToolHost
@@ -40,6 +40,12 @@ def _release_redirect_offline(monkeypatch: pytest.MonkeyPatch) -> None:
         raise OSError(msg)
 
     monkeypatch.setattr(_github, "_head", offline)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_applications(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> None:
+    """No test reads the desktop app in this machine's /Applications: the Mini's native app would change results."""
+    monkeypatch.setattr(_desktop_app, "SYSTEM_APPLICATIONS", tmp_path_factory.getbasetemp() / "no-system-applications")
 
 
 @pytest.fixture(autouse=True)

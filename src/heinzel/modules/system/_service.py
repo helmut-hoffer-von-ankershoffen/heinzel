@@ -20,6 +20,7 @@ from pydantic import BaseModel, SecretStr
 
 from heinzel import InfoLet, Kernel, __version__
 from heinzel.kernel import EDGE_WHEEL_PREFIX, EdgeRelease, Installation, ReleaseCache, ReleaseFacts, ReleaseSource
+from heinzel.kernel._desktop_app import desktop_app_here
 from heinzel.kernel._logging import log_event
 from heinzel.modules.system import _github
 from heinzel.modules.system._models import InstalledPlugin, ModuleInfo, ReleaseCheck, ReleaseNotes, SystemInfo
@@ -459,6 +460,7 @@ class SystemService:
                 if (section := self._section(let)) not in ({}, [], None)  # nothing to say, no empty heading
             },
             latest_release=ReleaseCache(self._kernel.settings.cache_dir).latest,
+            desktop_app=desktop_app_here(),
         )
 
     def release(self, requirement: str | None) -> ReleaseCheck:

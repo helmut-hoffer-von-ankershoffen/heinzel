@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from heinzel.kernel import HeadRefresh
+from heinzel.kernel._desktop_app import DesktopApp
 
 
 class ModuleInfo(BaseModel):
@@ -58,6 +59,11 @@ class SystemInfo(BaseModel):
     latest_release: str | None = Field(
         description="Latest release last seen by `hz system release` or the CLI's hourly check, from the cache; "
         "none if never asked."
+    )
+    desktop_app: DesktopApp | None = Field(
+        default=None,
+        description="The desktop app in Applications on this Mac: native or electron, its version and path; none "
+        "elsewhere or when there is none.",
     )
 
 
@@ -142,6 +148,9 @@ class UpdatePlan(BaseModel):
         default=False, description="Whether a desktop app is installed that the update can bring along afterwards."
     )
     desktop_running: bool = Field(default=False, description="Whether that desktop app is open now.")
+    desktop_variant: Literal["native", "electron"] | None = Field(
+        default=None, description="Which desktop app that is: native or electron, from its bundle id."
+    )
     daemon: bool = Field(default=False, description="Whether the daemon and the web server restart onto the update.")
     token: str = Field(
         default="",
