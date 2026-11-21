@@ -29,8 +29,8 @@ from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 mode = os.environ["HEINZEL_PROBE_MODE"]
 with open("argv", "a") as calls:
     calls.write(" ".join(sys.argv[1:]) + "\\n")
-if sys.argv[1:] != ["attach"]:
-    exit(2)  # anything but `hz ui attach`, such as `serve --port 0`, is refused
+if sys.argv[1:] != ["attach"] or mode == "outdated":
+    exit(2)  # anything but `hz ui attach`, such as `serve --port 0`, is refused; an old hz has no attach
 if mode == "eof":
     os.write(1, b"unfinished line")
     exit(0)
@@ -93,7 +93,7 @@ def local_service_probe(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.mark.timeout(75)  # Includes a cold Swift compiler and SDK module cache.
-@pytest.mark.parametrize("mode", ["attach", "fails", "eof", "oversized"])
+@pytest.mark.parametrize("mode", ["attach", "lost", "outdated", "fails", "eof", "oversized"])
 def test_mac_app_attaches_to_the_owned_service_and_never_spawns_or_stops_one(
     local_service_probe: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
 ) -> None:
@@ -104,9 +104,13 @@ def test_mac_app_attaches_to_the_owned_service_and_never_spawns_or_stops_one(
     monkeypatch.setenv("HEINZEL_PROBE_REPO", str(ROOT))
     try:
         subprocess.run(
-            [str(local_service_probe), "open" if mode == "attach" else "refuse"], cwd=tmp_path, check=True, timeout=15
+            [str(local_service_probe), {"attach": "open", "lost": "lost", "outdated": "outdated"}.get(mode, "refuse")],
+            cwd=tmp_path,
+            check=True,
+            timeout=15,
         )
-        assert (tmp_path / "argv").read_text(encoding="utf-8") == "attach\n"  # one attach, never `serve`
+        # One attach per start, never `serve`; a lost service is attached again.
+        assert (tmp_path / "argv").read_text(encoding="utf-8") == ("attach\n" * (2 if mode == "lost" else 1))
     finally:
         record = tmp_path / "service.pid"
         if record.exists():

@@ -219,7 +219,7 @@ const browserBridge = createBrowserBridge({
   listen: miniBrowser.agents.listen,
 });
 const managedMac = app.isPackaged && process.platform === "darwin";
-let ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz", bridgeToken, env: { HZ_CALLER: "desktop-app" } });
+let ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz", bridgeToken, probe: lifecycle, env: { HZ_CALLER: "desktop-app" } });
 if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   ipcMain.handle("hz:browser", (event, request) => miniBrowser.handle(event, request));
   ipcMain.handle("hz:player", (event, request) => mediaPlayer.handle(event, request));
@@ -278,15 +278,19 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
   ipcMain.handle("hz:audio-source", (event, source) => workspaceAudio?.choose(event, source) === true);
   let serviceStarted = false;
   let unexpectedExitReported = false;
-  function watchLocalService() { void ownedCli.exited().then(() => {
+  function watchLocalService() { void ownedCli.exited().then(async (result) => {
     if (serviceStarted && !stopping && !quitting) {
-      unexpectedExitReported = true;
       localConnection = null;
       browserBridge.stop();
-      if (!instance.currentConnection().remote) {
-        workspaceController?.failed(instance.currentConnection(), new Error("Local service stopped"));
-        showConnection();
-      }
+      let local = false;
+      try { local = !instance.currentConnection().remote; } catch { /* No workspace yet. */ }
+      if (!local) return;
+      // The owned service restarted (a crash, a reboot of its job): attach again, with a fresh link and bridge token.
+      const state = result?.serviceLost && workspaceController ? await workspaceController.connect({ kind: "local" }, true) : null;
+      if (state && !state.problem) return;
+      unexpectedExitReported = true;
+      workspaceController?.failed(instance.currentConnection(), new Error("Local service stopped"));
+      showConnection();
     }
   }); }
   watchLocalService();
@@ -351,7 +355,7 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
         if (localConnection && ownedCli.isRunning()) return localConnection;
         await stopWithReport(ownedCli, () => {});
         if (stopping || quitting) throw new Error("Desktop is stopping.");
-        ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz", bridgeToken, env: { HZ_CALLER: "desktop-app" } });
+        ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz", bridgeToken, probe: lifecycle, env: { HZ_CALLER: "desktop-app" } });
         watchLocalService();
         if (managedMac && !desktopGate) keepDesktopGate(await acquireDesktopGate());
         if (stopping || quitting) throw new Error("Desktop is stopping.");

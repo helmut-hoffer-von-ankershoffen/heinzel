@@ -2203,6 +2203,11 @@ struct ConnectionView: View {
         connecting = true
         error = nil
         defer { connecting = false }
+        service.onLost = {
+            // The owned service restarted with a new session: attach again rather than show a dead workspace.
+            guard endpoint?.origin.scheme == "http" else { return }
+            Task { await startLocal() }
+        }
         do {
             let target = try await service.start()
             if let snapshot = ActivityWidgetData.read(), snapshot.workspaceScope != ActivityWidgetData.scope(for: target.origin) {

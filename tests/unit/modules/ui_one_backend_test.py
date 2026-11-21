@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from heinzel import HeinzelError
+from heinzel import HeinzelError, Status
+from heinzel.modules.ui._runtime import runtime_checks
 from heinzel.modules.ui._service import WebService, WebStatus
 from heinzel.modules.ui._strays import retire_strays, strays
 
@@ -48,6 +49,7 @@ def mini() -> Machine:
         {
             41850: (1, UID, f"{python} -m heinzel ui serve --no-browser --port 8737 --supervised {'c' * 32}"),
             25616: (1, UID, f"{python} -I -m heinzel ui serve --port 0 --no-browser"),
+            66489: (1, UID, "/Applications/Heinzelmaennchen.app/Contents/MacOS/Heinzelmaennchen"),
             66512: (66489, UID, f"{python} -I -m heinzel ui serve --port 0 --no-browser"),
             70001: (1, UID, "/Users/someone/Code/heinzel/.venv/bin/python -m heinzel ui serve --port 0 --no-browser"),
             70002: (1, 502, f"{python} -I -m heinzel ui serve --port 0 --no-browser"),
@@ -80,14 +82,14 @@ def test_orphans_get_sigint_and_the_supervised_server_and_bystanders_are_untouch
     stopped, survivors = retire(machine)
     assert (sorted(stopped), survivors) == ([25616, 70004], [])
     assert sorted(machine.signals) == [(25616, signal.SIGINT), (70004, signal.SIGINT)]
-    assert set(machine.processes) == {41850, 66512, 70001, 70002, 70003}
+    assert set(machine.processes) == {41850, 66489, 66512, 70001, 70002, 70003}
 
 
 def test_retiring_twice_is_safe_and_a_server_whose_app_quit_goes_next_time():
     machine = mini()
     retire(machine)
     assert retire(machine) == ([], [])
-    machine.processes[66512] = (1, *machine.processes[66512][1:])  # the updater quit the old app
+    del machine.processes[66489]  # the updater quit the old app; its server has no parent until it is adopted
     assert retire(machine) == ([66512], [])
     assert set(machine.processes) == {41850, 70001, 70002, 70003}
 
@@ -98,6 +100,46 @@ def test_a_survivor_is_reported_never_killed():
     stopped, survivors = retire(machine)
     assert (stopped, survivors) == ([70004], [25616])
     assert all(number == signal.SIGINT for _pid, number in machine.signals)
+
+
+def test_on_linux_an_orphan_adopted_by_systemd_user_is_retired_but_one_under_a_shell_is_not():
+    python = f"{TOOL}/bin/python"
+    machine = Machine(
+        {
+            1200: (1, UID, "/usr/lib/systemd/systemd --user"),
+            1300: (1, UID, "/usr/bin/bash"),
+            4100: (1200, UID, f"{python} -I -m heinzel ui serve --port 0 --no-browser"),
+            4200: (1300, UID, f"{python} -I -m heinzel ui serve --port 0 --no-browser"),
+            4300: (1200, UID, f"{python} -m heinzel ui serve --no-browser --port 8737 --supervised {'c' * 32}"),
+        }
+    )
+    assert retire(machine) == ([4100], [])
+    assert set(machine.processes) == {1200, 1300, 4200, 4300}
+
+
+def test_a_pid_reused_between_the_look_and_the_signal_is_never_signalled():
+    machine = mini()
+    looks = iter(range(100))
+    reused = {25616: (1, UID, "/usr/bin/vim notes.txt")}
+
+    def listing() -> str:
+        if next(looks) == 1:  # the re-check before the first signal: 25616 is now someone's editor
+            machine.processes.update(reused)
+        return machine.ps()
+
+    ticks = iter(range(1000))
+    stopped, _ = retire_strays(
+        TOOL,
+        uid=UID,
+        listing=listing,
+        send=machine.send,
+        alive=machine.alive,
+        clock=lambda: float(next(ticks)),
+        sleep=lambda _seconds: None,
+    )
+    assert 25616 not in stopped
+    assert machine.processes[25616] == reused[25616]
+    assert (25616, signal.SIGINT) not in machine.signals
 
 
 def test_an_unreadable_process_list_retires_nothing():
@@ -190,3 +232,38 @@ def test_attach_registers_the_bridge_token_over_the_control_socket(tmp_path):
     assert web.calls[-1] == "control 41850 bridge"
     with pytest.raises(HeinzelError, match="browser bridge"):
         _Attachable(tmp_path / "other", [READY]).attach(8737, bridge="x" * 40)
+
+
+def _doctor(observed: WebStatus, machine: Machine, *, installed: str = "0.9.54", prefix: Path | None = TOOL):
+    checks = runtime_checks(
+        lambda: observed, prefix, installed, find=lambda tool: strays(tool, uid=UID, own=1234, listing=machine.ps)
+    )
+    return [(check.name, check.status) for check in checks], checks
+
+
+def test_doctor_runtime_is_up_with_one_backend_serving_the_installed_version():
+    clean = Machine({41850: mini().processes[41850]})
+    found, _ = _doctor(READY.model_copy(update={"version": "0.9.54"}), clean)
+    assert found == [("runtime: one backend", Status.UP), ("runtime: no leftover servers", Status.UP)]
+
+
+def test_doctor_runtime_shows_the_minis_leftovers_and_a_stale_served_version():
+    found, checks = _doctor(READY.model_copy(update={"version": "0.9.51"}), mini())
+    assert found == [
+        ("runtime: one backend", Status.DEGRADED),
+        ("runtime: no leftover servers", Status.DOWN),  # orphans, e.g. a survivor of the retirement
+        ("runtime: no leftover servers", Status.DEGRADED),  # a server whose older app still runs
+    ]
+    assert "0.9.51" in checks[0].detail
+    assert "hz ui restart" in checks[0].fix
+    assert "25616" in checks[1].detail
+    assert "70004" in checks[1].detail
+    assert "66512" in checks[2].detail
+
+
+def test_doctor_runtime_without_a_service_or_in_a_dev_checkout_is_not_a_finding():
+    absent = WebStatus(installed=False, loaded=False, ready=False)
+    found, _ = _doctor(absent, mini(), prefix=None)
+    assert found == [("runtime: one backend", Status.UP), ("runtime: no leftover servers", Status.UP)]
+    stuck = WebStatus(installed=True, loaded=True, ready=False)
+    assert _doctor(stuck, Machine())[0][0] == ("runtime: one backend", Status.DEGRADED)

@@ -337,7 +337,7 @@ def _report_strays(stopped: list[int], survivors: list[int], say: Callable[[str]
         say(f"Stopped {len(stopped)} leftover web server{'s' if len(stopped) != 1 else ''} an older app started.")
     if survivors:
         pids = ", ".join(str(pid) for pid in survivors)
-        say(f"A leftover web server did not stop and was left running (pid {pids}).")
+        say(f"A leftover web server did not stop (pid {pids}); `hz system doctor` shows it until it is gone.")
 
 
 def _ui_announcement(err_console: Console, *, browser: bool) -> Callable[[str], None]:

@@ -7,6 +7,8 @@ import { parseConnection } from "./connection.js";
 // Installing the service on first launch plus its bounded readiness wait take well under this.
 const STARTUP_TIMEOUT_MS = 60_000;
 const OUTPUT_LIMIT = 4096;
+// How often the app asks the attached service whether it still answers; a lost service is attached again.
+const PROBE_INTERVAL_MS = 5_000;
 /** The exact arguments: the app only ever attaches, never `ui serve`. */
 export const ATTACH_ARGUMENTS = Object.freeze(["ui", "attach", "--bridge-token-stdin"]);
 
@@ -130,7 +132,12 @@ export function createOwnedCli({
   // Extra variables for the attach command only; never added to this process's own.
   env = {},
   bridgeToken = null,
+  // Asks the attached service whether it still answers this connection (its lifecycle); rejects when it does not.
+  probe = null,
+  probeIntervalMs = PROBE_INTERVAL_MS,
   startupTimeoutMs = STARTUP_TIMEOUT_MS,
+  setInterval: every = setInterval,
+  clearInterval: stopEvery = clearInterval,
 } = {}) {
   let connection = null;
   let startPromise = null;
@@ -139,7 +146,9 @@ export function createOwnedCli({
   let failed = false;
   let resolveExit;
   let exitResult = null;
-  // Settles only when attaching failed: the service the app attached to is not the app's, so it never "exits" here.
+  let watcher = null;
+  // Settles when attaching failed, or when the attached service stops answering this connection (a crash restart
+  // has a new session token, and forgets the bridge token): the app then attaches again.
   const exitPromise = new Promise((resolve) => { resolveExit = resolve; });
 
   function start() {
@@ -182,6 +191,11 @@ export function createOwnedCli({
         const lines = output.split("\n");
         const line = (lines[0] ?? "").replace(/\r$/, "");
         output = "";
+        if (code === 2 && !line) {
+          // An older hz has no `ui attach`: Typer's usage error. Say what fixes it instead of failing silently.
+          fail(new Error("This hz is too old for the app. Run `hz system update`, then open the app again."));
+          return;
+        }
         if (code !== 0 || signal !== null || lines.length !== 2 || lines[1] !== "" || !line) {
           fail();
           return;
@@ -195,6 +209,7 @@ export function createOwnedCli({
         settled = true;
         attached = true;
         clearTimeout(timer);
+        if (probe) watch();
         resolve(connection);
       });
       // An attach that exits before reading its input must not crash the main process with EPIPE.
@@ -208,8 +223,28 @@ export function createOwnedCli({
     return startPromise;
   }
 
+  function watch() {
+    let probing = false;
+    watcher = every(async () => {
+      if (probing || !attached || detached) return;
+      probing = true;
+      try {
+        await probe(connection);
+      } catch {
+        if (!attached || detached) return;
+        attached = false;
+        stopEvery(watcher);
+        watcher = null;
+        exitResult = Object.freeze({ code: null, signal: null, serviceLost: true });
+        resolveExit(exitResult);
+      } finally { probing = false; }
+    }, probeIntervalMs);
+    watcher?.unref?.();
+  }
+
   /** Leave the service running: it belongs to the service manager, not to this app. */
   async function stop() {
+    if (watcher) { stopEvery(watcher); watcher = null; }
     if (!startPromise || failed) return Object.freeze({ outcome: "not-started", code: null, signal: null, processError: false });
     await startPromise.catch(() => {});
     detached = true;

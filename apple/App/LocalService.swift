@@ -13,6 +13,12 @@ final class LocalService: NSObject, NSApplicationDelegate {
     private var installation: ManagedInstallation?
     private var attached: (executable: String, environment: [String: String])?
     private var attaching = false
+    private var monitor: Task<Void, Never>?
+    /// Called when the attached service stops answering this endpoint (a crash restart has a new session token);
+    /// the app then attaches again.
+    var onLost: (() -> Void)?
+    /// How often the app asks the attached service whether it still answers.
+    var probeInterval: Duration = .seconds(5)
 
     /// The exact arguments: the app only ever attaches. Tests check that `serve` never appears.
     static let attachArguments = ["ui", "attach"]
@@ -63,7 +69,10 @@ final class LocalService: NSObject, NSApplicationDelegate {
                     var lines = output.makeAsyncIterator()
                     var statuses = exited.stream.makeAsyncIterator()
                     let line = await lines.next()
-                    guard await statuses.next() == 0, let line,
+                    let status = await statuses.next()
+                    // An older hz has no `ui attach` (a usage error, exit 2): say that an update fixes it.
+                    if status == 2 && line == nil { throw ConnectionError.outdatedCLI }
+                    guard status == 0, let line,
                           let value = String(data: line, encoding: .utf8),
                           let endpoint = Endpoint(value, loopback: true) else {
                         throw ConnectionError.startup
@@ -76,11 +85,31 @@ final class LocalService: NSObject, NSApplicationDelegate {
                 return endpoint
             }
             attached = (executable, environment)
+            watch(endpoint)
             return endpoint
         } catch {
             // Only the one-shot attach command is ours to end; the service it reached keeps running.
             if child.isRunning { child.interrupt() }
             throw error
+        }
+    }
+
+    private func watch(_ endpoint: Endpoint) {
+        monitor?.cancel()
+        let interval = probeInterval
+        monitor = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: interval)
+                if Task.isCancelled { return }
+                do {
+                    _ = try await endpoint.readLifecycle()
+                } catch {
+                    if Task.isCancelled { return }
+                    self?.monitor = nil
+                    self?.onLost?()
+                    return
+                }
+            }
         }
     }
 
@@ -132,9 +161,14 @@ final class LocalService: NSObject, NSApplicationDelegate {
 
     /// Leave the local workspace. The owned service is not the app's to stop, so nothing ends; always true.
     @discardableResult
-    func stop() async -> Bool { true }
+    func stop() async -> Bool {
+        monitor?.cancel()
+        monitor = nil
+        return true
+    }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        monitor?.cancel()
         let managed = installation != nil
         installation = nil  // Releases the installer's desktop-use gate before the refresh needs it.
         if managed, let attached { requestRefresh(executable: attached.executable, environment: attached.environment) }

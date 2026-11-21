@@ -103,3 +103,10 @@ def test_cli_attach_fails_with_one_reason_and_no_fallback_server(make_kernel, mo
     assert result.exit_code == 1
     assert result.stdout == ""
     assert "did not become ready" in result.stderr
+
+
+def test_doctor_reports_the_runtime_check(make_kernel):
+    result = CliRunner().invoke(build(make_kernel(builtins=True)), ["system", "doctor", "--json"])
+    report = json.loads(result.stdout)
+    names = [check["name"] for check in report["checks"]["ui"]]
+    assert names[0] == "runtime: one backend", result.output

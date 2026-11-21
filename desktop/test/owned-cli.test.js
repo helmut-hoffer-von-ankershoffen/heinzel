@@ -166,6 +166,57 @@ test("installed binding selects only a configured absolute executable", (t) => {
   assert.throws(() => installedCli(home), /could not find/);
 });
 
+test("an older hz without `ui attach` gets a clear update message", async () => {
+  const child = makeChild();
+  const owned = createOwnedCli({ spawn: () => child });
+  const started = owned.start();
+  child.finish("", 2);
+  await assert.rejects(started, /hz system update/);
+});
+
+test("a service that stops answering (a crash restart: new token, bridge forgotten) settles exited for a re-attach", async () => {
+  const child = makeChild();
+  let tick;
+  let cleared = 0;
+  let answering = true;
+  const probed = [];
+  const owned = createOwnedCli({
+    spawn: () => child,
+    probe: async (connection) => { probed.push(connection.origin); if (!answering) throw Object.assign(new Error("401"), { status: 401 }); },
+    setInterval: (callback) => { tick = callback; return 7; },
+    clearInterval: (id) => { assert.equal(id, 7); cleared += 1; },
+  });
+  const started = owned.start();
+  child.finish(`${url}\n`);
+  await started;
+  await tick();
+  assert.equal(owned.isRunning(), true);
+  answering = false;
+  await tick();
+  assert.equal(owned.isRunning(), false);
+  assert.deepEqual(await owned.exited(), { code: null, signal: null, serviceLost: true });
+  assert.equal(cleared, 1);
+  assert.deepEqual(probed, ["http://127.0.0.1:43817", "http://127.0.0.1:43817"]);
+  // The next attach is a new handle, so it registers the bridge token again with the new server.
+  const next = makeChild();
+  const again = createOwnedCli({ spawn: () => next, bridgeToken: "c".repeat(43) });
+  const reattached = again.start();
+  next.finish(`${url}\n`);
+  await reattached;
+  assert.equal(next.received, `${"c".repeat(43)}\n`);
+});
+
+test("quitting stops the probe", async () => {
+  const child = makeChild();
+  let cleared = 0;
+  const owned = createOwnedCli({ spawn: () => child, probe: async () => {}, setInterval: () => 9, clearInterval: () => { cleared += 1; } });
+  const started = owned.start();
+  child.finish(`${url}\n`);
+  await started;
+  await owned.stop();
+  assert.equal(cleared, 1);
+});
+
 test("uses the resolved executable without shell lookup", async () => {
   const child = makeChild();
   let command;
