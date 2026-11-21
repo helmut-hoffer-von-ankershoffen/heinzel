@@ -90,3 +90,35 @@ def test_only_adapters_touch_the_world(path):
 
 def test_the_adapter_allowlist_names_files_that_exist_and_are_checked():
     assert sorted(set(CONFIG["allow"]["adapters"]) - set(_adapter_only_files())) == []
+
+
+def _needs_python(*changed):
+    return contexts.python_needed(CONFIG, list(changed))[0]
+
+
+def test_a_docs_only_or_apple_only_change_selects_no_python_job():
+    assert _needs_python("docs/guide/start.md") is False
+    assert _needs_python("apple/App/HeinzelApp.swift", "apple/Widgets/Widget.swift") is False
+    assert _needs_python("apple/App/HeinzelApp.swift", "docs/adr/0001.md", "mkdocs.yml") is False
+
+
+def test_everything_else_keeps_the_python_jobs():
+    assert _needs_python("src/heinzel/kernel/_kernel.py")
+    assert _needs_python("web/src/App.tsx"), "the web app shares the jobs; only Apple and prose skip them"
+    assert _needs_python("apple/App/HeinzelApp.swift", "src/heinzel/ports.py")
+    assert _needs_python("CHANGELOG.md"), "release checks read the changelog"
+    assert _needs_python("README.md")
+    assert _needs_python("contexts.toml")
+    assert _needs_python("scripts/affected.py")
+    assert _needs_python(".github/workflows/ci.yml")
+    assert _needs_python("something/nobody/owns.txt")
+
+
+def test_this_pull_request_keeps_the_complete_run():
+    assert _needs_python("src/heinzel/ports.py", "contexts.toml", "web/src/features/runtime/updates/controller.ts")
+
+
+def test_ci_asks_the_selector_for_pull_requests_only():
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "python3 -I scripts/contexts.py select" in workflow
+    assert '[ "$EVENT" = pull_request ] && [ "$full_release" != true ] && [ -z "${BATCH_BASE:-}" ]' in workflow

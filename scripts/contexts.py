@@ -12,10 +12,13 @@ contexts.py owner FILE the context that owns FILE
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 import tomllib
-from pathlib import Path, PurePosixPath
+from functools import cache
+from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SCOPE = ("src/", "web/", "desktop/", "apple/")
@@ -23,7 +26,7 @@ BEGIN = "# BEGIN generated from contexts.toml (scripts/contexts.py write); do no
 END = "# END generated from contexts.toml"
 
 
-def load(root: Path = ROOT) -> dict:
+def load(root: Path = ROOT) -> dict[str, Any]:
     """The parsed `contexts.toml`."""
     return tomllib.loads((root / "contexts.toml").read_text(encoding="utf-8"))
 
@@ -34,11 +37,33 @@ def tracked(root: Path = ROOT) -> list[str]:
     return [line for line in out.stdout.splitlines() if line]
 
 
-def _matches(path: str, patterns: list[str]) -> bool:
-    return any(PurePosixPath(path).full_match(pattern) for pattern in patterns)
+@cache
+def _glob(pattern: str) -> re.Pattern[str]:
+    """A repository glob as a regex: `**` crosses directories, `*` and `?` stay inside one."""
+    out, index = "", 0
+    while index < len(pattern):
+        if pattern.startswith("**/", index):
+            out, index = out + "(?:.*/)?", index + 3
+        elif pattern.startswith("**", index):
+            out, index = out + ".*", index + 2
+        elif pattern[index] == "*":
+            out, index = out + "[^/]*", index + 1
+        elif pattern[index] == "?":
+            out, index = out + "[^/]", index + 1
+        else:
+            out, index = out + re.escape(pattern[index]), index + 1
+    return re.compile(out)
 
 
-def owners(config: dict, files: list[str]) -> dict[str, list[str]]:
+def matches(path: str, patterns: list[str]) -> bool:
+    """Whether `path` matches any of the repository globs."""
+    return any(_glob(pattern).fullmatch(path) for pattern in patterns)
+
+
+_matches = matches
+
+
+def owners(config: dict[str, Any], files: list[str]) -> dict[str, list[str]]:
     """File to the names of the contexts that own it (a healthy map has exactly one)."""
     found: dict[str, list[str]] = {}
     for name, context in config["context"].items():
@@ -48,6 +73,22 @@ def owners(config: dict, files: list[str]) -> dict[str, list[str]]:
     return {path: found.get(path, []) for path in files}
 
 
+def python_needed(config: dict[str, Any], changed: list[str]) -> tuple[bool, str]:
+    """Whether a change needs the Python jobs, and why not when it does not (the selector's level L0).
+
+    Only a change that stays inside the contexts listed in `[select] skip_python` or inside `[select] docs` skips them;
+    a path no context owns, a context that is not listed and every shared path keep them.
+    """
+    select = config["select"]
+    skip = set(select["skip_python"])
+    prose = [path for path in changed if matches(path, select["docs"]) and not matches(path, select["keep"])]
+    owned = owners(config, [path for path in changed if path not in prose])
+    outside = [path for path, names in owned.items() if len(names) != 1 or names[0] not in skip]
+    if outside:
+        return True, f"{outside[0]}: needs the Python jobs"
+    return False, "only " + ", ".join(sorted({n for names in owned.values() for n in names} | {"docs"}))
+
+
 def _ignores(entries: list[str]) -> str:
     if not entries:
         return ""
@@ -55,7 +96,7 @@ def _ignores(entries: list[str]) -> str:
     return f"ignore_imports = [\n{body},\n]\n"
 
 
-def contracts_block(config: dict) -> str:
+def contracts_block(config: dict[str, Any]) -> str:
     """The `[[tool.importlinter.contracts]]` tables that follow from the contexts."""
     contexts = config["context"]
     inner = [c["package"] for c in contexts.values() if c.get("package") and not c.get("head")]
@@ -119,11 +160,15 @@ def write(root: Path = ROOT) -> None:
 def main() -> int:
     """Entry point."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("action", choices=["check", "write", "owner"])
+    parser.add_argument("action", choices=["check", "write", "owner", "select"])
     parser.add_argument("file", nargs="?")
     args = parser.parse_args()
     if args.action == "write":
         write()
+    elif args.action == "select":
+        needed, why = python_needed(load(), [line.strip() for line in sys.stdin if line.strip()])
+        sys.stdout.write(f"python={'true' if needed else 'false'}\n")
+        sys.stderr.write(f"{why}\n")
     elif args.action == "owner":
         sys.stdout.write(" ".join(owners(load(), [args.file])[args.file]) + "\n")
     else:

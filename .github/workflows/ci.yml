@@ -94,6 +94,7 @@ jobs:
       core: ${{ steps.paths.outputs.core }}
       plugins: ${{ steps.paths.outputs.plugins }}
       site_only: ${{ steps.paths.outputs.site_only }}
+      surface_only: ${{ steps.paths.outputs.surface_only }}
       macos_full: ${{ steps.paths.outputs.macos_full }}
       scheduled_maintenance: ${{ steps.maintenance.outputs.selected }}
       full_release: ${{ steps.release.outputs.full_release }}
@@ -170,7 +171,15 @@ jobs:
           if [ "$full_release" = true ] || [ -n "${BATCH_BASE:-}" ]; then
             prose_push=false
           fi
-          if [ "$prose_push" = true ]; then
+          # Level L0 of the test selection (contexts.toml): a pull request that changes only the Apple apps and prose
+          # skips the Python jobs. The release run, a batch, a push to main and the nightly stay complete.
+          surface_only=false
+          if [ "$EVENT" = pull_request ] && [ "$full_release" != true ] && [ -z "${BATCH_BASE:-}" ] && [ -n "$changed" ] \
+            && [ "$(printf '%s\n' "$changed" | python3 -I scripts/contexts.py select)" = python=false ]; then
+            surface_only=true
+          fi
+          echo "surface_only=$surface_only" >> "$GITHUB_OUTPUT"
+          if [ "$prose_push" = true ] || [ "$surface_only" = true ]; then
             echo "core=false" >> "$GITHUB_OUTPUT"
             core_work=false
           elif [ "$full_release" = true ] || [ -n "${BATCH_BASE:-}" ] || [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ] \

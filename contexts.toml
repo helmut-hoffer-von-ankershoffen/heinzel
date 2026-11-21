@@ -159,6 +159,15 @@ summary = "the iOS and macOS apps and widgets"
 src = ["apple/**"]
 surface = true
 
+# Level L0 of the test selection: a pull request that changes only what is listed here skips the Python jobs. Prose is
+# `docs` (the site and every Markdown file but the changelog and the root README, which release checks read). The
+# release run, the nightly and every push to main stay FULL; a path no context owns keeps the Python jobs.
+[select]
+skip_python = ["apple"]
+docs = ["docs/**", "*.md", "mkdocs.yml"]
+# The CHANGELOG and README are read by the release and the end-to-end suite, so they are never skipped:
+keep = ["CHANGELOG.md", "README.md", "docs/**/*.sh"]
+
 # Today's violations of the generated contracts. Each list may only shrink: a new entry fails review.
 [allow]
 contexts = [
