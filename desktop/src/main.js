@@ -7,7 +7,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, se
 import { appMenuTemplate, helpLogLine, isAllowedHelpUrl, menuLogLine, menuScript } from "./app-menu.js";
 import { lifecycle } from "./connection.js";
 import { createBrowserAgent } from "./browser-agent.js";
-import { BRIDGE_TOKEN_ENV, createBrowserBridge, newBridgeToken } from "./browser-bridge.js";
+import { createBrowserBridge, newBridgeToken } from "./browser-bridge.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createAboutHandler, createAboutLinkHandler, createLifecycleHandler } from "./lifecycle-ipc.js";
 import { createMediaPlayer } from "./media-player.js";
@@ -219,7 +219,7 @@ const browserBridge = createBrowserBridge({
   listen: miniBrowser.agents.listen,
 });
 const managedMac = app.isPackaged && process.platform === "darwin";
-let ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz", env: { [BRIDGE_TOKEN_ENV]: bridgeToken, HZ_CALLER: "desktop-app" } });
+let ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz", bridgeToken, env: { HZ_CALLER: "desktop-app" } });
 if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   ipcMain.handle("hz:browser", (event, request) => miniBrowser.handle(event, request));
   ipcMain.handle("hz:player", (event, request) => mediaPlayer.handle(event, request));
@@ -351,7 +351,7 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
         if (localConnection && ownedCli.isRunning()) return localConnection;
         await stopWithReport(ownedCli, () => {});
         if (stopping || quitting) throw new Error("Desktop is stopping.");
-        ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz", env: { [BRIDGE_TOKEN_ENV]: bridgeToken, HZ_CALLER: "desktop-app" } });
+        ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz", bridgeToken, env: { HZ_CALLER: "desktop-app" } });
         watchLocalService();
         if (managedMac && !desktopGate) keepDesktopGate(await acquireDesktopGate());
         if (stopping || quitting) throw new Error("Desktop is stopping.");

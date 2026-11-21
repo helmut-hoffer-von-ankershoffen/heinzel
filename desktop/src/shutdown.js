@@ -12,7 +12,7 @@ export async function stopWithReport(ownedCli, report) {
 
 /** Refresh only after a healthy packaged macOS session shuts down normally. */
 export function shouldRefresh({ packaged, platform, fixture, serviceStarted, unexpectedExit, signal, outcome }) {
-  return packaged && platform === "darwin" && !fixture && serviceStarted && !unexpectedExit && !signal && outcome === "graceful";
+  return packaged && platform === "darwin" && !fixture && serviceStarted && !unexpectedExit && !signal && (outcome === "graceful" || outcome === "detached");
 }
 
 /** Release the installation lease before requesting a detached, bounded CLI refresh. */

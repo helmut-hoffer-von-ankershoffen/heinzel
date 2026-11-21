@@ -4,11 +4,11 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { parseConnection } from "./connection.js";
 
-const STARTUP_TIMEOUT_MS = 30_000;
-// `hz ui serve` ends within 5 seconds of SIGINT, even with a request still running; kill it only after that.
-const STOP_TIMEOUT_MS = 8_000;
-const FORCE_STOP_TIMEOUT_MS = 2_000;
+// Installing the service on first launch plus its bounded readiness wait take well under this.
+const STARTUP_TIMEOUT_MS = 60_000;
 const OUTPUT_LIMIT = 4096;
+/** The exact arguments: the app only ever attaches, never `ui serve`. */
+export const ATTACH_ARGUMENTS = Object.freeze(["ui", "attach", "--bridge-token-stdin"]);
 
 /** Read the installer-managed binding; never fall back to PATH in an installed app. */
 export function installedCli(home = homedir()) {
@@ -115,25 +115,31 @@ export function acquireDesktopGate(home = homedir(), { spawn = nodeSpawn, timeou
   }
 }
 
-/** Start and own one foreground `hz ui` process for the lifetime of the Electron app. */
+/**
+ * Attach to this computer's one owned web service through `hz ui attach`; never start a server of its own.
+ *
+ * `hz ui attach` installs or starts the supervised service when needed, prints one session link and exits 0. The
+ * browser-bridge token goes to it on stdin, never in arguments or this process's environment, and it registers the
+ * token with the live service. The app keeps no hz process: Quit, a crash or an update leaves the service running,
+ * so no second server with its own auto-updater on old code can exist.
+ */
 export function createOwnedCli({
   spawn = nodeSpawn,
   executable = () => "hz",
   parse = parseConnection,
-  // Extra variables for the service only, such as the browser bridge token; never added to this process's own.
+  // Extra variables for the attach command only; never added to this process's own.
   env = {},
+  bridgeToken = null,
   startupTimeoutMs = STARTUP_TIMEOUT_MS,
-  stopTimeoutMs = STOP_TIMEOUT_MS,
-  forceStopTimeoutMs = FORCE_STOP_TIMEOUT_MS,
 } = {}) {
-  let child = null;
-  let childClosed = false;
-  let childProcessError = false;
   let connection = null;
   let startPromise = null;
-  let stopPromise = null;
+  let attached = false;
+  let detached = false;
+  let failed = false;
   let resolveExit;
   let exitResult = null;
+  // Settles only when attaching failed: the service the app attached to is not the app's, so it never "exits" here.
   const exitPromise = new Promise((resolve) => { resolveExit = resolve; });
 
   function start() {
@@ -142,184 +148,79 @@ export function createOwnedCli({
       let settled = false;
       let output = "";
       let timer;
-      let onData;
-      let onError;
-      let onExit;
-      const cleanup = ({ preserveExit = false } = {}) => {
-        clearTimeout(timer);
-        if (onData) child?.stdout.removeListener("data", onData);
-        if (!preserveExit && onExit) child?.removeListener("exit", onExit);
-        output = "";
-      };
-      const fail = (error = new Error("Heinzelmännchen could not start its local service.")) => {
+      let child;
+      const fail = (error = new Error("Heinzelmännchen could not reach its local service.")) => {
         if (settled) return;
         settled = true;
-        if (!exitResult) {
-          exitResult = Object.freeze({ code: null, signal: null, failedToStart: true });
-          resolveExit(exitResult);
-        }
-        cleanup();
+        failed = true;
+        clearTimeout(timer);
+        exitResult = Object.freeze({ code: null, signal: null, failedToStart: true });
+        resolveExit(exitResult);
+        try { if (child && child.exitCode === null && child.signalCode === null) child.kill("SIGINT"); } catch { /* gone */ }
         reject(error);
       };
       try {
-        childClosed = false;
-        childProcessError = false;
-        child = spawn(executable(), ["ui", "serve", "--port", "0", "--no-browser"], {
+        child = spawn(executable(), ATTACH_ARGUMENTS, {
           shell: false,
           windowsHide: true,
-          stdio: ["ignore", "pipe", "ignore"],
+          stdio: ["pipe", "pipe", "ignore"],
           ...(Object.keys(env).length ? { env: { ...process.env, ...env } } : {}),
         });
       } catch {
         fail();
         return;
       }
-      const ownedChild = child;
-      ownedChild.once("close", () => {
-        childClosed = true;
-        if (onError) ownedChild.removeListener("error", onError);
-      });
-      timer = setTimeout(() => fail(new Error("Heinzelmännchen took too long to start its local service.")), startupTimeoutMs);
-      onError = () => {
-        childProcessError = true;
-        if (!settled) {
-          fail();
-          return;
-        }
-        exitResult = Object.freeze({ code: null, signal: null, processError: true });
-        resolveExit(exitResult);
-      };
-      onExit = (code, signal) => {
-        exitResult = Object.freeze({ code, signal, ...(childProcessError ? { processError: true } : {}) });
-        resolveExit(exitResult);
-        if (!settled) fail();
-      };
-      onData = (chunk) => {
+      timer = setTimeout(() => fail(new Error("Heinzelmännchen took too long to reach its local service.")), startupTimeoutMs);
+      child.on("error", () => fail());
+      child.stdout.on("data", (chunk) => {
         if (settled) return;
         output += chunk.toString("utf8");
-        if (output.length > OUTPUT_LIMIT) {
-          fail();
-          return;
-        }
-        const newline = output.indexOf("\n");
-        if (newline < 0) return;
-        const line = output.slice(0, newline).replace(/\r$/, "");
-        if (!line || output.slice(newline + 1).trim()) {
+        if (output.length > OUTPUT_LIMIT) fail();
+      });
+      child.once("close", (code, signal) => {
+        if (settled) return;
+        const lines = output.split("\n");
+        const line = (lines[0] ?? "").replace(/\r$/, "");
+        output = "";
+        if (code !== 0 || signal !== null || lines.length !== 2 || lines[1] !== "" || !line) {
           fail();
           return;
         }
         try {
           connection = parse([`--hz-url=${line}`]);
-          settled = true;
-          cleanup({ preserveExit: true });
-          resolve(connection);
         } catch {
           fail();
+          return;
         }
-      };
-      ownedChild.on("error", onError);
-      ownedChild.once("exit", onExit);
-      ownedChild.stdout.on("data", onData);
+        settled = true;
+        attached = true;
+        clearTimeout(timer);
+        resolve(connection);
+      });
+      // An attach that exits before reading its input must not crash the main process with EPIPE.
+      child.stdin?.on("error", () => {});
+      try {
+        child.stdin.end(bridgeToken ? `${bridgeToken}\n` : "\n");
+      } catch {
+        fail();
+      }
     });
     return startPromise;
   }
 
-  function stop() {
-    if (stopPromise) return stopPromise;
-    const stopping = (async () => {
-      const ownedChild = child;
-      if (!ownedChild) return Object.freeze({ outcome: "not-started", code: null, signal: null, processError: false });
-
-      const hasExitStatus = () => (ownedChild.exitCode !== null && ownedChild.exitCode !== undefined)
-        || (ownedChild.signalCode !== null && ownedChild.signalCode !== undefined);
-      const wasAlreadyExited = childClosed || hasExitStatus();
-      if (wasAlreadyExited) {
-        const priorExit = exitResult && !exitResult.failedToStart ? exitResult : null;
-        return Object.freeze({
-          outcome: "already-exited",
-          code: priorExit?.code ?? ownedChild.exitCode,
-          signal: priorExit?.signal ?? ownedChild.signalCode,
-          processError: Boolean(priorExit?.processError),
-        });
-      }
-
-      let closed = childClosed;
-      let processError = childProcessError;
-      let resolveClosed;
-      const closedPromise = new Promise((resolve) => { resolveClosed = resolve; });
-      // Node may emit an asynchronous ChildProcess `error` if a process exits between a status check
-      // and kill(). Keep this listener until `close`, including after the bounded wait returns.
-      const onError = () => { processError = true; };
-      const onClose = () => {
-        closed = true;
-        childClosed = true;
-        ownedChild.removeListener("error", onError);
-        resolveClosed();
-      };
-      if (!closed) {
-        ownedChild.on("error", onError);
-        ownedChild.once("close", onClose);
-      } else resolveClosed();
-
-      const exited = hasExitStatus;
-      const waitForClose = async (timeoutMs) => {
-        if (closed) return true;
-        let timer;
-        const timedOut = new Promise((resolve) => { timer = setTimeout(() => resolve(false), timeoutMs); });
-        const didClose = await Promise.race([closedPromise.then(() => true), timedOut]);
-        clearTimeout(timer);
-        return didClose;
-      };
-      const signal = (value) => {
-        try {
-          ownedChild.kill(value);
-        } catch {
-          processError = true;
-          // The bounded wait below still allows the child to exit or receive the forced signal.
-        }
-      };
-
-      if (!closed && !exited()) signal("SIGINT");
-      if (!(await waitForClose(stopTimeoutMs))) {
-        if (!closed && !exited()) {
-          signal("SIGKILL");
-        }
-        if (!(await waitForClose(forceStopTimeoutMs))) {
-          throw new Error("The local service did not stop after a forced shutdown.");
-        }
-      }
-
-      const processExit = exitResult && !exitResult.failedToStart
-        ? exitResult
-        : { code: ownedChild.exitCode, signal: ownedChild.signalCode };
-      const code = processExit.code ?? null;
-      const signalCode = processExit.signal ?? null;
-      const outcome = signalCode === "SIGKILL"
-        ? "forced"
-        : !processError && code === 0 && signalCode === null
-          ? "graceful"
-          : "abnormal";
-      const result = Object.freeze({ outcome, code, signal: signalCode, processError });
-      exitResult = Object.freeze({ code, signal: signalCode, processError });
-      return result;
-    })();
-    stopPromise = stopping.then((result) => {
-      // An abnormal exit has stopped the child, but the caller can retry once to close the app
-      // after reporting it. The retry returns `already-exited`, never a false graceful result.
-      if (result.outcome === "abnormal") stopPromise = null;
-      return result;
-    }).catch((error) => {
-      stopPromise = null;
-      throw error;
-    });
-    return stopPromise;
+  /** Leave the service running: it belongs to the service manager, not to this app. */
+  async function stop() {
+    if (!startPromise || failed) return Object.freeze({ outcome: "not-started", code: null, signal: null, processError: false });
+    await startPromise.catch(() => {});
+    detached = true;
+    return Object.freeze({ outcome: "detached", code: null, signal: null, processError: false });
   }
 
   return Object.freeze({
     start,
     stop,
     currentConnection: () => connection,
-    isRunning: () => Boolean(child) && !childClosed && !childProcessError && child.exitCode === null && child.signalCode === null,
+    isRunning: () => attached && !detached,
     exited: () => exitPromise,
     exitResult: () => exitResult,
   });

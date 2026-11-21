@@ -75,7 +75,7 @@ async function run(redirectOnStart) {
     const dirs = ["bin", "home", "config", "data", "state", "cache", "logs", "tmp", "electron-profile", "electron-session", "electron-logs"];
     await Promise.all(dirs.map((name) => mkdir(join(root, name), { mode: 0o700 })));
     const cli = join(root, "bin", "hz");
-    await writeFile(cli, `#!${process.execPath}\nif (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(["ui","serve","--port","0","--no-browser"])) process.exit(64);\nprocess.stdout.write(process.env.HZ_TEST_URL + "\\n");\nprocess.on("SIGINT", () => process.exit(0));\nsetInterval(() => {}, 1000);\n`, { mode: 0o700 });
+    await writeFile(cli, `#!${process.execPath}\nif (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(["ui","attach","--bridge-token-stdin"])) process.exit(64);\nprocess.stdout.write(process.env.HZ_TEST_URL + "\\n", () => process.exit(0));\n`, { mode: 0o700 });
     const env = {
       PATH: `${join(root, "bin")}${delimiter}/usr/bin:/bin:/usr/sbin:/sbin`, HOME: join(root, "home"), TMPDIR: join(root, "tmp"),
       USER: process.env.USER || "", LOGNAME: process.env.LOGNAME || "", LANG: "en_US.UTF-8",
@@ -164,7 +164,7 @@ async function run(redirectOnStart) {
       stopped = true;
     }
     const ownedPid = Number(await readFile(join(root, "owned-pid"), "utf8"));
-    assert.equal(processExists(ownedPid), false, "Electron left its owned service running.");
+    assert.equal(processExists(ownedPid), false, "Electron left its attach command running.");
     assert.deepEqual(JSON.parse(await readFile(join(root, "owned-exit"), "utf8")), { code: 0, signal: null });
     const paths = JSON.parse(await readFile(join(root, "electron-paths"), "utf8"));
     assert.deepEqual(paths, {
