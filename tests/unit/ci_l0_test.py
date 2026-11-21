@@ -6,7 +6,9 @@ shared, large, a release branch, a candidate, a batch or a push keeps the comple
 """
 
 import os
+import re
 import subprocess
+from collections import defaultdict
 from pathlib import Path
 
 import pytest
@@ -102,13 +104,52 @@ def test_the_apple_job_runs_for_an_apple_only_change_and_ci_ok_asks_for_it():
     assert complete["env"]["SURFACE_ONLY"] == "${{ needs.changes.outputs.surface_only }}"
 
 
+def evaluate(condition: str, outputs: dict[str, str]) -> bool:
+    """A job's `if` as GitHub reads it, for the few forms ci.yml uses (outputs, event name, `!cancelled()`)."""
+    text = str(condition).replace("${{", "").replace("}}", "")
+    text = text.split(" # ")[0]  # a trailing YAML comment
+    text = re.sub(r"!\s*cancelled\(\)", "True", text)
+    text = re.sub(r"always\(\)", "True", text)
+    text = re.sub(r"needs\.[\w-]+\.outputs\.(\w+)", lambda m: f"out[{m.group(1)!r}]", text)
+    text = re.sub(r"needs\.[\w-]+\.result", "'success'", text)
+    text = text.replace("github.event_name", "'pull_request'").replace("github.ref", "'refs/pull/1/merge'")
+    text = text.replace("&&", " and ").replace("||", " or ")
+    text = re.sub(r"!(?!=)", " not ", text)
+    return bool(eval(text, {"__builtins__": {}}, {"out": defaultdict(str, outputs)}))  # noqa: S307 - our own workflow text
+
+
 def test_every_job_the_reduced_workload_requires_runs_when_surface_only_is_set():
-    """CI OK demands these jobs to be `success`; a job skipped on the same run would fail every such pull request."""
+    """CI OK demands these jobs to be `success`; a job skipped on the same run would fail every such pull request.
+
+    Each job's `if` is evaluated with the outputs of an Apple-only pull request: core false, surface_only true.
+    """
     [complete] = [s for s in WORKFLOW["jobs"]["ci-ok"]["steps"] if s["name"].startswith("Require the complete direct")]
     listed = next(line for line in complete["run"].splitlines() if 'SURFACE_ONLY:-false}" = true' in line)
     required = listed.split("required=(")[1].split(")")[0].split()
-    for job in required:
-        condition = WORKFLOW["jobs"][job].get("if")
-        assert (
-            condition is None or "surface_only" in str(condition) or "needs.changes.outputs.core" not in str(condition)
-        ), f"{job} is required when surface_only is set but its `if` skips it: {condition}"
+    outputs = {
+        "core": "false",
+        "surface_only": "true",
+        "full_ci": "true",
+        "site_only": "false",
+        "scheduled_maintenance": "",
+        "focused_mode": "",
+        "lane": "",
+        "full_release": "false",
+        "full": "true",
+    }
+    skipped = [
+        job for job in required if "if" in WORKFLOW["jobs"][job] and not evaluate(WORKFLOW["jobs"][job]["if"], outputs)
+    ]
+    assert skipped == [], (
+        f"CI OK requires these jobs but their `if` skips them for a surface-only pull request: {skipped}"
+    )
+
+
+def test_the_evaluator_sees_a_job_that_core_gates():
+    assert (
+        evaluate("needs.changes.outputs.core == 'true' && needs.changes.outputs.lane != 'macos'", {"core": "false"})
+        is False
+    )
+    assert evaluate(
+        "needs.changes.outputs.core == 'true' || needs.changes.outputs.surface_only == 'true'", {"surface_only": "true"}
+    )

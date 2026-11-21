@@ -103,7 +103,7 @@ required-version = ">=0.13.0"
 target-version = "py313"
 line-length = 120
 fix = true
-extend-exclude = ["template", "plugins", "scripts/acceptance"] # independent projects; a hash-pinned stdlib harness
+extend-exclude = ["template", "plugins", "scripts/acceptance", "tests/fixtures/state_folder_0_9_53"] # independent projects; a hash-pinned stdlib harness
 
 [tool.ruff.lint]
 select = ["ALL"]
