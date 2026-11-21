@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
-from typing import Literal
+from typing import Literal, cast
 from urllib.parse import urlsplit
 
 from packaging.requirements import InvalidRequirement, Requirement
@@ -877,8 +877,10 @@ class UpdateService:
 
     def _receipt(self) -> dict[str, object]:
         with suppress(OSError, ValueError, RuntimeError):
-            found = json.loads((self._home or Path.home()).joinpath(DESKTOP_RECEIPT).read_text(encoding="utf-8"))
-            return found if isinstance(found, dict) else {}
+            found: object = json.loads(
+                (self._home or Path.home()).joinpath(DESKTOP_RECEIPT).read_text(encoding="utf-8")
+            )
+            return cast("dict[str, object]", found) if isinstance(found, dict) else {}
         return {}
 
     def _found_app(self) -> DesktopApp | None:
