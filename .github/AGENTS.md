@@ -38,6 +38,14 @@ Constraints per workflow:
   candidate run (release wheel URL + sha256 + profile URL) is labelled `CANDIDATE_*`, never a public-path pass.
 - `prepare-release.yml` (`make release`): opens the release PR `chore(release): vX.Y.Z` and dispatches CI on it (token-made
   PRs trigger none). A maintainer reviews all checks before merging.
+- `release-chain.yml` ("Release", core only): the whole Core release in CI (`scripts/release_chain.py`): cut on a
+  first-attempt green main tip, candidate CI (full, first attempt), merge as the owner (secret `RELEASE_TOKEN`) only
+  if main has not moved since the candidate base, tag and Publish, PyPI, compose, acceptance on both OSes, the
+  `acceptance.json` marker, then Latest. Publish creates a Core release with `--latest=false`; nothing is Latest
+  before its marker. Dispatch again to resume; a rerun of failed jobs never counts as acceptance. Auto-cut and resume
+  on a schedule only while `vars.AUTO_CUT` is `true`. A PR touching the chain runs it as a dry run.
+- `release-freeze.yml` (core only): the check "Release freeze", red on every PR while another PR is the open release
+  candidate; the chain posts it on all open PRs at the cut and after the merge. Required by the ruleset.
 - `edge.yml`: dark until `vars.RELEASE_CHANNELS` is set (ADR 0114); then publishes pre-releases `edge-v<version>`,
   never latest, never on PyPI.
 - `pypi.yml`: manual dispatch on a final version tag; verifies and promotes the exact signed official GitHub release

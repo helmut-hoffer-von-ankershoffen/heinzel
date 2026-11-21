@@ -1,0 +1,432 @@
+name: Release
+run-name: "Release ${{ inputs.version || 'next' }}${{ (inputs.dry_run || github.event_name == 'pull_request') && ' (dry run)' || '' }}"
+
+# The Core release chain, end to end in GitHub Actions: cut, candidate CI, release-PR merge, tag and publish, PyPI,
+# compose, public acceptance on both OSes, the acceptance.json marker, then Latest. No machine of ours takes part; the
+# Mini only follows an accepted release (its own updater, `sm mini update`, the iOS upload).
+#
+# Every step reads GitHub state first (scripts/release_chain.py), so dispatching the workflow again continues the
+# release in flight: an open release PR resumes at its candidate, a published release without its marker at its tail.
+# A rerun of failed jobs is no resume: acceptance counts only on a run's first attempt.
+#
+# Triggers: a manual dispatch (`sm release VERSION` dispatches it and watches); a schedule that cuts and resumes only
+# while the repository variable AUTO_CUT is `true` (default off); and a pull request that changes the chain, which runs
+# it as a dry run (cut prepared and checked, never pushed; the tail checks read the newest accepted release).
+#
+# The release PR is opened and merged as the owner identity (secret RELEASE_TOKEN, a fine-grained token of the owner:
+# contents, pull requests and actions read and write here; actions write on heinzel-plugins to dispatch compose). The
+# ruleset needs that: CI OK, SonarCloud and resolved review threads; a bot-only PR merged by a bot is refused.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version X.Y.Z (empty: resume the release in flight, else the next patch)"
+        type: string
+        default: ""
+      intro:
+        description: "Release introduction (empty: from the user-facing commit subjects)"
+        type: string
+        default: ""
+      dry_run:
+        description: "Prepare and check the cut and read the tail checks; push, merge and publish nothing"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "11,41 * * * *"
+  pull_request:
+    paths:
+      - ".github/workflows/release-chain.yml"
+      - ".github/workflows/release-freeze.yml"
+      - "scripts/release_chain.py"
+      - "tests/unit/release_chain_test.py"
+
+permissions: {}
+
+# One real release chain at a time, never cancelled; dry runs and idle schedules stay out of its group.
+concurrency:
+  group: >-
+    ${{ (github.event_name == 'pull_request' || inputs.dry_run || (github.event_name == 'schedule' && vars.AUTO_CUT != 'true'))
+        && format('release-chain-aside-{0}', github.run_id) || 'release-chain' }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan
+    if: github.event_name != 'schedule' || vars.AUTO_CUT == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      phase: ${{ steps.plan.outputs.phase }}
+      pr: ${{ steps.plan.outputs.pr }}
+      bump: ${{ steps.plan.outputs.bump }}
+      base: ${{ steps.plan.outputs.base }}
+      intro: ${{ steps.plan.outputs.intro }}
+      previous: ${{ steps.plan.outputs.previous }}
+      dry: ${{ steps.mode.outputs.dry }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - id: mode
+        name: Dry run or release
+        env:
+          EVENT: ${{ github.event_name }}
+          DRY: ${{ inputs.dry_run }}
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$EVENT" = pull_request ] || [ "$DRY" = true ]; then
+            echo "dry=true" >> "$GITHUB_OUTPUT"
+            if [ -z "$VERSION" ]; then
+              # A throwaway version for the dry run: the next minor, which nothing pushes.
+              latest="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+              IFS=. read -r major minor _ <<< "${latest#v}"
+              VERSION="$major.$((minor + 1)).0"
+            fi
+          else
+            echo "dry=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - id: plan
+        name: Read what is done, and gate a cut on main's first-attempt green tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.mode.outputs.version }}
+          AUTO: ${{ github.event_name == 'schedule' && '--auto' || '' }}
+        run: |
+          tip="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
+          # shellcheck disable=SC2086 # AUTO is one flag or nothing
+          uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py plan \
+            --version "$VERSION" --tip "$tip" $AUTO
+
+  cut:
+    name: Cut v${{ needs.plan.outputs.version }}
+    needs: plan
+    if: needs.plan.outputs.phase == 'cut'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      pr: ${{ steps.open.outputs.pr }}
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      BASE: ${{ needs.plan.outputs.base }}
+      DRY: ${{ needs.plan.outputs.dry }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.base }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: The chain's own scripts, from this workflow's commit (a dry run on a PR tests the PR's chain)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: .chain
+          sparse-checkout: scripts
+          persist-credentials: false
+      - name: Keep the chain checkout out of the release tree
+        run: echo /.chain/ >> .git/info/exclude
+      - uses: ./.github/actions/setup-uv
+      - name: Install the pinned tools, as locally
+        run: make install
+      - name: Commit as the owner identity
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -n "$RELEASE_TOKEN" ]; then
+            user="$(GH_TOKEN="$RELEASE_TOKEN" gh api user --jq '"\(.login) \(.id)"')"
+            git config user.name "${user% *}"
+            git config user.email "${user#* }+${user% *}@users.noreply.github.com"
+          elif [ "$DRY" = true ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          else
+            echo "error: the secret RELEASE_TOKEN is missing: the release PR is opened and merged as the owner" >&2
+            exit 1
+          fi
+      - name: Prepare the release commit on the gated tip
+        env:
+          BUMP: ${{ needs.plan.outputs.bump }}
+          INTRO: ${{ inputs.intro || needs.plan.outputs.intro }}
+        run: |
+          git checkout -q -B main "$BASE"
+          tag="$(bash scripts/release.sh "$BUMP" | tail -n 1)"
+          test "$tag" = "v$VERSION"
+      - name: Check the scope of the release commit and that the notes name every commit
+        env:
+          PREVIOUS: ${{ needs.plan.outputs.previous }}
+        run: |
+          uv run --no-project --frozen --no-build --python 3.15 python .chain/scripts/release_chain.py scope \
+            --base "$BASE" --version "$VERSION" --previous "$PREVIOUS"
+          {
+            echo "### v$VERSION from ${BASE:0:9}"
+            echo '```'
+            git show --stat --format='%an <%ae>%n%s' HEAD
+            echo '```'
+            uv run --no-project --frozen --no-build --python 3.15 python scripts/release_notes.py "v$VERSION"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - id: open
+        name: Push the release branch and open the release PR as the owner
+        if: needs.plan.outputs.dry != 'true'
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          tip="$(GH_TOKEN="$RELEASE_TOKEN" gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
+          if [ "$tip" != "$BASE" ]; then
+            echo "error: main moved during the cut (${BASE:0:9} -> ${tip:0:9}); nothing was pushed: dispatch Release again" >&2
+            exit 1
+          fi
+          git push --quiet "https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/release/v$VERSION"
+          uv run --no-project --frozen --no-build --python 3.15 python scripts/release_notes.py "v$VERSION" > "$RUNNER_TEMP/notes.md"
+          url="$(GH_TOKEN="$RELEASE_TOKEN" gh pr create -R "$GITHUB_REPOSITORY" --base main --head "release/v$VERSION" \
+            --title "chore(release): v$VERSION" --body-file "$RUNNER_TEMP/notes.md")"
+          echo "pr=${url##*/}" >> "$GITHUB_OUTPUT"
+
+  freeze:
+    name: Freeze main for the candidate
+    needs: [plan, cut]
+    if: >-
+      ${{ !cancelled() && needs.plan.outputs.dry != 'true' &&
+          (needs.plan.outputs.phase == 'candidate' || needs.cut.result == 'success') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - name: Fail the check "Release freeze" on every other open PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py freeze-sync
+
+  candidate:
+    name: Candidate CI of v${{ needs.plan.outputs.version }}
+    needs: [plan, cut, freeze]
+    if: ${{ !cancelled() && needs.freeze.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - name: Wait for the full first-attempt candidate run and verify it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ needs.cut.outputs.pr || needs.plan.outputs.pr }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py candidate \
+            --pr "$PR" --version "$VERSION" --wait 17400
+
+  merge:
+    name: Merge the release PR of v${{ needs.plan.outputs.version }}
+    needs: [plan, cut, candidate]
+    if: ${{ !cancelled() && needs.candidate.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: read
+    outputs:
+      sha: ${{ steps.merge.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - id: merge
+        name: Merge as the owner, only if main has not moved since the candidate base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          PR: ${{ needs.cut.outputs.pr || needs.plan.outputs.pr }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py merge \
+            --pr "$PR" --version "$VERSION"
+      - name: Lift the freeze
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py freeze-sync
+
+  publish:
+    name: Tag, publish, PyPI and compose v${{ needs.plan.outputs.version }}
+    needs: [plan, merge]
+    if: >-
+      ${{ !cancelled() && needs.plan.outputs.dry != 'true' &&
+          (needs.plan.outputs.phase == 'tail' || needs.merge.result == 'success') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      actions: write
+    outputs:
+      wheel: ${{ steps.snapshot.outputs.wheel_sha256 }}
+      profile: ${{ steps.snapshot.outputs.profile_sha256 }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      SHA: ${{ needs.merge.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - name: Wait for the tag and the GitHub release (workflow "Release tag" calls Publish)
+        run: |
+          published() { gh release view "v$VERSION" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx artifact-manifest.json; }
+          if [ -n "$SHA" ]; then
+            # The owner's merge pushes main, which starts "Release tag" on that commit; dispatch it only if it did not.
+            for _ in $(seq 1 18); do
+              run="$(gh run list -R "$GITHUB_REPOSITORY" -w release-tag.yml -c "$SHA" -L 1 --json databaseId --jq '.[0].databaseId // empty')"
+              [ -n "$run" ] && break
+              sleep 10
+            done
+            if [ -z "$run" ]; then
+              test "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" = "$SHA" \
+                || { echo "error: no Release tag run for $SHA and main moved on; tag it by hand" >&2; exit 1; }
+              gh workflow run release-tag.yml -R "$GITHUB_REPOSITORY" --ref main
+              sleep 15
+              run="$(gh run list -R "$GITHUB_REPOSITORY" -w release-tag.yml -e workflow_dispatch -L 1 --json databaseId --jq '.[0].databaseId')"
+            fi
+            published || gh run watch "$run" -R "$GITHUB_REPOSITORY" --exit-status --interval 30 > /dev/null
+          fi
+          published || { echo "error: v$VERSION has no published release with its producer manifest" >&2; exit 1; }
+          echo "ok   v$VERSION is published (not Latest until its acceptance marker)"
+      - name: Publish the exact GitHub release bytes to PyPI
+        run: |
+          if curl -fsS -o /dev/null "https://pypi.org/pypi/heinzel/$VERSION/json"; then echo "ok   PyPI has $VERSION"; exit 0; fi
+          gh workflow run pypi.yml -R "$GITHUB_REPOSITORY" --ref "v$VERSION"
+          for _ in $(seq 1 18); do
+            run="$(gh run list -R "$GITHUB_REPOSITORY" -w pypi.yml -b "v$VERSION" -L 1 --json databaseId --jq '.[0].databaseId // empty')"
+            [ -n "$run" ] && break
+            sleep 10
+          done
+          test -n "$run"
+          gh run watch "$run" -R "$GITHUB_REPOSITORY" --exit-status --interval 30 > /dev/null
+      - name: Compose the standard app for this version
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if gh release view "app-v$VERSION" -R helmut-hoffer-von-ankershoffen/heinzel-plugins > /dev/null 2>&1; then exit 0; fi
+          wheel="https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/heinzel-$VERSION-py3-none-any.whl"
+          # Dispatching saves up to 15 minutes; without the grant the plugins' own schedule composes it from PyPI.
+          GH_TOKEN="$RELEASE_TOKEN" gh workflow run compose.yml -R helmut-hoffer-von-ankershoffen/heinzel-plugins --ref main \
+            -f version="$VERSION" -f core_wheel="$wheel" \
+            || echo "note: compose not dispatched; the plugins schedule composes v$VERSION"
+      - id: snapshot
+        name: Bind the bytes acceptance proves (GitHub wheel equal to PyPI, composed profile)
+        run: |
+          uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py snapshot \
+            --version "$VERSION" --wait 3600
+
+  acceptance:
+    name: Published-build acceptance
+    needs: [plan, publish]
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/acceptance.yml
+    with:
+      expected_version: ${{ needs.plan.outputs.version }}
+      expected_app_version: ${{ needs.plan.outputs.version }}
+      expected_wheel_sha256: ${{ needs.publish.outputs.wheel }}
+      expected_profile_sha256: ${{ needs.publish.outputs.profile }}
+      release_attempt: release-chain-${{ github.run_id }}
+
+  verdict:
+    name: Verdict, marker, Latest
+    needs: [plan, publish, acceptance]
+    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.acceptance.result != 'skipped' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: acceptance-result-*
+          path: receipts
+      - name: Judge both receipts, write the marker, then mark the release Latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          WHEEL: ${{ needs.publish.outputs.wheel }}
+          PROFILE: ${{ needs.publish.outputs.profile }}
+          RUN_ID: ${{ github.run_id }}
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py verdict \
+            --version "$VERSION" --receipts receipts --run-id "$RUN_ID" --attempt "$ATTEMPT" \
+            --wheel-sha256 "$WHEEL" --profile-sha256 "$PROFILE"
+
+  dry-tail:
+    name: Dry run of the tail checks on the newest accepted release
+    needs: plan
+    if: needs.plan.outputs.dry == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - name: Snapshot, verdict and Latest checks against the published release, writing nothing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+          version="${tag#v}"
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" -p acceptance.json -D "$RUNNER_TEMP/marker"
+          run_id="$(jq -r .acceptance_run "$RUNNER_TEMP/marker/acceptance.json")"
+          attempt="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq .run_attempt)"
+          gh run download "$run_id" -R "$GITHUB_REPOSITORY" -p 'acceptance-result-*' -D receipts
+          snap="$(uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py snapshot --version "$version" --wait 0)"
+          echo "$snap"
+          wheel="$(sed -n 's/^wheel_sha256=//p' <<< "$snap")"
+          profile="$(sed -n 's/^profile_sha256=//p' <<< "$snap")"
+          uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py verdict --dry-run \
+            --version "$version" --receipts receipts --run-id "$run_id" --attempt "$attempt" \
+            --wheel-sha256 "$wheel" --profile-sha256 "$profile"
