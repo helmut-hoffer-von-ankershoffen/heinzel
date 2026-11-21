@@ -265,6 +265,7 @@ def expected_jobs(event: str) -> dict[str, str]:
         "Site tests",
         "Focused tests (${{ matrix.lane }})",
         "macOS smoke",
+        "Dispatch the coalesced macOS main run",  # a push to main only
         "Source plugin (${{ matrix.name }})",
         *[
             f"Stop after {name} failure"
