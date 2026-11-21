@@ -1,4 +1,5 @@
 import importlib.util
+import os
 from pathlib import Path
 
 import pytest
@@ -62,9 +63,25 @@ def test_nothing_missing_leaves_the_notes_unchanged():
 def test_every_commit_between_the_previous_tag_and_the_tag_is_listed(tmp_path, monkeypatch):
     import subprocess
 
+    for name in [
+        n for n in os.environ if n.startswith("GIT_")
+    ]:  # a git hook sets GIT_DIR: the test repo must be its own
+        monkeypatch.delenv(name)
+
     def git(*args):
         subprocess.run(
-            ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
+            [
+                "git",
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@example.com",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "tag.gpgsign=false",
+                *args,
+            ],
             cwd=tmp_path,
             check=True,
             capture_output=True,
