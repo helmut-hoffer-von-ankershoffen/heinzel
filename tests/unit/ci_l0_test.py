@@ -100,3 +100,15 @@ def test_the_apple_job_runs_for_an_apple_only_change_and_ci_ok_asks_for_it():
     [complete] = [s for s in jobs["ci-ok"]["steps"] if s["name"].startswith("Require the complete direct CI workload")]
     assert "macos-specific" in complete["run"].split("SURFACE_ONLY")[-1]
     assert complete["env"]["SURFACE_ONLY"] == "${{ needs.changes.outputs.surface_only }}"
+
+
+def test_every_job_the_reduced_workload_requires_runs_when_surface_only_is_set():
+    """CI OK demands these jobs to be `success`; a job skipped on the same run would fail every such pull request."""
+    [complete] = [s for s in WORKFLOW["jobs"]["ci-ok"]["steps"] if s["name"].startswith("Require the complete direct")]
+    listed = next(line for line in complete["run"].splitlines() if 'SURFACE_ONLY:-false}" = true' in line)
+    required = listed.split("required=(")[1].split(")")[0].split()
+    for job in required:
+        condition = WORKFLOW["jobs"][job].get("if")
+        assert (
+            condition is None or "surface_only" in str(condition) or "needs.changes.outputs.core" not in str(condition)
+        ), f"{job} is required when surface_only is set but its `if` skips it: {condition}"

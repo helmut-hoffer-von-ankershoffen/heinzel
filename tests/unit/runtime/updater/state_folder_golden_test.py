@@ -58,3 +58,14 @@ def test_a_next_update_over_a_folder_0_9_53_left_recovers_first_and_writes_the_s
     ToolSnapshot.take(prefix, state.folder)
     assert tree(prefix) == tree(GOLDEN / "after_take_prefix")
     assert tree(state.folder) == tree(GOLDEN / "after_take")
+
+
+def test_the_golden_tree_is_complete_in_git():
+    """`lib/` and `site/` look ignorable to a gitignore; the fixture must still carry every file 0.9.53 wrote."""
+    for name in (
+        "after_take_prefix",
+        "after_take/before-update",
+        "interrupted/before-update",
+        "interrupted/after-update",
+    ):
+        assert (GOLDEN / name / "lib/site/heinzel.py").is_file(), name

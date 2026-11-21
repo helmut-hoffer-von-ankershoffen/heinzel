@@ -1,0 +1,4 @@
+# The tree is written by hz 0.9.53 and kept whole: the root rules for lib/ and site/ must not drop its files.
+!lib/
+!site/
+!*

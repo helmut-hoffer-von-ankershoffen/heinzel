@@ -307,7 +307,7 @@ jobs:
       contents: read
     name: Lint, contracts and types
     needs: changes
-    if: (needs.changes.outputs.core == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '') && needs.changes.outputs.lane != 'macos' # Core focused structural
+    if: (needs.changes.outputs.core == 'true' || needs.changes.outputs.surface_only == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '') && needs.changes.outputs.lane != 'macos' # Core focused structural
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
