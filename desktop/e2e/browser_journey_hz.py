@@ -1,9 +1,10 @@
 """The `hz` of the browser journey (ADR 0162): the real CLI, plus one agent runner whose model is a script.
 
-Test-only. `browser-journey.mjs` puts a launcher for this file first on the PATH of an isolated Electron app, which
-starts it as `hz ui serve`. Everything is the product's own code, except the model: the runner named `journey` runs
-a Pydantic AI agent on a `FunctionModel` and calls hz's tools in-process (`direct_tools`, `pydantic_ai_tools`), as a
-runner that keeps its model inside hz does. So the tool policy, the commit gate, the bridge and the desktop are real.
+Test-only. `browser-journey.mjs` puts a launcher for this file on the PATH of an isolated Electron app, which
+attaches with `hz ui attach`; `isolated-service.mjs` then starts this file as the stand-in owned service, `hz ui
+serve`. Everything is the product's own code, except the model: the runner named `journey` runs a Pydantic AI agent
+on a `FunctionModel` and calls hz's tools in-process (`direct_tools`, `pydantic_ai_tools`), as a runner that keeps
+its model inside hz does. So the tool policy, the commit gate, the bridge and the desktop are real.
 
 The script reads what the tools return (the tab id, the refs of the page) and decides the next call from that. Its
 last answer is a JSON object of what each step returned, which the journey reads from the chat.

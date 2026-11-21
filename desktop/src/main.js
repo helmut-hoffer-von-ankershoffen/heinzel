@@ -7,12 +7,13 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, se
 import { appMenuTemplate, helpLogLine, isAllowedHelpUrl, menuLogLine, menuScript } from "./app-menu.js";
 import { lifecycle } from "./connection.js";
 import { createBrowserAgent } from "./browser-agent.js";
-import { BRIDGE_TOKEN_ENV, createBrowserBridge, newBridgeToken } from "./browser-bridge.js";
+import { createBrowserBridge, newBridgeToken } from "./browser-bridge.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createAboutHandler, createAboutLinkHandler, createLifecycleHandler } from "./lifecycle-ipc.js";
 import { createMediaPlayer } from "./media-player.js";
 import { createMiniBrowser, deviceDialog, smallFavicon } from "./mini-browser.js";
-import { acquireDesktopGate, createOwnedCli, installedCli } from "./owned-cli.js";
+import { acquireDesktopGate, createOwnedCli, developmentCli, installedCli } from "./owned-cli.js";
+import { reattach } from "./reattach.js";
 import { createNativePermissions } from "./native-permissions.js";
 import { createSettingsStore } from "./settings-store.js";
 import { createPublicMediaHandler, isOwnedMainFrame } from "./public-media.js";
@@ -219,7 +220,7 @@ const browserBridge = createBrowserBridge({
   listen: miniBrowser.agents.listen,
 });
 const managedMac = app.isPackaged && process.platform === "darwin";
-let ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz", env: { [BRIDGE_TOKEN_ENV]: bridgeToken, HZ_CALLER: "desktop-app" } });
+let ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => developmentCli(), bridgeToken, probe: lifecycle, env: { HZ_CALLER: "desktop-app" } });
 if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   ipcMain.handle("hz:browser", (event, request) => miniBrowser.handle(event, request));
   ipcMain.handle("hz:player", (event, request) => mediaPlayer.handle(event, request));
@@ -278,15 +279,28 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
   ipcMain.handle("hz:audio-source", (event, source) => workspaceAudio?.choose(event, source) === true);
   let serviceStarted = false;
   let unexpectedExitReported = false;
-  function watchLocalService() { void ownedCli.exited().then(() => {
+  function watchLocalService() { void ownedCli.exited().then(async (result) => {
+    // Only a loss of the attached service starts a re-attach. A failed attach (one of the re-attach attempts, or the
+    // person's own) is reported by whoever started it, so it must not open the connection screen mid-backoff.
+    if (!result?.serviceLost) return;
     if (serviceStarted && !stopping && !quitting) {
-      unexpectedExitReported = true;
       localConnection = null;
       browserBridge.stop();
-      if (!instance.currentConnection().remote) {
-        workspaceController?.failed(instance.currentConnection(), new Error("Local service stopped"));
-        showConnection();
-      }
+      let local = false;
+      try { local = !instance.currentConnection().remote; } catch { /* No workspace yet. */ }
+      if (!local) return;
+      // The owned service restarted (a crash, a reboot of its job): attach again, with a fresh link and bridge token,
+      // now and then with a bounded backoff. Only when every attempt failed does the connection screen offer Try Again.
+      // The person switching to a remote workspace during the backoff ends it: that choice wins.
+      const remote = () => { try { return Boolean(instance.currentConnection().remote); } catch { return false; } };
+      const back = workspaceController && await reattach(async () => {
+        const state = await workspaceController.connect({ kind: "local" }, true);
+        return !state.problem;
+      }, { cancelled: () => stopping || quitting || remote() });
+      if (back || stopping || quitting || remote()) return;
+      unexpectedExitReported = true;
+      workspaceController?.failed(instance.currentConnection(), new Error("Local service stopped"));
+      showConnection();
     }
   }); }
   watchLocalService();
@@ -351,7 +365,7 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
         if (localConnection && ownedCli.isRunning()) return localConnection;
         await stopWithReport(ownedCli, () => {});
         if (stopping || quitting) throw new Error("Desktop is stopping.");
-        ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => "hz", env: { [BRIDGE_TOKEN_ENV]: bridgeToken, HZ_CALLER: "desktop-app" } });
+        ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => developmentCli(), bridgeToken, probe: lifecycle, env: { HZ_CALLER: "desktop-app" } });
         watchLocalService();
         if (managedMac && !desktopGate) keepDesktopGate(await acquireDesktopGate());
         if (stopping || quitting) throw new Error("Desktop is stopping.");

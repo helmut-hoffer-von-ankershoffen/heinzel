@@ -108,10 +108,13 @@ ASAR payload.
 These are unsigned (ad-hoc sealed on macOS) local/CI verification artifacts. They are not notarized, published, or suitable for a trusted
 production install. Gatekeeper may block macOS launches, and Linux desktop integration/package-manager installation
 is not included. There is no auto-update, login item, background service, OS permission request, installer/uninstaller,
-or Python runtime provisioning. The shell invokes `hz ui serve --port 0 --no-browser` without a shell, accepts only its
-single verified loopback URL line, passes its fragment only to the owned web UI, and stops only its owned child on
-Quit or on SIGTERM, SIGINT or SIGHUP (the owned service gets SIGINT first and SIGKILL only after a timeout). A signal-initiated
-shutdown exits non-zero when the child exits uncleanly or does not stop; it never waits for a GUI error dialog.
+or Python runtime provisioning. The shell runs `hz ui attach --bridge-token-stdin` without a shell: it starts or
+installs this computer's one owned web service when needed, prints a single verified loopback URL line and exits. The
+shell passes the fragment only to the owned web UI and its browser-bridge token only on stdin. It never starts a web
+server of its own, so Quit, a crash or SIGTERM, SIGINT or SIGHUP leave the service running for the next launch.
+An unpackaged dev run attaches with `hz` from `PATH`, which installs or starts your own login service. To keep a
+dev run off it, set `HZ_DESKTOP_DEV_CLI` to an absolute path of another CLI, such as an isolated stand-in made with
+`e2e/isolated-service.mjs` (the opt-in e2e harnesses do this). Packaged apps ignore the variable.
 This does not install the `hz` CLI or enable background operation; the CLI must already be installed and the
 user must launch the app while it is on `PATH`.
 

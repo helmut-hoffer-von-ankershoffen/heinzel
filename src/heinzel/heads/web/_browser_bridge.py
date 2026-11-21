@@ -100,6 +100,26 @@ def bridge_token(given: str | None, session_token: str) -> str | None:
     return given
 
 
+class BridgeSlot:
+    """The one bridge token a server accepts: the starting desktop app's, or the one `hz ui attach` registered last."""
+
+    def __init__(self, session_token: str, given: str | None) -> None:
+        """Start with the token handed over in the environment, if valid."""
+        self._session = session_token
+        self._token = bridge_token(given, session_token)
+
+    def current(self) -> str | None:
+        """The token a bridge socket must present now; None refuses every one."""
+        return self._token
+
+    def register(self, given: str) -> bool:
+        """Replace the token with a valid one from an attaching desktop app; refuse malformed ones."""
+        valid = bridge_token(given, self._session)
+        if valid is not None:
+            self._token = valid
+        return valid is not None
+
+
 def wire_agent(actor: str, kind: str) -> dict[str, JsonValue]:
     """The agent as the desktop takes it: an id in its alphabet and the name its tabs show.
 
@@ -226,21 +246,23 @@ def _outcome(message: dict[str, object]) -> dict[str, JsonValue] | BrowserError 
 def add_route(
     app: FastAPI,
     *,
-    token: str | None,
+    token: str | Callable[[], str | None] | None,
     port: int | None,
     bridge: Callable[[], BrowserBridge | None],
     stopping: Stopping | None = None,
 ) -> None:
     """Add `/api/browser-bridge` to `app`.
 
-    `token` is the bridge token, or None when no desktop app started this service. `bridge()` is the kernel's bridge,
+    `token` is the bridge token, or None when no desktop app started or attached to this service; a callable reads
+    the token a desktop app registered later through `hz ui attach`. `bridge()` is the kernel's bridge,
     or None while the browser module is not loaded.
     """
     current: list[_Desktop] = []
 
     @app.websocket(PATH)
     async def browser_bridge(websocket: WebSocket) -> None:
-        await session(websocket, token=token, port=port, bridge=bridge(), stopping=stopping, current=current)
+        given = token() if callable(token) else token
+        await session(websocket, token=given, port=port, bridge=bridge(), stopping=stopping, current=current)
 
 
 async def session(  # noqa: PLR0913 - the socket plus explicit authentication, the bridge and shutdown policy

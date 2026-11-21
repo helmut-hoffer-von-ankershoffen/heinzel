@@ -5,11 +5,13 @@ from typing import Annotated
 
 from pydantic import Field
 
-from heinzel import Config, Kernel, Module, Settings
+from heinzel import Check, Config, Kernel, Module, Settings, Status, __version__
 from heinzel import HeinzelError as HeinzelError
-from heinzel.kernel import HeadRefresh, PersistentWeb, WebHeadRefresh, WebOverview
+from heinzel.kernel import HeadRefresh, Installation, PersistentWeb, WebHeadRefresh, WebOverview
 from heinzel.modules.ui._overview import WebOverviewService
+from heinzel.modules.ui._runtime import runtime_checks
 from heinzel.modules.ui._service import WebChange, WebRestart, WebService, WebStatus
+from heinzel.modules.ui._strays import retire_strays
 
 module = Module("ui", "Open the web workspace or manage its optional persistent service.")
 module.service(WebService, WebService.for_user)
@@ -25,7 +27,15 @@ def _persistent_web(kernel: Kernel) -> PersistentWeb:
             return None
         return kernel.resolve(WebService).open_local()
 
-    return PersistentWeb(open_local=open_local)
+    def attach(port: int, bridge: str | None) -> str:
+        return kernel.resolve(WebService).attach(port, bridge=bridge)
+
+    def retire() -> tuple[list[int], list[int]]:
+        installation = kernel.resolve(Installation)
+        # Only the owned uv tool: a dev checkout's servers are its developer's business.
+        return retire_strays(installation.prefix) if installation.is_tool else ([], [])
+
+    return PersistentWeb(open_local=open_local, attach=attach, retire_strays=retire)
 
 
 module.service(PersistentWeb, _persistent_web)
@@ -73,6 +83,18 @@ def _web_head_refresh(kernel: Kernel) -> WebHeadRefresh:
 
 
 module.service(WebHeadRefresh, _web_head_refresh)
+
+
+@module.health
+def runtime(kernel: Kernel) -> list[Check]:
+    """One owned web backend per user: it serves the installed version, and no app-spawned server is left."""
+    try:
+        service = kernel.resolve(WebService)
+        installation = kernel.resolve(Installation)
+    except HeinzelError as exc:
+        return [Check(name="runtime: one backend", status=Status.UP, detail=f"no owned web service here ({exc})")]
+    prefix = installation.prefix if installation.is_tool else None
+    return runtime_checks(service.status, prefix, __version__)
 
 
 @module.operation(read_only=False, heads={"cli"}, audience="everyday")
