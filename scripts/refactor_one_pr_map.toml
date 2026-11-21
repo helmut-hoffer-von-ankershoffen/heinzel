@@ -258,3 +258,36 @@ new = "tests/unit/runtime/lifecycle/ui_service_test.py"
 stage = "lifecycle"
 old = "tests/unit/modules/ui_refresh_test.py"
 new = "tests/unit/runtime/lifecycle/ui_refresh_test.py"
+
+# Third pass: the client context (tokens, devices, the private state directory and the widget fence), all free of
+# fastapi; the routes that use them stay in the heads.
+
+[[move]]
+stage = "client"
+old = "src/heinzel/heads/_mcp_tokens.py"
+new = "src/heinzel/modules/system/client/_mcp_tokens.py"
+
+[[move]]
+stage = "client"
+old = "src/heinzel/heads/web/_devices.py"
+new = "src/heinzel/modules/system/client/_devices.py"
+
+[[move]]
+stage = "client"
+old = "src/heinzel/heads/web/_state_directory.py"
+new = "src/heinzel/modules/system/client/_state_directory.py"
+
+[[move]]
+stage = "client"
+old = "src/heinzel/heads/web/_widget_fence.py"
+new = "src/heinzel/modules/system/client/_widget_fence.py"
+
+[[move]]
+stage = "client"
+old = "tests/integration/web_devices_test.py"
+new = "tests/integration/runtime/client/web_devices_test.py"
+
+[[move]]
+stage = "client"
+old = "tests/integration/mcp_token_cli_test.py"
+new = "tests/integration/runtime/client/mcp_token_cli_test.py"

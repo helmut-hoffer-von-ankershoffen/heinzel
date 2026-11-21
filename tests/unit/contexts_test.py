@@ -121,4 +121,4 @@ def test_this_pull_request_keeps_the_complete_run():
 def test_ci_asks_the_selector_for_pull_requests_only():
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "python3 -I scripts/contexts.py select" in workflow
-    assert '[ "$EVENT" = pull_request ] && [ "$full_release" != true ] && [ -z "${BATCH_BASE:-}" ]' in workflow
+    assert '[ "$EVENT" = pull_request ] && [ "${RELEASE_FULL:-false}" != true ] && [ -z "${BATCH_BASE:-}" ]' in workflow

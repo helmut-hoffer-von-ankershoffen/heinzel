@@ -137,6 +137,8 @@ jobs:
           FULL_RELEASE: ${{ steps.full.outputs.selected }}
           BASE: ${{ needs.admission.outputs.base || github.event.pull_request.base.sha || github.event.before }}
           BATCH_BASE: ${{ needs.admission.outputs.base }}
+          RELEASE_FULL: ${{ steps.release.outputs.full_release }}
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           changed="$(git diff --name-only "$BASE...HEAD")" || changed=""
           full_release="${FULL_RELEASE:-false}"
@@ -174,8 +176,12 @@ jobs:
           # Level L0 of the test selection (contexts.toml): a pull request that changes only the Apple apps and prose
           # skips the Python jobs. The release run, a batch, a push to main and the nightly stay complete.
           surface_only=false
-          if [ "$EVENT" = pull_request ] && [ "$full_release" != true ] && [ -z "${BATCH_BASE:-}" ] && [ -n "$changed" ] \
-            && [ "$(printf '%s\n' "$changed" | python3 -I scripts/contexts.py select)" = python=false ]; then
+          # RELEASE_FULL is the real release-candidate flag (FULL_RELEASE above is always true until this selector is the
+          # rule). Fail closed: a release branch, a candidate, a batch, a push, a refactor-sized change, a path no context
+          # owns or a selector that does not answer keep the complete run.
+          if [ "$EVENT" = pull_request ] && [ "${RELEASE_FULL:-false}" != true ] && [ -z "${BATCH_BASE:-}" ] \
+            && [[ "${HEAD_REF:-}" != release/* ]] && [ -n "$changed" ] && [ "$(printf '%s\n' "$changed" | wc -l)" -lt 200 ] \
+            && [ "$(printf '%s\n' "$changed" | python3 -I scripts/contexts.py select 2>/dev/null)" = python=false ]; then
             surface_only=true
           fi
           echo "surface_only=$surface_only" >> "$GITHUB_OUTPUT"
@@ -600,7 +606,7 @@ jobs:
       contents: read
     name: macOS-specific tests
     needs: changes
-    if: needs.changes.outputs.full_ci == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_ci == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_ci == 'true') && (needs.changes.outputs.core == 'true' || needs.changes.outputs.surface_only == 'true') && needs.changes.outputs.site_only != 'true') # Core candidate-only
     runs-on: macos-latest
     timeout-minutes: 10
     env:
@@ -1236,11 +1242,14 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
           EVENT: ${{ github.event_name }}
+          SURFACE_ONLY: ${{ needs.changes.outputs.surface_only }}
           PLUGINS: ${{ needs.local-plugin-plan.outputs.selected }}
         run: |
           required=(admission changes lint secrets setup audit test coverage perf e2e template notifier macos-specific electron build core-wheel local-plugin-plan consumer-plan consumer-check quarantine-registry)
           if [ "$EVENT" = pull_request ]; then required+=(commits dependency-review); fi
           if [ "${PLUGINS:-False}" = True ]; then required+=(local-plugin-check); fi
+          # An Apple-only or prose-only pull request (contexts.toml, level L0) skips the Python jobs.
+          if [ "${SURFACE_ONLY:-false}" = true ]; then required=(admission changes lint secrets commits dependency-review quarantine-registry macos-specific); fi
           for job in "${required[@]}"; do
             jq -e --arg job "$job" '.[$job].result == "success"' <<< "$RESULTS" >/dev/null \
               || { echo "::error::Required full CI job did not pass: $job"; exit 1; }
