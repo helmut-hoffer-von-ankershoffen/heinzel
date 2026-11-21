@@ -36,6 +36,7 @@ export async function openDetails(page, { show = "chat" } = {}) {
   await heinzelComposer(page).waitFor({ timeout: 30000 });
   const heading = page.getByRole("heading", { level: 1, name: /, your Heinzel$/ });
   const opened = !(await heading.isVisible());
+  const before = new URL(page.url()).pathname;
   if (opened) {
     await chat.getByRole("button", { name: "More: search, about" }).click();
     await page
@@ -47,9 +48,13 @@ export async function openDetails(page, { show = "chat" } = {}) {
   // On a phone a new address selects the Page tab; with Chat selected the page stays above the chat, both in reach.
   // That selection runs just after the page renders (before any tap of a person's, which React handles after it), so
   // when About opened the page, wait for it to land before choosing Chat; else a slow runner chooses first and loses.
+  // Only a route change selects Page. After a reload the heading can still be rendering when `opened` is decided, so
+  // About is tapped on the page's own address: nothing navigates and Page is never selected (bead v606j). Wait for
+  // the selection only when the address changed.
   const chatTab = page.getByRole("tab", { name: "Chat", exact: true });
   const pageTab = page.getByRole("tab", { name: "Page", exact: true });
-  if (opened && (await pageTab.count()))
+  const navigated = new URL(page.url()).pathname !== before;
+  if (navigated && (await pageTab.count()))
     await page.getByRole("tab", { name: "Page", exact: true, selected: true }).waitFor({ timeout: 30000 });
   if (show === "chat" && (await chatTab.count()) && !(await heinzelComposer(page).isVisible())) {
     await chatTab.press("Enter");
