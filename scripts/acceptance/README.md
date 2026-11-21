@@ -107,9 +107,8 @@ verdict logic.
 ## Isolated sharding study
 
 The manual `acceptance-sharded.yml` workflow is an experiment, separate from release acceptance. It does not run on
-pull requests, publish packages, or produce the production `acceptance-result-<OS>` artifacts. The existing serial
-workflow and release gates remain authoritative until independently reviewed source and observed comparisons qualify
-an integration.
+pull requests, publish packages, or produce the production `acceptance-result-<OS>` artifacts. Release acceptance
+itself is sharded the same way (see "Sharded release acceptance" below); the study stays for timing comparisons.
 
 Four fresh hosted VMs per OS execute disjoint fixed groups: public commands (1–5, 13), update (6, 10), plugin CLI and
 retention (7, 9), browser and explicit limits (8, 11, 12). Every case creates its own complete `Case`, including private
@@ -150,3 +149,13 @@ preflight and case durations against the serial control; report preparation, PR 
 acceptance and automatic rollout separately. This experiment has no observed latency result yet and establishes no
 release-time claim. Three consecutive successful controlled release trials are a measurement convention for assessing
 reliability, not a replacement for any release gate.
+
+## Sharded release acceptance
+
+`acceptance.yml` runs the 13 cases in the four fixed shards above, each shard on its own hosted VM per OS, against
+release bytes pinned once by the `Acceptance pins` job (`run_acceptance.py --resolve-pins`; a pull request's dry run
+pins what is published now and its receipt says `expectation_supplied: false`). The job `Acceptance (<os>)` then runs
+`reduce.py --release` over that OS's four receipts of the same run attempt: it writes the schema-2
+`acceptance-result-<OS>` receipt with every case's original record, the harness's own verdict over all 13 cases, and
+prints the one verdict line the release driver reads, as the serial job did. A missing, mixed or unfinished shard is
+`INCOMPLETE` and fails the job. Cases 10 and, on Linux, 3 decide UNPROVABLE or SKIPPED before any home is set up.

@@ -410,3 +410,179 @@ def test_wall_bounds_and_preflight_durations_describe_all_shards_not_the_first()
     assert result["timing"]["shards"]["public"]["preflight_seconds"] == 10
     assert result["timing"]["shards"]["browser"]["preflight_seconds"] == 20
     assert "preflight_seconds" not in result
+
+
+def test_release_receipt_satisfies_what_the_driver_reads():
+    study = reducer.reduce_receipts(receipts(), "macOS", CI, WHEEL, PROFILE)
+    receipt = reducer.release_receipt(study, supplied=True)
+    assert receipt["schema"] == 2
+    assert receipt["verdict"] == "ACCEPTED_EXCEPT_UNPROVABLE"
+    assert receipt["public_path_proof"] is True
+    assert receipt["ci"]["runner_os"] == "macOS"  # the shards' runner, not the reducer's Linux one
+    assert receipt["ci"]["run_id"] == CI["run_id"]
+    assert receipt["published"]["core_wheel_sha256"] == WHEEL
+    assert receipt["published"]["profile_sha256"] == PROFILE
+    assert set(receipt["cases"]) == set(harness.CASES)
+    assert receipt["expectation_supplied"] is True
+    assert reducer.release_receipt(study, supplied=False)["expectation_supplied"] is False
+
+
+def test_a_failed_case_in_one_shard_rejects_the_whole_os():
+    values = receipts()
+    public = values[0]
+    public["cases"]["2"]["status"] = "FAIL"
+    public["verdict"] = harness.verdict(
+        SimpleNamespace(
+            candidate_wheel_url=False, diagnostic_explicit_profile=False, candidate_wheel=None, bootstrap="literal"
+        ),
+        public["cases"],
+    )
+    study = reducer.reduce_receipts(values, "macOS", CI, WHEEL, PROFILE)
+    receipt = reducer.release_receipt(study, supplied=True)
+    assert receipt["verdict"] == "REJECTED"
+    assert harness.exit_code(receipt["verdict"]) == 1
+
+
+def run_release_reducer(tmp_path, values, *, drop=None):
+    for receipt in values:
+        name = receipt["shard"]["name"]
+        if name == drop:
+            continue
+        directory = tmp_path / "inputs" / f"acceptance-shard-macOS-{name}"
+        directory.mkdir(parents=True)
+        (directory / "result.json").write_text(json.dumps(receipt))
+    output = tmp_path / "out" / "result.json"
+    names = {"repository": "GITHUB_REPOSITORY", "sha": "GITHUB_SHA", "run_id": "GITHUB_RUN_ID"}
+    names |= {"run_attempt": "GITHUB_RUN_ATTEMPT", "workflow": "GITHUB_WORKFLOW", "event": "GITHUB_EVENT_NAME"}
+    env = dict(os.environ) | {names[key]: value for key, value in CI.items()}
+    command = [sys.executable, "-I", str(DIRECTORY / "reduce.py"), "--release", "--receipts", str(tmp_path / "inputs")]
+    command += ["--artifact-prefix", "acceptance-shard", "--runner-os", "macOS", "--supplied", "true"]
+    command += ["--wheel-sha256", WHEEL, "--profile-sha256", PROFILE]
+    command += ["--output", str(output)]
+    return subprocess.run(command, env=env, capture_output=True, text=True, check=False, timeout=10), output
+
+
+def test_release_reducer_prints_exactly_one_verdict_line_and_writes_the_receipt(tmp_path):
+    result, output = run_release_reducer(tmp_path, receipts())
+    assert result.returncode == 0, result.stderr
+    lines = [line for line in result.stdout.splitlines() if line.startswith('{"verdict"')]
+    assert len(lines) == 1
+    assert json.loads(lines[0])["verdict"] == "ACCEPTED_EXCEPT_UNPROVABLE"
+    assert json.loads(output.read_text())["verdict"] == "ACCEPTED_EXCEPT_UNPROVABLE"
+
+
+def test_release_reducer_fails_closed_on_a_missing_shard(tmp_path):
+    result, output = run_release_reducer(tmp_path, receipts(), drop="update")
+    assert result.returncode == 1
+    assert json.loads(result.stdout.splitlines()[-1])["verdict"] == "INCOMPLETE"
+    assert not output.exists()
+
+
+def fake_fetch(responses):
+    def fetch(url, *_args, **_kwargs):
+        return responses[url]
+
+    return fetch
+
+
+PROFILE_URL = f"{harness.COLLECTION}/releases/download/app-v1.2.3/standard.json"
+
+
+def test_pins_for_a_dry_run_bind_what_is_published_now(monkeypatch):
+    responses = {
+        "https://pypi.org/pypi/heinzel/json": json.dumps({"info": {"version": "1.2.3"}}).encode(),
+        "https://pypi.org/pypi/heinzel/1.2.3/json": json.dumps(
+            {"urls": [{"packagetype": "bdist_wheel", "digests": {"sha256": "d" * 64}}, {"packagetype": "sdist"}]}
+        ).encode(),
+        PROFILE_URL: b"profile",
+    }
+    monkeypatch.setattr(harness, "fetch", fake_fetch(responses))
+    monkeypatch.setattr(harness, "latest_app_version", lambda: "1.2.3")
+    pins = harness.resolve_pins({"EXPECTED_VERSION": "published", "EXPECTED_APP_VERSION": "published"})
+    assert pins == {
+        "expected_version": "1.2.3",
+        "expected_app_version": "1.2.3",
+        "accept_wheel_sha256": "d" * 64,
+        "accept_profile_sha256": harness.sha256(b"profile"),
+        "reduce_wheel_sha256": "d" * 64,
+        "supplied": "false",
+    }
+
+
+def test_supplied_pins_are_kept_and_never_fetched(monkeypatch):
+    monkeypatch.setattr(harness, "fetch", lambda *_a, **_k: pytest.fail("must not fetch"))
+    environ = {
+        "EXPECTED_VERSION": "1.2.3",
+        "EXPECTED_APP_VERSION": "1.2.3",
+        "EXPECTED_WHEEL_SHA256": "a" * 64,
+        "EXPECTED_PROFILE_SHA256": "b" * 64,
+    }
+    pins = harness.resolve_pins(environ)
+    assert pins["supplied"] == "true"
+    assert pins["accept_wheel_sha256"] == pins["reduce_wheel_sha256"] == "a" * 64
+    assert pins["accept_profile_sha256"] == "b" * 64
+
+
+def test_candidate_pins_keep_the_candidate_wheel_and_pin_its_profile(monkeypatch):
+    monkeypatch.setattr(harness, "fetch", fake_fetch({PROFILE_URL: b"candidate profile"}))
+    environ = {
+        "EXPECTED_VERSION": "1.2.3",
+        "EXPECTED_APP_VERSION": "1.2.3",
+        "CANDIDATE_WHEEL_SHA256": "c" * 64,
+        "CANDIDATE_PROFILE_URL": PROFILE_URL,
+    }
+    pins = harness.resolve_pins(environ)
+    assert pins["accept_wheel_sha256"] == ""
+    assert pins["reduce_wheel_sha256"] == "c" * 64
+    assert pins["accept_profile_sha256"] == harness.sha256(b"candidate profile")
+
+
+@pytest.mark.parametrize(
+    "environ",
+    [
+        {"EXPECTED_VERSION": "1.2.3", "EXPECTED_APP_VERSION": "1.2.3", "EXPECTED_WHEEL_SHA256": "A" * 64},
+        {
+            "EXPECTED_VERSION": "1.2.3\nx=y",
+            "EXPECTED_APP_VERSION": "1.2.3",
+            "EXPECTED_WHEEL_SHA256": "a" * 64,
+            "EXPECTED_PROFILE_SHA256": "b" * 64,
+        },
+        {
+            "EXPECTED_VERSION": "1.2.3",
+            "EXPECTED_APP_VERSION": "1.2.3",
+            "CANDIDATE_PROFILE_URL": "https://example.invalid/standard.json",
+            "CANDIDATE_WHEEL_SHA256": "c" * 64,
+        },
+        {"EXPECTED_VERSION": "1.2.3", "EXPECTED_APP_VERSION": "1.2.3", "CANDIDATE_PROFILE_URL": PROFILE_URL},
+    ],
+)
+def test_pins_refuse_unsafe_or_incomplete_inputs(monkeypatch, environ):
+    monkeypatch.setattr(harness, "fetch", lambda *_a, **_k: b"")
+    with pytest.raises(harness.StepFailed):
+        harness.resolve_pins(environ)
+
+
+def early_case(tmp_path, *, target, bootstrap_version="1.2.3"):
+    return SimpleNamespace(
+        ctx={"update_target": target, "bootstrap": {"version": bootstrap_version}},
+        provide_uv=lambda: pytest.fail("no home may be set up"),
+        root=tmp_path,
+    )
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_case_10_decides_unprovable_or_skipped_before_any_install(monkeypatch, tmp_path, platform):
+    monkeypatch.setattr(harness.sys, "platform", platform)
+    case = early_case(tmp_path, target={"version": "1.2.3"})
+    expected = harness.Unprovable if platform == "linux" else harness.Skipped
+    with pytest.raises(expected):
+        harness.case_stopped_unit_update(case)
+    if platform == "darwin":
+        with pytest.raises(harness.Skipped, match="No update target"):
+            harness.case_stopped_unit_update(early_case(tmp_path, target=None))
+
+
+def test_case_3_on_linux_is_unprovable_before_any_install(monkeypatch, tmp_path):
+    monkeypatch.setattr(harness.sys, "platform", "linux")
+    with pytest.raises(harness.Unprovable, match="quiescence proof"):
+        harness.case_retained(early_case(tmp_path, target=None))
