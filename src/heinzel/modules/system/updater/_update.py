@@ -125,8 +125,12 @@ class UpdateService(UpdateChannels):
                 specs = selection.specs
                 original_receipt = self._installation.receipt()
                 untouched = {name: installed_identity(prefix, name) for name in selection.by_hand}
-                constraints = (*self._installation.tool_constraints(), *guards)
+                moving = (["heinzel"] if announced.core else []) + list(announced.plugins)
                 try:
+                    # A standard-app wheel the receipt names bare stays the verified wheel it is (ADR 0116).
+                    sources = self._installation.unchanged_wheel_sources([core_requirement, *specs], moving)
+                    transient = (*guards, *sources)
+                    constraints = (*self._installation.tool_constraints(), *transient)
                     self._installation.validate_install_constraints([core_requirement, *specs], constraints)
                     snapshot = ToolSnapshot.take(self._installation.prefix.resolve(strict=True), folder)
                 except (HeinzelError, OSError):
@@ -136,11 +140,11 @@ class UpdateService(UpdateChannels):
                 before = self._fingerprints()
                 try:
                     generation = self._install_announced(
-                        [core_requirement, *specs], (guards, constraints), expected, announced
+                        [core_requirement, *specs], (guards, sources, constraints), expected, announced
                     )
                     require_untouched(prefix, untouched)
                     generation = self._installation.remove_transient_tool_constraint(
-                        expected=generation, original=policy, added=guards, options=added_options(announced)
+                        expected=generation, original=policy, added=transient, options=added_options(announced)
                     )
                     if pin.kind == "release":
                         generation = self._installation.name_core_by_tag(

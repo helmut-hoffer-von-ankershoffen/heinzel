@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 import tomllib
-from collections.abc import Callable, Generator, Mapping, MutableMapping, Sequence
+from collections.abc import Callable, Collection, Generator, Mapping, MutableMapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -978,6 +978,20 @@ class Installation:
             msg = "The installed tool changed during metadata inspection; no installed code was started."
             raise HeinzelError(msg)
         return result
+
+    def unchanged_wheel_sources(self, requirements: Sequence[str], moving: Collection[str]) -> tuple[str, ...]:
+        """The hash-bound wheel sources of every requirement that isn't moving, as transient constraints.
+
+        One rule for each path that keeps installed packages while others move (the announced and the manual update,
+        a plugin change): a standard-app wheel the receipt names as a bare index requirement is held to the verified
+        wheel it was installed from, so uv keeps it and its metadata matches the selected source afterwards.
+
+        Raises:
+            HeinzelError: If metadata or the checkpoint changes during capture.
+        """
+        excluded = {canonicalize_name(name) for name in moving}
+        unchanged = [item for item in requirements if canonicalize_name(Requirement(item).name) not in excluded]
+        return self.preserved_tool_wheel_constraints(unchanged) if unchanged else ()
 
     def preserved_tool_wheel_constraints(self, requirements: list[str]) -> tuple[str, ...]:
         """Keep unchanged verified wheel provenance while a plugin mutation retains installed packages.

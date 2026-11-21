@@ -2107,8 +2107,7 @@ class PluginService:
             *(command[index + 1] for index, part in enumerate(command) if part == "--with"),
         ]
         changing = (distributions_in_spec(adding) if adding else set(forbidden)) | alongside
-        unchanged = [item for item in selected if canonicalize_name(Requirement(item).name) not in changing]
-        sources = self._installation.preserved_tool_wheel_constraints(unchanged)
+        sources = self._installation.unchanged_wheel_sources(selected, changing)
         transient = (guard, *holds, *sources)
         constraints = (*self._installation.tool_constraints(), *transient)
         self._installation.validate_install_constraints(selected, constraints)

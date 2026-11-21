@@ -52,7 +52,7 @@ class UpdateInstall(UpdateHeads):
     def _install_announced(
         self,
         requirements: list[str],
-        policy: tuple[tuple[str, ...], tuple[str, ...]],
+        policy: tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]],
         expected: dict[str, str],
         announced: Announcement,
     ) -> str:
@@ -61,7 +61,7 @@ class UpdateInstall(UpdateHeads):
         Raises:
             HeinzelError: If uv fails, or the metadata names other versions or another commit than announced.
         """
-        guards, constraints = policy
+        guards, sources, constraints = policy
         command = self._installation.tool_install_command(requirements[0], requirements[1:], reinstall=False)
         moving = (["heinzel"] if announced.core else []) + list(announced.plugins)
         for name in moving:  # only what was announced is asked again and reinstalled; the rest stays as it is
@@ -76,7 +76,7 @@ class UpdateInstall(UpdateHeads):
             "uv couldn't install exactly the announced versions",
             f"Installing hz {expected['heinzel']}",
             git_credentials(subprocess_environment()),
-            additional_constraints=guards,
+            additional_constraints=(*guards, *sources),
         )
         generation = self._installation.startup_fingerprint()
         self._installation.verify_installed_requirements(
@@ -412,8 +412,7 @@ class UpdateInstall(UpdateHeads):
             for item in parsed
             if item.url is not None and urlsplit(item.url).scheme == "file" and urlsplit(item.url).path.endswith(".whl")
         }
-        unchanged = sorted(str(name) for name in selected & local)
-        preserved = self._installation.preserved_tool_wheel_constraints(unchanged) if unchanged else ()
+        preserved = self._installation.unchanged_wheel_sources(sorted(str(name) for name in selected & local), ())
         sources = {canonicalize_name(Requirement(item).name): Requirement(item) for item in preserved}
         source = urlsplit(core.url or "")
         if (
