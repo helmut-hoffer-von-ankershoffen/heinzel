@@ -41,6 +41,7 @@ from heinzel.modules.system._tools import render as render_tools_text
 from heinzel.modules.system._tools import tools as tool_list
 from heinzel.modules.system._uninstall import SystemOfflineUninstall
 from heinzel.modules.system.config._service import ConfigService
+from heinzel.modules.system.updater._adapter_state import FileInstallationState
 from heinzel.modules.system.updater._announced import Announcement, ToolSnapshot, trial_start
 from heinzel.modules.system.updater._plugin_releases import PyPIPluginReleases, plugin_releases
 from heinzel.modules.system.updater._update import UpdateService
@@ -103,6 +104,7 @@ def _update_service(installation: Installation, releases: ReleaseSource, kernel:
         newer=plugins.newer if plugins is not None else None,
         need=PythonNeed(kernel.settings.cache_dir),
         daemon=daemon,
+        state=FileInstallationState(kernel.settings.state_dir),
     )
 
 

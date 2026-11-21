@@ -378,9 +378,10 @@ class UpdateService(_UpdateChannels):
         held = _AGREED.set(moves)
         self._restart_daemon = daemon
         try:
-            return self._update_with_steps(
-                source, current, channel, shown=shown, desktop=(desktop, restart, from_app), daemon=daemon
-            )
+            with self._across_processes():
+                return self._update_with_steps(
+                    source, current, channel, shown=shown, desktop=(desktop, restart, from_app), daemon=daemon
+                )
         finally:
             self._restart_daemon = True
             _AGREED.reset(held)

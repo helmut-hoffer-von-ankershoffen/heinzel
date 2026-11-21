@@ -18,6 +18,7 @@ from heinzel.modules import system
 from heinzel.modules.system._models import PluginPlan, PluginUpdate, UpdatePlan, UpdateResult
 from heinzel.modules.system._render import plan_text, render_update
 from heinzel.modules.system.updater import _update_core, _update_heads, _update_rules
+from heinzel.modules.system.updater._adapter_state import FileInstallationState
 from heinzel.modules.system.updater._plugin_releases import PinnedPlugins, PyPIPluginReleases
 from heinzel.modules.system.updater._plugin_standing import standing
 from heinzel.modules.system.updater._update import UpdateService
@@ -857,6 +858,29 @@ def test_a_second_update_while_one_installs_is_refused_and_cannot_touch_its_agre
     assert seen["result"].plugins[0].after == "1.2.0"  # type: ignore[attr-defined]
     assert service._updating.acquire(blocking=False)  # and the lock is free again
     service._updating.release()
+
+
+def test_an_update_waits_for_one_another_process_holds_on_the_same_state_folder(tmp_path):
+    uv = FakeUv("0.2.0")
+    target = tool(tmp_path, AT_VERSION, uv)
+    service = UpdateService(target, FakeReleases("0.4.0"), state=FileInstallationState(tmp_path / "state"))
+    other = FileInstallationState(tmp_path / "state")  # another hz on the same installation: its own lock file handle
+    started, done = threading.Event(), threading.Event()
+
+    def update():
+        started.set()
+        service.update(current="0.2.0")
+        done.set()
+
+    with other.lock("update"):
+        worker = threading.Thread(target=update)
+        worker.start()
+        assert started.wait(10)
+        assert not done.wait(0.3)  # held off while the other process updates
+        assert uv.commands == []
+    assert done.wait(10)
+    worker.join(10)
+    assert uv.commands  # once the other one let go, this update ran
 
 
 @pytest.mark.parametrize("error", [LookupError("no such release"), KeyError("tag_name"), TypeError("not a list")])

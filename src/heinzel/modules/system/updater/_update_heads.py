@@ -5,7 +5,6 @@ import logging
 import platform
 import subprocess
 from contextlib import suppress
-from pathlib import Path
 
 from heinzel import HeinzelError
 from heinzel.kernel import (
@@ -34,8 +33,9 @@ class _UpdateHeads(_UpdateCore):
         if not self._desktop_installed():
             return None
         release = None
-        with suppress(OSError, ValueError, AttributeError):
-            found = json.loads((self._home or Path.home()).joinpath(DESKTOP_RECEIPT).read_text(encoding="utf-8"))
+        with suppress(OSError, ValueError, AttributeError, RuntimeError):
+            text = self._home_file(DESKTOP_RECEIPT)
+            found = json.loads(text) if text is not None else {}
             release = found.get("release")
         return release if isinstance(release, str) else None, self._running()
 
@@ -222,7 +222,7 @@ class _UpdateHeads(_UpdateCore):
 
     def _desktop_installed(self) -> bool:
         try:
-            return platform.system() == "Darwin" and (self._home or Path.home()).joinpath(DESKTOP_RECEIPT).exists()
+            return platform.system() == "Darwin" and self._home_file(DESKTOP_RECEIPT) is not None
         except (OSError, RuntimeError):  # no home to look in: nothing is claimed about a desktop app
             return False
 

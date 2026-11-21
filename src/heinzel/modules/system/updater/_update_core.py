@@ -30,6 +30,7 @@ from heinzel.kernel._logging import log_event
 from heinzel.kernel._tool_python import PythonNeed, newer_python
 from heinzel.modules.system._models import UpdateResult
 from heinzel.modules.system._service import RELEASE_TIMEOUT
+from heinzel.modules.system.updater._adapter_state import FileInstallationState
 from heinzel.modules.system.updater._plugin_releases import PinnedPlugins
 from heinzel.modules.system.updater._update_rules import (
     _ORIGINALS,
@@ -109,6 +110,15 @@ class _UpdateCore:
         """Held while `update` runs: one update at a time in this process (the lifecycle guards other processes)."""
         lock: threading.Lock = self.__dict__.setdefault("_updating_lock", threading.Lock())
         return lock
+
+    def _across_processes(self) -> AbstractContextManager[None]:
+        """Held while `update` runs, with the state folder's `update` lock: an update in another process waits."""
+        return nullcontext() if self._state is None else self._state.lock("update")
+
+    def _home_file(self, relative: Path) -> str | None:
+        """A file under the home folder, read through the state port; with no port, under `home` (tests) or `~`."""
+        state = self._state if self._state is not None else FileInstallationState(Path(), self._home)
+        return state.home_file(relative.as_posix())
 
     def _start_step(self, id_: str) -> None:
         """Tell the running `update` that its step `id_` started; nothing outside one."""
