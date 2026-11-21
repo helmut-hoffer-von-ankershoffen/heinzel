@@ -26,7 +26,6 @@ import subprocess
 import sys
 import tempfile
 import threading
-import time
 from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext, suppress
 from contextvars import ContextVar
@@ -42,6 +41,7 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 from heinzel import HeinzelError, Progress, __version__
+from heinzel._adapter_system import SYSTEM_CLOCK, SYSTEM_RUNNER
 from heinzel.kernel import (
     CorePin,
     DaemonAttestation,
@@ -51,7 +51,6 @@ from heinzel.kernel import (
     DaemonMutationScope,
     HeadRefresh,
     Installation,
-    ReleaseSource,
     ToolConstraintPolicy,
     WebHeadRefresh,
     subprocess_environment,
@@ -73,6 +72,7 @@ from heinzel.modules.system.updater._announced import (
 from heinzel.modules.system.updater._phases import Phases, State
 from heinzel.modules.system.updater._plugin_releases import PinnedPlugins
 from heinzel.modules.system.updater._plugin_standing import standing
+from heinzel.ports import Clock, InstallationState, ProcessRunner, ReleaseSource
 
 log = get_logger("update")
 DEFAULT_BRANCH = "main"
@@ -180,8 +180,11 @@ class UpdateService:
         lifecycle: DaemonInstallationLifecycle | None = None,
         require_lifecycle: bool = False,
         web: WebHeadRefresh | None = None,
-        clock: Callable[[], float] = time.monotonic,
-        sleep: Callable[[float], None] = time.sleep,
+        clock: Callable[[], float] | None = None,
+        sleep: Callable[[float], None] | None = None,
+        clocks: Clock = SYSTEM_CLOCK,
+        runner: ProcessRunner = SYSTEM_RUNNER,
+        state: InstallationState | None = None,
         home: Path | None = None,
         progress: Progress | None = None,
         pinned: Callable[[float], PinnedPlugins] | None = None,
@@ -199,13 +202,15 @@ class UpdateService:
         `hz app install` (`restart=True`: `--restart`) and returns its exit code and output; `daemon` reads the version
         the daemon runs and `running` whether the desktop app is open. Tests replace all of them.
         `need` keeps what the last update found about a release that needs a newer Python, for the doctor.
+        The world comes in through ports (`heinzel.ports`): `clocks` for time (or the single `clock` and `sleep`
+        callables, which win), `runner` for the programs it starts, `state` for the state folder.
         """
         self._pinned_plugins = pinned
         self._need = need
         self._newer_plugins = newer
         self._desktop = desktop or self._app_install
         self._daemon = daemon
-        self._running = running or _app_running
+        self._running = running or self._app_open
         self._restart_daemon = True
         """Whether the update in progress may restart the daemon and the web server (`--no-daemon` says not)."""
 
@@ -216,7 +221,9 @@ class UpdateService:
         self._lifecycle = lifecycle
         self._require_lifecycle = require_lifecycle
         self._web = web
-        self._clock, self._sleep = clock, sleep
+        self._clock, self._sleep = clock or clocks.monotonic, sleep or clocks.sleep
+        self._runner = runner
+        self._state = state
         self._home = home
         self._handover: tuple[DaemonHandoverPlan, DaemonHandoverRequest] | None = None
         """What the daemon was before the last completed mutation and the handover it requested, for the heads."""
@@ -327,12 +334,23 @@ class UpdateService:
         self._handover = (plan, scope.request(plan))
         return result
 
+    def _state_folder(self) -> Path:
+        """The state folder of the installation, for what has to be kept beside it.
+
+        Raises:
+            HeinzelError: If this service was given none.
+        """
+        if self._state is None:
+            msg = "There is no state folder to copy the installation into; nothing was installed."
+            raise HeinzelError(msg)
+        return self._state.folder
+
     def apply_announced(
         self,
         announced: Announcement,
         *,
         current: str = __version__,
-        folder: Path,
+        folder: Path | None = None,
         trial: Callable[[str], bool],
     ) -> AnnouncedUpdate:
         """Install exactly the announced versions, prove the new hz starts, or put everything back (ADR 0116).
@@ -349,10 +367,14 @@ class UpdateService:
         failure after the copy puts the tool folder back from it (`ToolSnapshot`), so its continuity record matches
         again and the daemon mutation completes with no handover pending.
 
+        `folder` is where the copy is taken; without it, the state folder of the installation (`state`).
+
         Raises:
-            HeinzelError: If the installation can't be updated this way, before anything was installed.
+            HeinzelError: If the installation can't be updated this way, before anything was installed, or if there
+                is no folder to copy into.
             OSError: If the copy can't be taken; nothing was installed.
         """
+        folder = folder or self._state_folder()
         target = announced.core or current
         selection = self._announced_selection(target, announced)
         if isinstance(selection, AnnouncedUpdate):
@@ -945,16 +967,20 @@ class UpdateService:
             was_running=known[1],
         )
 
+    def _app_open(self) -> bool:
+        """Whether the managed desktop app is open now: one of its processes runs from inside its folder."""
+        try:
+            listing = self._runner.run(["/bin/ps", "-ww", "-axo", "comm="], timeout=10).stdout
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return "/Heinzelmaennchen.app/" in listing
+
     def _app_install(self, *, restart: bool = False) -> tuple[int, str]:
         """Run `hz app install` in a fresh interpreter, which is the new hz; its exit code and what it printed."""
         flags = ["-I", "-B"] if sys.dont_write_bytecode else ["-I"]
-        result = subprocess.run(  # noqa: S603 - our own interpreter and module
+        result = self._runner.run(
             [sys.executable, *flags, "-m", "heinzel", "app", "install", *(["--restart"] if restart else [])],
-            capture_output=True,
-            text=True,
-            check=False,
             timeout=DESKTOP_SECONDS,
-            stdin=subprocess.DEVNULL,
             env=subprocess_environment() | {"HZ_UPDATE_CHECK": "false"},
         )
         return result.returncode, result.stderr.strip() or result.stdout.strip()
@@ -2028,17 +2054,6 @@ class UpdateService:
 
 
 HEAD_LABELS = {"daemon": "Daemon", "web": "Web server", "notifier": "Notifier", "desktop": "Desktop app"}
-
-
-def _app_running() -> bool:
-    """Whether the managed desktop app is open now: one of its processes runs from inside its folder."""
-    try:
-        listing = subprocess.run(
-            ["/bin/ps", "-ww", "-axo", "comm="], check=False, capture_output=True, timeout=10
-        ).stdout
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return b"/Heinzelmaennchen.app/" in listing
 
 
 def _own_rows(names: Sequence[str], plan: UpdatePlan | None) -> list[str]:

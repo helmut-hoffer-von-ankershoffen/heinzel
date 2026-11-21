@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from heinzel.kernel import ReleaseFacts
+from heinzel.kernel import EdgeRelease, ReleaseFacts
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
@@ -240,6 +240,7 @@ class FakeReleaseSource:
         self._accepted: set[str] = set()
         self._requires: dict[str, str] = {}
         self._latest = latest
+        self._edge: EdgeRelease | None = None
         self.publish(latest, published=published)
 
     def publish(self, version: str, *, published: datetime | None = None, accepted: bool = True) -> None:
@@ -259,6 +260,29 @@ class FakeReleaseSource:
         """The release published last."""
         del timeout
         return self._latest
+
+    def highest_version(self, timeout: float, *, prereleases: bool = False) -> str:
+        """The highest published version, in version order."""
+        del timeout, prereleases
+        from packaging.version import Version  # noqa: PLC0415 - only this one method orders versions
+
+        return str(max(Version(v) for v in self._facts))
+
+    def edge_release(self, timeout: float) -> EdgeRelease:
+        """The edge release the test set with `set_edge`.
+
+        Raises:
+            OSError: If none was set, like an unreachable pointer.
+        """
+        del timeout
+        if self._edge is None:
+            msg = "no edge release"
+            raise OSError(msg)
+        return self._edge
+
+    def set_edge(self, version: str, *, sha256: str = "0" * 64) -> None:
+        """Publish an edge release."""
+        self._edge = EdgeRelease(version, f"https://example.invalid/heinzel-{version}.whl", sha256)
 
     def release_facts(self, version: str, timeout: float) -> ReleaseFacts:
         """The facts of a published release.

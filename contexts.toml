@@ -193,7 +193,4 @@ heads = [
 [allow.adapters]
 "src/heinzel/heads/web/_auto_update.py" = 1
 "src/heinzel/heads/web/_updates.py" = 1
-"src/heinzel/modules/system/updater/_announced.py" = 1
-"src/heinzel/modules/system/updater/_phases.py" = 1
-"src/heinzel/modules/system/updater/_update.py" = 4
 "src/heinzel/modules/ui/_service.py" = 7

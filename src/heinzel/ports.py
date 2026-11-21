@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from datetime import datetime
     from pathlib import Path
 
-    from heinzel.kernel import ReleaseFacts
+    from heinzel.kernel import EdgeRelease, ReleaseFacts
 
 __all__ = [
     "Clock",
@@ -158,6 +158,14 @@ class ReleaseSource(Protocol):
 
     def latest_version(self, timeout: float) -> str:
         """The version of the latest release."""
+        ...
+
+    def highest_version(self, timeout: float, *, prereleases: bool = False) -> str:
+        """The highest published version among the newest releases, in version order rather than by date."""
+        ...
+
+    def edge_release(self, timeout: float) -> EdgeRelease:
+        """The newest edge release; asked only after someone chose the edge channel."""
         ...
 
     def release_facts(self, version: str, timeout: float) -> ReleaseFacts:

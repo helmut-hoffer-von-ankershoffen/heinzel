@@ -30,7 +30,9 @@ from typing import cast
 
 from packaging.requirements import InvalidRequirement, Requirement
 
+from heinzel._adapter_system import SYSTEM_RUNNER
 from heinzel.kernel import HeinzelError, user_config_dir
+from heinzel.ports import ProcessRunner
 
 MOVED_ASIDE = ".everything-the-update-left-is-here"
 """Written once every entry the update left is aside: from then on, only the copy moves."""
@@ -258,7 +260,12 @@ def trial_environment(scratch: Path, environ: Mapping[str, str], config: Path) -
     return env
 
 
-def trial_start(version: str, timeout: float = TRIAL_SECONDS, command: Sequence[str] | None = None) -> bool:
+def trial_start(
+    version: str,
+    timeout: float = TRIAL_SECONDS,
+    command: Sequence[str] | None = None,
+    runner: ProcessRunner = SYSTEM_RUNNER,
+) -> bool:
     """Whether the installed hz starts a web app server that answers with `version`, before this one restarts into it.
 
     It runs `hz ui serve` as the restart would, on a free port with its own token, against a throwaway copy of the
@@ -269,9 +276,7 @@ def trial_start(version: str, timeout: float = TRIAL_SECONDS, command: Sequence[
     with tempfile.TemporaryDirectory(prefix="hz-trial-") as scratch:
         try:
             env = trial_environment(Path(scratch), os.environ, user_config_dir())
-            child = subprocess.Popen(  # noqa: S603 - this interpreter and fixed arguments, or a test's
-                command, env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, text=True
-            )
+            child = runner.spawn(command, env=env, capture=True)
         except OSError:
             return False
         lines: list[str] = []

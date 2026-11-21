@@ -9,12 +9,12 @@ and `detail` (the words the person reads, which never hold a secret).
 """
 
 import logging
-import time
 from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from typing import Literal
 
 from heinzel import HeinzelError, Progress
+from heinzel._adapter_system import SYSTEM_CLOCK
 from heinzel.kernel._logging import get_logger, log_event
 
 State = Literal["pending", "running", "done", "warn", "skipped", "failed"]
@@ -39,7 +39,7 @@ class Phases:
         plan: Sequence[tuple[str, str]] = (),
         *,
         operation: str = "system.daemon",
-        clock: Callable[[], float] = time.monotonic,
+        clock: Callable[[], float] = SYSTEM_CLOCK.monotonic,
         checklist: bool = False,
     ) -> None:
         """Report to `progress` and announce the `plan` of (id, label) steps, so a head can say "step 2 of 5".

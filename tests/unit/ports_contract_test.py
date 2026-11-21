@@ -200,6 +200,8 @@ def releases(request, monkeypatch):
     )
 
     def get_json(url, token, timeout):
+        if "/releases?per_page" in url:
+            return [{"tag_name": "v1.2.0"}, {"tag_name": "v1.1.0"}, {"tag_name": "v1.3.0-rc1", "prerelease": True}]
         if "/git/ref/tags/" in url:
             return {"object": {"type": "commit", "sha": "a" * 40}}
         return facts
@@ -219,6 +221,7 @@ def test_a_release_source_names_the_latest_and_what_is_known_about_it(releases):
     assert facts.version == latest
     assert facts.published_at is not None
     assert releases.accepted(latest, 5) is True
+    assert releases.highest_version(5) == "1.2.0"
 
 
 # --- InstallationState ---------------------------------------------------------------------------------------------
