@@ -12,6 +12,11 @@ run-name: Acceptance ${{ inputs.candidate_wheel_url || inputs.expected_version }
 #
 # A candidate run takes a held release's wheel URL and sha256 plus the app profile URL. It proves those bytes, never the
 # public path, and its verdict says so.
+#
+# Sharded: `pins` binds the release bytes once (what is published now, when a pull request supplies nothing); the 13
+# cases run in the harness's four fixed shards, each on its own hosted VM per OS; `Acceptance (<os>)` reduces the four
+# same-attempt receipts of its OS (scripts/acceptance/reduce.py --release) and uploads the one receipt and prints the
+# one verdict line the release driver reads, as the serial job did. An incomplete or mixed set of shards fails.
 
 on:
   workflow_dispatch:
@@ -103,31 +108,62 @@ on:
 permissions: {}
 
 jobs:
-  acceptance:
-    name: Acceptance (${{ matrix.os }})
+  pins:
+    name: Acceptance pins
     if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      expected_version: ${{ steps.pins.outputs.expected_version }}
+      expected_app_version: ${{ steps.pins.outputs.expected_app_version }}
+      accept_wheel_sha256: ${{ steps.pins.outputs.accept_wheel_sha256 }}
+      accept_profile_sha256: ${{ steps.pins.outputs.accept_profile_sha256 }}
+      reduce_wheel_sha256: ${{ steps.pins.outputs.reduce_wheel_sha256 }}
+      supplied: ${{ steps.pins.outputs.supplied }}
+    env:
+      EXPECTED_VERSION: ${{ inputs.expected_version || 'published' }}
+      EXPECTED_APP_VERSION: ${{ inputs.expected_app_version || 'published' }}
+      EXPECTED_WHEEL_SHA256: ${{ inputs.expected_wheel_sha256 || '' }}
+      EXPECTED_PROFILE_SHA256: ${{ inputs.expected_profile_sha256 || '' }}
+      CANDIDATE_WHEEL_SHA256: ${{ inputs.candidate_wheel_sha256 || '' }}
+      CANDIDATE_PROFILE_URL: ${{ inputs.candidate_profile_url || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - run: uv python install 3.15
+      - id: pins
+        name: Pin the release bytes once for every shard
+        run: >-
+          "$(uv python find 3.15)" -I scripts/acceptance/run_acceptance.py --resolve-pins >> "$GITHUB_OUTPUT"
+
+  shard:
+    name: Acceptance shard (${{ matrix.os }}, ${{ matrix.shard }})
+    needs: pins
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 240
+    timeout-minutes: 240 # a ceiling as before sharding: case 6 may wait 65 min for anonymous GitHub quota
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-latest
-            no_sandbox: "false"
-          - os: ubuntu-24.04
-            no_sandbox: "true" # a disposable hosted VM; Chrome's sandbox needs user namespaces the image restricts
+        os: [macos-latest, ubuntu-24.04]
+        shard: [public, update, plugins, browser]
     env:
-      # A pull request has no inputs: it takes whatever is published now, and the receipt records that.
-      EXPECTED_VERSION: ${{ inputs.expected_version || 'published' }}
-      EXPECTED_APP_VERSION: ${{ inputs.expected_app_version || 'published' }}
-      EXPECTED_WHEEL_SHA256: ${{ inputs.expected_wheel_sha256 || '' }}
-      EXPECTED_PROFILE_SHA256: ${{ inputs.expected_profile_sha256 || '' }}
+      EXPECTED_VERSION: ${{ needs.pins.outputs.expected_version }}
+      EXPECTED_APP_VERSION: ${{ needs.pins.outputs.expected_app_version }}
+      EXPECTED_WHEEL_SHA256: ${{ needs.pins.outputs.accept_wheel_sha256 }}
+      EXPECTED_PROFILE_SHA256: ${{ needs.pins.outputs.accept_profile_sha256 }}
       CANDIDATE_WHEEL_URL: ${{ inputs.candidate_wheel_url || '' }}
       CANDIDATE_WHEEL_SHA256: ${{ inputs.candidate_wheel_sha256 || '' }}
       CANDIDATE_PROFILE_URL: ${{ inputs.candidate_profile_url || '' }}
-      NO_SANDBOX: ${{ matrix.no_sandbox }}
+      SHARD: ${{ matrix.shard }}
+      NO_SANDBOX: ${{ matrix.os == 'ubuntu-24.04' && 'true' || 'false' }} # a disposable hosted VM; Chrome's sandbox needs user namespaces the image restricts
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -150,7 +186,8 @@ jobs:
           --candidate-profile-url "$CANDIDATE_PROFILE_URL"
           --chrome-no-sandbox "$NO_SANDBOX"
           --bridge-quota-wait-seconds 3900
-      - name: Summarize the result
+          --shard "$SHARD"
+      - name: Summarize the shard
         if: always()
         run: >-
           "$(uv python find 3.15)" -I scripts/acceptance/summary.py >> "$GITHUB_STEP_SUMMARY"
@@ -158,14 +195,70 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: acceptance-screens-${{ runner.os }}
+          name: acceptance-screens-${{ runner.os }}-${{ matrix.shard }}
           path: /tmp/hz-acceptance-*/case*/shots/*.png
           if-no-files-found: ignore
           retention-days: 3
+      - name: Upload the shard receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: acceptance-shard-${{ runner.os }}-${{ matrix.shard }}
+          path: reports/acceptance/result.json
+          if-no-files-found: error
+
+  acceptance:
+    # The name the release driver requires: one job and one verdict per OS, as before sharding.
+    name: Acceptance (${{ matrix.os }})
+    needs: [pins, shard]
+    if: ${{ !cancelled() && needs.pins.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            runner_os: macOS
+          - os: ubuntu-24.04
+            runner_os: Linux
+    env:
+      TARGET_OS: ${{ matrix.runner_os }}
+      WHEEL_SHA256: ${{ needs.pins.outputs.reduce_wheel_sha256 }}
+      PROFILE_SHA256: ${{ needs.pins.outputs.accept_profile_sha256 }}
+      SUPPLIED: ${{ needs.pins.outputs.supplied }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - run: uv python install 3.15
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: acceptance-shard-${{ matrix.runner_os }}-*
+          path: reports/shards
+      - name: Reduce the four shard receipts of this OS
+        run: >-
+          "$(uv python find 3.15)" -I scripts/acceptance/reduce.py --release
+          --receipts reports/shards
+          --artifact-prefix acceptance-shard
+          --runner-os "$TARGET_OS"
+          --wheel-sha256 "$WHEEL_SHA256"
+          --profile-sha256 "$PROFILE_SHA256"
+          --supplied "$SUPPLIED"
+          --output reports/acceptance/result.json
+      - name: Summarize the result
+        if: always()
+        run: >-
+          "$(uv python find 3.15)" -I scripts/acceptance/summary.py >> "$GITHUB_STEP_SUMMARY"
       - name: Upload the receipt
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: acceptance-result-${{ runner.os }}
+          name: acceptance-result-${{ matrix.runner_os }}
           path: reports/acceptance/result.json
           if-no-files-found: error

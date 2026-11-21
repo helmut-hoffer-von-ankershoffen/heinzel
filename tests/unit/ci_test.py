@@ -60,6 +60,7 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
+        'version="$(sed -n': "archives a release candidate's desktop apps under its version for Publish to promote",
         "echo 'DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer'": "selects the installed Xcode for macOS CI",
         "python3 -I scripts/release_candidate.py": "records release source",
         "echo 'selected=true'": "selects complete CI directly without an external plan",
@@ -93,6 +94,10 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
         'gh run cancel "$RUN_ID"': "a failed cheap check cancels the rest of its own pull request run",
+        'case "$EVENT:${LANE:-all}" in': "selects the Linux push lane or the coalesced macOS main lane",
+        'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f lane=macos': (
+            "queues the coalesced macOS main run; its concurrency group replaces an older pending one"
+        ),
     },
     "merge-gate.yml": {
         "uv run --no-build --frozen --script scripts/merge_gate.py": "judges by public APIs, from the base branch",
@@ -129,6 +134,9 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     },
     "publish.yml": {
         'node desktop/ci/release-macos.mjs "$TAG"': "archives the built app and emits its release identity",
+        "uv run --no-project --frozen --no-build --python 3.15 python -I scripts/release_apps.py": (
+            "promotes the release candidate's macOS apps by sha256 and tree instead of building them again"
+        ),
         'test "v$(uv version --short)" = "$TAG"': "refuses a tag that doesn't match the project version",
         '[[ "$TAG" =~': "binds the exact core tag, checkout, caller source and main ancestry before tooling",
         "uv run --no-project --frozen --no-build --python 3.15 python scripts/pypi_release.py checkout": (
@@ -1097,11 +1105,12 @@ def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
     assert '"os":"macos-latest","python":"3.15"' in jobs["test"]["strategy"]["matrix"]["include"]
 
 
-def _macos_include(matrix: dict, event: str, full: bool, *, release: bool = False) -> list[dict]:
+def _macos_include(matrix: dict, event: str, full: bool, *, release: bool = False, lane: str = "") -> list[dict]:
     expression = re.fullmatch(r"\$\{\{ fromJSON\((.*)\) \}\}", matrix["include"].strip())
     assert expression
     context = {
         "github.event_name": event,
+        "needs.changes.outputs.lane": lane or ("linux" if event == "push" else "all"),
         "needs.changes.outputs.macos_full": str(full).lower(),
         "needs.changes.outputs.full_ci": str(release).lower(),
     }
@@ -1129,8 +1138,8 @@ def _macos_include(matrix: dict, event: str, full: bool, *, release: bool = Fals
     [
         ("pull_request", False, []),
         ("pull_request", True, []),
-        ("push", False, ["3.15"]),
-        ("push", True, ["3.15"]),
+        ("push", False, []),  # a push to main runs Linux; its dispatched macOS lane runs the macOS cells
+        ("push", True, []),
         ("schedule", False, ["3.15"]),
         ("schedule", True, ["3.15"]),
         ("workflow_dispatch", False, ["3.15"]),
@@ -1483,15 +1492,17 @@ def test_everything_else_runs_the_app_jobs(tmp_path, ci_paths, event, changed):
 
 def test_site_only_skips_exactly_the_app_test_jobs_and_ci_ok_waits_for_site_tests():
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
-    for name in ("test", "coverage", "perf", "e2e"):
+    for name, lane in (("test", ""), ("coverage", "macos"), ("perf", "macos"), ("e2e", "")):
         assert jobs[name]["if"] == (
             "needs.changes.outputs.full_ci == 'true' && "
             "(needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true')"
+            + (f" && needs.changes.outputs.lane != '{lane}'" if lane else "")
         )
     for name in ("lint", "build"):
         assert "site_only" not in jobs[name]["if"]
     assert jobs["site-tests"]["if"] == (
         "needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.site_only == 'true')"
+        " && needs.changes.outputs.lane != 'macos'"
     )
     assert "site-tests" in jobs["ci-ok"]["needs"]
 
@@ -1555,12 +1566,12 @@ def _ci_jobs() -> dict:
 @pytest.mark.parametrize(
     ("event", "candidate", "selected"),
     [
-        ("schedule", False, {"maintenance", "full", "paths"}),  # the nightly selects the full workload like main
-        ("pull_request", False, {"release", "full", "paths"}),
-        ("push", False, {"release", "full", "paths"}),
-        ("workflow_dispatch", False, {"release", "full", "paths"}),
-        ("pull_request", True, {"release", "full", "paths"}),
-        ("workflow_dispatch", True, {"release", "full", "paths"}),
+        ("schedule", False, {"maintenance", "full", "paths", "lane"}),  # the nightly selects the full workload
+        ("pull_request", False, {"release", "full", "paths", "lane"}),
+        ("push", False, {"release", "full", "paths", "lane"}),
+        ("workflow_dispatch", False, {"release", "full", "paths", "lane"}),
+        ("pull_request", True, {"release", "full", "paths", "lane"}),
+        ("workflow_dispatch", True, {"release", "full", "paths", "lane"}),
     ],
 )
 def test_changed_paths_event_policy(event, candidate, selected):
@@ -1824,17 +1835,48 @@ def test_release_acceptance_can_pin_public_artifacts_and_correlate_its_run():
     for trigger in ("workflow_dispatch", "workflow_call"):
         for name in ("expected_wheel_sha256", "expected_profile_sha256", "release_attempt"):
             assert events[trigger]["inputs"][name]["default"] == ""
-    job = workflow["jobs"]["acceptance"]
+    pins, job = workflow["jobs"]["pins"], workflow["jobs"]["shard"]
+    for variable in ("EXPECTED_WHEEL_SHA256", "EXPECTED_PROFILE_SHA256"):
+        assert f"inputs.{variable.lower()}" in pins["env"][variable]  # a supplied pin is the pin every shard tests
     command = next(step["run"] for step in job["steps"] if step.get("name") == "Run the acceptance harness")
     for flag, variable in (
         ("--accept-wheel-sha256", "EXPECTED_WHEEL_SHA256"),
         ("--accept-profile-sha256", "EXPECTED_PROFILE_SHA256"),
     ):
         assert f'{flag} "${variable}"' in command
-        assert variable in job["env"]
+        assert job["env"][variable].startswith("${{ needs.pins.outputs.")
     assert "inputs.release_attempt" in workflow["run-name"]
     assert workflow["permissions"] == {}
-    assert job["permissions"] == {"contents": "read"}
+    for name in ("pins", "shard", "acceptance"):
+        assert workflow["jobs"][name]["permissions"] == {"contents": "read"}
+
+
+def test_sharded_release_acceptance_keeps_one_named_job_receipt_and_verdict_per_os():
+    """The release driver reads `Acceptance (<os>)` jobs and `acceptance-result-<OS>` receipts; sharding keeps both."""
+    workflow = yaml.safe_load((REPO / ".github/workflows/acceptance.yml").read_text())
+    jobs = workflow["jobs"]
+    shard = jobs["shard"]
+    assert shard["strategy"]["fail-fast"] is False
+    assert shard["strategy"]["matrix"] == {
+        "os": ["macos-latest", "ubuntu-24.04"],
+        "shard": ["public", "update", "plugins", "browser"],
+    }
+    assert shard["name"].startswith("Acceptance shard (")  # never a name the driver counts as a verdict job
+    run = next(step["run"] for step in shard["steps"] if step.get("name") == "Run the acceptance harness")
+    assert '--shard "$SHARD"' in run
+    assert "--bridge-quota-wait-seconds 3900" in run
+    reduce = jobs["acceptance"]
+    assert reduce["name"] == "Acceptance (${{ matrix.os }})"
+    assert reduce["needs"] == ["pins", "shard"]
+    assert {(entry["os"], entry["runner_os"]) for entry in reduce["strategy"]["matrix"]["include"]} == {
+        ("macos-latest", "macOS"),
+        ("ubuntu-24.04", "Linux"),
+    }
+    steps = {step.get("name"): step for step in reduce["steps"]}
+    assert "--release" in steps["Reduce the four shard receipts of this OS"]["run"]
+    assert steps["Upload the receipt"]["with"]["name"] == "acceptance-result-${{ matrix.runner_os }}"
+    download = next(step for step in reduce["steps"] if "download-artifact@" in step.get("uses", ""))
+    assert download["with"]["pattern"] == "acceptance-shard-${{ matrix.runner_os }}-*"
 
 
 @pytest.mark.parametrize(
@@ -2169,3 +2211,119 @@ def test_the_nightly_selects_and_runs_the_full_macos_matrix_end_to_end(tmp_path,
     assert "if" not in complete  # the nightly requires the whole direct workload, macOS lanes included
     for name in ("setup", "test", "e2e", "notifier", "macos-specific", "electron"):
         assert name in complete["run"]
+
+
+MACOS_JOBS = ("notifier", "macos-specific")
+LINUX_ONLY_JOBS = (
+    "lint", "audit", "coverage", "perf", "site-tests", "template", "core-wheel", "local-plugin-plan", "consumer-plan",
+    "release-candidate-source",
+)  # fmt: skip
+MAIN_MACOS_GROUP = "ci-main-macos"
+
+
+def _lane_outputs(tmp_path, event: str, lane: str = "", ref: str = "refs/heads/main") -> dict[str, str] | None:
+    step = next(step for step in _ci_jobs()["changes"]["steps"] if step.get("id") == "lane")
+    output = tmp_path / "lane-output"
+    result = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env={
+            "EVENT": event,
+            "LANE": lane,
+            "GITHUB_REPOSITORY": "helmut-hoffer-von-ankershoffen/heinzel",
+            "GITHUB_REF": ref,
+            "GITHUB_OUTPUT": str(output),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=4,
+    )
+    if result.returncode:
+        return None
+    return dict(line.split("=", 1) for line in output.read_text().splitlines())
+
+
+@pytest.mark.parametrize(
+    ("event", "lane", "selected", "excluded"),
+    [
+        ("push", "", "linux", ["macos-latest"]),
+        ("workflow_dispatch", "macos", "macos", ["ubuntu-24.04", "ubuntu-24.04-arm"]),
+        ("workflow_dispatch", "all", "all", []),
+        ("workflow_dispatch", "", "all", []),
+        ("pull_request", "", "all", []),  # release/* candidates included: they keep the whole matrix
+        ("schedule", "", "all", []),
+    ],
+)
+def test_main_lanes_split_linux_pushes_from_the_dispatched_macos_run(tmp_path, event, lane, selected, excluded):
+    outputs = _lane_outputs(tmp_path, event, lane)
+    assert outputs is not None
+    assert outputs["lane"] == selected
+    assert [row["os"] for row in json.loads(outputs["exclude"])] == excluded
+
+
+def test_the_macos_lane_refuses_any_ref_but_main(tmp_path):
+    assert _lane_outputs(tmp_path, "workflow_dispatch", "macos", ref="refs/heads/release/v1.2.3") is None
+
+
+def test_main_lanes_gate_every_platform_job():
+    jobs = _ci_jobs()
+    for name in LINUX_ONLY_JOBS:
+        assert jobs[name]["if"].split(" # ")[0].endswith(" && needs.changes.outputs.lane != 'macos'"), name
+    for name in MACOS_JOBS:
+        assert jobs[name]["if"].split(" # ")[0].endswith(" && needs.changes.outputs.lane != 'linux'"), name
+    for name in ("setup", "test", "e2e", "electron", "quarantine"):
+        assert jobs[name]["strategy"]["matrix"]["exclude"] == (
+            "${{ fromJSON(needs.changes.outputs.lane_exclude || '[]') }}"
+        ), name
+    assert jobs["test"]["strategy"]["matrix"]["include"].startswith(
+        "${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || "
+    )
+    assert _macos_include(jobs["test"]["strategy"]["matrix"], "workflow_dispatch", full=True, lane="macos") == [
+        {"os": "macos-latest", "python": "3.15", "levels": level} for level in ("unit", "integration")
+    ]
+    assert "lane" not in jobs["build"]["if"]  # the macOS lane builds the wheel with the notifier it just built
+    assert "lane" not in jobs["macos-smoke"]["if"]  # pull requests only
+
+
+def test_a_push_to_main_dispatches_the_coalesced_macos_run():
+    workflow = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    jobs = workflow["jobs"]
+    job = jobs["macos-main"]
+    assert job["permissions"] == {"actions": "write"}
+    assert job["needs"] == "changes"
+    assert job["if"] == (
+        "github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.lane == 'linux'"
+    )
+    assert [step["run"] for step in job["steps"]] == [
+        'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f lane=macos'
+    ]
+    assert "macos-main" in jobs["ci-ok"]["needs"]
+    lane = workflow[True]["workflow_dispatch"]["inputs"]["lane"]  # YAML 1.1 reads the key `on` as True
+    assert (lane["type"], lane["options"], lane["default"]) == ("choice", ["all", "macos"], "all")
+    group = workflow["concurrency"]["group"]
+    assert f"inputs.lane == 'macos' && '{MAIN_MACOS_GROUP}' ||" in group
+    assert "github.ref == 'refs/heads/main' && github.sha || github.ref" in group  # Linux keeps one group per SHA
+    # cancel-in-progress stays pull-request-only: the macOS group keeps its running run and the newest pending one
+    assert workflow["concurrency"]["cancel-in-progress"] == (
+        "${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }}"
+    )
+    assert "inputs.lane == 'macos' && 'CI macOS main '" in workflow["run-name"]
+
+
+def test_ci_ok_requires_each_lane_its_own_jobs():
+    jobs = _ci_jobs()
+    complete = next(step for step in jobs["ci-ok"]["steps"] if step.get("name", "").startswith("Require the complete"))
+    lanes = dict(re.findall(r"(?m)^ +(linux|macos)\) required=\(([^)]*)\)", complete["run"]))
+    linux, macos = (set(lanes[name].split()) for name in ("linux", "macos"))
+    assert not linux & set(MACOS_JOBS)
+    assert "macos-main" in linux
+    assert {"setup", "test", "e2e", "electron", "build", *MACOS_JOBS} <= macos
+    assert not macos & set(LINUX_ONLY_JOBS)
+    assert complete["env"]["LANE"] == "${{ needs.changes.outputs.lane }}"
+
+
+def test_the_plugin_template_never_sees_the_main_lanes():
+    generated = _template_sync_module().ci_workflow()
+    assert "lane" not in generated
+    assert MAIN_MACOS_GROUP not in generated
+    assert "macos-main" not in generated

@@ -532,7 +532,8 @@ def test_desktop_release_assets_share_the_official_core_attestation():
     jobs = yaml.safe_load((ROOT / ".github/workflows/publish.yml").read_text())["jobs"]
     desktop = jobs["desktop"]
     publish = jobs["publish"]
-    assert desktop["if"] == f"github.repository == '{release.REPOSITORY}'"
+    assert f"github.repository == '{release.REPOSITORY}'" in desktop["if"]
+    assert "needs.promote.outputs.promoted != 'true'" in desktop["if"]  # built here only when not promoted
     assert desktop["permissions"] == {"contents": "read"}
     assert desktop["runs-on"] == "macos-latest"
     assert desktop["steps"][0]["with"] == {
@@ -555,8 +556,9 @@ def test_desktop_release_assets_share_the_official_core_attestation():
     steps = publish["steps"]
     index = next(i for i, step in enumerate(steps) if step.get("id") == "attest")
     download, bind, attest = steps[index - 2 : index + 1]
-    assert desktop["steps"][-1]["with"]["name"] == download["with"]["name"]
-    assert bind["if"] == desktop["if"]
+    assert desktop["steps"][-1]["with"]["name"] in download["with"]["name"]
+    assert "promoted-desktop-macos-arm64" in download["with"]["name"]
+    assert bind["if"] == f"github.repository == '{release.REPOSITORY}'"
     assert bind["env"]["SOURCE_COMMIT"] == "${{ steps.source.outputs.commit }}"
     assert bind["run"] == "make desktop-bind-release-assets"
     recipe = (ROOT / "Makefile").read_text().split("\ndesktop-bind-release-assets:", 1)[1].split("\n\n", 1)[0]

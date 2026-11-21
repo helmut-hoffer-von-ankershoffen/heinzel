@@ -3,6 +3,7 @@
   "expected_jobs": {
     "pull_request": {
       "skipped": [
+        "Dispatch the coalesced macOS main run",
         "Focused tests (${{ matrix.lane }})",
         "Main batch delegated to ${{ needs.admission.outputs.run }}",
         "Main batch focused scope (${{ needs.admission.outputs.base }})",
@@ -72,6 +73,7 @@
       "skipped": [
         "Conventional commits",
         "Dependency review",
+        "Dispatch the coalesced macOS main run",
         "Focused tests (${{ matrix.lane }})",
         "Main batch delegated to ${{ needs.admission.outputs.run }}",
         "Main batch focused scope (${{ needs.admission.outputs.base }})",

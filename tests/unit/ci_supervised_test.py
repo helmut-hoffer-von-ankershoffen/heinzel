@@ -41,7 +41,7 @@ def test_all_e2e_lanes_keep_workers_and_deadlines_and_readme_runs_only_once(suit
 def test_supervised_stays_required_in_the_full_ci_matrix():
     jobs = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["jobs"]
     e2e = jobs["e2e"]
-    assert set(e2e["strategy"]["matrix"]) == {"os", "suite"}
+    assert set(e2e["strategy"]["matrix"]) == {"os", "suite", "exclude"}  # exclude: the main lanes
     assert e2e["strategy"]["matrix"]["suite"] == ["cli", "supervised", "web-1", "web-2", "web-3"]
     assert e2e["strategy"]["matrix"]["os"] == (
         "${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' "
