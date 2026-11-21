@@ -3743,7 +3743,7 @@ Bundled into the web app that `hz ui` serves: the production dependencies of [we
 | [is-hexadecimal](#is-hexadecimal-201) | 2.0.1 | MIT |
 | [is-plain-obj](#is-plain-obj-410) | 4.1.0 | MIT |
 | [longest-streak](#longest-streak-310) | 3.1.0 | MIT |
-| [lucide-react](#lucide-react-1660) | 1.66.0 | ISC |
+| [lucide-react](#lucide-react-1730) | 1.73.0 | ISC |
 | [markdown-table](#markdown-table-304) | 3.0.4 | MIT |
 | [mdast-util-find-and-replace](#mdast-util-find-and-replace-303) | 3.0.3 | MIT |
 | [mdast-util-from-markdown](#mdast-util-from-markdown-210) | 2.1.0 | MIT |
@@ -3812,8 +3812,8 @@ Bundled into the web app that `hz ui` serves: the production dependencies of [we
 | [style-to-object](#style-to-object-1014) | 1.0.14 | MIT |
 | [supports-color](#supports-color-1022) | 10.2.2 | MIT |
 | [tailwind-merge](#tailwind-merge-370) | 3.7.0 | MIT |
-| [@tanstack/query-core](#tanstackquery-core-51050) | 5.105.0 | MIT |
-| [@tanstack/react-query](#tanstackreact-query-51050) | 5.105.0 | MIT |
+| [@tanstack/query-core](#tanstackquery-core-51071) | 5.107.1 | MIT |
+| [@tanstack/react-query](#tanstackreact-query-51071) | 5.107.1 | MIT |
 | [trim-lines](#trim-lines-301) | 3.0.1 | MIT |
 | [trough](#trough-220) | 2.2.0 | MIT |
 | [@types/d3-color](#typesd3-color-313) | 3.1.3 | MIT |
@@ -3843,8 +3843,8 @@ Bundled into the web app that `hz ui` serves: the production dependencies of [we
 | [vfile-message](#vfile-message-403) | 4.0.3 | MIT |
 | [@xterm/addon-fit](#xtermaddon-fit-0110) | 0.11.0 | MIT |
 | [@xterm/xterm](#xtermxterm-600) | 6.0.0 | MIT |
-| [@xyflow/react](#xyflowreact-12120) | 12.12.0 | MIT |
-| [@xyflow/system](#xyflowsystem-0083) | 0.0.83 | MIT |
+| [@xyflow/react](#xyflowreact-12121) | 12.12.1 | MIT |
+| [@xyflow/system](#xyflowsystem-0084) | 0.0.84 | MIT |
 | [zustand](#zustand-457) | 4.5.7 | MIT |
 | [zwitch](#zwitch-204) | 2.0.4 | MIT |
 
@@ -5551,7 +5551,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 </details>
 
-### lucide-react 1.66.0
+### lucide-react 1.73.0
 
 - License: ISC
 - Homepage: <https://lucide.dev>
@@ -7963,7 +7963,7 @@ SOFTWARE.
 
 </details>
 
-### @tanstack/query-core 5.105.0
+### @tanstack/query-core 5.107.1
 
 - License: MIT
 - Homepage: <https://tanstack.com/query>
@@ -7997,7 +7997,7 @@ SOFTWARE.
 
 </details>
 
-### @tanstack/react-query 5.105.0
+### @tanstack/react-query 5.107.1
 
 - License: MIT
 - Homepage: <https://tanstack.com/query>
@@ -9016,7 +9016,7 @@ THE SOFTWARE.
 
 </details>
 
-### @xyflow/react 12.12.0
+### @xyflow/react 12.12.1
 
 - License: MIT
 - Homepage: <https://reactflow.dev>
@@ -9050,7 +9050,7 @@ SOFTWARE.
 
 </details>
 
-### @xyflow/system 0.0.83
+### @xyflow/system 0.0.84
 
 - License: MIT
 - Homepage: <https://github.com/xyflow/xyflow#readme>
