@@ -963,6 +963,8 @@ describe("personal conversation links", () => {
             status: abandoned ? "abandoned" : "pending",
           });
         if (pathname === "/api/heinzel/abandon-chat-turn") {
+          const body = await request.clone().json();
+          expect(body.expected_status).toBe("pending");
           posts++;
           abandoned = true;
           return Response.json({ session_id: sessionId, request_id: "wake", status: "abandoned" });
@@ -2522,7 +2524,17 @@ it("discards previous authority diagnostics and ignores late stream measurements
       provider_ms: 0,
       requests: 1,
       context: {},
-      servers: [],
+      servers: [
+        {
+          name: "private-server",
+          internal: false,
+          offered: false,
+          tool_count: null,
+          tools: [],
+          gateway_tool_count: 1,
+          gateway_tools: [{ name: "private-tool", description: "Private discovered description" }],
+        },
+      ],
     });
   mockApi({
     ...shell,
@@ -2549,6 +2561,7 @@ it("discards previous authority diagnostics and ignores late stream measurements
   await waitFor(() => expect(channel).toBeDefined());
   fireEvent.click(screen.getByRole("button", { name: "Chat diagnostics" }));
   expect(await screen.findByText("Preparation: 813 ms")).toBeInTheDocument();
+  expect(screen.getByText("private-server")).toBeInTheDocument();
   act(() => {
     sessionStorage.setItem("hz.token", "replacement-token");
     window.dispatchEvent(new Event("storage"));
@@ -2561,4 +2574,6 @@ it("discards previous authority diagnostics and ignores late stream measurements
   fireEvent.click(await screen.findByRole("button", { name: "Chat diagnostics" }));
   expect(await screen.findByText(/Send a message to measure a turn/)).toBeInTheDocument();
   expect(screen.queryByText("Preparation: 913 ms")).not.toBeInTheDocument();
+  expect(screen.queryByText("private-server")).not.toBeInTheDocument();
+  expect(screen.queryByText("Private discovered description")).not.toBeInTheDocument();
 });

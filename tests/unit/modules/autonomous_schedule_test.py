@@ -246,7 +246,7 @@ def test_owner_can_resolve_unstarted_daemon_occurrence_without_replaying_it(tmp_
         with current.local("daemon"):
             crud.accept(session, MessageRequest(request_id="scheduled-gap", text="Scheduled instruction"))
         assert chat.turn_state(session, "scheduled-gap").status == "pending"
-        assert chat.abandon(session, "scheduled-gap").status == "abandoned"
+        assert chat.abandon(session, "scheduled-gap", expected_status="pending").status == "abandoned"
         assert chat.turn_state(session, "scheduled-gap").status == "abandoned"
         crud.accept(session, MessageRequest(request_id="after-gap", text="Continue"))
         answer = asyncio.run(chat.answer(session, "after-gap"))
@@ -254,6 +254,31 @@ def test_owner_can_resolve_unstarted_daemon_occurrence_without_replaying_it(tmp_
         assert "set aside with an uncertain outcome" in (tmp_path / "prompt-input").read_text()
         with pytest.raises(HeinzelError):
             asyncio.run(chat.answer(session, "scheduled-gap"))
+
+
+def test_daemon_acknowledgement_cannot_set_aside_a_turn_that_started(tmp_path):
+    from heinzel.modules.heinzel._session_models import MessageRequest
+    from heinzel.modules.heinzel._turn_activity import interactive_turn_id
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+        session = crud.new_chat("race").session_id
+        chat = UserChatService(
+            crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(fake_claude(tmp_path))
+        )
+        with current.local("daemon"):
+            crud.accept(session, MessageRequest(request_id="wake", text="Wake"))
+        assert chat.turn_state(session, "wake").status == "pending"
+        turn = interactive_turn_id("wake")
+        with repo.control_writer(session) as writer:
+            writer.append("interactive.started", key=turn, turn=turn, data={"message_id": "wake"})
+        with pytest.raises(HeinzelError, match="state changed"):
+            chat.abandon(session, "wake", expected_status="pending")
+        assert chat.turn_state(session, "wake").status == "unresolved"
+        assert not any(e.kind == "interactive.abandoned" for e in repo.control_read(session).events)
+        assert chat.abandon(session, "wake", expected_status="unresolved").status == "abandoned"
 
 
 @pytest.mark.parametrize("crosses_quiet_hours", [False, True])
@@ -356,7 +381,7 @@ def test_failure_after_acceptance_before_start_can_be_resolved(tmp_path, monkeyp
         occurrence = next(e.data["message_id"] for e in events if e.kind == "message.accepted")
         assert not any(e.kind == "interactive.started" for e in events)
         assert chat.turn_state(session, occurrence).status == "pending"
-        assert chat.abandon(session, occurrence).status == "abandoned"
+        assert chat.abandon(session, occurrence, expected_status="pending").status == "abandoned"
         monkeypatch.setattr(ClaudeSubscriptionModel, "bind_fence", original)
         crud.accept(session, MessageRequest(request_id="continue", text="Continue"))
         assert asyncio.run(chat.answer(session, "continue")).message.text == "A real recorded reply"
@@ -379,7 +404,7 @@ def test_unstarted_resolution_must_follow_accepted_daemon_message(tmp_path, monk
         )
         with current.local("daemon"):
             crud.accept(session, MessageRequest(request_id="scheduled", text="Scheduled"))
-        chat.abandon(session, "scheduled")
+        chat.abandon(session, "scheduled", expected_status="pending")
         crud.accept(session, MessageRequest(request_id="next", text="Next"))
         snapshot = repo.control_read(session)
         accepted = next(e for e in snapshot.events if e.kind == "message.accepted" and e.key == "message-scheduled")

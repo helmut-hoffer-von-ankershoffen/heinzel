@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import secrets
+from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -1915,6 +1916,7 @@ class SessionCrud(ApprovalIssuer):
             encoded = _Cursor(v=1, session_id=session_id, after=page[-1].seq).model_dump_json().encode()
             next_cursor = base64.urlsafe_b64encode(encoded).decode().rstrip("=")
         projected = [self.read_message(session_id, event) for event in page]
+        queue_head = self._queue_head(events)
         if search_jump and (not projected or projected[0].status == "expired"):
             msg = "This search result is no longer retained; run the search again"
             raise HeinzelError(msg)
@@ -1931,6 +1933,7 @@ class SessionCrud(ApprovalIssuer):
             schedule=schedule,
             last_seq=events[-1].seq if events else 0,
             messages=projected,
+            queue_head=self.read_message(session_id, queue_head) if queue_head else None,
             costs=costs.model_copy(
                 update={
                     "unknown_turns": costs.unknown_turns
@@ -1943,6 +1946,63 @@ class SessionCrud(ApprovalIssuer):
             has_more=more,
             next_cursor=next_cursor,
             next_after_seq=page[-1].seq if more else None,
+        )
+
+    def _queue_head(self, events: list[SessionEvent]) -> SessionEvent | None:
+        """Find the earliest unfinished acceptance independently of the current message page.
+
+        Raises:
+            HeinzelError: If an accepted message has an invalid identity.
+        """
+        from heinzel.modules.heinzel._turn_activity import interactive_turn_id  # noqa: PLC0415 - queue projection
+
+        replies = {e.key for e in events if e.kind == "message.replied"}
+        starts: dict[str | None, list[SessionEvent]] = defaultdict(list)
+        resolutions: dict[str | None, list[SessionEvent]] = defaultdict(list)
+        for event in events:
+            if event.kind == "interactive.started":
+                starts[event.key].append(event)
+            elif event.kind == "interactive.abandoned":
+                resolutions[event.key].append(event)
+        for accepted in (e for e in events if e.kind == "message.accepted"):
+            message_id = accepted.data.get("message_id")
+            if not isinstance(message_id, str):
+                msg = "An accepted message has an invalid identity"
+                raise HeinzelError(msg)
+            turn = interactive_turn_id(message_id)
+            resolved = self._queue_resolution_matches(
+                accepted, message_id, starts.get(turn, []), resolutions.get(turn, [])
+            )
+            if turn not in replies and not resolved:
+                return accepted
+        return None
+
+    def _queue_resolution_matches(
+        self, accepted: SessionEvent, message_id: str, starts: list[SessionEvent], resolutions: list[SessionEvent]
+    ) -> bool:
+        """Check that one owner-bound resolution can advance this accepted message."""
+        if len(resolutions) != 1:
+            return False
+        resolution = resolutions[0]
+        head_origins = {"cli", "api-bearer", "web-session", "web-device"}
+        if (
+            resolution.data.get("message_id") != message_id
+            or resolution.data.get("owner") != self.repository.principal_id
+            or resolution.data.get("origin") not in head_origins
+        ):
+            return False
+        if starts:
+            return (
+                len(starts) == 1
+                and resolution.data.get("unstarted") is not True
+                and starts[0].data.get("message_id") == message_id
+                and starts[0].seq < resolution.seq
+            )
+        origin = accepted.data.get("origin")
+        return (
+            (origin == "daemon" or (origin in head_origins and resolution.data.get("expired_input") is True))
+            and resolution.data.get("unstarted") is True
+            and accepted.seq < resolution.seq
         )
 
     def recent_history(self, session_id: str, limit: int = 20) -> list[SessionMessage]:

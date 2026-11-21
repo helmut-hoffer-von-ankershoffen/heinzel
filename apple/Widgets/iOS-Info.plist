@@ -9,6 +9,7 @@
         <key>NSExtensionPointIdentifier</key>
         <string>com.apple.widgetkit-extension</string>
     </dict>
+    <key>HeinzelSourceRevision</key><string>$(HEINZEL_SOURCE_REVISION)</string>
     <key>HeinzelWidgetGroup</key><string>$(HEINZEL_WIDGET_GROUP)</string>
     <key>HeinzelWidgetEnrollmentEnabled</key><true/>
     <key>HeinzelWidgetKeychainGroup</key><string>$(AppIdentifierPrefix)team.heinzel.widget</string>

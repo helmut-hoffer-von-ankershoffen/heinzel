@@ -145,6 +145,7 @@ def test_recovery_defers_or_preserves_failed_journal_before_next_operation(monke
         if state == "corrupt":
             msg = "fixture conflict"
             raise desktop.DesktopInstallationError(msg)
+        journal.unlink()
 
     monkeypatch.setattr(desktop, "_recover_transaction", recover)
     if state == "corrupt":
@@ -153,7 +154,7 @@ def test_recovery_defers_or_preserves_failed_journal_before_next_operation(monke
     else:
         assert desktop._recover_before_use(tmp_path, config) is (state == "recovered")
     assert calls == (["recover"] if state in {"corrupt", "recovered"} else [])
-    assert journal.read_text() == "pending"
+    assert journal.exists() is (state != "recovered")
 
 
 def test_in_use_recognizes_owned_and_translocated_paths(monkeypatch, tmp_path):

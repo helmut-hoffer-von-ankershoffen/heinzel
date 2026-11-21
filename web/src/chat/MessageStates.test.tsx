@@ -1,9 +1,12 @@
 // Message states under the bubble (ADR 0157, canvas board 7): "Not sent · Try again", "Not answered · Try
 // again" and "Queued" stand under the person's own message; the composer has no "Retry the same message" any more, and
 // an uncertain turn never gets a plain retry.
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, it } from "vitest";
+import { routes } from "@/App";
+import { Providers, queryClient } from "@/app/providers";
 import { base } from "@/test/chat";
 import { mockApi } from "@/test/render";
 import { renderAt } from "@/test/renderApp";
@@ -42,6 +45,301 @@ afterEach(() => {
 });
 
 describe("message states", () => {
+  it.each(["authority", "session", "unmount"])(
+    "never answers after %s changes during the queue state recheck",
+    async (change) => {
+      let reads = 0;
+      let release: ((value: unknown) => void) | undefined;
+      let replacement: ((value: unknown) => void) | undefined;
+      let oldRequest: Request | undefined;
+      const { calls } = mockHelmi([], {
+        "/api/heinzel/session": (request: Request) => ({
+          session_id: new URL(request.url).searchParams.get("session_id"),
+          heinzel_id: new URL(request.url).searchParams.get("session_id"),
+          name: "Helmi",
+          messages: [],
+          queue_head:
+            new URL(request.url).searchParams.get("session_id") === helmi
+              ? { id: "earlier", seq: 1, role: "user", origin: "web-session", text: "Earlier", status: "pending" }
+              : null,
+        }),
+        "/api/heinzel/chat-turn-state": (request: Request) => {
+          if (request.headers.get("Authorization") === "Bearer replacement-token")
+            return new Promise((resolve) => {
+              replacement = resolve;
+            });
+          reads++;
+          if (reads === 1) return { session_id: helmi, request_id: "earlier", status: "pending" };
+          oldRequest = request;
+          return new Promise((resolve) => {
+            release = resolve;
+          });
+        },
+        "/api/heinzel/answer-chat": {
+          session_id: helmi,
+          request_id: "earlier",
+          message: { role: "assistant", text: "Must not start" },
+        },
+      });
+      sessionStorage.setItem("hz.token", "test-token");
+      const router = createMemoryRouter(routes, { initialEntries: ["/doctor"] });
+      const view = render(
+        <Providers client={queryClient()}>
+          <RouterProvider router={router} />
+        </Providers>,
+      );
+      const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
+      await userEvent.click(await chat.findByRole("button", { name: "Answer this earlier message" }));
+      await waitFor(() => expect(release).toBeDefined());
+      if (change === "authority") {
+        act(() => {
+          sessionStorage.setItem("hz.token", "replacement-token");
+          window.dispatchEvent(new Event("storage"));
+        });
+        await waitFor(() => expect(replacement).toBeDefined());
+        expect(screen.queryByRole("button", { name: "Answer this earlier message" })).not.toBeInTheDocument();
+        await act(async () => {
+          replacement?.({ session_id: helmi, request_id: "earlier", status: "unresolved" });
+        });
+        expect(await screen.findByRole("checkbox", { name: /will not retry/ })).not.toBeChecked();
+      } else if (change === "session") {
+        await act(async () => router.navigate("/heinzel?chat=hz-01ARZ3NDEKTSV4RRFFQ69G5FAW"));
+      } else view.unmount();
+      await act(async () => {
+        release?.({ session_id: helmi, request_id: "earlier", status: "pending" });
+      });
+      expect(oldRequest?.signal.aborted).toBe(true);
+      expect(paths(calls, "/api/heinzel/answer-chat")).toHaveLength(0);
+      if (change === "authority") {
+        expect(screen.queryByRole("button", { name: "Answer this earlier message" })).not.toBeInTheDocument();
+        expect(screen.getByRole("checkbox", { name: /will not retry/ })).not.toBeChecked();
+        expect(reads).toBe(2);
+      }
+    },
+  );
+
+  it("explicitly cancels an expired unstarted human head without answering or replaying", async () => {
+    let status = "pending";
+    const { calls } = mockHelmi([], {
+      "/api/heinzel/session": () => ({
+        session_id: helmi,
+        heinzel_id: helmi,
+        name: "Helmi",
+        messages: [],
+        queue_head:
+          status === "abandoned"
+            ? null
+            : {
+                id: "expired",
+                seq: 1,
+                role: "user",
+                origin: "web-session",
+                text: "No longer retained",
+                status: "expired",
+              },
+      }),
+      "/api/heinzel/chat-turn-state": () => ({ session_id: helmi, request_id: "expired", status }),
+      "/api/heinzel/abandon-chat-turn": async (request: Request) => {
+        expect(await request.json()).toEqual({
+          session_id: helmi,
+          request_id: "expired",
+          acknowledge_uncertain: true,
+          expected_status: "pending",
+        });
+        status = "abandoned";
+        return { session_id: helmi, request_id: "expired", status };
+      },
+    });
+    renderAt("/doctor");
+    const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
+    const recovery = within(await chat.findByRole("region", { name: "Resolve an uncertain turn" }));
+    expect(chat.getByLabelText("Message Helmi")).toBeDisabled();
+    expect(chat.queryByRole("button", { name: "Answer this earlier message" })).not.toBeInTheDocument();
+    const cancel = await recovery.findByRole("button", { name: "Set aside this unstarted turn" });
+    expect(cancel).toBeDisabled();
+    await userEvent.click(recovery.getByRole("checkbox", { name: /expired, unstarted input/ }));
+    await userEvent.click(cancel);
+    await userEvent.click(await recovery.findByRole("button", { name: "Continue conversation" }));
+    await waitFor(() => expect(chat.getByLabelText("Message Helmi")).toBeEnabled());
+    expect(paths(calls, "/api/heinzel/answer-chat")).toHaveLength(0);
+    expect(paths(calls, "/api/heinzel/abandon-chat-turn")).toHaveLength(1);
+  });
+
+  it("requires fresh uncertain-outcome consent if an expired input starts", async () => {
+    let status = "pending";
+    const { calls } = mockHelmi([], {
+      "/api/heinzel/session": () => ({
+        session_id: helmi,
+        heinzel_id: helmi,
+        name: "Helmi",
+        messages: [],
+        queue_head: {
+          id: "expired",
+          seq: 1,
+          role: "user",
+          origin: "web-session",
+          text: "No longer retained",
+          status: "expired",
+        },
+      }),
+      "/api/heinzel/chat-turn-state": () => ({ session_id: helmi, request_id: "expired", status }),
+    });
+    renderAt("/doctor");
+    const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
+    const recovery = within(await chat.findByRole("region", { name: "Resolve an uncertain turn" }));
+    await userEvent.click(await recovery.findByRole("checkbox", { name: /expired, unstarted input/ }));
+    status = "unresolved";
+    await userEvent.click(recovery.getByRole("button", { name: "Check saved turn" }));
+    expect(await recovery.findByRole("checkbox", { name: /will not retry/ })).not.toBeChecked();
+    expect(recovery.getByRole("button", { name: "Set aside this turn" })).toBeDisabled();
+    expect(paths(calls, "/api/heinzel/abandon-chat-turn")).toHaveLength(0);
+  });
+
+  it("exposes recovery for an earlier uncertain turn without replaying it", async () => {
+    let status = "unresolved";
+    const { calls } = mockHelmi(
+      [
+        { id: "earlier", seq: 1, role: "user", text: "First", status: "pending" },
+        { id: "later", seq: 2, role: "user", text: "Test", status: "pending" },
+      ],
+      {
+        "/api/heinzel/session": () => ({
+          session_id: helmi,
+          heinzel_id: helmi,
+          name: "Helmi",
+          messages: [{ id: "later", seq: 2, role: "user", text: "Test", status: "pending" }],
+          queue_head: { id: "earlier", seq: 1, role: "user", origin: "web-session", text: "First", status: "pending" },
+        }),
+        "/api/heinzel/chat-turn-state": (request: Request) => ({
+          session_id: helmi,
+          request_id: new URL(request.url).searchParams.get("request_id"),
+          status: new URL(request.url).searchParams.get("request_id") === "earlier" ? status : "pending",
+        }),
+        "/api/heinzel/abandon-chat-turn": async (request: Request) => {
+          const body = await request.clone().json();
+          expect(body.request_id).toBe("earlier");
+          expect(body.acknowledge_uncertain).toBe(true);
+          expect(body.expected_status).toBe("unresolved");
+          status = "abandoned";
+          return { session_id: helmi, request_id: "earlier", status };
+        },
+      },
+    );
+    renderAt("/doctor");
+    const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
+    const recovery = within(await chat.findByRole("region", { name: "Resolve an uncertain turn" }));
+    const user = userEvent.setup();
+    await user.click(recovery.getByRole("checkbox"));
+    await user.click(recovery.getByRole("button", { name: "Set aside this turn" }));
+    expect(await recovery.findByText(/This turn was set aside/)).toBeInTheDocument();
+    expect(paths(calls, "/api/heinzel/answer-chat")).toHaveLength(0);
+  });
+
+  it("answers only the earliest unstarted message and then exposes the next", async () => {
+    let firstDone = false;
+    const head = (id: string, seq: number) => ({
+      id,
+      seq,
+      role: "user",
+      origin: "web-session",
+      text: id,
+      status: "pending",
+    });
+    const { calls } = mockHelmi([], {
+      "/api/heinzel/session": () => ({
+        session_id: helmi,
+        heinzel_id: helmi,
+        name: "Helmi",
+        messages: [],
+        queue_head: firstDone ? head("second", 2) : head("first", 1),
+      }),
+      "/api/heinzel/chat-turn-state": (request: Request) => ({
+        session_id: helmi,
+        request_id: new URL(request.url).searchParams.get("request_id"),
+        status: firstDone && new URL(request.url).searchParams.get("request_id") === "first" ? "completed" : "pending",
+      }),
+      "/api/heinzel/answer-chat": async (request: Request) => {
+        const body = await request.clone().json();
+        expect(body.request_id).toBe("first");
+        firstDone = true;
+        return {
+          session_id: helmi,
+          request_id: "first",
+          message: { id: "reply", seq: 3, role: "assistant", text: "Done" },
+        };
+      },
+    });
+    renderAt("/doctor");
+    const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
+    const user = userEvent.setup();
+    await user.click(await chat.findByRole("button", { name: "Answer this earlier message" }));
+    await waitFor(() => expect(paths(calls, "/api/heinzel/answer-chat")).toHaveLength(1));
+    await waitFor(() => expect(chat.getByText("second")).toBeInTheDocument());
+  });
+
+  it("keeps recovery beside the composer and refreshes a completed stale head", async () => {
+    let completed = false;
+    const messages = Array.from({ length: 50 }, (_, i) => ({
+      id: `m${i}`,
+      seq: i + 2,
+      role: "assistant",
+      text: `Reply ${i}`,
+    }));
+    mockHelmi(messages, {
+      "/api/heinzel/session": () => ({
+        session_id: helmi,
+        heinzel_id: helmi,
+        name: "Helmi",
+        messages,
+        queue_head: completed
+          ? null
+          : { id: "old", seq: 1, role: "user", origin: "web-session", text: "Earlier", status: "pending" },
+      }),
+      "/api/heinzel/chat-turn-state": () => ({
+        session_id: helmi,
+        request_id: "old",
+        status: completed ? "completed" : "pending",
+      }),
+    });
+    renderAt("/doctor");
+    const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
+    const blocker = await chat.findByRole("region", { name: "Earlier message blocking the queue" });
+    const footer = blocker.parentElement?.parentElement;
+    expect(footer).toContainElement(chat.getByLabelText("Message Helmi"));
+    expect(footer).not.toContainElement(chat.getByText("Reply 49"));
+    expect(chat.getByLabelText("Message Helmi")).toBeDisabled();
+    completed = true;
+    await userEvent.click(within(blocker).getByRole("button", { name: "Check earlier turn" }));
+    await waitFor(() =>
+      expect(chat.queryByRole("region", { name: "Earlier message blocking the queue" })).not.toBeInTheDocument(),
+    );
+    expect(chat.getByLabelText("Message Helmi")).toBeEnabled();
+  });
+
+  it("requires a new acknowledgement when a daemon turn starts", async () => {
+    let status = "pending";
+    const { calls } = mockHelmi([], {
+      "/api/heinzel/session": () => ({
+        session_id: helmi,
+        heinzel_id: helmi,
+        name: "Helmi",
+        messages: [],
+        queue_head: { id: "wake", seq: 1, role: "user", origin: "daemon", text: "Wake", status: "pending" },
+      }),
+      "/api/heinzel/chat-turn-state": () => ({ session_id: helmi, request_id: "wake", status }),
+    });
+    renderAt("/doctor");
+    const chat = within(await screen.findByRole("complementary", { name: "Chat" }));
+    const recovery = within(await chat.findByRole("region", { name: "Resolve an uncertain turn" }));
+    await userEvent.click(await recovery.findByRole("checkbox", { name: /unstarted daemon turn/ }));
+    status = "unresolved";
+    await userEvent.click(recovery.getByRole("button", { name: "Check saved turn" }));
+    const uncertain = await recovery.findByRole("checkbox", { name: /will not retry/ });
+    expect(uncertain).not.toBeChecked();
+    expect(recovery.getByRole("button", { name: "Set aside this turn" })).toBeDisabled();
+    expect(paths(calls, "/api/heinzel/abandon-chat-turn")).toHaveLength(0);
+  });
+
   it("says Not sent under the bubble and tries the same message again from there", async () => {
     let tries = 0;
     const { calls } = mockHelmi([], {

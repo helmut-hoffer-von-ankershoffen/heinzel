@@ -20,11 +20,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from heinzel import AccessStatus, AccessTest
+from heinzel import AccessStatus, AccessTest, Config
 from heinzel.kernel import clean_text, subprocess_environment
 from heinzel.modules.ai.access._models import AccessSettings
 
 NAME = "gateway"
+SETTINGS_CHANGED = "Gateway commands or environment changed"
+RESTART = "Restart Heinzel before testing."
 STATUS_TIMEOUT = 10.0
 TEST_TIMEOUT = 90.0
 OUTPUT_LIMIT = 64 * 1024
@@ -113,6 +115,10 @@ def configured_hosts(settings: AccessSettings) -> list[str]:
     return settings.gateway_hosts
 
 
+def _current_gateway_settings() -> AccessSettings:
+    return Config.load().settings(AccessSettings, "ai.access")
+
+
 class GatewayAccess:
     """The `gateway` option of `ai-access`: a company CLI described by `[ai.access]`."""
 
@@ -121,11 +127,22 @@ class GatewayAccess:
         settings: AccessSettings,
         run: Run = run_command,
         which: Callable[[str], str | None] = shutil.which,
+        *,
+        current_settings: Callable[[], AccessSettings] = _current_gateway_settings,
     ) -> None:
         """Create the option; settings are injected, `run` and `which` replace processes in tests."""
         self._settings = settings
         self._run = run
         self._which = which
+        self._current_settings = current_settings
+
+    def _settings_changed(self) -> bool:
+        latest, settings = self._current_settings(), self._settings
+        return (
+            latest.gateway_status_command != settings.gateway_status_command
+            or latest.gateway_test_command != settings.gateway_test_command
+            or latest.gateway_env != settings.gateway_env
+        )
 
     def _status(self, **update: Any) -> AccessStatus:  # noqa: ANN401 - fields of AccessStatus
         settings = self._settings
@@ -144,6 +161,8 @@ class GatewayAccess:
 
     def status(self) -> AccessStatus:
         """Whether the gateway CLI is there and signed in, from its status command; calls no model."""
+        if self._settings_changed():
+            return self._status(detail=SETTINGS_CHANGED, fix=RESTART)
         settings = self._settings
         if not settings.gateway_status_command:
             return self._status(detail="not set up: no status command", fix=f"Configure it, e.g. {SET_STATUS}")
@@ -153,8 +172,15 @@ class GatewayAccess:
                 detail=f"{settings.gateway_status_command[0]} is not on PATH",
                 fix="Install your company's AI gateway CLI, or correct ai.access.gateway_status_command",
             )
+        env = environment(settings.gateway_env)
+        if self._settings_changed():
+            return self._status(detail=SETTINGS_CHANGED, fix=RESTART)
+        return self._status_command(command, env)
+
+    def _status_command(self, command: list[str], env: Mapping[str, str]) -> AccessStatus:
+        settings = self._settings
         try:
-            finished = self._run(command, environment(settings.gateway_env), STATUS_TIMEOUT)
+            finished = self._run(command, env, STATUS_TIMEOUT)
         except OSError as exc:
             return self._status(detail=f"the status command didn't start: {exc}", fix=settings.gateway_sign_in)
         if finished.returncode is None:
@@ -175,6 +201,8 @@ class GatewayAccess:
 
     def test(self) -> AccessTest:
         """Run the gateway's test command once; a failure is a result."""
+        if self._settings_changed():
+            return AccessTest(ok=False, detail=SETTINGS_CHANGED, fix=RESTART)
         settings = self._settings
         if not settings.gateway_test_command:
             fix = """hz system config set ai.access.gateway_test_command '["acme", "ai", "ping"]'"""
@@ -182,9 +210,16 @@ class GatewayAccess:
         command = self._resolve(settings.gateway_test_command)
         if command is None:
             return AccessTest(ok=False, detail=f"{settings.gateway_test_command[0]} is not on PATH")
+        env = environment(settings.gateway_env)
+        if self._settings_changed():
+            return AccessTest(ok=False, detail=SETTINGS_CHANGED, fix=RESTART)
+        return self._test_command(command, env)
+
+    def _test_command(self, command: list[str], env: Mapping[str, str]) -> AccessTest:
+        settings = self._settings
         started = time.monotonic()
         try:
-            finished = self._run(command, environment(settings.gateway_env), TEST_TIMEOUT)
+            finished = self._run(command, env, TEST_TIMEOUT)
         except OSError as exc:
             return AccessTest(ok=False, detail=f"the test command didn't start: {exc}")
         duration = time.monotonic() - started

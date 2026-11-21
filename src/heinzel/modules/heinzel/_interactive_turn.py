@@ -316,19 +316,29 @@ class InteractiveTurn:
                             or not (
                                 (
                                     abandoned[0].data.get("unstarted") is True
-                                    and incoming.data.get("origin") == "daemon"
+                                    and (
+                                        incoming.data.get("origin") == "daemon"
+                                        or (
+                                            incoming.data.get("origin")
+                                            in {"cli", "api-bearer", "web-session", "web-device"}
+                                            and abandoned[0].data.get("expired_input") is True
+                                        )
+                                    )
                                     and abandoned[0].seq > incoming.seq
                                     and not any(
                                         e.kind == "interactive.started" and e.key == interactive_turn_id(incoming_id)
                                         for e in events
                                     )
                                 )
-                                or any(
-                                    e.kind == "interactive.started"
-                                    and e.key == interactive_turn_id(incoming_id)
-                                    and e.seq < abandoned[0].seq
-                                    and e.data.get("message_id") == incoming_id
-                                    for e in events
+                                or (
+                                    abandoned[0].data.get("unstarted") is not True
+                                    and any(
+                                        e.kind == "interactive.started"
+                                        and e.key == interactive_turn_id(incoming_id)
+                                        and e.seq < abandoned[0].seq
+                                        and e.data.get("message_id") == incoming_id
+                                        for e in events
+                                    )
                                 )
                             )
                         ):

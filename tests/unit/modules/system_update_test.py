@@ -158,7 +158,7 @@ def test_a_tag_pinned_install_moves_to_the_latest_release_keeping_plugins(tmp_pa
     result = service.update(current="0.2.0")
     assert uv.commands == [install_command(f"heinzel @ git+{REPO}@v0.4.0", PLUGIN)]
     assert (result.before, result.after, result.latest, result.updated) == ("0.2.0", "0.4.0", "0.4.0", True)
-    assert result.message.splitlines()[0] == "Updated hz 0.2.0 → 0.4.0."
+    assert result.message.splitlines()[0] == "Updated hz 0.2.0 → 0.4.0"
 
 
 def test_a_manual_update_never_asks_for_the_acceptance_verdict(tmp_path):
@@ -255,7 +255,7 @@ def test_a_main_install_is_updated_in_place_keeping_plugins(tmp_path):
     result = service.update(current="0.5.0.dev3", channel="main")
     assert uv.commands == [install_command(f"heinzel @ git+{REPO}@main", PLUGIN)]
     assert (result.message.splitlines()[0], result.updated, result.after, result.next) == (
-        "Updated hz 0.5.0.dev3 → 0.5.0.dev7.",
+        "Updated hz 0.5.0.dev3 → 0.5.0.dev7",
         True,
         "0.5.0.dev7",
         [],
@@ -346,7 +346,7 @@ def test_an_upgrade_that_brings_a_newer_version_says_so(tmp_path):
     uv = FakeUv("0.2.0")
     service = UpdateService(installation(tmp_path, f'git = "{REPO}"', uv), FakeReleases())
     uv.next_version = "0.3.0"  # what uv finds on the default branch
-    assert service.update(current="0.2.0").message.splitlines()[0] == "Updated hz 0.2.0 → 0.3.0."
+    assert service.update(current="0.2.0").message.splitlines()[0] == "Updated hz 0.2.0 → 0.3.0"
 
 
 def test_source_reinstalls_from_there_keeping_plugins(tmp_path):
@@ -582,7 +582,7 @@ def test_channel_release_moves_a_main_install_to_the_newest_release_and_stays_th
     service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=main"', uv), FakeReleases("0.4.0"))
     result = service.update(current="0.3.0.dev1")
     assert uv.commands == [install_command(f"heinzel @ git+{REPO}@v0.4.0", PLUGIN)]
-    assert result.message.splitlines()[0] == "Updated hz 0.3.0.dev1 → 0.4.0."
+    assert result.message.splitlines()[0] == "Updated hz 0.3.0.dev1 → 0.4.0"
 
 
 def test_a_main_install_ahead_of_the_latest_release_stays_and_says_when_it_moves(tmp_path):
@@ -2092,7 +2092,7 @@ def test_an_update_tells_each_step_and_each_plugin_as_it_ends(tmp_path):
     assert [e["id"] for e in progress.events[:4]] == ["check", "install", "plugin:heinzel-acme", "heads"]
     assert final_steps(progress) == {
         "check": ("done", None),
-        "install": ("done", "Updated hz 0.2.0 → 0.4.0."),
+        "install": ("done", "Updated hz 0.2.0 → 0.4.0"),
         "plugin:heinzel-acme": ("done", "Updated 1.0.0 → 1.2.0"),
         "heads": ("done", None),
     }

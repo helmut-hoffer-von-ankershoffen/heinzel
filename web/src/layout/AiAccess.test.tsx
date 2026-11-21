@@ -286,7 +286,7 @@ describe("AI access", () => {
     await expectAccessible(container);
   });
 
-  it("sets the Model API up in a dialog, then tests it there with the result inline", async () => {
+  it("saves the Model API setup and waits for a restart before testing", async () => {
     const { calls } = accessApi();
     const user = userEvent.setup();
     renderAt("/doctor?settings=ai");
@@ -294,12 +294,14 @@ describe("AI access", () => {
     const dialog = await screen.findByRole("dialog", { name: "Set up Model API" });
     await user.type(within(dialog).getByLabelText("Model"), "anthropic:claude-sonnet-4-5");
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
-    expect(await within(dialog).findByText("Saved. Test it to see it answer.")).toBeInTheDocument();
+    expect(
+      await within(dialog).findByText("Saved. Restart Heinzel before testing these settings."),
+    ).toBeInTheDocument();
     const set = calls.find((call) => call.url.includes("/system/config/set"));
     expect(new URL(set?.url ?? "").searchParams.get("key")).toBe("ai.access.model");
     expect(new URL(set?.url ?? "").searchParams.get("value")).toBe("anthropic:claude-sonnet-4-5");
-    await user.click(within(dialog).getByRole("button", { name: "Test" }));
-    expect(await within(dialog).findByText("Answered: pong")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Test" })).toBeDisabled();
+    expect(calls.some((call) => call.url.includes("/ai/access/test"))).toBe(false);
   });
 
   it("keeps a typed API key only in the request body, then clears it from the page", async () => {
@@ -319,6 +321,65 @@ describe("AI access", () => {
     expect(await set?.clone().json()).toEqual({ value: "sk-fixture-typed" });
     expect(field).toHaveValue("");
     expect(calls.filter((call) => call.url.includes("sk-fixture"))).toEqual([]);
+    await user.click(within(dialog).getByRole("button", { name: "Test" }));
+    expect(await within(dialog).findByText("Answered: pong")).toBeInTheDocument();
+  });
+
+  it("does not report an empty setup as saved, or test edits that have not been saved", async () => {
+    const { calls } = accessApi();
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=ai");
+    await user.click(await screen.findByRole("button", { name: "Set up Model API" }));
+    const dialog = await screen.findByRole("dialog", { name: "Set up Model API" });
+    expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Test" })).toBeDisabled();
+    await user.type(within(dialog).getByLabelText("Model"), "openai:example");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(
+      await within(dialog).findByText("Saved. Restart Heinzel before testing these settings."),
+    ).toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText("Model"), "-changed");
+    expect(within(dialog).queryByText("Saved. Restart Heinzel before testing these settings.")).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Test" })).toBeDisabled();
+    expect(calls.filter((call) => call.url.includes("/system/config/set"))).toHaveLength(1);
+  });
+
+  it("shows a failed access-test request instead of silently losing it", async () => {
+    mockApi({
+      ...shell,
+      "/api/ai/access/list": listing("claude-code"),
+      "/api/ai/access/test": { status: 503, body: { error: "Provider is unavailable" } },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=ai");
+    await user.click(await screen.findByRole("button", { name: "Test Claude Code; this may cost a little" }));
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Provider is unavailable");
+  });
+
+  it("keeps the saved plugin model selected when saving another model fails", async () => {
+    mockApi({
+      ...shell,
+      "/api/ai/access/list": {
+        ...listing("bridge"),
+        options: [
+          option("bridge", {
+            title: "Bridge",
+            setup: "plugin-model",
+            model: "first",
+            models: ["first", "second"],
+          }),
+        ],
+      },
+      "/api/system/config/set": { status: 400, body: { error: "Model could not be saved" } },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=ai");
+    await user.click(await screen.findByRole("button", { name: "Pick a model of Bridge" }));
+    await user.click(await screen.findByRole("radio", { name: "second" }));
+    expect(await screen.findByText("Model could not be saved")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "first" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: "second" })).toHaveAttribute("aria-checked", "false");
   });
 
   it("adds a missing client of hz itself with a confirm, then restarts, with no command to type", async () => {

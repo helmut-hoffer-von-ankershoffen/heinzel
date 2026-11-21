@@ -56,7 +56,7 @@ describe("Settings dialog", () => {
     renderAt("/?settings=ai");
 
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
-    expect(await within(dialog).findByRole("heading", { name: "Runner" })).toBeInTheDocument();
+    expect(await within(dialog).findByRole("heading", { name: "Answer budget" })).toBeInTheDocument();
     expect(within(dialog).queryByText("Configuration section:")).not.toBeInTheDocument();
     expect(within(dialog).queryByText("[system.runner]")).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("heading", { name: "[system.runner]" })).not.toBeInTheDocument();

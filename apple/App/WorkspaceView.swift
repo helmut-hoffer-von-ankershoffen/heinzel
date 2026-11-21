@@ -233,6 +233,7 @@ struct WorkspaceView: WebRepresentable {
     var chatRequest: HeinzelChatRequest?
     var promptComposer: NativePromptComposer?
     var widgetRefreshRevision = 0
+    var versionRefreshRevision = 0
     var footerWidth: CGFloat = 88
     var footerBottom: CGFloat = 0
     var footerGeneration = 0
@@ -544,6 +545,7 @@ struct WorkspaceView: WebRepresentable {
     #endif
 
     private func updateWidgetActivity(_ coordinator: Navigation) {
+        coordinator.refreshWorkspaceVersion(revision: versionRefreshRevision)
         promptComposer?.navigation = coordinator
         coordinator.setWidgetActivityEnabled(reportsWidgetActivity, revision: widgetRefreshRevision)
         if let chatRequest { coordinator.openChat(chatRequest) }
@@ -620,6 +622,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     private var footerDeliveryAttempts = 0
     private var footerDeliveryID = 0
     #endif
+    private let versionRefresh = WorkspaceVersionRefresh()
     private var lookedUpHostName = false
     weak var workspace: WKWebView?
     #if os(iOS)
@@ -1361,6 +1364,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     func close(_ view: WKWebView) {
         if workspace === view { workspace = nil; reportFooterSlot(nil) }
         documentRevision &+= 1
+        versionRefresh.cancel()
         enrollmentTask?.cancel()
         NotificationCenter.default.removeObserver(self, name: WorkspaceNotifications.opened, object: nil)
         NotificationCenter.default.removeObserver(self, name: WorkspaceNotifications.changed, object: nil)
@@ -1398,6 +1402,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         #endif
         currentNavigation = navigation
         documentRevision &+= 1
+        versionRefresh.cancel()
         #if os(iOS)
         noticeAlert?.dismiss(animated: false)
         finishNoticeConfirmation(false)
@@ -1444,21 +1449,15 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                 } else if needsSignIn == false {
                     ready()
                     scheduleWidgetEnrollment(in: webView, revision: revision)
+                    refreshWorkspaceVersion()
                     await resolveWorkspaceName(in: webView)
-                    #if os(iOS)
-                    await resolveWorkspaceVersion(in: webView)
-                    #endif
                 }
             }
         } else {
             ready()
             scheduleWidgetEnrollment(in: webView, revision: documentRevision)
-            Task {
-                await resolveWorkspaceName(in: webView)
-                #if os(iOS)
-                await resolveWorkspaceVersion(in: webView)
-                #endif
-            }
+            refreshWorkspaceVersion()
+            Task { await resolveWorkspaceName(in: webView) }
         }
         #if DEBUG
         Task {
@@ -1476,12 +1475,26 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         #endif
     }
 
-    private func resolveWorkspaceVersion(in view: WKWebView) async {
-        guard view.url.map(endpoint.owns) == true else { return }
+    func refreshWorkspaceVersion(revision: Int? = nil) {
+        guard let view = workspace, hasCommittedWorkspace, case .idle = provisionalLoad,
+              view.url.map(endpoint.owns) == true else { return }
+        let document = documentRevision
+        versionRefresh.request(revision: revision, read: { [weak self, weak view] in
+            guard let self, let view else { return nil }
+            return await self.resolveWorkspaceVersion(in: view)
+        }, isCurrent: { [weak self, weak view] in
+            guard let self, let view else { return false }
+            return self.workspace === view && self.documentRevision == document &&
+                view.url.map(self.endpoint.owns) == true
+        }, report: { [weak self] observation in self?.reportBackendVersion(observation) })
+    }
+
+    private func resolveWorkspaceVersion(in view: WKWebView) async -> WorkspaceVersionObservation? {
+        guard view.url.map(endpoint.owns) == true else { return nil }
         let revision = documentRevision
         for attempt in 0..<5 {
             guard !Task.isCancelled, workspace === view, revision == documentRevision,
-                  view.url.map(endpoint.owns) == true else { return }
+                  view.url.map(endpoint.owns) == true else { return nil }
             let data = try? await inspectWorkspace(in: view, body: """
                 const date = value => {
                     if (typeof value !== 'string') return null;
@@ -1506,13 +1519,13 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                 const info = await fallback.json();
                 return {version:info?.version ?? null};
                 """) as? [String: Any]
-            guard workspace === view, revision == documentRevision, view.url.map(endpoint.owns) == true else { return }
+            guard !Task.isCancelled, workspace === view, revision == documentRevision, view.url.map(endpoint.owns) == true else { return nil }
             if let data, let observation = WorkspaceVersionObservation.fromPayload(data, now: .now) {
-                reportBackendVersion(observation)
-                return
+                return observation
             }
-            if attempt < 4 { do { try await Task.sleep(for: .seconds(1)) } catch { return } }
+            if attempt < 4 { do { try await Task.sleep(for: .seconds(1)) } catch { return nil } }
         }
+        return nil
     }
 
     private func resolveWorkspaceName(in view: WKWebView) async {
@@ -1579,6 +1592,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         footerDeliveryID &+= 1
         #endif
         documentRevision &+= 1
+        versionRefresh.cancel()
         currentNavigation = nil
         provisionalLoad = .idle
         hasCommittedWorkspace = false
