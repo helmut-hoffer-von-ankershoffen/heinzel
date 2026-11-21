@@ -26,6 +26,11 @@ def _without_host_gate(monkeypatch):
     monkeypatch.setattr(scoped.shutil, "which", lambda _: None)
     monkeypatch.delenv("HZ_LOCAL_TEST_SCOPE", raising=False)
     monkeypatch.delenv("HZ_LOCAL_TEST_SCOPE_SHA256", raising=False)
+    monkeypatch.delenv("HZ_LOCAL_MIXED_SCOPE", raising=False)
+    monkeypatch.delenv("HZ_LOCAL_MIXED_SCOPE_SHA256", raising=False)
+    monkeypatch.delenv("HZ_LOCAL_MIXED_BASE_REF", raising=False)
+    monkeypatch.delenv("HZ_LOCAL_MIXED_GUARD_BINDING", raising=False)
+    monkeypatch.delenv("HZ_DEV_PUSH_REFS_FILE", raising=False)
 
 
 def test_mocked_dispatch_isolates_an_inherited_source_bound_packet(monkeypatch, tmp_path):
@@ -345,9 +350,9 @@ def test_a_changed_test_file_runs_itself_and_a_changed_script_runs_the_tests_tha
     "changed",
     [["pyproject.toml"], ["tests/conftest.py"], ["src/heinzel/modules/system/_update.py", "src/heinzel/x.json"]],
 )
-def test_changes_that_cannot_be_mapped_to_tests_keep_the_full_unit_run(changed):
+def test_changes_that_cannot_be_mapped_to_tests_never_run_the_whole_unit_suite(changed):
     assert scoped_related.related_tests(changed) is None
-    assert "UNIT_TARGETS" not in overrides(changed)
+    assert overrides(changed)["UNIT_TARGETS"] == "tests/unit/scoped_checks_test.py"  # CI runs the full suite
 
 
 def test_a_change_no_test_reaches_still_runs_the_hooks_own_test():
@@ -395,7 +400,10 @@ def test_make_check_fast_by_hand_is_the_full_unit_run():
     makefile = (REPO / "Makefile").read_text(encoding="utf-8")
     assert "UNIT_TARGETS ?=\n" in makefile
     assert "FAST_TYPES ?=\n" in makefile
-    assert "uv run pytest $(UNIT_TARGETS) -m 'unit and not perf' -n auto" in makefile
+    assert (
+        "uv run pytest $(UNIT_TARGETS) -m 'unit and not perf' -n auto $(UNIT_STOP) -q --session-timeout=120" in makefile
+    )
+    assert "UNIT_STOP ?= -x\n" in makefile
 
 
 def test_the_pre_push_hook_keeps_the_confidentiality_and_commit_checks():
@@ -569,6 +577,8 @@ def test_explicit_scope_keeps_all_local_owning_checks_and_only_declared_hosted_o
         "WEB_TESTS=",
         "MANAGED_CHECK=",
         f"FAST_TYPES={scoped.TYPES}",
+        "UNIT_STOP=",
+        "STEPS_KEEP_GOING=1",
         f"UNIT_TARGETS={own}",
     ]
 
@@ -719,6 +729,8 @@ def test_readonly_preview_matches_actual_normal_hook_commands(local_scope_packet
         "WEB_TESTS=",
         "MANAGED_CHECK=",
         f"FAST_TYPES={scoped.TYPES}",
+        "UNIT_STOP=",
+        "STEPS_KEEP_GOING=1",
         f"UNIT_TARGETS={own}",
     ]
 
@@ -727,3 +739,28 @@ def test_explicit_local_python_scope_cannot_trim_web_checks(local_scope_packet):
     _, _, own, _ = local_scope_packet
     with pytest.raises(ValueError, match="only supported for the owning Python"):
         scoped.local_python_scope([own, "web/src/changed.ts"], "a" * 40)
+
+
+@pytest.mark.parametrize("path", ["Makefile", "pyproject.toml", "web/src/app.tsx", "src/heinzel/x.py"])
+def test_every_push_check_is_capped_at_related_tests_even_when_web_or_build_files_change(monkeypatch, path):
+    """The push check never runs the whole unit suite and never stops at the first failure."""
+    monkeypatch.setattr(sys, "argv", ["scoped_checks.py", "push"])
+    monkeypatch.setattr(scoped, "resolve_base", lambda _: "a" * 40)
+    monkeypatch.setattr(scoped, "changed_paths", lambda *_: [path])
+    monkeypatch.setattr(scoped, "configured_mixed_plan", lambda *_, **__: False)
+    monkeypatch.setattr(scoped, "run_scoped_push", lambda *_: None)
+    calls = []
+
+    def record(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(scoped, "run_check", record)
+    with pytest.raises(SystemExit):
+        scoped.main()
+    [(command, kwargs)] = calls
+    assert command[:2] == ["make", "check-fast"]
+    assert "UNIT_STOP=" in command
+    assert "STEPS_KEEP_GOING=1" in command
+    assert any(item.startswith("UNIT_TARGETS=tests/unit/") for item in command)
+    assert kwargs["timeout"] == scoped.PUSH_TIMEOUT

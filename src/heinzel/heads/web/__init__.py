@@ -62,13 +62,14 @@ from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._lifecycle import CANT_RESTART as CANT_RESTART
 from heinzel.heads.web._lifecycle import add_lifecycle
 from heinzel.heads.web._mcp import McpEndpoint, add_endpoint, add_routes
-from heinzel.heads.web._pairing import add_pairing
 from heinzel.heads.web._ports import wait_for_port
 from heinzel.heads.web._shutdown import GRACE_SECONDS, KEEP_ALIVE_SECONDS, Stopping
 from heinzel.heads.web._shutdown import server as stopping_server
 from heinzel.heads.web._stream import add_stream
 from heinzel.heads.web._supervision import WebPublication, restart_when_settled
 from heinzel.heads.web._updates import add_updates
+from heinzel.heads.web._widget import add_widget
+from heinzel.heads.web._workspace_version import add_workspace_version
 from heinzel.kernel import (
     FONT_ROUTE,
     KERNEL_SECTION,
@@ -182,6 +183,7 @@ def api_app(
     )
 
     add_lifecycle(app, kernel, restart)
+    add_workspace_version(app, kernel)
     app.state.chatgpt_sign_in = sign_in = ChatGptSignIn(kernel, port)
     sign_in.add_start(app)
     return app
@@ -279,7 +281,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     )
     app.state.lifecycle = endpoints.state.lifecycle
     endpoints.state.chatgpt_sign_in.add_callback(app)
-    add_pairing(endpoints, paired)
+    add_widget(app, endpoints, paired, kernel)
     app.state.auto_update = AutoUpdater(kernel, restart=restart, activity=activity)
     add_updates(endpoints, kernel, static, restartable=restart is not None, busy=_update_busy(app.state.auto_update))
     add_auto_update(endpoints, app.state.auto_update)

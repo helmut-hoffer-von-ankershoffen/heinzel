@@ -90,6 +90,14 @@ def app_running(applications: Path, *, command: str = "install") -> Problem:
     )
 
 
+def restart_deferred(seconds: float = 20.0) -> Problem:
+    """The open app did not quit when asked, so it was not replaced and was left open."""
+    return Problem(
+        f"{APP} is still open after {seconds:g} s, so it was not replaced and was left open.",
+        "Quit it, then run hz app install again.",
+    )
+
+
 def interrupted(applications: Path, *, everyone: bool) -> Problem:
     """An earlier install stopped halfway and what is on disk no longer matches it."""
     return Problem(

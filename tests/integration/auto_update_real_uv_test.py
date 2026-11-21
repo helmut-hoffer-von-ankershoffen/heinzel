@@ -7,6 +7,7 @@ folder, its tool, executable and cache folders are temporary, and no uv configur
 """
 
 import base64
+import fcntl
 import hashlib
 import os
 import re
@@ -84,37 +85,53 @@ def release(folder: Path, version: str) -> None:
     wheel(folder, "fakedep", version)
 
 
-def private_python(tmp_path: Path) -> str:
-    """An interpreter hz accepts for a tool: in a folder only you can write to, as hz names it to uv (no link).
-
-    The test's own Python, if it qualifies; else (a CI image whose Python folders others may write to) a Python uv
-    installs into a temporary folder. Skipped only if neither can be had.
-    """
-    own = str(Path(sys.executable).resolve())
+def private_python(shared: Path) -> str:
+    """Reuse an accepted runner interpreter or provision one old Python for this isolated pytest run."""
+    runner = Path(sys.executable).resolve()
     try:
-        _installation_continuity.external_python(Path(own))
+        _installation_continuity.external_python(runner)
     except HeinzelError:
         pass
     else:
-        return own
-    folder = tmp_path / "python"
-    found = subprocess.run(
-        [shutil.which("uv") or "uv", "python", "install", "3.13", "--install-dir", str(folder)],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=300,  # one download of a Python build
-    )
-    candidates = sorted(folder.glob("*/bin/python3.13"))
-    if found.returncode != 0 or not candidates:
-        unavailable(f"no Python in a private folder for a uv tool here, and uv couldn't install one: {found.stderr}")
-    python = str(candidates[0].resolve())
-    _installation_continuity.external_python(Path(python))
-    return python
+        return str(runner)
+
+    # Hosted images can have a controller Python outside the ownership policy. The old interpreter is immutable
+    # input to these tests; cache only that interpreter rather than spending each case's 15 seconds provisioning it.
+    folder = shared / "rollback-source-python"
+    with (shared / "rollback-source-python.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not (folder / "complete").is_file():
+            env = {**os.environ, "UV_NO_CONFIG": "1", "UV_CACHE_DIR": str(folder / "cache")}
+            found = subprocess.run(
+                [shutil.which("uv") or "uv", "python", "install", "--no-bin", "3.13", "--install-dir", str(folder)],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+            )
+            if found.returncode != 0:
+                unavailable(f"no private Python for a uv tool, and uv couldn't install one: {found.stderr}")
+        candidates = sorted(folder.glob("cpython-3.13.*/bin/python3.13"))
+        if len(candidates) != 1:
+            unavailable("uv did not provide one unambiguous private Python 3.13")
+        python = candidates[0].resolve(strict=True)
+        if not python.is_relative_to(folder.resolve(strict=True)):
+            pytest.fail("uv selected an interpreter outside the private rollback fixture")
+        _installation_continuity.external_python(python)
+        (folder / "complete").touch()
+        return str(python)
+
+
+@pytest.fixture(scope="session")
+def original_python(tmp_path_factory) -> str:
+    base = tmp_path_factory.getbasetemp()
+    shared = base.parent if "PYTEST_XDIST_WORKER" in os.environ else base
+    return private_python(shared)
 
 
 @pytest.fixture
-def tool(tmp_path, monkeypatch):
+def tool(tmp_path, monkeypatch, original_python):
     """hz 1.0.0 with heinzel-clock 1.0.0 and fakedep 1.0.0, installed by real uv into temporary folders."""
     wheels = tmp_path / "wheels"
     wheels.mkdir()
@@ -138,8 +155,7 @@ def tool(tmp_path, monkeypatch):
             receipt.write_text(text)
         return result
 
-    python = private_python(tmp_path)
-    first = runner(["uv", "tool", "install", "--python", python, "heinzel", "--with", "heinzel-clock"])
+    first = runner(["uv", "tool", "install", "--python", original_python, "heinzel", "--with", "heinzel-clock"])
     assert first.returncode == 0, first.stderr
     # Setup only: the first install is to look as one from PyPI does, with no `[tool.options]` table at all.
     receipt = tmp_path / "tools" / "heinzel" / "uv-receipt.toml"
@@ -164,6 +180,7 @@ def apply(installation, tmp_path, *, starts, releases=None):
     return service.apply_announced(announced, current="1.0.0", folder=tmp_path / "state", trial=lambda v: starts)
 
 
+@pytest.mark.timeout(60)  # two real uv installs: the first on a cold macOS runner took 15.25 s, past the 15 s level
 def test_real_uv_installs_exactly_the_announced_versions_and_the_receipt_stays_clean(tool, tmp_path):
     before = (tool.prefix / "uv-receipt.toml").read_bytes()
     result = apply(tool, tmp_path, starts=True)
@@ -276,6 +293,36 @@ def test_real_uv_without_the_newer_python_stops_before_installing(newer_release,
 def test_without_uv_or_a_python_the_test_fails_in_ci_and_skips_elsewhere(environ, outcome):
     with pytest.raises(outcome, match="no real uv"):
         unavailable("uv isn't installed, so there is no real uv to test with", environ)
+
+
+def test_unsafe_runner_provisions_one_private_old_interpreter_for_repeated_installs(tmp_path, monkeypatch):
+    unsafe = tmp_path / "unsafe-runner"
+    unsafe.mkdir()
+    executable = unsafe / "python"
+    executable.touch(mode=0o700)
+    unsafe.chmod(0o777)
+    monkeypatch.setattr(sys, "executable", str(executable))
+    shared = tmp_path / "pytest-run"
+    shared.mkdir()
+    folder = shared / "rollback-source-python"
+    chosen = folder / "cpython-3.13.0-fixture/bin/python3.13"
+    calls = []
+
+    def install(command, *, env, **options):
+        calls.append(command)
+        assert command[1:] == ["python", "install", "--no-bin", "3.13", "--install-dir", str(folder)]
+        assert options["timeout"] == 60
+        assert env["UV_NO_CONFIG"] == "1"
+        assert env["UV_CACHE_DIR"] == str(folder / "cache")
+        chosen.parent.mkdir(parents=True)
+        chosen.touch(mode=0o700)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", install)
+    assert private_python(shared) == str(chosen.resolve())
+    assert private_python(shared) == str(chosen.resolve())
+    assert len(calls) == 1
+    assert not (shared / "managed").exists()
 
 
 # A plugin pinned to a tagged git commit (ADR 0137) --------------------------------------------------------------------

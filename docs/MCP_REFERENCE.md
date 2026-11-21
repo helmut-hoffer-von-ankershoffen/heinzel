@@ -351,7 +351,7 @@ Module `heinzel`. Read-only. Result: `SkillDraftPage {items: list[SkillDraftRefe
 
 Create a durable personal Heinzel with an idempotent request, name and look.
 
-Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
+Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], queue_head: SessionMessage \| null, pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
 
 ```json
 {
@@ -520,7 +520,7 @@ Module `heinzel`. Read-only. Result: `SessionList {sessions: list[SessionSummary
 
 Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn.
 
-Module `heinzel`. Read-only. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
+Module `heinzel`. Read-only. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], queue_head: SessionMessage \| null, pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
 
 ```json
 {
@@ -566,7 +566,7 @@ Module `heinzel`. Read-only. Result: `SessionSnapshot {session_id: string, kind:
 
 Save this Heinzel's name or look against the exact profile revision you saw.
 
-Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
+Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], queue_head: SessionMessage \| null, pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
 
 ```json
 {
@@ -742,7 +742,7 @@ Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, k
 
 Propose local five-minute check-ins; the schedule stays inactive until activated.
 
-Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
+Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], queue_head: SessionMessage \| null, pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
 
 ```json
 {
@@ -1024,7 +1024,7 @@ Module `heinzel`. Read-only. Result: `ScheduledAgentProposal {session_id: string
 
 Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer.
 
-Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
+Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], queue_head: SessionMessage \| null, pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
 
 ```json
 {
@@ -2613,9 +2613,9 @@ Module `system`. Read-only. Result: `ReleaseCheck {current: string, latest: stri
 
 ## `system_update`
 
-Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking.
+Update Heinzelmännchen, every plugin and the desktop app in one pass, without asking anything.
 
-Module `system`. Changes state. Result: `UpdateResult {before: string, after: string, latest: string \| null, pinned_to: string \| null, updated: boolean, message: string, next: list[string], plugins: list[PluginUpdate], automatic: AutomaticUpdates \| null, heads: list[HeadRefresh], plan: UpdatePlan \| null, previewed: boolean}`.
+Module `system`. Changes state. Result: `UpdateResult {before: string, after: string, latest: string \| null, pinned_to: string \| null, updated: boolean, message: string, next: list[string], plugins: list[PluginUpdate], automatic: AutomaticUpdates \| null, heads: list[HeadRefresh], plan: UpdatePlan \| null, seconds: number \| null, previewed: boolean}`.
 
 ```json
 {
@@ -2654,7 +2654,8 @@ Module `system`. Changes state. Result: `UpdateResult {before: string, after: st
     },
     "yes": {
       "default": false,
-      "description": "Agree to the plan without being asked: update hz and every plugin, also the ones pinned to the version or commit they were added at, and the desktop app if one is installed. Whoever passes it agrees for the person: a script, an agent over MCP or a REST client then moves pins and, unless `desktop` is false, runs `hz app install` without another question.",
+      "description": "Accepted and ignored: the update never asks, so there is nothing to agree to.",
+      "hidden": true,
       "title": "Yes",
       "type": "boolean"
     },
@@ -2668,7 +2669,7 @@ Module `system`. Changes state. Result: `UpdateResult {before: string, after: st
         }
       ],
       "default": null,
-      "description": "The `token` of the plan that was shown (`--preview`). With `yes`, the update then installs exactly that plan; if a release appeared since, it changes nothing and answers with the new plan.",
+      "description": "The `token` of the plan that was shown (`--preview`). The update then installs exactly that plan; if a release appeared since, it changes nothing and answers with the new plan.",
       "title": "Plan"
     },
     "preview": {
@@ -2693,8 +2694,27 @@ Module `system`. Changes state. Result: `UpdateResult {before: string, after: st
         }
       ],
       "default": null,
-      "description": "Whether to update an installed desktop app afterwards with `hz app install`. Unset: asked on a terminal, yes with `--yes`, otherwise left for the app's own next update.",
+      "description": "Earlier name of `desktop_app`: false leaves the desktop app alone.",
+      "hidden": true,
       "title": "Desktop"
+    },
+    "desktop_app": {
+      "default": true,
+      "description": "Whether to bring an installed desktop app along with `hz app install`; `--no-desktop-app` leaves it.",
+      "title": "Desktop App",
+      "type": "boolean"
+    },
+    "desktop_app_restart": {
+      "default": true,
+      "description": "Whether an open desktop app is quit and reopened so it can be replaced. `--no-desktop-app-restart` never quits it: it then installs when you quit it. The app's own service never quits the app, whatever this says.",
+      "title": "Desktop App Restart",
+      "type": "boolean"
+    },
+    "daemon": {
+      "default": true,
+      "description": "Whether the daemon and the web server are restarted onto what was installed. `--no-daemon` leaves them running and says which version they still run.",
+      "title": "Daemon",
+      "type": "boolean"
     }
   },
   "title": "system_updateArguments",
@@ -3319,7 +3339,7 @@ Module `system.daemon`. Changes state. Result: `Restarted {restarted: boolean, v
 
 Check-ins need a resumed daemon with 5m ticks and a matching service version.
 
-Module `system.daemon`. Read-only. Result: `DaemonStatus {platform: string, installed: boolean, owned: boolean, loaded: boolean, paused: boolean, interval_minutes: integer \| null, executable: string \| null, last_tick: string \| null, jobs: integer, failing: list[string], version: string \| null, installed_version: string \| null, installed_at: string \| null, version_mismatch: boolean}`.
+Module `system.daemon`. Read-only. Result: `DaemonStatus {platform: string, installed: boolean, owned: boolean, loaded: boolean, paused: boolean, interval_minutes: integer \| null, executable: string \| null, last_tick: string \| null, last_tick_interval_minutes: integer \| null, jobs: integer, failing: list[string], version: string \| null, installed_version: string \| null, installed_at: string \| null, version_mismatch: boolean}`.
 
 ```json
 {

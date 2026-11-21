@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -1161,6 +1161,28 @@ def test_manual_tick_cannot_attest_the_daemon_and_restart_stays_unknown_until_a_
     ) == (__version__, __version__, False)
 
 
+def test_status_keeps_heartbeat_version_and_time_in_one_snapshot(make, monkeypatch):
+    service = make()
+    service.install(timedelta(minutes=5))
+    read = service._read_state
+    first = {"version": "0.9.43", "last_tick": "2026-11-16T12:00:00+00:00", "interval_minutes": 20}
+    second = {"version": "0.9.49", "last_tick": "2026-11-16T12:05:00+00:00", "interval_minutes": 1}
+    heartbeat_reads = []
+
+    def changing(name):
+        if name != "heartbeat.json":
+            return read(name)
+        heartbeat_reads.append(name)
+        return first if len(heartbeat_reads) == 1 else second
+
+    monkeypatch.setattr(service, "_read_state", changing)
+    status = service.status()
+    assert status.version == "0.9.43"
+    assert status.last_tick == datetime(2026, 11, 16, 12, tzinfo=UTC)
+    assert status.last_tick_interval_minutes == 20
+    assert heartbeat_reads == ["heartbeat.json"]
+
+
 def test_a_daemon_started_by_an_older_hz_is_flagged_until_current_service_tick(make, tmp_path, monkeypatch):
     service = make()
     service.install(timedelta(minutes=5))
@@ -2033,6 +2055,30 @@ def test_abort_unchanged_requires_exact_original_identity(make, bin_dir, changed
     else:
         attempt()
         assert not (service.state_dir / "mutation-pending.json").exists()
+
+
+def test_finish_without_handover_closes_a_verified_mutation_and_never_requests_one(make, bin_dir):
+    service = make(runner=Runner(bin_dir))
+    service._continuity_fingerprint = lambda: "a" * 64
+    with service.mutation_guard(lambda: True, lambda: "b" * 64) as scope:
+        scope.capture()
+        scope.verified_complete("a" * 64)
+        scope.finish_without_handover()
+        assert scope.requested is False
+        with pytest.raises(HeinzelError, match="unavailable or its pending token changed"):
+            scope.request(scope.plan)
+    assert not (service.state_dir / "mutation-pending.json").exists()
+
+
+def test_finish_without_handover_refuses_a_mutation_nobody_verified(make, bin_dir):
+    service = make(runner=Runner(bin_dir))
+    service._continuity_fingerprint = lambda: "a" * 64
+    with service.mutation_guard(lambda: True, lambda: "b" * 64) as scope:
+        scope.capture()
+        with pytest.raises(HeinzelError, match="not verified"):
+            scope.finish_without_handover()
+        scope.abort_unchanged()
+    assert not (service.state_dir / "mutation-pending.json").exists()  # the refused finish left it open until aborted
 
 
 def _fresh_quiescence_target(service, tmp_path):

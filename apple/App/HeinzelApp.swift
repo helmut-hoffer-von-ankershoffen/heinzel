@@ -1,6 +1,9 @@
 import AVFoundation
 import SwiftUI
 import UserNotifications
+#if os(iOS)
+import UIKit
+#endif
 
 private let workspaceSwitchTitle = "Switch Workspace"
 private let workspaceSwitchSymbol = "arrow.left.arrow.right"
@@ -12,6 +15,15 @@ private var heinzelAppVersion: String {
     let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
     let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
     return "Version \(version) · Build \(build)"
+}
+
+private var heinzelAppBuild: AppBuildObservation.Build? {
+    let bundle = Bundle.main
+    return AppBuildObservation.Build(
+        version: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+        number: bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+        revision: bundle.object(forInfoDictionaryKey: "HeinzelSourceRevision") as? String
+    )
 }
 
 private enum ConnectionPalette {
@@ -36,6 +48,62 @@ private struct ConnectionFooter: View {
         .padding(.horizontal, 24)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
+    }
+}
+
+private struct WorkspaceVersionDetails: View {
+    let app: AppBuildObservation?
+    let workspace: WorkspaceVersionObservation?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let app {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("App \(app.build.version) · Build \(app.build.number)").fontWeight(.medium)
+                    Text("This build observed here since \(date(app.observedSince))")
+                }
+            } else {
+                Text("App build details are unavailable.")
+            }
+
+            if let workspace {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Workspace web \(workspace.version)").fontWeight(.medium)
+                    Text("Version last seen \(date(workspace.observedAt))")
+                    if let installed = workspace.installedVersion {
+                        Text("Installed hz \(installed)")
+                        if let updated = workspace.installedUpdatedAt {
+                            Text("Installed hz updated \(date(updated))")
+                        } else {
+                            Text("Workspace did not report an installation update date.")
+                        }
+                    } else {
+                        Text("Workspace did not report the installed hz version or update date.")
+                    }
+                    if let daemon = workspace.daemonLastVersion, let observed = workspace.daemonLastObservedAt {
+                        Text("Daemon \(daemon) · Last observed \(date(observed))")
+                        if let stale = workspace.daemonObservationStale {
+                            Text(stale ? "Daemon observation was stale when checked." : "Daemon observation was fresh when checked.")
+                        }
+                    } else {
+                        Text("Workspace did not report a daemon observation.")
+                    }
+                    if workspace.version.range(of: #"^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$"#, options: .regularExpression) != nil,
+                       let release = URL(string: "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v\(workspace.version)") {
+                        Link("Release details", destination: release)
+                    }
+                }
+            } else {
+                Text("No workspace version has been recorded here. Version details appear when the workspace can report them.")
+            }
+        }
+        .font(.footnote)
+        .foregroundStyle(ConnectionPalette.muted)
+        .connectionPanel()
+    }
+
+    private func date(_ value: Date) -> String {
+        value.formatted(date: .abbreviated, time: .shortened)
     }
 }
 
@@ -235,7 +303,11 @@ struct ConnectionView: View {
     @AppStorage("serverOrigin") private var serverOrigin = ""
     @AppStorage("workspaceHistory") private var workspaceHistory = Data()
     @AppStorage("forgottenWorkspaces") private var forgottenWorkspaces = Data()
+    @AppStorage("workspaceBackendVersions") private var workspaceBackendVersions = Data()
+    @AppStorage("appBuildObservation") private var appBuildObservation = Data()
     @State private var syncedWorkspaces: [RecentWorkspace] = []
+    @State private var cloudDirectoryUnavailable = false
+    @State private var cloudDirectoryChecked = false
     @State private var attemptedCloudSignIns: [String: Date] = [:]
     @State private var cloudSignInInProgress = false
     #if os(macOS)
@@ -253,10 +325,16 @@ struct ConnectionView: View {
     @State private var error: String?
     @State private var widgetClearFailed = false
     @State private var showConnection = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    #if os(iOS)
+    @State private var nativeFooterWidth: CGFloat = 88
+    @State private var nativeFooterBottom: CGFloat = 0
+    @State private var nativeFooterGeneration = 0
+    @State private var nativeFooterSlot: CGRect?
+    #endif
     @State private var connectionSheetContentHeight: CGFloat = 350
-    @State private var connectionSheetFooterHeight: CGFloat = 40
     private var connectionSheetHeight: CGFloat {
-        min(520, max(300, (connectionSheetContentHeight + connectionSheetFooterHeight).rounded(.up)))
+        min(520, max(300, connectionSheetContentHeight.rounded(.up)))
     }
     @State private var showDisconnectConfirmation = false
     @State private var choosingWorkspace = false
@@ -273,6 +351,7 @@ struct ConnectionView: View {
     @State private var pickerHasSnapshot = false
     @State private var pickerTimedOut = false
     @State private var widgetRefreshRevision = 0
+    @State private var versionRefreshRevision = 0
     @State private var chatRequest: HeinzelChatRequest?
     @State private var showPromptComposer = false
     @State private var dismissingPromptComposer = false
@@ -280,6 +359,7 @@ struct ConnectionView: View {
     @State private var sharedWorkspace: Endpoint?
     @State private var loadFailure: WorkspaceProblem?
     @State private var loadRevision = 0
+    @State private var widgetViewRotation = WidgetViewRotation()
     @State private var connectionIssue: WorkspaceProblem?
     @State private var verifiedConnectionOrigin: URL?
     #if os(iOS)
@@ -395,6 +475,9 @@ struct ConnectionView: View {
     }
 
     private func forgetWorkspace(_ item: RecentWorkspace) {
+        var versions = (try? JSONDecoder().decode([String: WorkspaceVersionObservation].self, from: workspaceBackendVersions)) ?? [:]
+        versions.removeValue(forKey: item.address)
+        if let encoded = try? JSONEncoder().encode(versions) { workspaceBackendVersions = encoded }
         var local = (try? JSONDecoder().decode([RecentWorkspace].self, from: workspaceHistory)) ?? []
         local.removeAll { $0.address == item.address }
         if let encoded = try? JSONEncoder().encode(local) { workspaceHistory = encoded }
@@ -402,7 +485,10 @@ struct ConnectionView: View {
         let latestSync = syncedWorkspaces.first { $0.address == item.address }?.lastUsed ?? .distantPast
         forgotten[item.address] = max(.now, latestSync)
         if let encoded = try? JSONEncoder().encode(forgotten) { forgottenWorkspaces = encoded }
-        if serverOrigin == item.address { serverOrigin = "" }
+        if serverOrigin == item.address {
+            clearWidgetActivity()
+            serverOrigin = ""
+        }
     }
 
     private var diagnosticOrigin: URL? {
@@ -493,7 +579,7 @@ struct ConnectionView: View {
         #else
         guard endpoint.origin.absoluteString == serverOrigin else { return nil }
         #endif
-        return ActivityWidgetData.scope(for: endpoint.origin)
+        return ActivityWidgetData.currentScope(for: endpoint.origin)
     }
 
     private var currentWidgetSnapshot: ActivityWidgetData? {
@@ -639,6 +725,9 @@ struct ConnectionView: View {
         }) {
             if let endpoint { connectionSheet(for: endpoint) }
         }
+        .onChange(of: showConnection) { _, open in
+            if open { versionRefreshRevision &+= 1 }
+        }
         .sheet(isPresented: $showConnectionHelp) {
             ConnectionHelp(
                 origin: diagnosticOrigin,
@@ -670,6 +759,13 @@ struct ConnectionView: View {
         .task {
             guard !started else { return }
             started = true
+            if let build = heinzelAppBuild {
+                let previous = try? JSONDecoder().decode(AppBuildObservation.self, from: appBuildObservation)
+                let observation = AppBuildObservation.recording(build, previous: previous, now: .now)
+                if observation != previous, let encoded = try? JSONEncoder().encode(observation) {
+                    appBuildObservation = encoded
+                }
+            }
             // A short cold-start beat keeps the branded screen perceptible even when the host responds immediately.
             let earliest = ContinuousClock.now + .milliseconds(650)
             await openInitialWorkspace()
@@ -714,6 +810,26 @@ struct ConnectionView: View {
         }
         .onChange(of: link) { _, _ in error = nil }
         .onReceive(NotificationCenter.default.publisher(for: ActivityWidgetData.clearFailed)) { _ in widgetClearFailed = true }
+        .onReceive(NotificationCenter.default.publisher(for: WidgetCredentialStore.activationChanged).receive(on: RunLoop.main)) { notification in
+            let activation = ActivityWidgetData.currentActivation()
+            guard widgetViewRotation.shouldReload(notificationID: notification.object as? String,
+                                                  currentID: activation?.id, currentEndpoint: activation?.endpoint,
+                                                  visibleEndpoint: endpoint?.origin.absoluteString) else { return }
+            retryWorkspace()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: WidgetCredentialStore.preparationRecovered).receive(on: RunLoop.main)) { notification in
+            guard let activation = ActivityWidgetData.currentActivation(),
+                  notification.object as? String == activation.id,
+                  activation.endpoint == endpoint?.origin.absoluteString else { return }
+            retryWorkspace()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: WidgetCredentialStore.receiptRetired).receive(on: RunLoop.main)) { notification in
+            let retired = notification.object as? ActivityCatalog.Activation
+            guard WidgetViewRotation.shouldReloadRetirement(retired, current: ActivityWidgetData.currentActivation(),
+                endpoint: retired?.endpoint, visibleEndpoint: endpoint?.origin.absoluteString,
+                credentialFree: retired?.credentialGeneration == nil) else { return }
+            retryWorkspace()
+        }
         .alert("Widget information could not be cleared", isPresented: $widgetClearFailed) {
             Button("Retry") { Task { await Task.yield(); clearWidgetActivity() } }
             Button("Close", role: .cancel) { }
@@ -817,7 +933,12 @@ struct ConnectionView: View {
     @ViewBuilder
     private var content: some View {
         if let endpoint, loadFailure == .signIn {
-            if showingColdStart { startup } else { recovery(visibleProblem ?? .signIn, for: endpoint) }
+            Group {
+                if showingColdStart { startup } else { recovery(visibleProblem ?? .signIn, for: endpoint) }
+            }
+            #if os(iOS)
+            .safeAreaInset(edge: .bottom, spacing: 0) { recoveryWorkspaceFooter(for: endpoint) }
+            #endif
         } else if let endpoint {
             let revision = loadRevision
             let obscured = choosingWorkspace || showingColdStart || loadingWorkspace || visibleProblem != nil
@@ -832,7 +953,21 @@ struct ConnectionView: View {
                     #else
                     false
                     #endif
-                }, chatRequest: requestedChat, promptComposer: promptComposer, widgetRefreshRevision: widgetRefreshRevision, ready: {
+                }, isEnrollmentViewCurrent: {
+                    #if os(iOS)
+                    self.endpoint == endpoint && loadRevision == revision && !choosingWorkspace && !showingColdStart && scenePhase == .active
+                    #else
+                    self.endpoint == endpoint && loadRevision == revision && !choosingWorkspace && !showingColdStart
+                    #endif
+                }, chatRequest: requestedChat, promptComposer: promptComposer, widgetRefreshRevision: widgetRefreshRevision,
+                versionRefreshRevision: versionRefreshRevision, footerWidth: nativeFooterWidthValue, footerBottom: nativeFooterBottomValue,
+                footerGeneration: nativeFooterGenerationValue,
+                reportFooterSlot: { slot in
+                    #if os(iOS)
+                    guard self.endpoint == endpoint, loadRevision == revision else { return }
+                    nativeFooterSlot = slot
+                    #endif
+                }, ready: {
                     guard self.endpoint == endpoint, loadRevision == revision else { return }
                     loadingWorkspace = false
                     loadFailure = nil
@@ -840,9 +975,22 @@ struct ConnectionView: View {
                     guard self.endpoint == endpoint, serverOrigin == endpoint.origin.absoluteString,
                           loadRevision == revision else { return }
                     rememberWorkspace(endpoint, hostName: name)
+                }, reportBackendVersion: { observation in
+                    guard self.endpoint == endpoint else { return }
+                    var versions = (try? JSONDecoder().decode([String: WorkspaceVersionObservation].self, from: workspaceBackendVersions)) ?? [:]
+                    guard WorkspaceVersionObservation.record(observation, origin: endpoint.origin.absoluteString,
+                        selectedOrigin: serverOrigin, requestRevision: revision, currentRevision: loadRevision,
+                        into: &versions) else { return }
+                    let newest = versions.sorted { $0.value.observedAt > $1.value.observedAt }.prefix(12)
+                    if let encoded = try? JSONEncoder().encode(Dictionary(uniqueKeysWithValues: newest.map { ($0.key, $0.value) })) {
+                        workspaceBackendVersions = encoded
+                    }
                 }, reportError: { message in
                     guard self.endpoint == endpoint, loadRevision == revision else { return }
                     if message == .signIn && endpoint.origin.scheme == "https" {
+                        // The navigation error has no captured secure activation.
+                        // Do not let it revoke a newer credential at this origin.
+                        let signInWidgetToken = ActivityWidgetData.legacyRefreshToken()
                         #if os(iOS)
                         guard scenePhase == .active else {
                             loadFailure = .signIn
@@ -863,7 +1011,10 @@ struct ConnectionView: View {
                                 guard connectionProbe?.revision == result.revision else { continue }
                                 connectionIssue = result.issue
                                 loadFailure = result.issue ?? .signIn
-                                if result.issue == nil, widgetWorkspaceScope != nil { clearWidgetActivity() }
+                                if result.issue == nil, widgetWorkspaceScope != nil, let signInWidgetToken {
+                                    _ = WidgetCredentialStore.clearShared(expectedToken: signInWidgetToken)
+                                    ActivityWidgetData.reload()
+                                }
                                 loadingWorkspace = false
                                 finishConnectionProbe(result.revision)
                                 return
@@ -873,7 +1024,10 @@ struct ConnectionView: View {
                             guard self.endpoint == endpoint, loadRevision == revision else { return }
                             connectionIssue = issue
                             loadFailure = issue ?? .signIn
-                            if issue == nil, widgetWorkspaceScope != nil { clearWidgetActivity() }
+                            if issue == nil, widgetWorkspaceScope != nil, let signInWidgetToken {
+                                _ = WidgetCredentialStore.clearShared(expectedToken: signInWidgetToken)
+                                ActivityWidgetData.reload()
+                            }
                             loadingWorkspace = false
                             #endif
                         }
@@ -886,6 +1040,9 @@ struct ConnectionView: View {
                     workspaceBackground = color
                 })
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                #if os(iOS)
+                .ignoresSafeArea(.container, edges: nativeFooterSlot == nil ? [] : .bottom)
+                #endif
                 .id(endpoint.url)
                 .id(revision)
                 .opacity(obscured ? 0 : 1)
@@ -934,14 +1091,32 @@ struct ConnectionView: View {
                 #if os(macOS)
                 .ignoresSafeArea(edges: .top)
                 #endif
+                #if os(iOS)
+                if !obscured && nativeFooterSlot == nil {
+                    HStack(spacing: 0) {
+                        workspaceFooterButton(for: endpoint, width: nativeFooterWidth)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(height: 48)
+                    .background(workspaceBackground.ignoresSafeArea(.container, edges: .bottom))
+                }
+                #endif
             }
             #if os(iOS)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if obscured { recoveryWorkspaceFooter(for: endpoint) }
+            }
             .overlay {
-                if !obscured { workspaceSafeAreaControl }
+                if !obscured { workspaceFooterControl(for: endpoint, fallback: false) }
             }
             #endif
         } else if connecting || showingColdStart {
             startup
+            #if os(iOS)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if let saved = Endpoint(serverOrigin) { recoveryWorkspaceFooter(for: saved) }
+            }
+            #endif
         } else if let target = sharedWorkspace {
             launchCard(compactBrand: true) {
                 Text("Open workspace?")
@@ -962,41 +1137,101 @@ struct ConnectionView: View {
         }
     }
 
+    private var nativeFooterWidthValue: CGFloat {
+        #if os(iOS)
+        nativeFooterWidth
+        #else
+        88
+        #endif
+    }
+
+    private var nativeFooterBottomValue: CGFloat {
+        #if os(iOS)
+        nativeFooterBottom
+        #else
+        0
+        #endif
+    }
+
+    private var nativeFooterGenerationValue: Int {
+        #if os(iOS)
+        nativeFooterGeneration
+        #else
+        0
+        #endif
+    }
+
     #if os(iOS)
-    private var workspaceSafeAreaControl: some View {
+    // Native recovery screens reserve their own space; the web footer uses reported geometry.
+    private func recoveryWorkspaceFooter(for endpoint: Endpoint) -> some View {
+        Button {
+            if self.endpoint == nil { chooseAnotherWorkspace() } else { showConnection = true }
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "point.3.connected.trianglepath.dotted").accessibilityHidden(true)
+                Text(workspaceName(endpoint.origin)).fixedSize(horizontal: false, vertical: true)
+                Image(systemName: "chevron.down").accessibilityHidden(true)
+            }
+            .font(.footnote.weight(.medium))
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Workspace: \(workspaceName(endpoint.origin))")
+        .accessibilityHint("Open connection details or switch workspace")
+        .foregroundStyle(ConnectionPalette.ink)
+        .environment(\.colorScheme, .light)
+        .background(Color("StartupBackground").ignoresSafeArea(.container, edges: .bottom))
+    }
+
+    private func workspaceFooterControl(for endpoint: Endpoint, fallback: Bool) -> some View {
         GeometryReader { geometry in
             let bottom = geometry.safeAreaInsets.bottom
-            if bottom >= 18 {
-                // Center the 44-point touch target under the workspace sidebar's 56-point rail.
-                workspaceCircle(size: min(26, bottom - 2), hitHeight: bottom, alignment: .top,
-                                visualOffset: CGSize(width: -0.5, height: -4.5))
-                    .padding(.leading, (56 - 44) / 2)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                    .ignoresSafeArea(.container, edges: .bottom)
-            } else {
-                workspaceCircle(size: 32, hitHeight: 44)
-                    .padding(4)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            let name = workspaceName(endpoint.origin)
+            let textWidth = (name as NSString).size(withAttributes: [.font: UIFont.preferredFont(forTextStyle: .footnote)]).width
+            let width = max(44, min(180, geometry.size.width * 0.45, max(76, textWidth + 52)))
+            let slot = fallback ? nil : nativeFooterSlot
+            ZStack(alignment: .bottomLeading) {
+                if fallback {
+                    workspaceBackground
+                        .frame(height: 48)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                        .ignoresSafeArea(.container, edges: .bottom)
+                        .allowsHitTesting(false)
+                }
+                if fallback || slot != nil {
+                    workspaceFooterButton(for: endpoint, width: width)
+                        .position(x: slot?.midX ?? width / 2, y: slot?.midY ?? geometry.size.height - 24)
+                }
             }
+            .onAppear { nativeFooterWidth = width; nativeFooterBottom = bottom }
+            .onChange(of: width) { _, value in nativeFooterSlot = nil; nativeFooterWidth = value }
+            .onChange(of: bottom) { _, value in nativeFooterSlot = nil; nativeFooterBottom = value }
+            .onChange(of: geometry.size) { _, _ in nativeFooterSlot = nil; nativeFooterGeneration &+= 1 }
+            .onChange(of: dynamicTypeSize) { _, _ in nativeFooterSlot = nil; nativeFooterGeneration &+= 1 }
+            .onChange(of: nativeFooterSlot == nil) { _, _ in nativeFooterGeneration &+= 1 }
         }
     }
 
-    private func workspaceCircle(size: CGFloat, hitHeight: CGFloat, alignment: Alignment = .center,
-                                 visualOffset: CGSize = .zero) -> some View {
-        Button {
-            showConnection = true
+    private func workspaceFooterButton(for endpoint: Endpoint, width: CGFloat) -> some View {
+        let name = workspaceName(endpoint.origin)
+        return Button {
+            if self.endpoint == nil { chooseAnotherWorkspace() } else { showConnection = true }
         } label: {
-            Image(systemName: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: size * 0.52, weight: .semibold))
-                .frame(width: size, height: size)
-                .background(.regularMaterial, in: Circle())
-                .offset(visualOffset)
-                .frame(width: 44, height: hitHeight, alignment: alignment)
-                .contentShape(Rectangle())
+            HStack(spacing: 5) {
+                Image(systemName: "point.3.connected.trianglepath.dotted").accessibilityHidden(true)
+                if width >= 76 { Text(name).lineLimit(1).truncationMode(.tail) }
+                Image(systemName: "chevron.down").accessibilityHidden(true)
+            }
+            .font(.footnote.weight(.medium))
+            .frame(width: width, height: 48)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Workspace")
-        .accessibilityHint("Shows the address, connection status, and workspace actions")
+        .accessibilityLabel("Workspace \(name)")
+        .accessibilityHint("Shows saved workspaces and connection actions")
     }
     #endif
 
@@ -1075,6 +1310,12 @@ struct ConnectionView: View {
                     .foregroundStyle(ConnectionPalette.warning)
                 }
                 .buttonStyle(.plain)
+                WorkspaceVersionDetails(
+                    app: (try? JSONDecoder().decode(AppBuildObservation.self, from: appBuildObservation))
+                        .flatMap { $0.build == heinzelAppBuild ? $0 : nil },
+                    workspace: (try? JSONDecoder().decode([String: WorkspaceVersionObservation].self,
+                        from: workspaceBackendVersions))?[endpoint.origin.absoluteString]
+                )
                 #if os(macOS)
                 if endpoint.origin.scheme == "http", offersCloudSignIn {
                     VStack(alignment: .leading, spacing: 4) {
@@ -1094,13 +1335,6 @@ struct ConnectionView: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                 connectionSheetContentHeight = height
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            ConnectionFooter()
-                .background(Color("StartupBackground"))
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                    connectionSheetFooterHeight = height
-                }
         }
         #if os(iOS)
         .refreshable { await refreshConnectionStatus(for: endpoint) }
@@ -1209,6 +1443,21 @@ struct ConnectionView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                Divider()
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(cloudDirectoryUnavailable
+                        ? "Synced sign-ins couldn’t be read on this device."
+                        : cloudDirectoryChecked
+                            ? "No synced sign-in for this workspace is available on this device."
+                            : "Checking for a synced sign-in…", systemImage: "icloud")
+                    if endpoint.origin.host?.hasSuffix(".ts.net") == true {
+                        Text("Enable private Tailscale sharing on the Mac, then Sync Sign-in with iCloud in the Mac app’s Connection screen. Both devices need the same Apple Account and iCloud Keychain. If that option is missing on the Mac, use a private sign-in link.")
+                    }
+                }
+                .font(.footnote)
+                .foregroundStyle(ConnectionPalette.muted)
+                .fixedSize(horizontal: false, vertical: true)
                 Divider()
             }
             if endpoint.origin.host?.hasSuffix(".ts.net") == true {
@@ -1357,6 +1606,7 @@ struct ConnectionView: View {
             VStack(spacing: 14) {
                 brandHeader(loading: loading, compact: compactBrand || editingLink)
                 actions()
+                if !editingLink { ConnectionFooter(showTagline: !loading) }
             }
             .frame(maxWidth: 420)
             .padding(24)
@@ -1373,9 +1623,6 @@ struct ConnectionView: View {
         .environment(\.colorScheme, .light)
         .tint(ConnectionPalette.accent)
         .background { paperBackground }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !editingLink { ConnectionFooter(showTagline: !loading) }
-        }
         .overlay(alignment: .topTrailing) {
             if !loading || startupIsSlow && !stoppingLocalWorkspace {
                 helpButton.padding(.trailing, 12)
@@ -1392,8 +1639,9 @@ struct ConnectionView: View {
                 .accessibilityHidden(true)
             Text("Heinzelmännchen")
                 .font(.system(compact ? .title2 : .largeTitle, design: .serif, weight: .semibold))
-                .minimumScaleFactor(0.7)
-                .lineLimit(1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.7)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
                 .foregroundStyle(ConnectionPalette.ink)
         }
@@ -1612,7 +1860,13 @@ struct ConnectionView: View {
     }
 
     private func refreshSyncedWorkspaces() {
-        if let workspaces = WorkspaceKeychain.workspaces() { syncedWorkspaces = workspaces }
+        cloudDirectoryChecked = true
+        if let workspaces = WorkspaceKeychain.workspaces() {
+            syncedWorkspaces = workspaces
+            cloudDirectoryUnavailable = false
+        } else {
+            cloudDirectoryUnavailable = true
+        }
     }
 
     private func resumeCloudSignInIfReady() {
@@ -1797,7 +2051,7 @@ struct ConnectionView: View {
     }
 
     private func clearWidgetActivity() {
-        _ = ActivityWidgetData.clear()
+        _ = WidgetCredentialStore.clearShared()
         ActivityWidgetData.reload()
     }
 
@@ -1833,7 +2087,8 @@ struct ConnectionView: View {
     }
 
     private func refreshConnectionStatus(for target: Endpoint) async {
-        guard !refreshingConnection else { return }
+        guard endpoint == target, !refreshingConnection else { return }
+        versionRefreshRevision &+= 1
         refreshingConnection = true
         defer {
             refreshingConnection = false
@@ -2604,11 +2859,22 @@ private struct ConnectionHelp: View {
                 results[.systemAudio] = Result(.optional, "Sharing started, but no audio samples arrived. Try playing sound and test again.")
             }
             #else
+            if started {
+                for _ in 0..<20 {
+                    if capture.read() == nil || capture.hasReceivedSamples || Task.isCancelled { break }
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+            }
+            let received = capture.hasReceivedSamples
             capture.stop()
             guard !Task.isCancelled else { return }
-            results[.systemAudio] = started
-                ? Result(.passed, "Sharing started and stopped")
-                : Result(.optional, "Sharing didn’t start. Try again and choose a source if asked.")
+            if !started {
+                results[.systemAudio] = Result(.optional, "Sharing didn’t start. Try again and choose a source if asked.")
+            } else if received {
+                results[.systemAudio] = Result(.passed, "Audio samples received")
+            } else {
+                results[.systemAudio] = Result(.optional, "Sharing started, but no audio samples arrived. Try playing sound and test again.")
+            }
             #endif
         }
         #endif

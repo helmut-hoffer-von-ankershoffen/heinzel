@@ -15,6 +15,14 @@ __all__ = ["sandbox", "seed_uv_cache", "service", "service_factory", "supervised
 pytestmark = pytest.mark.e2e
 
 
+@pytest.fixture
+def supervised_install_options():
+    """Compile the private tool at install time for the browser restart journey."""
+    # Keep first-import compilation out of this concurrent browser journey. The separate
+    # cold-publication cases still exercise uv's default installation and the same deadline.
+    return ("--compile-bytecode",)
+
+
 @pytest.mark.timeout(900)
 @pytest.mark.parametrize("engine", ["chromium", "webkit"])
 def test_installed_server_restarts_from_settings_and_reconnects_the_selected_profile(supervised, tmp_path, engine):

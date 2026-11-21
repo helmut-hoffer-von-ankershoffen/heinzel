@@ -26,6 +26,47 @@ const event = {
   ],
 };
 
+it("shows gateway discovery separately from directly offered descriptors", () => {
+  const snapshot = diagnosticsEvent({
+    ...event,
+    servers: [
+      {
+        name: "weather",
+        internal: false,
+        offered: false,
+        tools: [],
+        tool_count: null,
+        gateway_tool_count: 7,
+        gateway_tools: [{ name: "forecast", description: "Weather details" }],
+      },
+    ],
+  });
+  if (!snapshot) throw new Error("Expected gateway diagnostics");
+  render(<ChatDiagnostics turns={[{ id: "one", snapshot }]} onClose={vi.fn()} />);
+  expect(screen.getByText("Offered servers · 0")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /weather/ }));
+  expect(screen.getByText("Gateway tools at last discovery: 7")).toBeInTheDocument();
+  expect(screen.getByText("No tools directly offered to the provider in this request.")).toBeInTheDocument();
+  expect(screen.queryByText(/tool count unknown|Gateway tool count: not measured/)).not.toBeInTheDocument();
+  expect(screen.getByText("Weather details")).toBeInTheDocument();
+  expect(screen.getByText("Showing the first 1 gateway tools.")).toBeInTheDocument();
+});
+
+it.each([
+  { gateway_tool_count: -1 },
+  { gateway_tool_count: 0.5 },
+  { gateway_tool_count: 1 },
+  { gateway_tools: [] },
+  { gateway_tool_count: 0, gateway_tools: [{ name: "a", description: "b" }] },
+])("rejects malformed gateway metadata: %j", (gateway) => {
+  expect(
+    diagnosticsEvent({
+      ...event,
+      servers: [{ name: "weather", internal: false, offered: false, tools: [], tool_count: null, ...gateway }],
+    }),
+  ).toBeNull();
+});
+
 it.each([
   { name: "x".repeat(129) },
   { internal: "yes" },
@@ -110,7 +151,8 @@ it("shows configured servers with unknown tool counts and sampled status", () =>
   if (!snapshot) throw new Error("Expected diagnostics");
   render(<ChatDiagnostics turns={[{ id: "one", snapshot }]} onClose={vi.fn()} />);
   fireEvent.click(screen.getByRole("button", { name: /my_server/ }));
-  expect(screen.getByText("Not offered in this request · tool count unknown")).toBeInTheDocument();
+  expect(screen.getByText("No tools directly offered to the provider in this request.")).toBeInTheDocument();
+  expect(screen.getByText("Gateway tool count: not measured in this turn.")).toBeInTheDocument();
   expect(screen.getByText(/Running when sampled/)).toBeInTheDocument();
 });
 
@@ -128,7 +170,8 @@ it("distinguishes tool categories and passive cached counts from offered tools",
   expect(screen.getByText("MCP discovery: 100 ms")).toBeInTheDocument();
   expect(screen.getByText("MCP tool calls: 25 ms")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /weather/ }));
-  expect(screen.getByText("Not offered in this request · tool count unknown")).toBeInTheDocument();
+  expect(screen.getByText("No tools directly offered to the provider in this request.")).toBeInTheDocument();
+  expect(screen.getByText("Gateway tool count: not measured in this turn.")).toBeInTheDocument();
   expect(screen.getByText("Cached descriptors when sampled: 7")).toBeInTheDocument();
   expect(diagnosticsEvent({ ...event, mcp_tool_ms: -1 })).toBeNull();
   expect(diagnosticsEvent({ ...event, internal_tool_ms: Infinity })).toBeNull();

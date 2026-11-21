@@ -1,5 +1,128 @@
+import CoreFoundation
+import CoreGraphics
 import Foundation
 import Security
+
+enum WorkspaceFooterGeometry {
+    static func deliveryIsCurrent(revision: Int, currentRevision: Int,
+                                  requested: (CGFloat, CGFloat, Int), current: (CGFloat, CGFloat, Int)) -> Bool {
+        revision == currentRevision && requested == current
+    }
+
+    /// The page can only reserve the current viewport's bottom-left footer slot.
+    static func slot(_ values: [String: NSNumber], viewport: CGSize, width expectedWidth: CGFloat, bottom: CGFloat) -> CGRect? {
+        let keys = ["x", "y", "width", "height", "viewportWidth", "viewportHeight"]
+        guard keys.allSatisfy({ values[$0].map { CFGetTypeID($0) != CFBooleanGetTypeID() } == true }),
+              let x = values["x"]?.doubleValue, let y = values["y"]?.doubleValue,
+              let width = values["width"]?.doubleValue, let height = values["height"]?.doubleValue,
+              let viewportWidth = values["viewportWidth"]?.doubleValue,
+              let viewportHeight = values["viewportHeight"]?.doubleValue,
+              [x, y, width, height, viewportWidth, viewportHeight, expectedWidth, bottom].allSatisfy(\.isFinite),
+              abs(viewportWidth - Double(viewport.width)) <= 2, abs(viewportHeight - Double(viewport.height)) <= 2,
+              x >= 0, x <= 80, width >= 44, width <= 180, abs(width - Double(expectedWidth)) <= 2,
+              height >= 44, height <= 52, x + width <= viewportWidth,
+              y >= 0, abs(y + height + Double(bottom) - viewportHeight) <= 3 else { return nil }
+        return CGRect(origin: CGPoint(x: x, y: y), size: CGSize(width: width, height: height))
+    }
+}
+
+struct AppBuildObservation: Codable, Equatable {
+    struct Build: Codable, Equatable {
+        let version: String
+        let number: String
+        let revision: String?
+
+        init?(version: String?, number: String?, revision: String?) {
+            guard let version, !version.isEmpty, let number, !number.isEmpty else { return nil }
+            self.version = version
+            self.number = number
+            self.revision = revision.flatMap { $0.range(of: #"^[a-f0-9]{7,64}$"#, options: .regularExpression) == nil ? nil : $0 }
+        }
+    }
+
+    let build: Build
+    let observedSince: Date
+
+    static func recording(_ build: Build, previous: Self?, now: Date) -> Self {
+        if let previous, previous.build == build, previous.observedSince <= now { return previous }
+        return Self(build: build, observedSince: now)
+    }
+}
+
+struct WorkspaceVersionObservation: Codable, Equatable {
+    let version: String
+    let observedAt: Date
+    var installedVersion: String? = nil
+    var installedUpdatedAt: Date? = nil
+    var daemonLastVersion: String? = nil
+    var daemonLastObservedAt: Date? = nil
+    var daemonObservationStale: Bool? = nil
+
+    static func fromPayload(_ data: [String: Any], now: Date) -> Self? {
+        func text(_ value: Any?) -> String? {
+            guard let value = value as? String, !value.isEmpty, value.count <= 64,
+                  value.rangeOfCharacter(from: .controlCharacters) == nil else { return nil }
+            return value
+        }
+        func date(_ value: Any?) -> Date? {
+            guard let value = value as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID(),
+                  value.doubleValue.isFinite, value.doubleValue > 0 else { return nil }
+            let date = Date(timeIntervalSince1970: value.doubleValue / 1000)
+            return date <= now ? date : nil
+        }
+        guard let version = text(data["version"]) else { return nil }
+        var observation = Self(version: version, observedAt: now)
+        observation.installedVersion = text(data["installedVersion"])
+        observation.installedUpdatedAt = observation.installedVersion == nil ? nil : date(data["installedUpdatedAt"])
+        observation.daemonLastVersion = text(data["daemonLastVersion"])
+        observation.daemonLastObservedAt = date(data["daemonLastObservedAt"])
+        observation.daemonObservationStale = data["daemonObservationStale"] as? Bool
+        return observation
+    }
+
+    static func record(_ observation: Self, origin: String, selectedOrigin: String,
+                       requestRevision: Int, currentRevision: Int, into values: inout [String: Self]) -> Bool {
+        guard origin == selectedOrigin, requestRevision == currentRevision else { return false }
+        values[origin] = observation
+        return true
+    }
+}
+
+/// One bounded metadata lookup at a time; failed or superseded requests never relabel cached observations.
+@MainActor
+final class WorkspaceVersionRefresh {
+    private var lastRevision = 0
+    private var generation = 0
+    private var task: Task<Void, Never>?
+
+    func cancel() {
+        generation &+= 1
+        task?.cancel()
+        task = nil
+    }
+
+    @discardableResult
+    func request(revision: Int? = nil,
+                 read: @escaping @MainActor () async -> WorkspaceVersionObservation?,
+                 isCurrent: @escaping @MainActor () -> Bool,
+                 report: @escaping @MainActor (WorkspaceVersionObservation) -> Void) -> Task<Void, Never>? {
+        if let revision {
+            guard revision != lastRevision else { return nil }
+            lastRevision = revision
+        }
+        cancel()
+        let requestedGeneration = generation
+        let pending = Task { [weak self] in
+            guard !Task.isCancelled, isCurrent() else { return }
+            let observation = await read()
+            guard !Task.isCancelled, self?.generation == requestedGeneration, isCurrent(),
+                  let observation else { return }
+            report(observation)
+        }
+        task = pending
+        return pending
+    }
+}
 
 struct RecentWorkspace: Codable, Identifiable {
     let address: String

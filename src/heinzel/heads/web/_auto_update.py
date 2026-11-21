@@ -18,6 +18,7 @@ import os
 import platform
 import random
 import re
+import secrets
 import sys
 import threading
 import weakref
@@ -35,6 +36,7 @@ from pydantic import BaseModel, Field
 
 from heinzel import HeinzelError, __version__
 from heinzel.heads._stream import WORK
+from heinzel.heads.web._state_directory import open_updater_file, private_directory
 from heinzel.kernel import (
     KERNEL_SECTION,
     CurrentUser,
@@ -537,18 +539,23 @@ def _old_enough(published: datetime | None, hours: int, now: datetime) -> bool:
 
 
 @contextmanager
-def _locked(path: Path) -> Generator[None]:
-    """Hold an exclusive lock on `path` for the block; without a writable state folder, go on without one."""
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        handle = path.open("a", encoding="utf-8")
-    except OSError:
-        yield
-        return
-    with handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
+def _locked(path: Path) -> Generator[int | None]:
+    """Lock one verified directory for the complete read/edit/write operation.
+
+    Yields:
+        The stable directory descriptor, or None for in-memory-only operation when storage is unsafe/unavailable.
+    """
+    with contextlib.ExitStack() as stack:
         try:
-            yield
+            folder = stack.enter_context(private_directory(path.parent))
+            descriptor = open_updater_file(folder, path.name, os.O_WRONLY | os.O_CREAT | os.O_APPEND)
+            handle = stack.enter_context(os.fdopen(descriptor, "a", encoding="utf-8"))
+            fcntl.flock(handle, fcntl.LOCK_EX)
+        except (OSError, HeinzelError):
+            yield None
+            return
+        try:
+            yield folder
         finally:
             fcntl.flock(handle, fcntl.LOCK_UN)
 
@@ -556,9 +563,10 @@ def _locked(path: Path) -> Generator[None]:
 def _try_lock(path: Path) -> IO[str] | None:
     """An exclusive lock on `path` if no other holder has it, kept until released or this process ends."""
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        handle = path.open("a", encoding="utf-8")
-    except OSError:
+        with private_directory(path.parent) as folder:
+            descriptor = open_updater_file(folder, path.name, os.O_WRONLY | os.O_CREAT | os.O_APPEND)
+            handle = os.fdopen(descriptor, "a", encoding="utf-8")
+    except (OSError, HeinzelError):
         return None
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -840,7 +848,7 @@ class AutoUpdater:
             executable = next((entry for entry in entries if entry.name == "hz"), None)
             if executable is not None:
                 status = install_desktop(self._version, executable, update_only=True)
-                if status in {"updated", "deferred"}:
+                if status in {"updated", "deferred", "installed-pending"}:
                     log.info("desktop automatic update: %s", status)
         except (HeinzelError, OSError, SubprocessError) as exc:
             log.warning("desktop automatic update could not finish: %s", exc)
@@ -1116,10 +1124,15 @@ class AutoUpdater:
     def _between(self, low: timedelta, high: timedelta) -> timedelta:
         return low + (high - low) * self._random.random()
 
-    def _read(self, *, fresh: bool = False) -> Plan | None:
+    def _read(self, *, fresh: bool = False, folder: int | None = None) -> Plan | None:
         try:
-            return Plan.from_json(json.loads(self._path.read_text(encoding="utf-8")), fresh=fresh)
-        except (OSError, ValueError):
+            with contextlib.ExitStack() as stack:
+                if folder is None:
+                    folder = stack.enter_context(private_directory(self._path.parent))
+                descriptor = open_updater_file(folder, self._path.name, os.O_RDONLY)
+                with os.fdopen(descriptor, encoding="utf-8") as handle:
+                    return Plan.from_json(json.load(handle), fresh=fresh)
+        except (OSError, ValueError, HeinzelError):
             return None
 
     @contextmanager
@@ -1133,25 +1146,42 @@ class AutoUpdater:
         Yields:
             The latest plan, saved after the block if it changed.
         """
-        with self._lock, _locked(self._plan_lock):
-            latest = self._read()
+        with self._lock, _locked(self._plan_lock) as folder:
+            latest = self._read(folder=folder) if folder is not None else None
             if latest is not None:
                 latest.applying = self.plan.applying
                 self.plan = latest
             before = self.plan.to_json()
             yield self.plan
-            if self.plan.to_json() != before:
-                self._save()
+            if folder is not None and self.plan.to_json() != before:
+                self._save(folder=folder)
 
-    def _save(self) -> None:
+    def _save(self, *, folder: int | None = None) -> None:
         """Replace the state file at once; an unwritable state folder only costs what survives a restart."""
-        partial = self._path.with_name(f".{FILENAME}.{os.getpid()}")
-        try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-            partial.write_text(json.dumps(self.plan.to_json()), encoding="utf-8")
-            partial.replace(self._path)
-        except OSError:
+        if folder is None:
+            with _locked(self._plan_lock) as locked:
+                if locked is not None:
+                    self._save(folder=locked)
             return
+        partial = f".{FILENAME}.{secrets.token_hex(12)}"
+        created = False
+        try:
+            with contextlib.suppress(FileNotFoundError):
+                os.close(open_updater_file(folder, self._path.name, os.O_RDONLY))
+            descriptor = open_updater_file(folder, partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+            created = True
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                json.dump(self.plan.to_json(), handle)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(partial, self._path.name, src_dir_fd=folder, dst_dir_fd=folder)
+            os.fsync(folder)
+        except (OSError, HeinzelError):
+            return
+        finally:
+            if created:
+                with contextlib.suppress(OSError):
+                    os.unlink(partial, dir_fd=folder)
 
 
 AUTO_UPDATE_PATH = "/auto-update"

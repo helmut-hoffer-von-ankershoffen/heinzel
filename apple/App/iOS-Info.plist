@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleURLTypes</key>
+    <array><dict>
+        <key>CFBundleURLName</key><string>team.heinzel.apple.workspace</string>
+        <key>CFBundleURLSchemes</key><array><string>heinzel</string></array>
+    </dict></array>
+    <key>UILaunchScreen</key><dict>
+        <key>UIImageName</key><string>StartupIcon</string>
+        <key>UIColorName</key><string>StartupBackground</string>
+        <key>UIImageRespectsSafeAreaInsets</key><true/>
+    </dict>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>HeinzelManagedInstall</key><string>$(HEINZEL_MANAGED_INSTALL)</string>
+    <key>HeinzelCloudSignIn</key><string>$(HEINZEL_ICLOUD_SIGN_IN)</string>
+    <key>HeinzelHTTPSLinks</key><string>$(HEINZEL_HTTPS_LINKS)</string>
+    <key>CFBundleDisplayName</key><string>Heinzelmännchen</string>
+    <key>ITSAppUsesNonExemptEncryption</key><false/>
+    <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
+    <key>NSLocalNetworkUsageDescription</key><string>Connect to the Heinzelmännchen server you choose on your private network.</string>
+    <key>NSMicrophoneUsageDescription</key><string>Use your microphone when you enable audio input in the Heinzelmännchen workspace.</string>
+    <key>NSAudioCaptureUsageDescription</key><string>Show sound playing on this Mac in the Heinzelmännchen visualizer.</string>
+    <key>NSScreenCaptureUsageDescription</key><string>Use audio from apps included in your system sharing selection to animate the Heinzelmännchen visualizer.</string>
+    <key>UIBackgroundModes</key><array><string>screen-capture</string></array>
+    <key>HeinzelSourceRevision</key><string>$(HEINZEL_SOURCE_REVISION)</string>
+    <key>HeinzelWidgetGroup</key><string>$(HEINZEL_WIDGET_GROUP)</string>
+    <key>HeinzelWidgetEnrollmentEnabled</key><true/>
+    <key>HeinzelWidgetKeychainGroup</key><string>$(AppIdentifierPrefix)team.heinzel.widget</string>
+</dict></plist>

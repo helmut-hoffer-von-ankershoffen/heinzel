@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>Connection · Heinzelmännchen</title>
+  <link rel="stylesheet" href="workspace-picker.css">
+  <script src="workspace-picker.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><img src="workspace-brand.svg" alt="" width="133" height="95"><h1>Heinzelmännchen</h1></header>
+    <div class="heading"><h2>Switch Workspace</h2><button id="back" title="Back to Workspace" aria-label="Back to Workspace" hidden>×</button></div>
+    <section id="connection" class="panel" hidden><h3>Current workspace</h3><p id="current"></p></section>
+    <output id="status" aria-live="polite"></output>
+    <progress id="progress" aria-label="Connecting" hidden></progress>
+    <button id="retry" class="primary" hidden>Try Again</button>
+    <section class="panel"><button id="local" class="row"><span><strong>Start Local Workspace</strong><small>This Mac</small></span><span aria-hidden="true">›</span></button></section>
+    <section id="recents" class="panel" hidden><h3>Recent Workspaces</h3><div id="recent-list"></div></section>
+    <form class="panel" id="connect"><h3>Connect to a workspace</h3><p>Paste a shared workspace link or a private HTTPS sign-in link from the host.</p><label for="link">Workspace or sign-in link</label><input id="link" type="password" placeholder="https://…" autocomplete="off" spellcheck="false" required><div class="actions"><button class="primary" type="submit">Connect</button></div></form>
+    <footer><p>Durable agents accelerating product teams,<br>like the little elves from Cologne.</p><small id="version"></small></footer>
+  </main>
+</body>
+</html>

@@ -153,6 +153,7 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/ship.py": "the golden path for small changes in Heinzelmännchen's own worktrees (docs/SHIP_SMALL.md)",
     ".claude/skills/ship-small/SKILL.md": "drives scripts/ship.py, which plugins don't get",
     "scripts/scoped_checks.py": "routes Core-root checks; owning and governed plugins already check their own project",
+    "scripts/mixed_scope.py": "supports Core-root mixed push checks; plugins run their own checks",
     "scripts/related_tests.py": "maps the core pre-push diff to its related unit tests; plugins run their own",
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
     "scripts/review_tier.py": "picks the source review tier of a core change from its paths; plugins have none",
@@ -216,6 +217,18 @@ def parity_problem(path: str, generated: set[Path]) -> str | None:
     if counterpart in generated or jinja.exists():
         return None
     return "symlink it into template/ (or generate it), or add it to CORE_ONLY with the reason"
+
+
+def test_template_locks_the_reviewed_pyyaml():
+    """A fresh plugin lock resolves the PyYAML the bootstrap reviewed, named once in src/heinzel/bootstrap_pyyaml.py;
+    the starter carries a copy this test keeps equal."""
+    reviewed = re.search(r'(?m)^VERSION = "([^"]+)"$', (REPO / "src/heinzel/bootstrap_pyyaml.py").read_text())
+    assert reviewed is not None
+    for source in (TEMPLATE / "pyproject.toml.jinja", REPO / "starter" / "pyproject.toml.jinja"):
+        rendered = source.read_text(encoding="utf-8")
+        assert f'constraint-dependencies = ["pyyaml=={reviewed.group(1)}"]' in rendered, source
+    starter = (REPO / "starter" / "pyproject.toml.jinja").read_text(encoding="utf-8")
+    assert f'"pyyaml=={reviewed.group(1)}"]' in starter.split("[dependency-groups]")[1].split("\n\n")[0]
 
 
 def test_finds_parity_problems():

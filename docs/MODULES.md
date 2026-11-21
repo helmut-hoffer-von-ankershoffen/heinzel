@@ -120,7 +120,7 @@ Your Heinzelmännchen: durable Heinzels that draft your team's recurring work fo
 | Inspect the latest suggested name and look; it has not been applied. | `hz heinzel latest-profile-proposal` | — | — | `GET /api/heinzel/latest-profile-proposal` |  |  |
 | Answer one authenticated user's accepted message; an interrupted request is never silently replayed. | `hz heinzel answer-chat` | — | — | `POST /api/heinzel/answer-chat` | yes |  |
 | Read the recorded turn state; unresolved may still be running. | `hz heinzel chat-turn-state` | — | — | `GET /api/heinzel/chat-turn-state` |  |  |
-| Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects. | `hz heinzel abandon-chat-turn` | — | — | `POST /api/heinzel/abandon-chat-turn` | yes |  |
+| Set aside a stopped uncertain turn or eligible unstarted input; never retry or undo effects. | `hz heinzel abandon-chat-turn` | — | — | `POST /api/heinzel/abandon-chat-turn` | yes |  |
 | Show recent private exact-result comparisons from approved reads, without source contents. | `hz heinzel input-snapshot-history` | — | — | `GET /api/heinzel/input-snapshot-history` |  |  |
 | Show owner-private host-observed tool decisions, without their arguments. | `hz heinzel tool-activity` | — | — | `GET /api/heinzel/tool-activity` |  |  |
 | Create a durable personal Heinzel with an idempotent request, name and look. | `hz heinzel new-chat` | `heinzel_new_chat` | — | `POST /api/heinzel/new-chat` | yes |  |
@@ -252,7 +252,7 @@ Inspect, configure, diagnose and update Heinzelmännchen itself.
 | List every module and the lets it advertises. | `hz system modules` | `system_modules` | `GET /system/modules` | `GET /api/system/modules` |  | expert |
 | List every operation and tool with its heads, parameters and result, in four formats. | `hz system tools` | `system_tools` | `GET /system/tools` | `GET /api/system/tools` |  | expert |
 | Ask where Heinzelmännchen was installed from for its latest release, and whether to update. | `hz system release` | `system_release` | `GET /system/release` | `GET /api/system/release` |  | expert |
-| Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking. | `hz system update` | `system_update` | `POST /system/update` | `POST /api/system/update` | yes |  |
+| Update Heinzelmännchen, every plugin and the desktop app in one pass, without asking anything. | `hz system update` | `system_update` | `POST /system/update` | `POST /api/system/update` | yes |  |
 | Uninstall the verified Heinzel tool offline, keeping your data and configuration. | `hz system uninstall` | — | — | — | yes |  |
 | Show the update channel, or say what switching changes and, with `--yes`, switch. | `hz system channel` | `system_channel` | `POST /system/channel` | `POST /api/system/channel` | yes |  |
 

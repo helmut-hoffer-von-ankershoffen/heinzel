@@ -44,6 +44,7 @@ from packaging.version import InvalidVersion, Version
 from heinzel import HeinzelError, Progress, __version__
 from heinzel.kernel import (
     CorePin,
+    DaemonAttestation,
     DaemonHandoverPlan,
     DaemonHandoverRequest,
     DaemonInstallationLifecycle,
@@ -84,6 +85,10 @@ DAEMON_SECONDS = 90.0
 """How long an update waits for the handed-over daemon's first tick to report the version it loaded."""
 DAEMON_POLL_SECONDS = 1.0
 DESKTOP_RECEIPT = Path(".config/heinzel/desktop-installation.json")
+DEFERRED = 75
+"""The exit code of `hz app install --restart` when the app was still open after `QUIT_SECONDS` (EX_TEMPFAIL)."""
+QUIT_SECONDS = 20.0
+"""How long `hz app install --restart` waits for an open app to quit (`heinzel.heads._desktop_installation`)."""
 DESKTOP_SECONDS = 900
 """How long the new hz's `hz app install` may take: one verified download and a replace, as the installer allows."""
 """Under the home folder: the managed Mac app's receipt (`heinzel.heads._desktop_installation`)."""
@@ -181,21 +186,28 @@ class UpdateService:
         progress: Progress | None = None,
         pinned: Callable[[float], PinnedPlugins] | None = None,
         newer: Callable[[float], dict[str, str]] | None = None,
-        desktop: Callable[[], tuple[int, str]] | None = None,
+        desktop: Callable[..., tuple[int, str]] | None = None,
         need: PythonNeed | None = None,
+        daemon: DaemonAttestation | None = None,
+        running: Callable[[], bool] | None = None,
     ) -> None:
         """Create the service with an optional trusted lifecycle boundary and the heads it refreshes afterwards.
 
         `progress` hears the steps of `update` as they happen (`phase` events), so the app can show each one.
         `pinned` asks the releases of plugins pinned to an exact version or a GitHub commit and `newer` those of
         plugins that follow the index (both from the system module's `PluginReleases`); `desktop` runs the new hz's
-        `hz app install` and returns its exit code and output. Tests replace all three. `need` keeps what the last
-        update found about a release that needs a newer Python, for the doctor.
+        `hz app install` (`restart=True`: `--restart`) and returns its exit code and output; `daemon` reads the version
+        the daemon runs and `running` whether the desktop app is open. Tests replace all of them.
+        `need` keeps what the last update found about a release that needs a newer Python, for the doctor.
         """
         self._pinned_plugins = pinned
         self._need = need
         self._newer_plugins = newer
         self._desktop = desktop or self._app_install
+        self._daemon = daemon
+        self._running = running or _app_running
+        self._restart_daemon = True
+        """Whether the update in progress may restart the daemon and the web server (`--no-daemon` says not)."""
 
         self._progress = progress or Progress()
         self._steps: _Steps | None = None
@@ -308,11 +320,11 @@ class UpdateService:
         if scope.checkpoint_matched:
             self._installation.record_startup_state(expected=candidate)
         scope.verified_complete(candidate)
-        handover = scope.request(plan)
-        self._handover = (plan, handover)
-        if handover.requested:
-            message = f"{result.message}\nThe daemon handover was requested; a fresh service tick is pending."
-            return result.model_copy(update={"message": message})
+        if not self._restart_daemon:
+            scope.finish_without_handover()
+            self._handover = (plan, DaemonHandoverRequest(requested=False, reason="--no-daemon left it running"))
+            return result
+        self._handover = (plan, scope.request(plan))
         return result
 
     def apply_announced(
@@ -407,18 +419,20 @@ class UpdateService:
             heads=heads,
         )
 
-    def _target_release(self, pin: CorePin, current: str, latest: str | None, target: str | None) -> str | None:
-        """The release an install moves to, whose Python requirement decides the interpreter; None if unknown.
-
-        An installation that follows the package index resolves the newest release uv finds for the interpreter it
-        names, so the highest release is asked for there: a release for a newer Python is reached only that way.
-        """
-        if latest is not None and target in {f"v{latest}", None}:
+    @staticmethod
+    def _target_release(pin: CorePin, current: str, latest: str | None, target: str | None) -> str | None:
+        """The release an install moves to, whose Python requirement decides the interpreter."""
+        if target is not None:
+            return _release_version(target)
+        if (
+            pin.kind in {"default", "index"}
+            and pin.git is None
+            and latest is not None
+            and Version(latest) > _version(current)
+            and Requirement(pin.requirement).specifier.contains(latest)
+        ):
             return latest
-        if target is None and pin.kind in ("default", "index") and pin.git is None:
-            highest = self._asked_latest(current)
-            return highest if highest is not None and Version(highest) > _version(current) else None
-        return _release_version(target)
+        return None
 
     def _fingerprints(self) -> "_Before":
         """The generation before an install and, if it moves to another interpreter, what a put-back must match."""
@@ -700,20 +714,26 @@ class UpdateService:
             )
         return AnnouncedUpdate(updated=False, after=current, restored=True, refused=bool(refused), message=message)
 
-    def update(
+    def update(  # noqa: PLR0913 - what a person can ask for, each a keyword
         self,
         source: str | None = None,
         current: str = __version__,
         channel: UpdateChannel = "stable",
         *,
         agreed: UpdatePlan | None = None,
+        shown: UpdatePlan | None = None,
         desktop: bool = False,
+        restart: bool = False,
+        from_app: bool = False,
+        daemon: bool = True,
     ) -> UpdateResult:
         """Update to the latest release, or reinstall from `source`; `current` is the version running now.
 
         After a change, every installed long-running head is moved onto the installed code through its own owned
         restart path and asked which version its live process loaded (`heads`): the daemon's handover tick and the
         persistent web server. The update is complete only when each is verified; the message says which aren't.
+        A daemon that runs older code than is installed is restarted too, even when nothing changed. With `daemon`
+        false none of them is restarted: the result says which one still runs older code.
 
         `channel` is where the installation follows: `edge` (the newest edge release's wheel, verified by digest) or
         stable, which `release` also names: the releases (a pin to the newest release tag, which every later
@@ -724,8 +744,10 @@ class UpdateService:
         pinned to an exact index version follows the index from that version up, and one pinned to a commit of a
         GitHub repository that tags its releases goes to the commit of its newest release tag, as automatic updates
         install it (ADR 0137). Nothing is asked again for them, and never with `source`, which installs exactly
-        what it names. The agreement belongs to this call alone. With `desktop` an installed desktop app is updated
-        afterwards by the new hz's own `hz app install`; a failure there never undoes the update.
+        what it names. The agreement belongs to this call alone. `shown` is the plan the progress rows are announced
+        from. With `desktop` an installed desktop app is brought along by the new hz's own `hz app install`; a
+        failure there never undoes the update. With `restart` an open app is quit and reopened by it, unless `from_app`
+        says the app itself runs this update: then it installs when the app is quit.
 
         Raises:
             HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, another update runs in this
@@ -737,19 +759,34 @@ class UpdateService:
             raise HeinzelError(msg)
         moves = _Agreed.of(agreed if source is None else None)
         held = _AGREED.set(moves)
+        self._restart_daemon = daemon
         try:
-            return self._update_with_steps(source, current, channel, desktop=desktop)
+            return self._update_with_steps(
+                source, current, channel, shown=shown, desktop=(desktop, restart, from_app), daemon=daemon
+            )
         finally:
+            self._restart_daemon = True
             _AGREED.reset(held)
             self._updating.release()
 
-    def _update_with_steps(
-        self, source: str | None, current: str, channel: UpdateChannel, *, desktop: bool
+    def _update_with_steps(  # noqa: PLR0913 - the answers of one call
+        self,
+        source: str | None,
+        current: str,
+        channel: UpdateChannel,
+        *,
+        shown: UpdatePlan | None,
+        desktop: tuple[bool, bool, bool],
+        daemon: bool,
     ) -> UpdateResult:
+        started = self._clock()
         self._handover = None
         pins = self._installation.plugin_pins()
+        names = [canonicalize_name(p.name) for p in pins]
+        app = self._desktop_state()
+        ran = self._daemon_version()
         steps = self._steps = _Steps(
-            self._progress, [canonicalize_name(p.name) for p in pins], desktop=desktop and self._desktop_installed()
+            self._progress, _own_rows(names, shown), len(names), desktop=app is not None, daemon=ran is not None
         )
         try:
             steps.start("check")
@@ -759,19 +796,18 @@ class UpdateService:
                 steps.fail(str(exc).splitlines()[0])
                 raise
             steps.installed(result)
-            if not result.updated:  # nothing changed, so every head already runs what is installed
-                steps.skip("heads", "Nothing changed, so nothing restarts.")
-                steps.skip("desktop", "Nothing changed, so the desktop app stays as it is.")
-                return result
-            steps.start("heads")
-            heads = self._refresh_heads(result.after)
-            steps.restarted(heads)
-            if desktop and any(head.head == "desktop" for head in heads):
+            heads: list[HeadRefresh] = []
+            steps.start("daemon")
+            heads += self._service_heads(result, ran, daemon=daemon)
+            steps.services(heads)
+            if app is not None:
                 steps.start("desktop")
-                app = self._desktop_head(result.after)
-                heads = [app if head.head == "desktop" else head for head in heads]
-                steps.desktop(app)
-            return result.model_copy(update={"heads": heads, "message": _with_heads(result.message, heads)})
+                head = self._app_head(result, app, desktop)
+                heads.append(head)
+                steps.desktop(head)
+            seconds = round(self._clock() - started, 1)
+            message = _with_heads(result.message, heads) if result.updated else result.message
+            return result.model_copy(update={"heads": heads, "message": message, "seconds": seconds})
         finally:
             self._steps = None
 
@@ -803,6 +839,8 @@ class UpdateService:
             core=_core_line(current, latest, channel),
             plugins=plans,
             desktop=self._desktop_installed(),
+            desktop_running=self._desktop_installed() and self._running(),
+            daemon=self._daemon_version() is not None,
             token=_plan_token(latest, plans),
         )
 
@@ -828,41 +866,90 @@ class UpdateService:
             newer = {}
         return found, newer
 
-    def update_desktop(self, result: UpdateResult) -> UpdateResult:
-        """`result` of an update that left the desktop app pending, after updating the app as the person agreed."""
-        if not any(head.head == "desktop" and head.status == "pending" for head in result.heads):
-            return result
-        app = self._desktop_head(result.after)
-        old = _with_heads("", result.heads)
-        heads = [app if head.head == "desktop" else head for head in result.heads]
-        base = result.message.removesuffix(old) if old else result.message
-        return result.model_copy(update={"heads": heads, "message": _with_heads(base, heads)})
+    def _desktop_state(self) -> tuple[str | None, bool] | None:
+        """The installed desktop app's release and whether it is open; none if there is no managed app here."""
+        if not self._desktop_installed():
+            return None
+        release = None
+        with suppress(OSError, ValueError, AttributeError):
+            found = json.loads((self._home or Path.home()).joinpath(DESKTOP_RECEIPT).read_text(encoding="utf-8"))
+            release = found.get("release")
+        return release if isinstance(release, str) else None, self._running()
 
-    def _desktop_head(self, target: str) -> HeadRefresh:
+    def _app_head(
+        self, result: UpdateResult, app: tuple[str | None, bool], asked: tuple[bool, bool, bool]
+    ) -> HeadRefresh:
+        """The desktop app's outcome: left alone, already newest, deferred until it is quit, or updated."""
+        desktop, restart, from_app = asked
+        release, running = app
+        target = result.after
+        known = (release, running)
+        if not desktop:
+            return HeadRefresh(
+                head="desktop",
+                status="pending",
+                detail="left alone; update it later with `hz app install`.",
+                before=known[0],
+                was_running=known[1],
+            )
+        if release == target or (release is None and not result.updated):  # nothing known to replace
+            return HeadRefresh(
+                head="desktop",
+                status="verified",
+                version=target,
+                detail="Already the newest.",
+                before=release,
+                was_running=running,
+            )
+        if running and (from_app or not restart):
+            why = "installs when you quit the app" if from_app else "installs when you quit it"
+            return HeadRefresh(head="desktop", status="pending", detail=f"{why}.", before=release, was_running=running)
+        return self._desktop_install(target, restart=running and restart, known=known)
+
+    def _desktop_install(self, target: str, *, restart: bool, known: tuple[str | None, bool]) -> HeadRefresh:
         """Update the installed desktop app with the new hz's own `hz app install`; never raises."""
         with step(log, "update.desktop", operation="system.update", version=target) as outcome:
             try:
-                code, output = self._desktop()
+                code, output = self._desktop(restart=True) if restart else self._desktop()
             except (OSError, subprocess.SubprocessError) as exc:
                 code, output = 1, str(exc)
-            outcome.note(exit_code=code)
-            if code != 0:
+            outcome.note(exit_code=code, restart=restart)
+            if code not in {0, DEFERRED}:
                 outcome.outcome = "error"
         if code == 0:
-            return HeadRefresh(head="desktop", status="verified", version=target, detail="Updated by `hz app install`.")
+            return HeadRefresh(
+                head="desktop",
+                status="verified",
+                version=target,
+                detail="Updated by `hz app install`.",
+                reopened=restart,
+                before=known[0],
+                was_running=known[1],
+            )
+        if code == DEFERRED:
+            return HeadRefresh(
+                head="desktop",
+                status="pending",
+                detail=f"still open after {QUIT_SECONDS:g} s, so it installs when you quit it: `hz app install`.",
+                reopened=False,
+                before=known[0],
+                was_running=known[1],
+            )
         lines = [line.strip() for line in output.splitlines() if line.strip()]
         said = " ".join(lines[-2:])[:REASON_LENGTH] if lines else "It gave no reason."
         return HeadRefresh(
             head="desktop",
             status="failed",
             detail=f"`hz app install` didn't update it: {said} hz itself is updated. Run `hz app install` again.",
+            before=known[0],
+            was_running=known[1],
         )
 
-    def _app_install(self) -> tuple[int, str]:
+    def _app_install(self, *, restart: bool = False) -> tuple[int, str]:
         """Run `hz app install` in a fresh interpreter, which is the new hz; its exit code and what it printed."""
         flags = ["-I", "-B"] if sys.dont_write_bytecode else ["-I"]
         result = subprocess.run(  # noqa: S603 - our own interpreter and module
-            [sys.executable, *flags, "-m", "heinzel", "app", "install"],
+            [sys.executable, *flags, "-m", "heinzel", "app", "install", *(["--restart"] if restart else [])],
             capture_output=True,
             text=True,
             check=False,
@@ -906,8 +993,9 @@ class UpdateService:
         if pin.kind == "ref" and pin.ref == DEFAULT_BRANCH:
             return self._switch_to_releases(pin, plugins, current, generation)
         if pin.kind in ("default", "index"):
+            latest = self._asked_latest(current) if pin.git is None else None
             return self._install(
-                pin.requirement, pin, plugins, current=current, latest=None, target=None, generation=generation
+                pin.requirement, pin, plugins, current=current, latest=latest, target=None, generation=generation
             )
         return self._with_plugins(self._pinned(pin, current), pin, plugins, generation)
 
@@ -1203,8 +1291,16 @@ class UpdateService:
         with self._install_constraints(
             core, current, self._constraint_candidates(core, plugins, before), enabled=not explicit_source, scope=scope
         ) as (constraints, captured_constraints):
-            modes, reasons, failure = self._converge(
-                core, plugins, before, activity, environment=environment, may_drop=True, constraints=constraints
+            preferred = _index_preferred_release(pin, current, latest, captured_constraints) if target is None else None
+            modes, reasons, failure, minimum = self._converge(
+                core,
+                plugins,
+                before,
+                activity,
+                environment=environment,
+                may_drop=True,
+                constraints=constraints,
+                preferred=preferred,
             )
         if modes is None:
             constraint_hint = (
@@ -1236,12 +1332,7 @@ class UpdateService:
             forbidden=tuple(plugin.name for plugin in plugins if modes[canonicalize_name(plugin.name)] == "drop"),
             constraints=captured_constraints,
         )
-        if not explicit_source and Version(metadata["heinzel"]) < Version(current):
-            msg = (
-                "The resolved automatic update is older than the installed core; "
-                "no changed code was started and explicit recovery is required."
-            )
-            raise HeinzelError(msg)
+        _verify_core_selection(metadata["heinzel"], current, minimum, explicit_source=explicit_source)
         try:
             after = self._version()
         except HeinzelError as exc:
@@ -1257,14 +1348,15 @@ class UpdateService:
             msg = "The running hz version does not match its inspected metadata."
             raise HeinzelError(msg)
         now = self._installation.core_pin()
-        if target is None and after == current:  # nothing newer where the installation follows
-            message = f"hz {current} is up to date{f' ({channel})' if channel else ''}."
-        elif after == current:
-            message = f"Reinstalled hz {current} from {target}"
-        elif explicit_source:
-            message = f"Installed hz {after} from {target}; this process is running hz {current}."
-        else:
-            message = f"Updated hz {current} → {after}."
+        message = _install_message(
+            current,
+            after,
+            latest,
+            target=target,
+            channel=channel,
+            explicit_source=explicit_source,
+            index_lookup_failed=pin.kind == "index" and channel is None and not explicit_source and latest is None,
+        )
         after_plugins = self._plugin_versions(strict=True)
         self._verify_plugin_versions(metadata, after_plugins)
         updates = self._plugin_updates(plugins, modes, reasons, before, after_plugins, core)
@@ -1321,7 +1413,7 @@ class UpdateService:
                 constraints,
                 captured_constraints,
             ):
-                modes, reasons, failure = self._converge(
+                modes, reasons, failure, _ = self._converge(
                     pin.requirement,
                     plugins,
                     before,
@@ -1378,6 +1470,8 @@ class UpdateService:
                     msg = "The installation changed during post-update verification."
                     raise HeinzelError(msg)
                 if scope is not None and plan is not None:
+                    if not refreshed.updated and self._abort_or_leave_pending(scope):
+                        return refreshed  # nothing changed, so the daemon is not handed over
                     refreshed = self._finish_mutation(scope, plan, candidate, refreshed)
             return refreshed
 
@@ -1487,37 +1581,40 @@ class UpdateService:
         environment: Mapping[str, str],
         may_drop: bool,
         constraints: Path | None = None,
-    ) -> tuple[dict[str, Mode] | None, dict[str, str], str]:
+        preferred: str | None = None,
+    ) -> tuple[dict[str, Mode] | None, dict[str, str], str, str | None]:
         """Install `core` and every plugin; each plugin that blocks it is stepped down until the install works.
 
         A plugin goes in from its spec asked again (`new`); one uv names in a failed install is tried at the version it
         has (`keep`), and with `may_drop` left out (`drop`) if that doesn't resolve either. If uv names no one, every
         plugin is tried as it is. Returns the mode of each plugin, why those stepped down did, and the last failure
-        (the modes are None if nothing worked).
+        (the modes are None if nothing worked), and the preferred minimum if the resolver used it.
         """
         names = [canonicalize_name(p.name) for p in plugins]
         modes: dict[str, Mode] = dict.fromkeys(names, "new")
         reasons: dict[str, str] = {}
         output = ""
         graph = self._requirers()
-        for _ in range(2 * len(plugins) + 2):
+        for _ in range(2 * len(plugins) + 2 + int(preferred is not None)):
             specs = [
                 self._spec(p, modes[n], core, before.get(n))
                 for p, n in zip(plugins, names, strict=True)
                 if modes[n] != "drop"
             ]
-            command = self._installation.tool_install_command(core, specs, refresh=True)
-            if constraints is not None:
-                command.extend(["--constraints", str(constraints)])
+            command = self._converge_command(core, specs, constraints, preferred)
             try:
                 result = self._installation.attempt(command, activity, environment)
             except HeinzelError as exc:
-                return None, reasons, str(exc)
+                return None, reasons, str(exc), None
             if result.returncode == 0:
-                return modes, reasons, ""
+                return modes, reasons, "", preferred
             output = result.stderr.strip() or result.stdout.strip()
             if not _is_conflict(output):  # a network, credential or timeout failure is not the plugins' fault
-                return None, reasons, output
+                return None, reasons, output, None
+            if preferred is not None:
+                # A preference for the newest release must not force plugin removal.
+                preferred = None
+                continue
             blocking = [n for n in blocking_plugins(specs, output) if n in modes and modes[n] != "drop"]
             suspects = (
                 blocking
@@ -1528,11 +1625,21 @@ class UpdateService:
                 break
             for name in suspects:
                 if modes[name] == "keep" and not may_drop:
-                    return None, reasons, output
+                    return None, reasons, output, None
                 modes[name] = "keep" if modes[name] == "new" else "drop"
                 reasons[name] = _reason(output)
             _drop_dependents(modes, reasons, graph)
-        return None, reasons, output
+        return None, reasons, output, None
+
+    def _converge_command(
+        self, core: str, specs: list[str], constraints: Path | None, preferred: str | None
+    ) -> list[str]:
+        command = self._installation.tool_install_command(core, specs, refresh=True)
+        if preferred is not None:
+            command.extend(["--upgrade-package", f"heinzel>={preferred}"])
+        if constraints is not None:
+            command.extend(["--constraints", str(constraints)])
+        return command
 
     def _requirers(self) -> dict[str, set[str]]:
         """Which installed distributions require each one, read from the tool folder's metadata; never run."""
@@ -1703,15 +1810,10 @@ class UpdateService:
         return f"hz may not start; restore it with: {self._installation.tool_restore_hint(restore)}"
 
     def _refresh_heads(self, target: str) -> list[HeadRefresh]:
-        """Move each installed long-running head onto the installed code and observe what its live process runs.
-
-        Runs only after the installation mutation completed, so no pending marker blocks an owned restart. Nothing
-        here raises: a head that can't be verified is reported as `pending` or `failed`, with the command that
-        finishes it, and the update never claims it.
-        """
+        """The heads after an automatic update: the daemon's handover and the web server, the app left to its update."""
         heads: list[HeadRefresh] = []
         if self._lifecycle is not None:
-            heads.append(self._daemon_head(target))
+            heads.append(self._handed_over(target))
         if self._web is not None:
             try:
                 heads.append(self._web.refresh(target))
@@ -1735,13 +1837,97 @@ class UpdateService:
             )
         return heads
 
+    def _daemon_version(self) -> str | None:
+        """The version the installed daemon's process runs, when there is one and it can be told."""
+        if self._daemon is None or self._lifecycle is None:
+            return None
+        try:
+            status = self._daemon.status()
+        except Exception:  # noqa: BLE001 - an unreadable status means nothing is claimed about the daemon
+            return None
+        return status.version if status.installed else None
+
+    def _service_heads(self, result: UpdateResult, ran: str | None, *, daemon: bool) -> list[HeadRefresh]:
+        """Move each installed long-running head onto the installed code and observe what its live process runs.
+
+        Runs only after the installation mutation completed, so no pending marker blocks an owned restart. Nothing
+        here raises: a head that can't be verified is reported as `pending` or `failed`, with the command that
+        finishes it, and the update never claims it. Without a change a head is left alone, unless the daemon runs
+        older code than is installed. With `daemon` false nothing restarts.
+        """
+        target = result.after
+        heads: list[HeadRefresh] = []
+        if self._lifecycle is not None:
+            heads.append(self._daemon_head(result, ran, daemon=daemon))
+        if self._web is not None and result.updated and daemon:
+            try:
+                heads.append(self._web.refresh(target))
+            except Exception as exc:  # noqa: BLE001 - a head's own failure is reported, never hidden or raised
+                heads.append(
+                    HeadRefresh(
+                        head="web",
+                        status="failed",
+                        detail=f"The web server couldn't be refreshed ({exc}). Run `hz ui restart`, then "
+                        "`hz ui status`.",
+                    )
+                )
+        return heads
+
+    def _daemon_head(self, result: UpdateResult, ran: str | None, *, daemon: bool) -> HeadRefresh:
+        """The daemon after the update: restarted into it, already running it, or still on older code."""
+        target = result.after
+        if ran is None and not result.updated:
+            return HeadRefresh(head="daemon", status="not-installed", detail="No daemon is running.")
+        if not result.updated and ran == target:
+            return HeadRefresh(
+                head="daemon", status="verified", version=ran, detail="Already runs it.", restarted=False
+            )
+        if not daemon:
+            return self._still_runs(ran)
+        if not result.updated and (failed := self._restart_stale(target)) is not None:
+            return failed
+        head = self._handed_over(target)
+        return head.model_copy(update={"before": ran, "restarted": head.status == "verified"})
+
+    @staticmethod
+    def _still_runs(ran: str | None) -> HeadRefresh:
+        what = f"hz {ran}" if ran else "the old version"
+        return HeadRefresh(
+            head="daemon",
+            status="pending",
+            before=ran,
+            restarted=False,
+            detail=f"still runs {what}: `hz system daemon restart`.",
+        )
+
+    def _restart_stale(self, target: str) -> HeadRefresh | None:
+        """Hand the daemon over to the installed code when nothing was installed; the head that says why it failed."""
+        try:
+            with self._mutation() as scope:
+                plan = scope.capture() if scope is not None else None
+                candidate = self._installation.startup_fingerprint() if scope is not None else None
+                if scope is None or plan is None or candidate is None:
+                    return None
+                if scope.checkpoint_matched:
+                    self._installation.record_startup_state(expected=candidate)
+                scope.verified_complete(candidate)
+                self._handover = (plan, scope.request(plan))
+        except (HeinzelError, OSError) as exc:
+            log_event(log, "update.daemon_restart", level=logging.WARNING, version=target, error=str(exc))
+            return HeadRefresh(
+                head="daemon",
+                status="failed",
+                detail=f"couldn't restart it ({str(exc).splitlines()[0]}): `hz system daemon restart`.",
+            )
+        return None
+
     def _desktop_installed(self) -> bool:
         try:
             return platform.system() == "Darwin" and (self._home or Path.home()).joinpath(DESKTOP_RECEIPT).exists()
         except (OSError, RuntimeError):  # no home to look in: nothing is claimed about a desktop app
             return False
 
-    def _daemon_head(self, target: str) -> HeadRefresh:
+    def _handed_over(self, target: str) -> HeadRefresh:
         """Wait, within `DAEMON_SECONDS`, for the handed-over daemon's own tick to report the version it loaded."""
         if self._handover is None:
             return HeadRefresh(head="daemon", status="not-installed", detail="No daemon handover was requested.")
@@ -1842,48 +2028,58 @@ class UpdateService:
 
 
 HEAD_LABELS = {"daemon": "Daemon", "web": "Web server", "notifier": "Notifier", "desktop": "Desktop app"}
-PENDING_TICK = "\nThe daemon handover was requested; a fresh service tick is pending."
+
+
+def _app_running() -> bool:
+    """Whether the managed desktop app is open now: one of its processes runs from inside its folder."""
+    try:
+        listing = subprocess.run(
+            ["/bin/ps", "-ww", "-axo", "comm="], check=False, capture_output=True, timeout=10
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return b"/Heinzelmaennchen.app/" in listing
+
+
+def _own_rows(names: Sequence[str], plan: UpdatePlan | None) -> list[str]:
+    """The plugins with a row of their own before the install says more: those the plan expects to move, or all."""
+    if plan is None:
+        return list(names)
+    moving = {p.distribution for p in plan.plugins if p.action != "current"}
+    return [name for name in names if name in moving]
 
 
 class _Steps:
-    """The steps of one `update`, told as they happen (ADR 0056): what is asked, installed, each plugin, the restart.
+    """The checklist of one `update`, told as it happens (ADR 0056): hz, the plugins, the services, the desktop app.
 
-    Every step is real work or a real outcome: each plugin is reported once the install says what became of it.
+    Rows start pending, from the plan; a row is real work or a real outcome. Plugins that stay as they are are one
+    row. Every event carries `checklist`, so a terminal draws the rows in place and a web app lists them as before.
     """
 
-    def __init__(self, progress: Progress, plugins: Sequence[str], *, desktop: bool = False) -> None:
+    def __init__(self, progress: Progress, own: Sequence[str], count: int, *, desktop: bool, daemon: bool) -> None:
+        self._own = list(own)
+        self._count = count
         self._labels = {
-            "check": "Finding the newest version",
-            "install": "Installing the update",
-            **{f"plugin:{name}": f"Plugin {name}" for name in plugins},
-            "heads": "Moving the background services onto it",
-            **({"desktop": "Updating the desktop app"} if desktop else {}),
+            "check": "hz",
+            **{f"plugin:{name}": name for name in own},
+            **({"plugins": _plugins_label(count - len(own))} if count > len(own) else {}),
+            **({"daemon": "Daemon, web server"} if daemon else {}),
+            **({"desktop": "Desktop app"} if desktop else {}),
         }
-        self._phases = Phases(progress, list(self._labels.items()), operation="system.update")
+        self._phases = Phases(progress, list(self._labels.items()), operation="system.update", checklist=True)
         self._running: str | None = None
 
     def _note(self, id_: str, state: State, detail: str | None = None) -> None:
         self._phases.note(id_, self._labels[id_], state, detail)
 
     def start(self, id_: str) -> None:
-        """Run `id_`; the step that ran before it is done (a second start of a running step changes nothing)."""
-        if self._running == id_:
+        """Run `id_`; the step that ran before it is done (a step this update doesn't show changes nothing)."""
+        if id_ not in self._labels or self._running == id_:
             return
         if self._running is not None:
             self._note(self._running, "done")
         self._running = id_
         self._note(id_, "running")
-
-    def skip(self, id_: str, detail: str) -> None:
-        """Say that `id_` had nothing to do, and why; a step this update doesn't have is not told."""
-        if id_ in self._labels:
-            self._note(id_, "skipped", detail)
-
-    def desktop(self, head: HeadRefresh) -> None:
-        """Finish the desktop app's step: done, or a warning with what finishes it."""
-        self._running = None
-        if "desktop" in self._labels:
-            self._note("desktop", "done" if head.status == "verified" else "warn", head.detail)
 
     def fail(self, detail: str) -> None:
         """The running step failed with `detail`; the ones after it never ran."""
@@ -1892,30 +2088,62 @@ class _Steps:
             self._running = None
 
     def installed(self, result: UpdateResult) -> None:
-        """Finish asking and installing, then tell what became of each plugin."""
-        if self._running == "check":
-            self._note("check", "done", result.message.splitlines()[0])
-            self.skip("install", "Nothing newer to install.")
-        elif self._running is not None:
-            self._note(self._running, "done", result.message.splitlines()[0])
+        """Finish hz, then tell what became of each plugin; the ones that stay as they are share one row."""
+        moved = result.updated and result.after != result.before
+        self._note("check", "done", f"{result.before} → {result.after}" if moved else "newest release")
         self._running = None
         told = {update.distribution: update for update in result.plugins}
         for id_ in [key for key in self._labels if key.startswith("plugin:")]:
             update = told.get(id_.removeprefix("plugin:"))
-            if update is None:
-                self.skip(id_, "Not asked: hz stays as it is.")
+            if update is None or (update.status == "unchanged" and update.checked and update.pinned is None):
+                self._note(id_, "skipped")
                 continue
             state, detail = _plugin_step(update)
             self._phases.note(id_, self._labels[id_], state, detail, version=update.after or update.before)
+        if "plugins" in self._labels:
+            rest = [u for u in result.plugins if u.status == "unchanged" and u.checked and u.pinned is None]
+            self._labels["plugins"] = _plugins_label(len(rest) or self._count - len(self._own))
+            self._note("plugins", "done", "already newest" if result.plugins else "left as they are")
 
-    def restarted(self, heads: Sequence[HeadRefresh]) -> None:
-        """Finish the restart: a warning names the first service not verified on the new version."""
+    def services(self, heads: Sequence[HeadRefresh]) -> None:
+        """Finish the services' row: done, or a warning that names what finishes it."""
         self._running = None
-        failed = next((head for head in heads if head.status == "failed"), None)
-        if failed is not None:
-            self._note("heads", "warn", failed.detail)
-        else:
-            self._note("heads", "done")
+        if "daemon" not in self._labels:
+            return
+        shown = [head for head in heads if head.head in {"daemon", "web"} and head.status != "not-installed"]
+        bad = next((head for head in shown if head.status not in SETTLED), None)
+        if bad is not None:
+            self._note("daemon", "warn", bad.detail)
+            return
+        first = next(iter(shown), None)
+        self._note("daemon", "done", None if first is None else _service_words(first))
+
+    def desktop(self, head: HeadRefresh) -> None:
+        """Finish the desktop app's row: done, or a warning with what finishes it."""
+        self._running = None
+        if "desktop" in self._labels:
+            self._note("desktop", "done" if head.status == "verified" else "warn", _app_words(head))
+
+
+def _plugins_label(count: int) -> str:
+    return f"{count} plugin{'' if count == 1 else 's'}"
+
+
+def _service_words(head: HeadRefresh) -> str:
+    """The services' row when they are in order: restarted into the new version, or already running it."""
+    ran = f"run {head.version}" if head.version else "run it"
+    return f"restarted, {ran}" if getattr(head, "restarted", None) else ran
+
+
+def _app_words(head: HeadRefresh) -> str:
+    """The desktop app's row: where it went, and whether it was quit and reopened; what finishes it otherwise."""
+    before, running = getattr(head, "before", None), getattr(head, "was_running", None)
+    if head.status != "verified":
+        return head.detail.removesuffix(".")
+    if not head.detail.startswith("Updated") and (before == head.version or before is None):
+        return "newest, running" if running else "newest"
+    moved = f"{before} → {head.version}" if before else f"updated to {head.version}"
+    return f"{moved}, quit and reopened" if getattr(head, "reopened", None) else moved
 
 
 def _sentence(text: str) -> str:
@@ -1954,6 +2182,62 @@ _AGREED: ContextVar[_Agreed] = ContextVar("heinzel_update_agreed", default=_Agre
 """The agreement of the `update` call running in this thread or task; never shared between requests."""
 
 
+def _verify_core_selection(selected: str, current: str, minimum: str | None, *, explicit_source: bool) -> None:
+    """Check the resolved version before any changed Core code is started.
+
+    Raises:
+        HeinzelError: If uv selected an older version than the update allows.
+    """
+    if minimum is not None and Version(selected) < Version(minimum):
+        msg = f"uv selected hz {selected} below the requested release {minimum}. No changed code was started."
+        raise HeinzelError(msg)
+    if not explicit_source and Version(selected) < Version(current):
+        msg = (
+            "The resolved automatic update is older than the installed core; "
+            "no changed code was started and explicit recovery is required."
+        )
+        raise HeinzelError(msg)
+
+
+def _install_message(  # noqa: PLR0913 - report the resolved version and how the source was chosen
+    current: str,
+    after: str,
+    latest: str | None,
+    *,
+    target: str | None,
+    channel: str | None,
+    explicit_source: bool,
+    index_lookup_failed: bool,
+) -> str:
+    if after == current:
+        if target is not None:
+            return f"Reinstalled hz {current} from {target}"
+        if index_lookup_failed:
+            return f"hz {current} stays installed. The newest stable release could not be checked."
+        if latest is not None and Version(latest) > _version(current):
+            return (
+                f"hz {current} stays installed. The newest stable release is {latest}. uv kept the existing selection."
+            )
+        return f"hz {current} is up to date{f' ({channel})' if channel else ''}."
+    if explicit_source:
+        return f"Installed hz {after} from {target}; this process is running hz {current}."
+    return f"Updated hz {current} → {after}"
+
+
+def _index_preferred_release(
+    pin: CorePin, current: str, latest: str | None, constraints: tuple[str, ...]
+) -> str | None:
+    """Prefer the known newest stable release only for an unpinned index installation."""
+    if pin.kind != "index" or pin.ref is not None or latest is None or Version(latest) <= _version(current):
+        return None
+    for constraint in map(Requirement, constraints):
+        if canonicalize_name(constraint.name) == "heinzel" and (
+            constraint.url is not None or not constraint.specifier.contains(latest)
+        ):
+            return None
+    return latest
+
+
 def _core_line(current: str, latest: str | None, channel: str) -> str:
     """What happens to hz itself, in one line of the plan."""
     if channel in {"edge", "main"}:
@@ -1961,7 +2245,7 @@ def _core_line(current: str, latest: str | None, channel: str) -> str:
     if latest is None:
         return f"hz {current}: the newest release couldn't be asked; the update asks again."
     if _version(latest) > _version(current):
-        return f"hz {current} → {latest}."
+        return f"hz {current} → {latest}"
     return f"hz {current} is the newest release."
 
 
@@ -2050,8 +2334,6 @@ def _with_heads(message: str, heads: list[HeadRefresh]) -> str:
     shown = [head for head in heads if head.status != "not-installed"]
     if not shown:
         return message
-    if any(head.head == "daemon" for head in shown):  # its own line says what the handover did
-        message = message.replace(PENDING_TICK, "")
     lines = [f"{HEAD_LABELS[head.head]}: {head.status}. {head.detail}".rstrip() for head in shown]
     if any(head.status not in SETTLED for head in shown):
         lines.append("Not everything runs the new version yet; the lines above say what finishes it.")

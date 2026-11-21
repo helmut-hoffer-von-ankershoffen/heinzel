@@ -231,6 +231,7 @@ def _without_release_candidate(text: str) -> str:
     )
     text = text.replace(" && needs.changes.outputs.full_ci != 'true'", "")
     text = text.replace(" && needs.changes.outputs.macos_full != 'true'", "")
+    text = text.replace(" && needs.changes.outputs.full_release != 'true'", "")
     return re.sub(r"\n {2}release-candidate-source:\n.*?(?=\n {2}ci-ok:)", "", text, flags=re.DOTALL)
 
 
@@ -424,6 +425,20 @@ def ci_workflow() -> str:
     return _plugin_coverage(text).replace(", template, build]", ", build]").replace(", changes,", ",")
 
 
+def _reviewed_pyyaml() -> str:
+    """The PyYAML version the bootstrap reviewed: the one place that names it is src/heinzel/bootstrap_pyyaml.py.
+
+    Raises:
+        SystemExit: The bootstrap names no reviewed VERSION.
+    """
+    text = (ROOT / "src" / "heinzel" / "bootstrap_pyyaml.py").read_text(encoding="utf-8")
+    match = re.search(r'(?m)^VERSION = "([^"]+)"$', text)
+    if match is None:
+        message = "src/heinzel/bootstrap_pyyaml.py names no reviewed VERSION"
+        raise SystemExit(message)
+    return match.group(1)
+
+
 def pyproject() -> str:
     """The plugin's project metadata plus Heinzelmännchen's dev dependencies and tool configuration."""
     source = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
@@ -489,7 +504,7 @@ def pyproject() -> str:
         "https://github.com/[[ github_owner ]]/[[ project_name ]]/pull/",
     )
     tools = tools.replace("[#", '[[ "[#" ]]')  # [# starts a comment in the template's Jinja dialect
-    head = PYPROJECT_HEAD.read_text(encoding="utf-8")
+    head = PYPROJECT_HEAD.read_text(encoding="utf-8").replace("@REVIEWED_PYYAML@", _reviewed_pyyaml())
     return head.replace("# DEPENDENCY-GROUPS\n", dev).rstrip() + "\n\n" + tools.rstrip() + "\n"
 
 

@@ -2,6 +2,7 @@ import { Copy, ExternalLink, EyeOff, LogIn, RotateCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SchemaSoundscapeView } from "@/api/client";
 import { PaneAction } from "@/components/PaneActions";
+import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { isIOS } from "@/lib/browser";
 import { useNativeSurface } from "@/lib/nativeSurface";
@@ -60,7 +61,7 @@ export function StreamPlayer(props: Props) {
   };
   return (
     <Player
-      key={`${account}:${attempt}`}
+      key={`${account}:${attempt}:${props.stream.video}`}
       {...props}
       stream={activeAccount && alternative ? alternative : props.stream}
       account={activeAccount}
@@ -95,6 +96,7 @@ function Player({
   const [ready, setReady] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [help, setHelp] = useState(false);
+  const [guestUnavailable, setGuestUnavailable] = useState(false);
   const [hasPlayed, setHasPlayed] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const volume = useRef(0);
@@ -113,8 +115,14 @@ function Player({
     [guest, origin],
   );
   const sawReady = useRef(false);
+  const stateRequest = useRef(0);
+  const appliedState = useRef(0);
+  const openPending = useRef(false);
   const onGuestState = useCallback(
     (next: GuestState) => {
+      if (next.status === "unavailable") setGuestUnavailable(true);
+      else if (next.status === "loading" || next.status === "ready") setGuestUnavailable(false);
+      if (next.status === "unavailable") setHelp(true);
       if (next.error) setHelp(true);
       if (next.state === 1) setHasPlayed(true);
       if (next.ready && !sawReady.current) {
@@ -128,18 +136,38 @@ function Player({
   );
   useEffect(() => {
     if (!guest || !src) return;
+    openPending.current = true;
     void guest({ action: "open", video: stream.video })
       .then(onGuestState)
-      .catch(() => setHelp(true));
+      .catch(() => {
+        setGuestUnavailable(true);
+        setHelp(true);
+      })
+      .finally(() => {
+        openPending.current = false;
+      });
     return () => {
       void guest({ action: "close" }).catch(() => {});
     };
   }, [guest, src, stream.video, onGuestState]);
-  useNativeSurface(surface, true, guest, () => {
-    void guest?.({ action: "state" })
-      .then(onGuestState)
-      .catch(() => {});
-  });
+  const surfaceFailed = useNativeSurface(
+    surface,
+    true,
+    guest,
+    () => {
+      if (openPending.current) return;
+      const request = ++stateRequest.current;
+      void guest?.({ action: "state" })
+        .then((next) => {
+          if (request > appliedState.current) {
+            appliedState.current = request;
+            onGuestState(next);
+          }
+        })
+        .catch(() => {});
+    },
+    "player",
+  );
   const copyLink = async () => {
     try {
       if (!copyUrl || !navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
@@ -221,8 +249,55 @@ function Player({
   }, [ready, level.gain, level.seconds, level.playing, send, deviceVolume]);
 
   if (!src) return null;
+  const helpPane = (
+    <PlayerHelp
+      inHeader={Boolean(guest)}
+      attention={help}
+      actions={
+        <>
+          {chooseAccount && (
+            <PaneAction icon={account ? EyeOff : LogIn} onClick={() => chooseAccount(!account)}>
+              {t(account ? "sound.privatePlayer" : "sound.accountPlayer")}
+            </PaneAction>
+          )}
+          {copyUrl && (
+            <PaneAction icon={Copy} onClick={() => void copyLink()}>
+              {t("sound.copyYouTubeLink")}
+            </PaneAction>
+          )}
+          <PaneAction icon={RotateCw} onClick={retry}>
+            {t("sound.retryPlayer")}
+          </PaneAction>
+          {!desktop && (
+            <PaneAction icon={ExternalLink} href={stream.watch_url} onClick={stop}>
+              {t("sound.playOnYouTube")}
+            </PaneAction>
+          )}
+        </>
+      }
+    >
+      <p>{t(desktop ? "sound.desktopHelp" : account ? "sound.accountHelp" : "sound.privateHelp")}</p>
+      {copyState !== "idle" && (
+        <p role="status">{t(copyState === "copied" ? "sound.linkCopied" : "sound.copyFailed")}</p>
+      )}
+      {copyState === "failed" && copyUrl && (
+        <input
+          aria-label={t("sound.videoLink")}
+          className="w-full rounded border border-border bg-transparent px-1"
+          readOnly
+          value={copyUrl}
+          onFocus={(event) => event.currentTarget.select()}
+        />
+      )}
+    </PlayerHelp>
+  );
   return (
-    <PlayerCard title={soundscape.title} watchUrl={desktop ? undefined : stream.watch_url} host="YouTube">
+    <PlayerCard
+      title={soundscape.title}
+      watchUrl={desktop ? undefined : stream.watch_url}
+      host="YouTube"
+      headerAction={guest ? helpPane : undefined}
+    >
       <div className="group/video relative">
         {guest ? (
           <div
@@ -250,46 +325,21 @@ function Player({
             allow={FRAME_ATTRIBUTES.allow}
           />
         )}
-        <PlayerHelp
-          attention={help}
-          actions={
-            <>
-              {chooseAccount && (
-                <PaneAction icon={account ? EyeOff : LogIn} onClick={() => chooseAccount(!account)}>
-                  {t(account ? "sound.privatePlayer" : "sound.accountPlayer")}
-                </PaneAction>
-              )}
-              {copyUrl && (
-                <PaneAction icon={Copy} onClick={() => void copyLink()}>
-                  {t("sound.copyYouTubeLink")}
-                </PaneAction>
-              )}
-              <PaneAction icon={RotateCw} onClick={retry}>
-                {t("sound.retryPlayer")}
-              </PaneAction>
-              {!desktop && (
-                <PaneAction icon={ExternalLink} href={stream.watch_url} onClick={stop}>
-                  {t("sound.playOnYouTube")}
-                </PaneAction>
-              )}
-            </>
-          }
-        >
-          <p>{t(desktop ? "sound.desktopHelp" : account ? "sound.accountHelp" : "sound.privateHelp")}</p>
-          {copyState !== "idle" && (
-            <p role="status">{t(copyState === "copied" ? "sound.linkCopied" : "sound.copyFailed")}</p>
-          )}
-          {copyState === "failed" && copyUrl && (
-            <input
-              aria-label={t("sound.videoLink")}
-              className="w-full rounded border border-border bg-transparent px-1"
-              readOnly
-              value={copyUrl}
-              onFocus={(event) => event.currentTarget.select()}
-            />
-          )}
-        </PlayerHelp>
+        {!guest && helpPane}
       </div>
+      {guestUnavailable && (
+        <div role="alert" className="flex items-center gap-2 p-2 text-ui-sm">
+          <span>{t("sound.desktopUnavailable")}</span>
+          <Button type="button" variant="outline" size="sm" onClick={retry}>
+            {t("sound.retryPlayer")}
+          </Button>
+        </div>
+      )}
+      {surfaceFailed && (
+        <p role="alert" className="p-2 text-ui-sm">
+          {t("browser.surfaceFailed")}
+        </p>
+      )}
     </PlayerCard>
   );
 }

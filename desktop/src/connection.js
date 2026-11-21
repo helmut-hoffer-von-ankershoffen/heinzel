@@ -16,7 +16,7 @@ export async function lifecycle(connection, fetchImpl = fetch) {
     redirect: "error",
     signal: AbortSignal.timeout(5000),
   });
-  if (!response.ok) throw new Error("The local service refused authentication or is unavailable.");
+  if (!response.ok) throw Object.assign(new Error("The workspace refused authentication or is unavailable."), { status: response.status });
   const value = await response.json();
   if (!value || typeof value !== "object" || typeof value.instance !== "string" || typeof value.version !== "string")
     throw new Error("The local service returned an invalid lifecycle response.");

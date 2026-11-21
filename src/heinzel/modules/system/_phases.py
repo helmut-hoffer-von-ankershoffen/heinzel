@@ -40,6 +40,7 @@ class Phases:
         *,
         operation: str = "system.daemon",
         clock: Callable[[], float] = time.monotonic,
+        checklist: bool = False,
     ) -> None:
         """Report to `progress` and announce the `plan` of (id, label) steps, so a head can say "step 2 of 5".
 
@@ -49,6 +50,7 @@ class Phases:
         self._progress = progress
         self._emit = progress.emitter()
         self._operation = operation
+        self._checklist = checklist
         self._clock = clock
         self._started: dict[str, float] = {}
         for id_, label in plan:
@@ -61,6 +63,8 @@ class Phases:
         data: dict[str, object] = {"id": id_, "label": label, "state": state}
         if detail:
             data["detail"] = detail
+        if self._checklist:
+            data["checklist"] = True  # a terminal draws every row in place instead of a bar
         self._emit(EVENT, data)
         self._log(id_, state, detail, version)
 

@@ -1,3 +1,4 @@
+import CoreFoundation
 import SwiftUI
 import WebKit
 #if DEBUG
@@ -228,21 +229,30 @@ struct WorkspaceView: WebRepresentable {
     var reportsWidgetActivity = false
     var isWidgetWorkspaceCurrent: () -> Bool = { false }
     var isMenuWorkspaceCurrent: () -> Bool = { false }
+    var isEnrollmentViewCurrent: () -> Bool = { false }
     var chatRequest: HeinzelChatRequest?
     var promptComposer: NativePromptComposer?
     var widgetRefreshRevision = 0
+    var versionRefreshRevision = 0
+    var footerWidth: CGFloat = 88
+    var footerBottom: CGFloat = 0
+    var footerGeneration = 0
+    var reportFooterSlot: (CGRect?) -> Void = { _ in }
     var ready: () -> Void
     var reportHostName: (String) -> Void = { _ in
         // Hosts without a hostname display do not need this update.
     }
+    var reportBackendVersion: (WorkspaceVersionObservation) -> Void = { _ in }
     var reportError: (WorkspaceProblem) -> Void
     var appearance: @MainActor @Sendable (Color) -> Void = { _ in
         // Hosts without native appearance integration ignore this update.
     }
 
     func makeCoordinator() -> Navigation {
-        Navigation(endpoint: endpoint, ready: ready, reportHostName: reportHostName, reportError: reportError,
-                   isWidgetWorkspaceCurrent: isWidgetWorkspaceCurrent, isMenuWorkspaceCurrent: isMenuWorkspaceCurrent)
+        Navigation(endpoint: endpoint, ready: ready, reportHostName: reportHostName, reportBackendVersion: reportBackendVersion,
+                   reportFooterSlot: reportFooterSlot, reportError: reportError,
+                   isWidgetWorkspaceCurrent: isWidgetWorkspaceCurrent, isMenuWorkspaceCurrent: isMenuWorkspaceCurrent,
+                   isEnrollmentViewCurrent: isEnrollmentViewCurrent)
     }
 
     private func makeWebView(_ context: Context) -> WKWebView {
@@ -261,6 +271,11 @@ struct WorkspaceView: WebRepresentable {
         configuration.userContentController.addScriptMessageHandler(
             context.coordinator, contentWorld: .page, name: "heinzelNotices"
         )
+        #if os(iOS)
+        configuration.userContentController.addScriptMessageHandler(
+            context.coordinator, contentWorld: .page, name: "heinzelFooter"
+        )
+        #endif
         var audioMember = ""
         #if os(macOS) || canImport(ScreenCaptureKit)
         if #available(iOS 27, *), offersSystemAudio {
@@ -290,7 +305,7 @@ struct WorkspaceView: WebRepresentable {
             : ""
         let chrome = "titlebar: Object.freeze({ height: 44, left: 80, right: 0 }), onFullscreen, \(localCommands)"
         #else
-        let chrome = "mobileWorkspace: true,"
+        let chrome = "mobileWorkspace: true, nativeFooter: footer,"
         #endif
         let connection = endpoint.origin.scheme == "https"
             ? "remoteWorkspace: true,"
@@ -325,6 +340,72 @@ struct WorkspaceView: WebRepresentable {
                 };
                 const browser = request => window.webkit.messageHandlers.heinzelBrowser.postMessage(request);
                 const notices = request => window.webkit.messageHandlers.heinzelNotices.postMessage(request);
+                let footerMetrics = { width: 88, bottom: 0 };
+                let footerRevision = -1;
+                let pageHandlesFooter = false;
+                let legacyStyle = null;
+                let legacyFooter = null;
+                let legacyLast = '';
+                let legacyCandidate = '';
+                let legacyAttempts = 0;
+                let legacySequence = 0;
+                let legacyFrame = 0;
+                const legacySizes = new ResizeObserver(() => scheduleLegacy());
+                const scheduleLegacy = () => {
+                    if (!legacyFrame) legacyFrame = requestAnimationFrame(updateLegacy);
+                };
+                const updateLegacy = () => {
+                    legacyFrame = 0;
+                    if (pageHandlesFooter || document.querySelector('[data-native-footer-slot]')) {
+                        legacySequence += 1;
+                        pageHandlesFooter = true; legacyMutations.disconnect();
+                        legacyStyle?.remove(); legacyStyle = null; legacySizes.disconnect(); legacyFooter = null;
+                        return;
+                    }
+                    const shell = document.querySelector('[data-testid="app-shell"]');
+                    const bar = shell?.querySelector('footer[data-footer-width]');
+                    if (!shell || !bar || !document.head || footerRevision < 0) return;
+                    if (!legacyStyle) { legacyStyle = document.createElement('style'); document.head.appendChild(legacyStyle); }
+                    const css = `[data-testid="app-shell"]{padding-bottom:0!important} footer[data-footer-width]{height:${48 + footerMetrics.bottom}px!important;padding-bottom:${footerMetrics.bottom}px!important;padding-left:${footerMetrics.width}px!important;justify-content:flex-end} footer[data-footer-width] [data-footer-part="@version"]{display:none!important}`;
+                    if (legacyStyle.textContent !== css) { legacyStyle.textContent = css; window.dispatchEvent(new Event('resize')); }
+                    if (legacyFooter !== bar) { legacySizes.disconnect(); legacySizes.observe(bar); legacyFooter = bar; }
+                    const rect = bar.getBoundingClientRect();
+                    const slot = {x:rect.x, y:rect.y, width:footerMetrics.width, height:48,
+                                  viewportWidth:innerWidth, viewportHeight:innerHeight, revision:footerRevision};
+                    const value = JSON.stringify(slot);
+                    if (value !== legacyCandidate) { legacyCandidate = value; legacyLast = ''; legacyAttempts = 0; }
+                    if (value !== legacyLast && legacyAttempts < 10) {
+                        legacyAttempts += 1;
+                        legacyLast = value;
+                        const request = ++legacySequence;
+                        const expired = setTimeout(() => {
+                            if (request === legacySequence && legacyAttempts < 10) { legacySequence += 1; legacyLast = ''; scheduleLegacy(); }
+                        }, 1000);
+                        window.webkit.messageHandlers.heinzelFooter.postMessage(slot).then(ok => {
+                            clearTimeout(expired);
+                            if (request === legacySequence && ok !== true && legacyAttempts < 10) { legacyLast = ''; setTimeout(scheduleLegacy, 200); }
+                        }).catch(() => { clearTimeout(expired); if (request === legacySequence && legacyAttempts < 10) { legacyLast = ''; setTimeout(scheduleLegacy, 200); } });
+                    }
+                };
+                const legacyMutations = new MutationObserver(scheduleLegacy);
+                legacyMutations.observe(document, { childList:true, subtree:true });
+                window.addEventListener('resize', scheduleLegacy);
+                window.addEventListener('scroll', scheduleLegacy, true);
+                window.addEventListener('hz:footer-relocated', scheduleLegacy);
+                const footer = Object.freeze({
+                    metrics: () => ({ ...footerMetrics }),
+                    reportSlot: slot => { pageHandlesFooter = true; scheduleLegacy(); return window.webkit.messageHandlers.heinzelFooter.postMessage({ ...slot, revision: footerRevision }); },
+                });
+                Object.defineProperty(window, "__heinzelUpdateFooter", { value: (width, bottom, revision) => {
+                    footerMetrics = { width, bottom };
+                    footerRevision = revision;
+                    legacyLast = '';
+                    legacyCandidate = '';
+                    legacyAttempts = 0;
+                    legacySequence += 1;
+                    scheduleLegacy();
+                    window.dispatchEvent(new Event("heinzel-native-footer-metrics"));
+                }});
                 Object.defineProperty(window, "heinzelDesktop", {
                     value: Object.freeze({ \(chrome) \(connection) browser, notices, workspaceAudio: false, \(audioMember) })
                 });
@@ -457,12 +538,14 @@ struct WorkspaceView: WebRepresentable {
     func updateUIView(_ view: WKWebView, context: Context) {
         view.accessibilityElementsHidden = isObscured
         view.isUserInteractionEnabled = !isObscured
+        context.coordinator.updateFooterMetrics(in: view, width: footerWidth, bottom: footerBottom, generation: footerGeneration)
         updateWidgetActivity(context.coordinator)
     }
     static func dismantleUIView(_ view: WKWebView, coordinator: Navigation) { coordinator.close(view) }
     #endif
 
     private func updateWidgetActivity(_ coordinator: Navigation) {
+        coordinator.refreshWorkspaceVersion(revision: versionRefreshRevision)
         promptComposer?.navigation = coordinator
         coordinator.setWidgetActivityEnabled(reportsWidgetActivity, revision: widgetRefreshRevision)
         if let chatRequest { coordinator.openChat(chatRequest) }
@@ -523,20 +606,37 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     private let endpoint: Endpoint
+    // This context is fixed for the lifetime of the WKWebView. Never replace it
+    // in response to a later callback from the same view.
+    private let widgetActivation: ActivityCatalog.Activation?
     private let ready: () -> Void
     private let reportHostName: (String) -> Void
+    private let reportBackendVersion: (WorkspaceVersionObservation) -> Void
+    private let reportFooterSlot: (CGRect?) -> Void
+    #if os(iOS)
+    private var footerWidth: CGFloat = 88
+    private var footerBottom: CGFloat = 0
+    private var footerGeneration = 0
+    private var lastFooterMetrics: (CGFloat, CGFloat, Int)?
+    private var pendingFooterMetrics: (CGFloat, CGFloat, Int)?
+    private var footerDeliveryAttempts = 0
+    private var footerDeliveryID = 0
+    #endif
+    private let versionRefresh = WorkspaceVersionRefresh()
     private var lookedUpHostName = false
     weak var workspace: WKWebView?
     #if os(iOS)
     private var backgroundObservation: NSKeyValueObservation?
     #endif
     private var widgetActivity: Task<Void, Never>?
+    private var enrollmentTask: Task<Void, Never>?
+    private var attemptedEnrollment = false
     private var widgetRefreshRevision = 0
     private var lastChatRequest: HeinzelChatRequest?
 
     func sendPrompt(_ request: NativePromptRequest) async -> NativePromptOutcome {
         guard request.isValid, let workspace,
-              request.workspaceScope == ActivityWidgetData.scope(for: endpoint.origin), isWidgetWorkspaceCurrent(),
+              request.workspaceScope == ActivityWidgetData.currentScope(for: endpoint.origin), isWidgetWorkspaceCurrent(), widgetContextCurrent,
               hasCommittedWorkspace, case .idle = provisionalLoad,
               workspace.url.map(endpoint.owns) == true else { return .unavailable }
         let revision = documentRevision
@@ -567,7 +667,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                 return result.session_id === sessionID && result.request_id === requestID &&
                     result.message?.role === 'assistant' ? 'accepted' : 'unconfirmed';
                 """) as? String
-            guard revision == documentRevision, isWidgetWorkspaceCurrent(),
+            guard revision == documentRevision, isWidgetWorkspaceCurrent(), widgetContextCurrent,
                   workspace.url.map(endpoint.owns) == true else { return .unconfirmed }
             if result == "accepted" { return .accepted }
             if result == "sign-in" || result == "" { return .signIn }
@@ -580,7 +680,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     func openChat(_ request: HeinzelChatRequest) {
         guard lastChatRequest != request, NativeRoute.isSessionID(request.id), let workspace,
-              request.workspaceScope == ActivityWidgetData.scope(for: endpoint.origin), isWidgetWorkspaceCurrent(),
+              request.workspaceScope == ActivityWidgetData.currentScope(for: endpoint.origin), isWidgetWorkspaceCurrent(), widgetContextCurrent,
               hasCommittedWorkspace, case .idle = provisionalLoad,
               workspace.url.map(endpoint.owns) == true,
               var url = URLComponents(url: endpoint.origin, resolvingAgainstBaseURL: false) else { return }
@@ -609,12 +709,14 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     private func refreshWidgetActivity() async {
-        guard isWidgetWorkspaceCurrent(), let workspace, workspace.url.map(endpoint.owns) == true else { return }
+        guard isWidgetWorkspaceCurrent(), widgetContextCurrent, let workspace, workspace.url.map(endpoint.owns) == true else { return }
         let revision = documentRevision
         let invalidation = ActivityWidgetData.invalidation
-        guard let refreshToken = ActivityWidgetData.refreshToken() else { return }
+        guard let refreshToken = widgetActivation == nil ? ActivityWidgetData.legacyRefreshToken() : ActivityWidgetData.refreshToken() else { return }
+        guard widgetContextCurrent else { return }
+        let refreshActivation = widgetActivation
         // The session and device tokens stay inside WebKit.
-        let scope = ActivityWidgetData.scope(for: endpoint.origin)
+        guard let scope = ActivityWidgetData.currentScope(for: endpoint.origin) else { return }
         let details = ActivityWidgetData.requestedDetails(scope: scope)
         let artwork = Self.widgetArtwork
         let result = try? await inspectWorkspace(in: workspace, arguments: ["detailIDs": details], body: """
@@ -672,16 +774,20 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                 };
             }));
             return JSON.stringify({
-                awake: sessions.filter(session => session.state === 'awake').length,
-                waiting: sessions.filter(session => session.state === 'waiting').length,
+                awake: Math.min(9999, sessions.filter(session => session.state === 'awake').length),
+                waiting: Math.min(9999, sessions.filter(session => session.state !== 'retired' && Number.isInteger(session.waiting_count) && session.waiting_count > 0).length),
                 roster, catalog
             });
             """) as? String
         guard !Task.isCancelled, revision == documentRevision, invalidation == ActivityWidgetData.invalidation, self.workspace === workspace,
-              let result, isWidgetWorkspaceCurrent() else { return }
+              let result, isWidgetWorkspaceCurrent(), widgetContextCurrent else { return }
         let changed: Bool
         if result.isEmpty {
-            _ = ActivityWidgetData.clear()
+            if let refreshActivation {
+                _ = WidgetCredentialStore.invalidateShared(refreshActivation)
+            } else {
+                _ = WidgetCredentialStore.clearShared(expectedToken: refreshToken)
+            }
             ActivityWidgetData.reload()
             return
         }
@@ -723,6 +829,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     private var provisionalLoad = ProvisionalLoad.idle
     private var hasCommittedWorkspace = false
     private var documentRevision = 0
+    private var currentNavigation: WKNavigation?
     #if os(macOS)
     private weak var observedWindow: NSWindow?
     private var mouseMonitor: Any?
@@ -734,16 +841,24 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     private let reportError: (WorkspaceProblem) -> Void
     private let isWidgetWorkspaceCurrent: () -> Bool
     private let isMenuWorkspaceCurrent: () -> Bool
+    private let isEnrollmentViewCurrent: () -> Bool
 
     init(endpoint: Endpoint, ready: @escaping () -> Void, reportHostName: @escaping (String) -> Void,
+         reportBackendVersion: @escaping (WorkspaceVersionObservation) -> Void,
+         reportFooterSlot: @escaping (CGRect?) -> Void,
          reportError: @escaping (WorkspaceProblem) -> Void, isWidgetWorkspaceCurrent: @escaping () -> Bool,
-         isMenuWorkspaceCurrent: @escaping () -> Bool) {
+         isMenuWorkspaceCurrent: @escaping () -> Bool, isEnrollmentViewCurrent: @escaping () -> Bool) {
         self.endpoint = endpoint
+        let activation = ActivityWidgetData.currentActivation()
+        self.widgetActivation = activation?.endpoint == endpoint.origin.absoluteString ? activation : nil
         self.ready = ready
         self.reportHostName = reportHostName
+        self.reportBackendVersion = reportBackendVersion
+        self.reportFooterSlot = reportFooterSlot
         self.reportError = reportError
         self.isWidgetWorkspaceCurrent = isWidgetWorkspaceCurrent
         self.isMenuWorkspaceCurrent = isMenuWorkspaceCurrent
+        self.isEnrollmentViewCurrent = isEnrollmentViewCurrent
         super.init()
         NotificationCenter.default.addObserver(
             self, selector: #selector(nativeNoticeOpened), name: WorkspaceNotifications.opened, object: nil
@@ -756,6 +871,73 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             self, selector: #selector(menuAction), name: WorkspaceMenuAction.notification, object: nil
         )
         #endif
+    }
+
+    private var widgetContextCurrent: Bool {
+        ActivityWidgetData.currentActivation() == widgetActivation
+    }
+
+    private func scheduleWidgetEnrollment(in view: WKWebView, revision: Int) {
+        guard !attemptedEnrollment, endpoint.origin.scheme == "https",
+              let store = WidgetCredentialStore.configured() else { return }
+        attemptedEnrollment = true
+        enrollmentTask = Task { [weak self, weak view] in
+            guard let self, let view else { return }
+            let current = { [weak self, weak view] in
+                guard let self, let view else { return false }
+                return !Task.isCancelled && self.workspace === view && self.documentRevision == revision &&
+                    self.isEnrollmentViewCurrent() && view.url.map(self.endpoint.owns) == true
+            }
+            guard current() else { return }
+            let fingerprint = await WidgetEnrollmentTransport.pairedDeviceFingerprint(in: view, endpoint: endpoint.origin, isCurrent: current)
+            guard current() else { return }
+            let enrollment = WidgetFencedEnrollment(store: store)
+            let coordinator = WidgetEnrollmentCoordinator(enrollment: enrollment)
+            let result: WidgetEnrollmentOutcome
+            if let pending = ActivityCatalog.pendingEnrollment(url: store.catalogURL) {
+                let recorded = pending.previous.endpoint == endpoint.origin.absoluteString && current()
+                    ? enrollment.finishRecordedRemoteRecovery(pending) : ActivityCatalog.ClearResult(revoked: false, purged: false, stale: true)
+                if recorded.revoked {
+                    result = .identityMismatch(recorded)
+                } else if let fingerprint, ActivityCatalog.cancelledRecoveryMatches(url: store.catalogURL, expected: pending, fingerprint: fingerprint) {
+                    result = await coordinator.recover(pending, in: view, endpoint: endpoint.origin, fingerprint: fingerprint, isCurrent: current)
+                } else {
+                    let matchesPairing = fingerprint.map { ActivityCatalog.enrollmentPairingMatches(url: store.catalogURL, expected: pending, fingerprint: $0) } ?? false
+                    guard matchesPairing && enrollment.canResume(pending) else {
+                        if pending.previous.endpoint == endpoint.origin.absoluteString, current() {
+                            if matchesPairing, let installed = enrollment.finishInterruptedInstallation(pending), current(),
+                               ActivityCatalog.activation(url: store.catalogURL) == installed {
+                                NotificationCenter.default.post(name: WidgetCredentialStore.activationChanged, object: installed.id)
+                            } else if let expired = enrollment.finishExpiredReceipt(pending), expired.revoked {
+                                ActivityWidgetData.didInvalidate(); ActivityWidgetData.reload()
+                                if !expired.complete { NotificationCenter.default.post(name: ActivityWidgetData.clearFailed, object: nil) }
+                            } else if enrollment.abandonInterruptedPreparation(pending), current(),
+                                      ActivityCatalog.activation(url: store.catalogURL) == pending.previous {
+                                NotificationCenter.default.post(name: WidgetCredentialStore.preparationRecovered, object: pending.previous.id)
+                            }
+                        }
+                        return
+                    }
+                    guard let fingerprint else { return }
+                    result = await coordinator.resume(pending, in: view, endpoint: endpoint.origin, fingerprint: fingerprint, isCurrent: current)
+                }
+            } else {
+                guard let fingerprint else { return }
+                let active = ActivityCatalog.activation(url: store.catalogURL)
+                if let active, active.endpoint != endpoint.origin.absoluteString { return }
+                if let active, active.credentialGeneration != nil {
+                    guard let existing = store.renewalCredential(expected: active) else { return }
+                    if existing.expiresAt.timeIntervalSinceNow > 3600 { return }
+                }
+                guard store.keychain.preflight(), current() else { return }
+                guard let expected = active ?? ActivityCatalog.activate(url: store.catalogURL, endpoint: endpoint.origin.absoluteString) else { return }
+                result = await coordinator.begin(expected: expected, in: view, endpoint: endpoint.origin, fingerprint: fingerprint, isCurrent: current)
+            }
+            if case .identityMismatch(let clear) = result {
+                if clear.revoked { ActivityWidgetData.didInvalidate(); ActivityWidgetData.reload() }
+                if !clear.stale && !clear.complete { NotificationCenter.default.post(name: ActivityWidgetData.clearFailed, object: nil) }
+            }
+        }
     }
 
     func webView(
@@ -777,10 +959,14 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
-        guard let url = response.response.url,
+        guard webView === workspace, let url = response.response.url,
               endpoint.permitsNavigation(to: url, inMainFrame: response.isForMainFrame) else { return .cancel }
         if response.isForMainFrame, let http = response.response as? HTTPURLResponse,
            let problem = WorkspaceProblem(response: http.statusCode) {
+            if (http.statusCode == 401 || http.statusCode == 403), let widgetActivation {
+                _ = WidgetCredentialStore.invalidateShared(widgetActivation)
+                ActivityWidgetData.reload()
+            }
             reportError(problem)
             return .cancel
         }
@@ -824,6 +1010,26 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         _ controller: WKUserContentController, didReceive message: WKScriptMessage,
         replyHandler: @escaping @MainActor (Any?, String?) -> Void
     ) {
+        #if os(iOS)
+        if message.name == "heinzelFooter" {
+            guard case .idle = provisionalLoad, let view = verifiedWorkspace(for: message) else {
+                replyHandler(false, nil)
+                return
+            }
+            guard let values = message.body as? [String: NSNumber],
+                  let revision = values["revision"], CFGetTypeID(revision) != CFBooleanGetTypeID(),
+                  revision.doubleValue.isFinite, revision.doubleValue == Double(documentRevision),
+                  let slot = WorkspaceFooterGeometry.slot(values, viewport: view.bounds.size,
+                                                          width: footerWidth, bottom: footerBottom) else {
+                reportFooterSlot(nil)
+                replyHandler(false, nil)
+                return
+            }
+            reportFooterSlot(slot)
+            replyHandler(true, nil)
+            return
+        }
+        #endif
         if message.name == "heinzelExternalLink", message.body as? String == "browser-external" {
             guard case .idle = provisionalLoad, let workspace = verifiedWorkspace(for: message),
                   workspace.window?.isKeyWindow == true, let target = browser.externalTarget(),
@@ -881,6 +1087,61 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
               workspace.url.map(endpoint.owns) == true else { return nil }
         return workspace
     }
+
+    #if os(iOS)
+    func updateFooterMetrics(in view: WKWebView, width: CGFloat, bottom: CGFloat, generation: Int) {
+        guard view === workspace, width.isFinite, bottom.isFinite else { return }
+        let newWidth = min(180, max(44, width))
+        let newBottom = min(80, max(0, bottom))
+        if footerWidth != newWidth || footerBottom != newBottom || footerGeneration != generation {
+            footerDeliveryAttempts = 0
+            footerDeliveryID &+= 1
+            lastFooterMetrics = nil
+            pendingFooterMetrics = nil
+        }
+        footerWidth = newWidth
+        footerBottom = newBottom
+        footerGeneration = generation
+        guard view === workspace, view.url.map(endpoint.owns) == true, case .idle = provisionalLoad else { return }
+        let metrics = (footerWidth, footerBottom, footerGeneration)
+        if let lastFooterMetrics, lastFooterMetrics == metrics { return }
+        if let pendingFooterMetrics, pendingFooterMetrics == metrics { return }
+        guard footerDeliveryAttempts < 10 else { return }
+        footerDeliveryAttempts += 1
+        footerDeliveryID &+= 1
+        let delivery = footerDeliveryID
+        pendingFooterMetrics = metrics
+        let revision = documentRevision
+        let script = "typeof window.__heinzelUpdateFooter === 'function' ? (window.__heinzelUpdateFooter(\(footerWidth), \(footerBottom), \(revision)), true) : false"
+        view.evaluateJavaScript(script) { [weak self, weak view] value, error in
+            guard let self, let view, self.workspace === view, self.footerDeliveryID == delivery,
+                  WorkspaceFooterGeometry.deliveryIsCurrent(revision: revision, currentRevision: self.documentRevision,
+                    requested: metrics, current: (self.footerWidth, self.footerBottom, self.footerGeneration)) else { return }
+            self.pendingFooterMetrics = nil
+            if error == nil, value as? Bool == true {
+                self.lastFooterMetrics = metrics
+            } else {
+                Task { @MainActor [weak self, weak view] in
+                    do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+                    guard let self, let view, self.workspace === view,
+                          WorkspaceFooterGeometry.deliveryIsCurrent(revision: revision, currentRevision: self.documentRevision,
+                            requested: metrics, current: (self.footerWidth, self.footerBottom, self.footerGeneration)) else { return }
+                    self.updateFooterMetrics(in: view, width: metrics.0, bottom: metrics.1, generation: metrics.2)
+                }
+            }
+        }
+        Task { @MainActor [weak self, weak view] in
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            guard let self, let view, self.workspace === view,
+                  self.footerDeliveryID == delivery, self.pendingFooterMetrics != nil,
+                  WorkspaceFooterGeometry.deliveryIsCurrent(revision: revision, currentRevision: self.documentRevision,
+                    requested: metrics, current: (self.footerWidth, self.footerBottom, self.footerGeneration)) else { return }
+            self.footerDeliveryID &+= 1
+            self.pendingFooterMetrics = nil
+            self.updateFooterMetrics(in: view, width: metrics.0, bottom: metrics.1, generation: metrics.2)
+        }
+    }
+    #endif
 
     private func handle(_ message: WKScriptMessage, at revision: Int) async -> (Any?, String?) {
         guard let workspace = verifiedWorkspace(for: message) else { return (nil, "Workspace command unavailable") }
@@ -1101,8 +1362,10 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     #endif
 
     func close(_ view: WKWebView) {
-        if workspace === view { workspace = nil }
+        if workspace === view { workspace = nil; reportFooterSlot(nil) }
         documentRevision &+= 1
+        versionRefresh.cancel()
+        enrollmentTask?.cancel()
         NotificationCenter.default.removeObserver(self, name: WorkspaceNotifications.opened, object: nil)
         NotificationCenter.default.removeObserver(self, name: WorkspaceNotifications.changed, object: nil)
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelNotices", contentWorld: .page)
@@ -1115,6 +1378,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelWindow", contentWorld: .page)
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelDrag", contentWorld: .defaultClient)
         #else
+        view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelFooter", contentWorld: .page)
         backgroundObservation?.invalidate()
         noticeAlert?.dismiss(animated: false)
         finishNoticeConfirmation(false)
@@ -1128,7 +1392,17 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        guard webView === workspace, let navigation else { return }
+        #if os(iOS)
+        reportFooterSlot(nil)
+        lastFooterMetrics = nil
+        pendingFooterMetrics = nil
+        footerDeliveryAttempts = 0
+        footerDeliveryID &+= 1
+        #endif
+        currentNavigation = navigation
         documentRevision &+= 1
+        versionRefresh.cancel()
         #if os(iOS)
         noticeAlert?.dismiss(animated: false)
         finishNoticeConfirmation(false)
@@ -1143,12 +1417,21 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard webView === workspace, let navigation, currentNavigation === navigation else { return }
         endProvisionalLoad(navigation)
         hasCommittedWorkspace = true
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView === workspace, let navigation, currentNavigation === navigation else { return }
         endProvisionalLoad(navigation)
+        #if os(iOS)
+        lastFooterMetrics = nil
+        pendingFooterMetrics = nil
+        footerDeliveryAttempts = 0
+        footerDeliveryID &+= 1
+        updateFooterMetrics(in: webView, width: footerWidth, bottom: footerBottom, generation: footerGeneration)
+        #endif
         if endpoint.origin.scheme == "https", endpoint.token == nil {
             let revision = documentRevision
             Task {
@@ -1159,15 +1442,21 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                     !sessionStorage.getItem('hz.token') && !localStorage.getItem('hz.device') &&
                     !new URLSearchParams(location.hash.slice(1)).has('token')
                     """) as? Bool
-                guard workspace === webView, revision == documentRevision else { return }
-                if needsSignIn == true { reportError(.signIn) }
-                else {
+                guard workspace === webView, revision == documentRevision, currentNavigation === navigation else { return }
+                if needsSignIn == true {
+                    if let widgetActivation { _ = WidgetCredentialStore.invalidateShared(widgetActivation); ActivityWidgetData.reload() }
+                    reportError(.signIn)
+                } else if needsSignIn == false {
                     ready()
+                    scheduleWidgetEnrollment(in: webView, revision: revision)
+                    refreshWorkspaceVersion()
                     await resolveWorkspaceName(in: webView)
                 }
             }
         } else {
             ready()
+            scheduleWidgetEnrollment(in: webView, revision: documentRevision)
+            refreshWorkspaceVersion()
             Task { await resolveWorkspaceName(in: webView) }
         }
         #if DEBUG
@@ -1184,6 +1473,59 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             }
         }
         #endif
+    }
+
+    func refreshWorkspaceVersion(revision: Int? = nil) {
+        guard let view = workspace, hasCommittedWorkspace, case .idle = provisionalLoad,
+              view.url.map(endpoint.owns) == true else { return }
+        let document = documentRevision
+        versionRefresh.request(revision: revision, read: { [weak self, weak view] in
+            guard let self, let view else { return nil }
+            return await self.resolveWorkspaceVersion(in: view)
+        }, isCurrent: { [weak self, weak view] in
+            guard let self, let view else { return false }
+            return self.workspace === view && self.documentRevision == document &&
+                view.url.map(self.endpoint.owns) == true
+        }, report: { [weak self] observation in self?.reportBackendVersion(observation) })
+    }
+
+    private func resolveWorkspaceVersion(in view: WKWebView) async -> WorkspaceVersionObservation? {
+        guard view.url.map(endpoint.owns) == true else { return nil }
+        let revision = documentRevision
+        for attempt in 0..<5 {
+            guard !Task.isCancelled, workspace === view, revision == documentRevision,
+                  view.url.map(endpoint.owns) == true else { return nil }
+            let data = try? await inspectWorkspace(in: view, body: """
+                const date = value => {
+                    if (typeof value !== 'string') return null;
+                    const m = /^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(?:[.][0-9]{1,6})?(?:Z|[+-]([0-9]{2}):([0-9]{2}))$/.exec(value);
+                    if (!m) return null;
+                    const [, year, month, day, hour, minute, second, offsetHour, offsetMinute] = m.map(Number);
+                    if (year < 1970 || month < 1 || month > 12 || day < 1 || day > new Date(Date.UTC(year, month, 0)).getUTCDate() ||
+                        hour > 23 || minute > 59 || second > 59 || (offsetHour || 0) > 23 || (offsetMinute || 0) > 59) return null;
+                    const ms = Date.parse(value); return Number.isFinite(ms) ? ms : null;
+                };
+                const response = await fetch('/api/workspace-version', options);
+                if (response.ok) {
+                    const info = await response.json();
+                    return {version:info?.web?.version ?? null, installedVersion:info?.installed?.version ?? null,
+                            installedUpdatedAt:date(info?.installed?.updated_at), daemonLastVersion:info?.daemon?.last_observed_version ?? null,
+                            daemonLastObservedAt:date(info?.daemon?.last_observed_at),
+                            daemonObservationStale:typeof info?.daemon?.observation_stale === 'boolean' ? info.daemon.observation_stale : null};
+                }
+                if (response.status !== 404) return null;
+                const fallback = await fetch('/api/system/info', options);
+                if (!fallback.ok) return null;
+                const info = await fallback.json();
+                return {version:info?.version ?? null};
+                """) as? [String: Any]
+            guard !Task.isCancelled, workspace === view, revision == documentRevision, view.url.map(endpoint.owns) == true else { return nil }
+            if let data, let observation = WorkspaceVersionObservation.fromPayload(data, now: .now) {
+                return observation
+            }
+            if attempt < 4 { do { try await Task.sleep(for: .seconds(1)) } catch { return nil } }
+        }
+        return nil
     }
 
     private func resolveWorkspaceName(in view: WKWebView) async {
@@ -1225,6 +1567,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        guard webView === workspace, let navigation, currentNavigation === navigation else { return }
         endProvisionalLoad(navigation)
         pageFailed(error)
         nativeNoticeOpened()
@@ -1235,11 +1578,22 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard webView === workspace, let navigation, currentNavigation === navigation else { return }
         pageFailed(error)
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        guard webView === workspace else { return }
+        #if os(iOS)
+        reportFooterSlot(nil)
+        lastFooterMetrics = nil
+        pendingFooterMetrics = nil
+        footerDeliveryAttempts = 0
+        footerDeliveryID &+= 1
+        #endif
         documentRevision &+= 1
+        versionRefresh.cancel()
+        currentNavigation = nil
         provisionalLoad = .idle
         hasCommittedWorkspace = false
         externalLinks.clearActivation()
@@ -1257,6 +1611,11 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         // WebKit reports a cancelled policy decision as a frame load interruption. The previous
         // workspace remains visible when a cross-origin redirect or external handoff is denied.
         if failure.domain == "WebKitErrorDomain", failure.code == 102 { return }
+        if failure.domain == NSURLErrorDomain, failure.code == NSURLErrorUserAuthenticationRequired,
+           let widgetActivation {
+            _ = WidgetCredentialStore.invalidateShared(widgetActivation)
+            ActivityWidgetData.reload()
+        }
         reportError(WorkspaceProblem(navigationError: error))
     }
 }

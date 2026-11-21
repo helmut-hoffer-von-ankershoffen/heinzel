@@ -87,6 +87,18 @@ private final class GuestBlank: NSObject, WKNavigationDelegate {
         pending.resume(returning: result)
     }
 
+    func webView(_: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
+        guard pending != nil, action.targetFrame?.isMainFrame == true,
+              action.request.url?.absoluteString == "about:blank" else { return .cancel }
+        return .allow
+    }
+
+    func webView(_: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
+        guard pending != nil, response.isForMainFrame,
+              response.response.url?.absoluteString == "about:blank" else { return .cancel }
+        return .allow
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if navigation === self.navigation { finish(true) }
     }
@@ -109,19 +121,44 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         let url: URL
         let revision: Int
     }
-    private var surface: WKWebView?
+    private final class Tab {
+        let id = UUID().uuidString
+        var view: WKWebView?
+        var status = "empty"
+    }
+
+    private static let maxTabs = 8
+    private var tabs: [Tab] = []
+    private var selected: Tab?
+    private var surface: WKWebView? { selected?.view }
+    private var configuration: WKWebViewConfiguration?
+    private var frame: CGRect?
     private var network: BrowserNetwork?
     private var opening = false
     private var generation = 0
     private var pageRevision = 0
     private var endpoint: Endpoint?
-    private var status = "empty"
+    private var emptyStatus = "empty"
+    private var status: String { selected?.status ?? emptyStatus }
     private var clearFailed = false
-    private let guestClear = GuestDataClear<(WKWebView, WKWebsiteDataStore)>()
+    private let guestClear = GuestDataClear<([WKWebView], WKWebsiteDataStore)>()
 
     func handle(_ request: [String: Any], in workspace: WKWebView, excluding endpoint: Endpoint) async -> [String: Any] {
         self.endpoint = endpoint
         switch request["action"] as? String {
+        case "new-tab":
+            guard !guestClear.clearing, !clearFailed, tabs.count < Self.maxTabs else { break }
+            addTab()
+        case "select-tab":
+            guard let id = request["tab"] as? String, let tab = tabs.first(where: { $0.id == id }) else { break }
+            select(tab)
+        case "close-tab":
+            guard let id = request["tab"] as? String, let index = tabs.firstIndex(where: { $0.id == id }) else { break }
+            let tab = tabs.remove(at: index)
+            detach(tab)
+            if selected === tab {
+                select(tabs.isEmpty ? nil : tabs[min(index, tabs.count - 1)])
+            }
         case "navigate":
             guard !opening, !guestClear.clearing, !clearFailed else { break }
             guard let value = request["url"] as? String, value.utf8.count <= 4096,
@@ -130,45 +167,45 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
                 markUnavailable()
                 return state
             }
-            status = "loading"
+            let tab = selected ?? addTab()
+            tab.status = "loading"
             let revision = generation
             opening = true
             do {
-                let view = try await browser(in: workspace, endpoint: endpoint, revision: revision)
-                if revision == generation { view.load(URLRequest(url: url)) }
+                let view = try await browser(in: workspace, endpoint: endpoint, revision: revision, tab: tab)
+                if revision == generation, tabs.contains(where: { $0 === tab }) {
+                    view.load(URLRequest(url: url))
+                }
             } catch {
-                if revision == generation { reset(status: "unavailable") }
+                if revision == generation {
+                    tab.status = "unavailable"
+                    updateVisibility()
+                }
             }
             if revision == generation { opening = false }
         case "layout":
             guard let bounds = request["bounds"] as? [String: CGFloat],
                   let x = bounds["x"], let y = bounds["y"], let width = bounds["width"], let height = bounds["height"],
-                  width > 0, height > 0 else { surface?.isHidden = true; break }
+                  width > 0, height > 0 else { hide(); break }
             let frame = Self.surfaceFrame(
                 CGRect(x: x, y: y, width: width, height: height), in: workspace
             )
             guard !frame.isEmpty, [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite),
-                  workspace.bounds.contains(frame) else { surface?.isHidden = true; break }
-            surface?.frame = frame
-            surface?.isHidden = status == "unavailable"
-        case "hide": surface?.isHidden = true
-        case "close": reset(status: "empty")
+                  workspace.bounds.contains(frame) else { hide(); break }
+            self.frame = frame
+            updateVisibility()
+        case "hide": hide()
+        case "close": reset()
         case "clear":
             let workspaceStore = workspace.configuration.websiteDataStore
             let cleared = await guestClear.run {
-                let guest = surface
-                // Stop the guest and revoke the proxy before touching its store.
-                reset(status: "empty")
-                return guest.map { ($0, $0.configuration.websiteDataStore) }
+                let guests = tabs.compactMap(\.view)
+                let store = configuration?.websiteDataStore
+                // Stop every guest and revoke the proxy before touching their store.
+                reset()
+                return store.map { (guests, $0) }
             } erase: { pair in
-                let (guest, store) = pair
-                // Never clear a persistent store or the workspace's own session.
-                guard !store.isPersistent, store !== workspaceStore else { return false }
-                let blanked = await GuestBlank().run(guest)
-                let types = WKWebsiteDataStore.allWebsiteDataTypes()
-                await store.removeData(ofTypes: types, modifiedSince: .distantPast)
-                let remaining = await store.dataRecords(ofTypes: types)
-                return blanked && remaining.isEmpty
+                await Self.eraseGuests(pair, excluding: workspaceStore)
             }
             clearFailed = !cleared
         case "back": pageRevision &+= 1; surface?.goBack()
@@ -191,25 +228,89 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         #endif
     }
 
+    private static func eraseGuests(_ pair: ([WKWebView], WKWebsiteDataStore),
+                                    excluding workspaceStore: WKWebsiteDataStore) async -> Bool {
+        let (guests, store) = pair
+        // Never clear a persistent store or the workspace's own session.
+        guard !store.isPersistent, store !== workspaceStore else { return false }
+        let blanks = guests.map { guest in Task { await GuestBlank().run(guest) } }
+        var blanked = true
+        for blank in blanks {
+            let finished = await blank.value
+            blanked = blanked && finished
+        }
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        await store.removeData(ofTypes: types, modifiedSince: .distantPast)
+        let remaining = await store.dataRecords(ofTypes: types)
+        return blanked && remaining.isEmpty
+    }
+
     private var state: [String: Any] {
         var result: [String: Any] = [
             "status": status, "canGoBack": surface?.canGoBack == true, "canGoForward": surface?.canGoForward == true,
         ]
+        result["tabs"] = tabs.map { tab in
+            [
+                "id": tab.id, "owner": "person", "selected": tab === selected, "status": tab.status,
+                "url": tab.status == "unavailable" ? "" : tab.view?.url?.absoluteString ?? "",
+                "title": tab.status == "unavailable" ? "" : String((tab.view?.title ?? "").prefix(200)),
+            ] as [String: Any]
+        }
+        if let selected { result["selected"] = selected.id }
         if status != "unavailable", let url = surface?.url { result["url"] = url.absoluteString }
         if clearFailed { result["notice"] = "clear-failed" }
         return result
     }
 
-    func reset(status: String = "empty") {
+    func reset() {
         generation += 1
         pageRevision &+= 1
         opening = false
-        surface?.stopLoading()
-        surface?.removeFromSuperview()
-        surface = nil
+        for tab in tabs { detach(tab) }
+        tabs.removeAll()
+        selected = nil
+        frame = nil
         network?.close()
         network = nil
-        self.status = status
+        configuration = nil
+        emptyStatus = "empty"
+    }
+
+    @discardableResult
+    private func addTab() -> Tab {
+        let tab = Tab()
+        tabs.append(tab)
+        select(tab)
+        return tab
+    }
+
+    private func select(_ tab: Tab?) {
+        surface?.isHidden = true
+        selected = tab
+        pageRevision &+= 1
+        emptyStatus = "empty"
+        updateVisibility()
+    }
+
+    private func detach(_ tab: Tab) {
+        guard let view = tab.view else { return }
+        view.isHidden = true
+        view.navigationDelegate = nil
+        view.uiDelegate = nil
+        view.stopLoading()
+        view.removeFromSuperview()
+        tab.view = nil
+    }
+
+    private func hide() {
+        frame = nil
+        surface?.isHidden = true
+    }
+
+    private func updateVisibility() {
+        guard let surface else { return }
+        if let frame { surface.frame = frame }
+        surface.isHidden = frame == nil || status == "unavailable"
     }
 
     /// WebKit may bypass even a non-failover proxy for loopback subresources.
@@ -243,24 +344,34 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         return compiled
     }
 
-    private func browser(in workspace: WKWebView, endpoint: Endpoint, revision: Int) async throws -> WKWebView {
-        if let surface { return surface }
-        guard try await Self.enabled(in: workspace, for: endpoint) else { throw URLError(.userAuthenticationRequired) }
-        guard revision == generation else { throw URLError(.cancelled) }
-        let host = endpoint.origin.host()?.lowercased()
-        let rules = try await Self.requestRules(excluding: host)
-        guard revision == generation else { throw URLError(.cancelled) }
-        let broker = try BrowserNetwork(deniedHost: host)
-        network = broker
-        let proxy = try await broker.start()
-        guard revision == generation else { throw URLError(.cancelled) }
-        let configuration = Self.guestConfiguration(proxy: proxy, rules: rules)
+    private func browser(in workspace: WKWebView, endpoint: Endpoint, revision: Int, tab: Tab) async throws -> WKWebView {
+        if let view = tab.view { return view }
+        if configuration == nil {
+            guard try await Self.enabled(in: workspace, for: endpoint) else { throw URLError(.userAuthenticationRequired) }
+            guard revision == generation else { throw URLError(.cancelled) }
+            let host = endpoint.origin.host()?.lowercased()
+            let rules = try await Self.requestRules(excluding: host)
+            guard revision == generation else { throw URLError(.cancelled) }
+            let broker = try BrowserNetwork(deniedHost: host)
+            network = broker
+            do {
+                let proxy = try await broker.start()
+                guard revision == generation else { throw URLError(.cancelled) }
+                configuration = Self.guestConfiguration(proxy: proxy, rules: rules)
+            } catch {
+                broker.close()
+                if revision == generation { network = nil }
+                throw error
+            }
+        }
+        guard let configuration, tabs.contains(where: { $0 === tab }) else { throw URLError(.cancelled) }
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = self
         view.uiDelegate = self
         view.isHidden = true
         workspace.addSubview(view)
-        surface = view
+        tab.view = view
+        updateVisibility()
         return view
     }
 
@@ -322,35 +433,45 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func isCurrent(_ target: ExternalTarget) -> Bool { externalTarget() == target }
 
-    private func markUnavailable() {
-        status = "unavailable"
-        surface?.isHidden = true
+    private func tab(for view: WKWebView) -> Tab? {
+        tabs.first { $0.view === view }
+    }
+
+    private func markUnavailable(_ tab: Tab? = nil) {
+        if let target = tab ?? selected {
+            target.status = "unavailable"
+            target.view?.isHidden = true
+        } else {
+            emptyStatus = "unavailable"
+        }
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
-        guard webView === surface, let frame = action.targetFrame else { return .cancel }
+        guard let tab = tab(for: webView), let frame = action.targetFrame else { return .cancel }
         guard action.request.url.map(permits) == true else {
-            if frame.isMainFrame { markUnavailable() }
+            if frame.isMainFrame { markUnavailable(tab) }
             return .cancel
         }
         return .allow
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
-        guard webView === surface else { return .cancel }
+        guard let tab = tab(for: webView) else { return .cancel }
         guard response.response.url.map(permits) == true, response.canShowMIMEType else {
-            if response.isForMainFrame { markUnavailable() }
+            if response.isForMainFrame { markUnavailable(tab) }
             return .cancel
         }
         return .allow
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        if webView === surface { pageRevision &+= 1; status = "loading" }
+        guard let tab = tab(for: webView) else { return }
+        if tab === selected { pageRevision &+= 1 }
+        tab.status = "loading"
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if webView === surface, status == "loading" { status = "ready" }
+        if let tab = tab(for: webView), tab.status == "loading" { tab.status = "ready" }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -362,12 +483,15 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        if webView === surface { reset(status: "unavailable") }
+        guard let tab = tab(for: webView) else { return }
+        markUnavailable(tab)
+        detach(tab)
+        if tab === selected { pageRevision &+= 1 }
     }
 
     private func navigationFailed(_ view: WKWebView, error: Error) {
-        guard view === surface, (error as NSError).code != NSURLErrorCancelled else { return }
-        markUnavailable()
+        guard let tab = tab(for: view), (error as NSError).code != NSURLErrorCancelled else { return }
+        markUnavailable(tab)
     }
 
     func webView(

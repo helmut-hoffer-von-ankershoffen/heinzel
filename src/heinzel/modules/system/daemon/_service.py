@@ -547,7 +547,7 @@ class _MutationScope:
 
     def request(self, plan: DaemonHandoverPlan) -> DaemonHandoverRequest:
         self._require_active()
-        if self.expected is None or self.plan is not plan or self.requested:
+        if self.expected is None or self.plan is not plan or self.requested or self.aborted:
             msg = "The daemon handover does not match this verified mutation."
             raise HeinzelError(msg)
         self._verify(self.expected)
@@ -557,6 +557,15 @@ class _MutationScope:
             raise HeinzelError(msg)
         self.requested = True
         return result
+
+    def finish_without_handover(self) -> None:
+        self._require_active()
+        if self.expected is None or self.requested or self.aborted:
+            msg = "The mutation was not verified, or it was already handed over."
+            raise HeinzelError(msg)
+        self._verify(self.expected)
+        self.authority.pending_path.unlink()
+        self.aborted = True  # nothing is left to commit; the daemon keeps running what it loaded
 
     def commit(self) -> None:
         if self.aborted:
@@ -2064,6 +2073,8 @@ class DaemonService:
         # written by the executing process and intentionally stays unknown for older versions without this field.
         heartbeat = self._read_state("heartbeat.json")
         version = str(heartbeat["version"]) if installed and isinstance(heartbeat.get("version"), str) else None
+        tick_interval = heartbeat.get("interval_minutes")
+        tick_interval = tick_interval if type(tick_interval) is int and tick_interval > 0 and version else None
         installed_version = str(recorded["version"]) if installed and isinstance(recorded.get("version"), str) else None
         version_mismatch = installed and (
             self._handover_pending()
@@ -2089,12 +2100,13 @@ class DaemonService:
             paused=self.paused,
             interval_minutes=int(recorded["interval_minutes"]) if "interval_minutes" in recorded else None,
             executable=Path(str(recorded["executable"])) if "executable" in recorded else None,
-            last_tick=self._last_tick(),
+            last_tick=self._state_timestamp(heartbeat, "last_tick"),
+            last_tick_interval_minutes=tick_interval,
             jobs=len(jobs),
             failing=[job.job for job in jobs if job.problem or job.last_disposition is Disposition.FAILED],
             version=version,
             installed_version=installed_version,
-            installed_at=self._timestamp("install.json", "installed_at") if installed else None,
+            installed_at=self._state_timestamp(recorded, "installed_at") if installed else None,
             version_mismatch=version_mismatch,
         )
 
@@ -2800,7 +2812,11 @@ class DaemonService:
             return state.pid if state.registered else None
 
     def _timestamp(self, name: str, key: str) -> datetime | None:
-        value = self._read_state(name).get(key)
+        return self._state_timestamp(self._read_state(name), key)
+
+    @staticmethod
+    def _state_timestamp(state: dict[str, str | int], key: str) -> datetime | None:
+        value = state.get(key)
         try:
             return datetime.fromisoformat(str(value)) if value else None
         except ValueError:

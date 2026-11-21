@@ -141,6 +141,8 @@ class UpdatePlan(BaseModel):
     desktop: bool = Field(
         default=False, description="Whether a desktop app is installed that the update can bring along afterwards."
     )
+    desktop_running: bool = Field(default=False, description="Whether that desktop app is open now.")
+    daemon: bool = Field(default=False, description="Whether the daemon and the web server restart onto the update.")
     token: str = Field(
         default="",
         description="Names exactly this plan. Pass it back as `plan` with `yes`: the update then installs what was "
@@ -196,11 +198,12 @@ class UpdateResult(BaseModel):
     )
     plan: UpdatePlan | None = Field(
         default=None,
-        description="What the update would change, when this answer is a preview or the person was asked first.",
+        description="What the update would change, when this answer is a preview or what it was run with.",
     )
+    seconds: float | None = Field(default=None, description="How long the update took, in seconds.")
     previewed: bool = Field(
         default=False,
-        description="Whether this was only a preview (`--preview`, or the question was answered with no): nothing "
+        description="Whether this was only a preview (`--preview`, or a plan that changed since it was shown): nothing "
         "was changed.",
     )
 

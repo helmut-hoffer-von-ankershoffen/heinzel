@@ -1,4 +1,15 @@
-import { ArrowLeft, ArrowRight, Bot, CornerDownLeft, ExternalLink, Plus, RefreshCw, Settings, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bot,
+  CornerDownLeft,
+  Ellipsis,
+  ExternalLink,
+  Plus,
+  RefreshCw,
+  Settings,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { MENU_EVENT } from "@/about/menu";
 import { BookmarkBar } from "@/bookmarks/BookmarkStar";
@@ -122,12 +133,43 @@ export function BrowserPanel({
   bookmarks?: boolean;
 }>) {
   const [address, setAddress] = useState("https://heinzel.team");
+  const [addressEdited, setAddressEdited] = useState(false);
+  const addressRevision = useRef(0);
+  const navigationRevision = useRef(0);
   const [state, setState] = useState<BrowserState>({ status: "empty" });
   const [refused, setRefused] = useState(false);
   const [externalFailed, setExternalFailed] = useState(false);
   const surface = useRef<HTMLDivElement>(null);
   const addressInput = useRef<HTMLInputElement>(null);
+  const selectedChip = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLElement>(null);
+  const overflowButton = useRef<HTMLButtonElement>(null);
+  const overflowContent = useRef<HTMLElement>(null);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  useEffect(() => {
+    if (!active) setToolsOpen(false);
+  }, [active]);
+  useEffect(() => {
+    if (!toolsOpen) return;
+    overflowContent.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    const outside = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) return;
+      if (overflowButton.current?.contains(event.target) || overflowContent.current?.contains(event.target)) return;
+      setToolsOpen(false);
+    };
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      setToolsOpen(false);
+      overflowButton.current?.focus();
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", dismissOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", dismissOnEscape);
+    };
+  }, [toolsOpen]);
   const native = bridge();
   const tabs = state.tabs ?? [];
   // Agents' tabs have their own limit: only the person's count against the person's.
@@ -161,20 +203,31 @@ export function BrowserPanel({
       })
       .catch(() => {});
   }, [native]);
-  useNativeSurface(surface, active, native?.browser, () => {
-    void native
-      ?.browser({ action: "state" })
-      .then(setState)
-      .catch(() => {});
-  });
+  const surfaceFailed = useNativeSurface(
+    surface,
+    active,
+    native?.browser,
+    () => {
+      void native
+        ?.browser({ action: "state" })
+        .then(setState)
+        .catch(() => {});
+    },
+    "browser",
+  );
   const selectedId = state.selected ?? null;
   const [shownTab, setShownTab] = useState<string | null>(null);
+  useEffect(() => {
+    if (selectedId) selectedChip.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [selectedId]);
   // Showing another tab shows its own address; typing in the bar is never overwritten by the poll.
   useEffect(() => {
     if (selectedId === shownTab) return;
     setShownTab(selectedId);
+    setAddressEdited(false);
     const current = (state.tabs ?? []).find((tab) => tab.id === selectedId);
-    if (current?.url) setAddress(current.url);
+    // An empty tab owns an empty address too: an older restore may have replaced the optimistic new-tab clear.
+    setAddress(current?.url ?? "");
   }, [selectedId, shownTab, state.tabs]);
   const newTab = () => {
     if (!native || ownTabs >= MAX_TABS) return;
@@ -228,19 +281,29 @@ export function BrowserPanel({
     };
   }, [native, active]);
   const current = tabs.find((tab) => tab.id === selectedId);
-  // The star's place inside the address form; the bookmark bar draws into it from below the tab strip.
+  // The bookmark bar draws its star into the tools row.
   const [starSlot, setStarSlot] = useState<HTMLElement | null>(null);
-  const target = addressUrl(address);
+  const displayAddress = !addressEdited && state.status === "ready" && state.url ? state.url : address;
+  const target = addressUrl(displayAddress);
   const external = target ? externalBrowserUrl(target) : null;
   // The desktop refuses local, private and non-HTTPS targets; say so instead of a silent failure.
   const go = async (url: string) => {
+    const submittedRevision = addressRevision.current;
+    const navigation = ++navigationRevision.current;
     try {
       const result = await native?.browser({ action: "navigate", url });
+      if (navigation !== navigationRevision.current) return;
       setRefused(false);
-      if (result) setState(result);
+      if (result) {
+        if (submittedRevision === addressRevision.current) setAddressEdited(false);
+        if (result.selected) setShownTab(result.selected);
+        setState(result);
+      }
     } catch (error) {
-      if (String(error).includes("public HTTPS")) setRefused(true);
-      else setState((previous) => ({ ...previous, status: "unavailable" }));
+      if (navigation !== navigationRevision.current) return;
+      if (String(error).includes("public HTTPS")) {
+        if (submittedRevision === addressRevision.current) setRefused(true);
+      } else setState((previous) => ({ ...previous, status: "unavailable" }));
     }
   };
   const status =
@@ -253,132 +316,17 @@ export function BrowserPanel({
           : t("browser.unavailable");
   return (
     <section ref={panel} aria-label={t("browser.title")} className="flex h-full min-h-0 flex-col bg-background">
-      <form
-        className="flex h-10 shrink-0 items-center gap-1 px-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (native && target) void go(target);
-        }}
-      >
-        {native && (
-          <>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label={t("browser.back")}
-              title={t("browser.back")}
-              disabled={!state.canGoBack}
-              onClick={() => void request({ action: "back" })}
-            >
-              <ArrowLeft aria-hidden />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label={t("browser.forward")}
-              title={t("browser.forward")}
-              disabled={!state.canGoForward}
-              onClick={() => void request({ action: "forward" })}
-            >
-              <ArrowRight aria-hidden />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label={t("browser.reload")}
-              title={t("browser.reload")}
-              disabled={!state.url || state.status === "loading"}
-              onClick={() => void request({ action: "reload" })}
-            >
-              <RefreshCw aria-hidden className={state.status === "loading" ? "animate-spin" : undefined} />
-            </Button>
-          </>
-        )}
-        <input
-          ref={addressInput}
-          aria-label={t("browser.address")}
-          // Text, not type=url: form validation would refuse "example.com" or a search before it is read.
-          type="text"
-          inputMode="url"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          value={address}
-          onChange={(event) => {
-            setAddress(event.target.value);
-            setRefused(false);
-          }}
-          className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1 text-sm"
-        />
-        {native ? (
-          <Button
-            type="submit"
-            variant="ghost"
-            size="icon"
-            aria-label={t("browser.go")}
-            title={t("browser.go")}
-            disabled={!target}
-          >
-            <CornerDownLeft aria-hidden />
-          </Button>
-        ) : (
-          external && (
-            <PaneAction ghost icon={ExternalLink} href={external}>
-              {t("browser.openExternal")}
-            </PaneAction>
-          )
-        )}
-        {native && bookmarks && <span ref={setStarSlot} className="contents" />}
-        {native && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            data-heinzel-browser-external=""
-            aria-label={t("browser.openInBrowser")}
-            title={t("browser.openInBrowser")}
-            disabled={!state.url}
-            onClick={() => void request({ action: "external" })}
-          >
-            <ExternalLink aria-hidden />
-          </Button>
-        )}
-        {native && onSettings && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label={t("browser.settings")}
-            title={t("browser.settings")}
-            onClick={onSettings}
-          >
-            <Settings aria-hidden />
-          </Button>
-        )}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label={t("browser.close")}
-          title={t("browser.close")}
-          onClick={onClose}
-        >
-          <X aria-hidden />
-        </Button>
-      </form>
-      {native ? (
-        <>
+      {native && (
+        <div className="flex min-h-11 shrink-0 items-center gap-1 px-2">
           <div
             role="tablist"
             aria-label={t("browser.tabs")}
-            className="flex shrink-0 items-center gap-1 overflow-x-auto px-2"
+            className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
           >
             {tabs.map((tab) => (
               <div
                 key={tab.id}
+                ref={tab.selected ? selectedChip : undefined}
                 className={`flex max-w-40 shrink-0 items-center rounded-md border border-border text-xs ${tab.selected ? "bg-muted" : ""}`}
               >
                 <Button
@@ -388,7 +336,7 @@ export function BrowserPanel({
                   role="tab"
                   aria-selected={tab.selected}
                   title={tab.url || undefined}
-                  className="h-auto min-w-0 flex-1 justify-start gap-1 py-1 text-left"
+                  className="h-9 min-w-0 flex-1 justify-start gap-1 text-left"
                   onClick={() => void request({ action: "select-tab", tab: tab.id })}
                 >
                   {tab.agent && <AgentFace kind={tab.agent.kind} />}
@@ -407,41 +355,204 @@ export function BrowserPanel({
                   size="icon"
                   aria-label={`${t("browser.closeTab")} ${tabLabel(tab)}`}
                   title={t("browser.closeTab")}
-                  className="size-auto px-1 py-1 text-muted-foreground"
+                  className="size-8 shrink-0 text-muted-foreground"
                   onClick={() => closeTab(tab.id)}
                 >
                   <X aria-hidden className="size-3" />
                 </Button>
               </div>
             ))}
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-10 shrink-0 px-2"
+            aria-label={t("browser.newTab")}
+            title={t("browser.newTab")}
+            disabled={ownTabs >= MAX_TABS}
+            onClick={newTab}
+          >
+            <Plus aria-hidden />
+            {t("browser.newTab")}
+          </Button>
+        </div>
+      )}
+      <form
+        className="flex h-11 shrink-0 items-center gap-0.5 px-2 sm:gap-1"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (native && target) void go(target);
+        }}
+      >
+        {native && (
+          <>
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              aria-label={t("browser.newTab")}
-              title={t("browser.newTab")}
-              disabled={ownTabs >= MAX_TABS}
-              onClick={newTab}
+              className="size-8 shrink-0 sm:size-9"
+              aria-label={t("browser.back")}
+              title={t("browser.back")}
+              disabled={!state.canGoBack}
+              onClick={() => void request({ action: "back" })}
             >
-              <Plus aria-hidden />
+              <ArrowLeft aria-hidden />
             </Button>
-          </div>
-          <p role="status" className="truncate px-3 pb-1 text-xs text-muted-foreground" title={state.url || undefined}>
-            {state.url && (state.status === "ready" || state.status === "loading") ? (
-              <>
-                <span className="sr-only">{t("browser.current")} </span>
-                {state.url}
-              </>
-            ) : (
-              status
-            )}
-          </p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8 shrink-0 sm:size-9"
+              aria-label={t("browser.forward")}
+              title={t("browser.forward")}
+              disabled={!state.canGoForward}
+              onClick={() => void request({ action: "forward" })}
+            >
+              <ArrowRight aria-hidden />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8 shrink-0 sm:size-9"
+              aria-label={t("browser.reload")}
+              title={t("browser.reload")}
+              disabled={!state.url || state.status === "loading"}
+              onClick={() => void request({ action: "reload" })}
+            >
+              <RefreshCw aria-hidden className={state.status === "loading" ? "animate-spin" : undefined} />
+            </Button>
+          </>
+        )}
+        <input
+          ref={addressInput}
+          aria-label={t("browser.address")}
+          // Text, not type=url: form validation would refuse "example.com" or a search before it is read.
+          type="text"
+          inputMode="url"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          value={displayAddress}
+          onChange={(event) => {
+            addressRevision.current += 1;
+            setAddress(event.target.value);
+            setAddressEdited(true);
+            setRefused(false);
+          }}
+          className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1 text-sm"
+        />
+        {native ? (
+          <Button
+            type="submit"
+            variant="ghost"
+            size="icon"
+            className="size-8 shrink-0 sm:size-9"
+            aria-label={t("browser.go")}
+            title={t("browser.go")}
+            disabled={!target}
+          >
+            <CornerDownLeft aria-hidden />
+          </Button>
+        ) : (
+          external && (
+            <PaneAction ghost icon={ExternalLink} href={external}>
+              {t("browser.openExternal")}
+            </PaneAction>
+          )
+        )}
+        {native ? (
+          <Button
+            ref={overflowButton}
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-8 shrink-0 sm:size-9"
+            aria-label={t("browser.moreActions")}
+            title={t("browser.moreActions")}
+            aria-expanded={toolsOpen}
+            onClick={() => setToolsOpen((open) => !open)}
+          >
+            <Ellipsis aria-hidden />
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t("browser.close")}
+            title={t("browser.close")}
+            onClick={onClose}
+          >
+            <X aria-hidden />
+          </Button>
+        )}
+      </form>
+      {native && toolsOpen && (
+        <section
+          ref={overflowContent}
+          aria-label={t("browser.moreActions")}
+          className="flex shrink-0 flex-wrap items-center gap-1 px-2 py-1"
+        >
+          {bookmarks && <span ref={setStarSlot} className="contents" />}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            data-heinzel-browser-external=""
+            disabled={!state.url}
+            onClick={() => void request({ action: "external" })}
+          >
+            <ExternalLink aria-hidden />
+            {t("browser.openInBrowser")}
+          </Button>
+          {onSettings && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setToolsOpen(false);
+                onSettings();
+              }}
+            >
+              <Settings aria-hidden />
+              {t("browser.settings")}
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setToolsOpen(false);
+              onClose();
+            }}
+          >
+            <X aria-hidden />
+            {t("browser.close")}
+          </Button>
+        </section>
+      )}
+      {native ? (
+        <>
+          <output
+            className={state.status === "unavailable" ? "block px-3 py-1 text-xs text-muted-foreground" : "sr-only"}
+          >
+            {status}
+          </output>
           {bookmarks && (
             <BookmarkBar slot={starSlot} url={current?.url || state.url} title={current?.title ?? ""} tabs={tabs} />
           )}
           {refused && (
             <p role="alert" className="shrink-0 border-t-[0.5px] border-foreground/20 px-3 py-1.5 text-xs">
               {t("browser.refusedNote")}
+            </p>
+          )}
+          {surfaceFailed && active && (
+            <p role="alert" className="shrink-0 px-3 py-1.5 text-xs">
+              {t("browser.surfaceFailed")}
             </p>
           )}
           {state.link && (

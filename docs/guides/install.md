@@ -61,27 +61,41 @@ the installed service and otherwise serve in the foreground. `hz ui install` is 
 ## One update for everything
 
 ```sh
-hz system update            # shows the plan, asks "Update now? [Y/n]", then updates hz and every plugin
+hz system update            # one checklist: hz, plugins, daemon and web server, desktop app; no questions
 hz system update --preview  # only the plan; nothing is installed
-hz system update --yes      # agrees in advance: for scripts, and where nobody can answer
 ```
 
-In the app, **Update all** in the footer's update pane shows the same plan and asks once before anything is installed.
+The update never asks anything, in a terminal or anywhere else (`--json`, the REST API and MCP run the same defaults).
+Rows start pending and tick in place; plugins that stay as they are are one row, and the last line says what was done:
 
-The plan lists hz, each plugin and the desktop app. A plugin you added in the app or with `hz system plugin add` is
-recorded at exactly the version or commit it was installed from. Once you agree, such a plugin moves too: to the newest
-release on the package index, which it follows from then on, or to the commit of its newest release tag. A plugin from
-a branch, a folder, a URL or a repository that tags no releases stays as it is, and the plan says so;
-`--keep-pins` keeps every pin.
+```text
+ ✓ hz                         OLD → NEW
+ ✓ heinzel-clock              1.4.2 → 1.5.0
+ ✓ 15 plugins                 already newest
+ ✓ Daemon, web server         restarted, run NEW
+ ✓ Desktop app                OLD → NEW, quit and reopened
+Updated to hz NEW in 48 s. What's new: hz system changelog --newer
+```
 
-A plugin installed newer than its newest stable release (a pre-release, a yanked release) stays too: an update never
-lowers a version. What is installed is the plan you saw: if a release appears while you read it, you are shown the
-new plan and asked again. Where nobody can answer (a script, `--json`) and `--yes` is not given, nothing is asked and
-pins stay, as before.
+A plugin you added in the app or with `hz system plugin add` is recorded at exactly the version or commit it was
+installed from. Such a plugin moves too: to the newest release on the package index, which it follows from then on, or
+to the commit of its newest release tag. A plugin from a branch, a folder, a URL or a repository that tags no releases
+stays as it is, and the plan says so; `--keep-pins` keeps every pin. A plugin installed newer than its newest stable
+release (a pre-release, a yanked release) stays too: an update never lowers a version.
 
-After a change, a terminal asks `Update the desktop app now? [Y/n]` when the app is installed. `--desktop`,
-`--no-desktop` or `--yes` answer in advance; the app's **Update all** has a switch for it. The app is updated by
-`hz app install`; if that can't finish (the app is open), hz itself stays updated and the result says how to finish.
+The daemon and the web server restart when hz or a plugin changed, or when the daemon runs older code than is
+installed. The desktop app is replaced with `hz app install`; an open app is quit and opened again, and a closed one
+stays closed. If it is still open 20 seconds after it was asked to quit, it stays open, installs when you quit it, and
+the row says so with a warning.
+
+| Flag | What it does |
+| --- | --- |
+| `--no-desktop-app` | Leave the desktop app alone; update it later with `hz app install`. |
+| `--no-desktop-app-restart` | Never quit an open app: it installs when you quit it. |
+| `--no-daemon` | Do not restart the daemon or the web server; the row says which version they still run. |
+| `--keep-pins` | Leave pinned plugins where they are. |
+
+`--yes` is still accepted and does nothing. The app's own service never quits the app that runs it.
 
 ## Stable by default, edge if you ask
 

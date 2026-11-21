@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { addressUrl, BrowserPanel, externalBrowserUrl } from "./BrowserPanel";
 
@@ -102,6 +102,9 @@ it("Open in browser is available only once a page is open", async () => {
   });
   Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
   render(<BrowserPanel active={false} onClose={vi.fn()} />);
+  const tools = screen.getByRole("button", { name: "More browser actions" });
+  expect(screen.queryByRole("button", { name: "Open in browser" })).toBeNull();
+  fireEvent.click(tools);
   const open = screen.getByRole("button", { name: "Open in browser" });
   expect(open).toHaveAttribute("data-heinzel-browser-external");
   expect(open).toBeDisabled();
@@ -113,7 +116,44 @@ it("Open in browser is available only once a page is open", async () => {
   await waitFor(() => expect(open).toBeEnabled());
   fireEvent.click(open);
   expect(browser).toHaveBeenCalledWith({ action: "external" });
+  fireEvent.keyDown(open, { key: "Escape" });
+  expect(screen.queryByRole("button", { name: "Open in browser" })).toBeNull();
+  expect(tools).toHaveFocus();
   expect(screen.queryByText(/Sign-ins stay until you clear browsing data/)).toBeNull();
+});
+
+it("the address shows the active page after navigation without duplicating it below the toolbar", async () => {
+  const browser = vi.fn(async ({ action }: Record<string, unknown>) => {
+    if (action === "navigate") return { status: "ready", url: "https://example.com/redirected" };
+    return { status: "empty" };
+  });
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  const address = screen.getByRole("textbox", { name: "Website address" });
+  fireEvent.change(address, { target: { value: "example.com" } });
+  expect(address).toHaveValue("example.com");
+  fireEvent.click(screen.getByRole("button", { name: "Open this address" }));
+  await waitFor(() => expect(address).toHaveValue("https://example.com/redirected"));
+  expect(screen.queryByText("https://example.com/redirected")).toBeNull();
+});
+
+it("a completed navigation does not replace a newer address edit", async () => {
+  let finishNavigation: ((result: { status: string; url: string }) => void) | undefined;
+  const navigation = new Promise<{ status: string; url: string }>((resolve) => {
+    finishNavigation = resolve;
+  });
+  const browser = vi.fn(async ({ action }: Record<string, unknown>) =>
+    action === "navigate" ? navigation : { status: "empty" },
+  );
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  const address = screen.getByRole("textbox", { name: "Website address" });
+  fireEvent.change(address, { target: { value: "example.com" } });
+  fireEvent.click(screen.getByRole("button", { name: "Open this address" }));
+  fireEvent.change(address, { target: { value: "next.example.com" } });
+  expect(finishNavigation).toBeDefined();
+  await act(async () => finishNavigation?.({ status: "ready", url: "https://example.com/redirected" }));
+  expect(address).toHaveValue("next.example.com");
 });
 
 it.each([
@@ -141,6 +181,7 @@ it("opens Browser settings and places the address action next to its field", () 
   expect(screen.getByRole("textbox", { name: "Website address" }).nextElementSibling).toBe(
     screen.getByRole("button", { name: "Open this address" }),
   );
+  fireEvent.click(screen.getByRole("button", { name: "More browser actions" }));
   fireEvent.click(screen.getByRole("button", { name: "Browser settings" }));
   expect(settings).toHaveBeenCalledOnce();
 });
@@ -255,6 +296,49 @@ it("a new tab opens from the plus button and from Ctrl-T; Ctrl-W closes the sele
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(2));
   fireEvent.keyDown(screen.getByRole("textbox", { name: "Website address" }), { key: "t", ctrlKey: true });
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(3));
+});
+
+it("a delayed new-tab response clears the address restored while that request was pending", async () => {
+  vi.useFakeTimers();
+  try {
+    const browser = tabBridge();
+    const read = browser.getMockImplementation();
+    if (!read) throw new Error("The fixture must supply a browser bridge");
+    let restore = () => {};
+    let open = () => {};
+    const restored = new Promise<void>((resolve) => {
+      restore = resolve;
+    });
+    const opened = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    browser.mockImplementation(async (request) => {
+      // A state poll can display the existing tabs before the opening tabs request returns.
+      if (request.action === "tabs") {
+        const snapshot = await read(request);
+        await restored;
+        return snapshot;
+      }
+      if (request.action === "new-tab") await opened;
+      return read(request);
+    });
+    render(<BrowserPanel active onClose={vi.fn()} />);
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
+    const field = screen.getByRole("textbox", { name: "Website address" });
+    fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+    await act(async () => restore());
+    await act(async () => open());
+    expect(screen.getAllByRole("tab")).toHaveLength(3);
+    expect(screen.getByRole("tab", { name: "New tab" })).toHaveAttribute("aria-selected", "true");
+    expect(field).toHaveValue("");
+    // A poll of the same selected tab must still leave an address being typed alone.
+    fireEvent.change(field, { target: { value: "example.com/draft" } });
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(field).toHaveValue("example.com/draft");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("the Mac menu's New Tab and Close Tab are taken by the panel, and Close Tab is left alone with no tab", async () => {

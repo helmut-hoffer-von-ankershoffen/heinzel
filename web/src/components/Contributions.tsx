@@ -48,7 +48,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { type ComponentProps, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type ComponentProps, type ReactNode, type RefObject, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router";
 import {
@@ -64,6 +64,7 @@ import {
 } from "@/api/client";
 import { token } from "@/api/token";
 import type { AskHeinzel } from "@/chat/askHeinzel";
+import { AnchoredPopover } from "@/components/AnchoredPopover";
 import { ChartBody } from "@/components/ChartBody";
 import { CommandDialog } from "@/components/CommandDialog";
 import { ContributionToggle } from "@/components/ContributionToggle";
@@ -715,20 +716,62 @@ export function StatusItems({
   );
 }
 
+export function HeaderShortcut({
+  icon,
+  children,
+  ...props
+}: Omit<ComponentProps<typeof Button>, "variant" | "size" | "className"> & { icon: ReactNode }) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      className="h-auto min-h-11 w-full justify-start gap-2.5 px-2.5 py-2 text-left text-sm whitespace-normal [&_svg]:shrink-0 [&_svg]:text-icon"
+      {...props}
+    >
+      {icon}
+      <span className="min-w-0 wrap-anywhere">{children}</span>
+    </Button>
+  );
+}
+
 function ActionButton({
   entry,
   updatedAt,
   run,
+  onSelect,
 }: {
   entry: SchemaActionEntry;
   updatedAt: number;
   run: (effect: Effect) => void;
+  onSelect?: () => void;
 }) {
   const current = useEntry("actions", entry, updatedAt);
   const Component = ICONS[current.icon];
   const badge = current.badge === 0 || current.badge == null ? null : String(current.badge);
   const effect = current.effect;
   const hintId = `badge-hint-${entry.id}`;
+  if (onSelect) {
+    return (
+      <HeaderShortcut
+        icon={<Component aria-hidden />}
+        disabled={!effect}
+        aria-label={badge ? `${current.label} (${badge})` : current.label}
+        title={current.problem ?? current.label}
+        onClick={() => {
+          if (!effect) return;
+          onSelect();
+          run(effect);
+        }}
+      >
+        {current.label}
+        {badge && (
+          <span aria-hidden className="ml-2 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
+            {badge}
+          </span>
+        )}
+      </HeaderShortcut>
+    );
+  }
   return (
     <span className="group/badge relative inline-flex">
       <Button
@@ -768,19 +811,39 @@ function ActionButton({
   );
 }
 
-/** The header buttons modules add, before the built-in ones. */
-export function HeaderActions() {
+type HeaderMenu = {
+  anchor: RefObject<HTMLElement | null>;
+  open: boolean;
+  onSelect: () => void;
+  children: ReactNode;
+};
+
+/** Render header contributions as toolbar icons or labeled shortcuts. Keep effect dialogs mounted when the pane closes. */
+export function HeaderActions({ menu }: { menu?: HeaderMenu } = {}) {
   const { entries, updatedAt } = useEntries("actions", "header");
   const { run, dialog } = useEffectRunner();
-  if (!entries.length) return null;
-  return (
+  const actions = entries.map((entry) => (
+    <ActionButton key={entry.id} entry={entry} updatedAt={updatedAt} run={run} onSelect={menu?.onSelect} />
+  ));
+  if (menu) {
+    return (
+      <>
+        {menu.open && (
+          <AnchoredPopover anchor={menu.anchor} role="region" aria-label={t("top.more")} className="w-64" focusFirst>
+            {menu.children}
+            {actions}
+          </AnchoredPopover>
+        )}
+        {dialog}
+      </>
+    );
+  }
+  return entries.length ? (
     <>
-      {entries.map((entry) => (
-        <ActionButton key={entry.id} entry={entry} updatedAt={updatedAt} run={run} />
-      ))}
+      {actions}
       {dialog}
     </>
-  );
+  ) : null;
 }
 
 /** The text of a widget, for "Ask <Name>" and the footer. */

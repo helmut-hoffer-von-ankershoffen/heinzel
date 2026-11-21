@@ -15,7 +15,6 @@ import { createPortal } from "react-dom";
 import { FooterItem, type State } from "@/components/FooterItem";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import type { HeinzelLook } from "@/components/heinzel";
-import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { type Segment, SegmentedControl } from "@/components/ui/segmented";
 import { t } from "@/i18n";
@@ -48,7 +47,7 @@ export { spectrumLevel } from "./aurora";
 
 /**
  * What the person last chose to listen to; "off" is remembered too, so nothing resumes until they pick a source.
- * "system" exists only in the desktop app where Electron can loop back the computer's sound; it is an extra opt-in,
+ * "system" is offered only when the native host reports it can capture system audio; it is an extra opt-in,
  * never the default.
  */
 type Source = "off" | "mic" | "tab" | "system";
@@ -105,6 +104,10 @@ function markNoSystem() {
 
 /** A system audio failure that asking again cannot fix: not a decline or a cancel. */
 function systemBroken(error: unknown) {
+  // The iOS sharing picker and its audio session can fail transiently. Keep the
+  // explicit retry available; only a definite unsupported result rules it out.
+  if ((window as Window & { heinzelDesktop?: { mobileWorkspace?: boolean } }).heinzelDesktop?.mobileWorkspace)
+    return error instanceof DOMException && error.name === "NotSupportedError";
   return !(error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "AbortError"));
 }
 
@@ -188,12 +191,10 @@ export function AudioVisualizer({
   const [session, setSession] = useState<CapturedAudio | null>(null);
   const [requesting, setRequesting] = useState<Listening | null>(null);
   const [problem, setProblem] = useState("");
-  /** Which source the shown problem belongs to: a declined system request is offered again on its own action. */
-  const [failedSource, setFailedSource] = useState<Listening | null>(null);
   const [sharing, setSharing] = useState(canShareAudio);
   /**
-   * Whether the desktop app loops back system audio here: null while it is asked. Workspace audio stays the default
-   * source; where loopback exists, system audio is one extra action the person opts into, consented each time.
+   * Whether the native host supports system audio: null while it is asked. Workspace audio stays the default
+   * source; where system capture exists, it is an explicit choice, consented each time.
    */
   const [system, setSystem] = useState<boolean | null>(() => (hasDesktopAudio() ? null : false));
   const systemOffered = system === true;
@@ -295,7 +296,6 @@ export function AudioVisualizer({
         setNotice(NO_SYSTEM);
         return;
       }
-      setFailedSource(kind);
       setProblem(
         kind === "system" ? systemProblem(error) : kind === "mic" ? microphoneProblem(error) : captureProblem(error),
       );
@@ -310,7 +310,7 @@ export function AudioVisualizer({
         remember("off");
         return;
       }
-      if (source === "system" && !systemOffered) return;
+      if (source === "system" && (!systemOffered || current.current?.label === "System audio")) return;
       if (source === "tab" && !canShareAudio()) {
         // The pressed choice leaves the pane; if its whole group goes with it, keep the keyboard on the trigger.
         const root = rootElement.current;
@@ -624,9 +624,8 @@ export function AudioVisualizer({
   const looped = session?.label === "System audio";
   const listening: Source = session ? (microphone ? "mic" : looped ? "system" : "tab") : "off";
   const listeningTo = microphone ? "the microphone" : looped ? "system audio" : sharedWord.toLowerCase();
-  // System audio's own action stops what it started; a declined or failed system request offers it again.
+  // The selected source stays visible while its capture is active or permission is pending.
   const onSystem = requesting === "system" || (!requesting && listening === "system");
-  const systemRetry = Boolean(problem) && failedSource === "system";
   let status = "Off. Heinzel's own sound still shows.";
   let state: State = "off";
   let triggerLabel = "Audio visualizer";
@@ -697,6 +696,7 @@ export function AudioVisualizer({
     { value: "off", label: "Off", icon: MicOff },
     ...(listenable ? [{ value: "mic" as const, label: "Microphone", icon: Mic }] : []),
     ...(sharing ? [{ value: "tab" as const, label: sharedWord, icon: MonitorSpeaker }] : []),
+    ...(systemOffered ? [{ value: "system" as const, label: "System audio", icon: Speaker }] : []),
   ];
   const mark = { ok: "text-ok", warn: "text-warn", bad: "text-bad", off: "text-muted-foreground" }[state] ?? "";
   return (
@@ -716,22 +716,8 @@ export function AudioVisualizer({
           state === "bad" ? "text-bad" : settings.master ? "text-foreground" : "text-muted-foreground"
         }`}
         popoverClassName="w-80 max-w-[calc(100vw-1rem)] p-3"
-        actions={
-          settings.master &&
-          systemOffered && (
-            // The extra opt-in beside the default sources: the desktop app asks its own consent each time.
-            <PaneAction
-              key="system"
-              icon={Speaker}
-              aria-busy={requesting === "system"}
-              onClick={() => choose(onSystem ? "off" : "system")}
-            >
-              {onSystem ? "Stop system audio" : systemRetry ? "Try system audio again" : "Use system audio"}
-            </PaneAction>
-          )
-        }
       >
-        <div className="space-y-3 px-1.5 pb-1">
+        <div className="space-y-3 px-1.5 pt-2 pb-1">
           {settings.master && (
             <>
               {/* Independent styles, any of them on (design/README.md, Choices): native checkboxes as chips, 2-up, no
@@ -770,14 +756,16 @@ export function AudioVisualizer({
               )}
               {/* Off is always there; with no source this browser can take, there is nothing to choose. */}
               {sourceSegments.length > 1 && (
-                <SegmentedControl
-                  legend="Listen to"
-                  segments={sourceSegments}
-                  value={listening === "system" ? null : listening}
-                  busy={requesting}
-                  allowWhileBusy="off"
-                  onSelect={choose}
-                />
+                <div className="pt-3">
+                  <SegmentedControl
+                    legend="Listen to"
+                    segments={sourceSegments}
+                    value={listening}
+                    busy={requesting}
+                    allowWhileBusy="off"
+                    onSelect={choose}
+                  />
+                </div>
               )}
             </>
           )}

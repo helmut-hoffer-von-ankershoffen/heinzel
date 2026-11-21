@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   createHeinzelWith,
@@ -12,6 +13,29 @@ import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics
 import { settleRoutes } from "./route-settlement.mjs";
 
 const { axe, browser, context, page, token, url } = await openChatJourney();
+await page.addInitScript(() => {
+  window.__hzFieldEvents = [];
+  for (const type of ["focusin", "focusout", "beforeinput", "input", "change"]) {
+    document.addEventListener(
+      type,
+      (event) => {
+        const node = event.target;
+        if (!(node instanceof HTMLElement)) return;
+        if (window.__hzFieldEvents.length > 100) window.__hzFieldEvents.shift();
+        window.__hzFieldEvents.push({
+          type,
+          tag: node.tagName,
+          inputType: node.getAttribute("type"),
+          length: typeof node.value === "string" ? node.value.length : null,
+          connectedReview: !!node.closest('[aria-label="Connected read review"]'),
+          active: document.activeElement === node,
+          trusted: event.isTrusted,
+        });
+      },
+      true,
+    );
+  }
+});
 const lateActivity = process.argv[6] === "late-activity";
 if (lateActivity) {
   // Reproduce the hosted ordering: page DOM growth is committed between press/release, while its resize
@@ -124,9 +148,49 @@ try {
     page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const entered = async (label, value) => {
     const field = panel.getByLabel(label);
+    const original = await field.elementHandle();
+    await original.evaluate((node) => {
+      node.__hzInputTrace = [];
+      for (const type of ["focus", "beforeinput", "input", "change", "blur"]) {
+        node.addEventListener(
+          type,
+          (event) => {
+            if (node.__hzInputTrace.length < 20)
+              node.__hzInputTrace.push({ type, length: node.value.length, trusted: event.isTrusted });
+          },
+          { capture: true, once: true },
+        );
+      }
+    });
     await field.fill(value);
     await rendered();
-    assert.equal(await field.inputValue(), value, `${label} must keep the entered value after a render`);
+    const held = await field.inputValue();
+    writeFileSync(
+      join(process.argv[4], `input-trace-${label.replaceAll(/[^a-zA-Z]/g, "-")}.json`),
+      JSON.stringify(
+        await field.evaluate((node) => ({
+          events: window.__hzFieldEvents,
+          active: document.activeElement === node,
+          rect: node.getBoundingClientRect().toJSON(),
+          scroll: document.querySelector(".workspace-scroll")?.scrollTop,
+          length: node.value.length,
+        })),
+        null,
+        2,
+      ),
+    );
+    if (held !== value) {
+      const trace = await original.evaluate((node) => ({
+        connected: node.isConnected,
+        events: node.__hzInputTrace,
+        length: node.value.length,
+      }));
+      console.error(
+        "review-input-lifetime",
+        JSON.stringify({ label, held, ...trace, page: await page.evaluate(() => window.__hzFieldEvents) }),
+      );
+    }
+    assert.equal(held, value, `${label} must keep the entered value after a render`);
   };
   await panel.getByLabel("Read operation").selectOption("calendar.events");
   if (process.argv[5] === "rolling") {
@@ -252,17 +316,77 @@ try {
   if (latePage && !lateActivity) {
     await latePage.ready;
     await revoke.hover();
+    // A prior disclosure can finish scrolling after hover. Reacquire the real target before pressing.
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await revoke.hover();
+    const target = await revoke.elementHandle();
+    assert.ok(target);
+    await target.evaluate(async (node) => {
+      const deadline = performance.now() + 3000;
+      const geometry = () => {
+        const rect = node.getBoundingClientRect();
+        return [rect.left, rect.top, rect.width, rect.height];
+      };
+      let before = geometry();
+      while (performance.now() < deadline) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const after = geometry();
+        if (after.every((value, index) => Math.abs(value - before[index]) < 0.5)) return;
+        before = after;
+      }
+      throw new Error("Revoke geometry did not settle before the press.");
+    });
+    const pointer = await target.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      const left = Math.max(0, rect.left),
+        right = Math.min(innerWidth, rect.right);
+      const top = Math.max(0, rect.top),
+        bottom = Math.min(innerHeight, rect.bottom);
+      return right > left && bottom > top ? { x: (left + right) / 2, y: (top + bottom) / 2 } : null;
+    });
+    assert.ok(pointer);
+    await page.mouse.move(pointer.x, pointer.y);
+    assert.equal(
+      await target.evaluate((node, { x, y }) => node.contains(document.elementFromPoint(x, y)), pointer),
+      true,
+      "revoke is under the pointer before the press",
+    );
+    await target.evaluate((node) => {
+      window.__hzRevokePress = false;
+      document.addEventListener(
+        "pointerdown",
+        (event) => {
+          window.__hzRevokePress = event.isTrusted && node.contains(event.target);
+        },
+        { capture: true, once: true },
+      );
+    });
     const priorHeight = await page.locator("#content").evaluate((node) => node.getBoundingClientRect().height);
     // Deliver the real pending page report between the same physical press and release as a normal click.
-    await page.mouse.down();
-    latePage.release();
-    await latePage.inserted;
-    await page.waitForFunction(
-      (height) => document.getElementById("content").getBoundingClientRect().height > height,
-      priorHeight,
-    );
-    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-    await page.mouse.up();
+    let pressed = false;
+    try {
+      await page.mouse.down();
+      pressed = true;
+      assert.equal(await page.evaluate(() => window.__hzRevokePress), true, "the trusted press reached revoke");
+      latePage.release();
+      await latePage.inserted;
+      await page.waitForFunction(
+        (height) => document.getElementById("content").getBoundingClientRect().height > height,
+        priorHeight,
+      );
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.equal(
+        await target.evaluate(
+          (node, { x, y }) => node.isConnected && node.contains(document.elementFromPoint(x, y)),
+          pointer,
+        ),
+        true,
+        "late page loading keeps revoke under the pressed pointer",
+      );
+    } finally {
+      latePage.release();
+      if (pressed) await page.mouse.up();
+    }
   } else await revoke.click();
   await panel.getByText(/Recorded state: revoked/).waitFor();
   assert.deepEqual(revocations, [{ kind: "request" }, { kind: "response", status: 200 }]);

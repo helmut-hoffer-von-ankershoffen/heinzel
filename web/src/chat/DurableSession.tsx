@@ -30,7 +30,7 @@ import { DayHeading, MessageTime } from "@/chat/MessageTime";
 import { ModelPolicyReviewCard, supportedPolicy } from "@/chat/ModelPolicyReviewCard";
 import { ReleaseDraftReviewDetails, releaseDraftReview } from "@/chat/ReleaseDraftActivity";
 import { ToolEvents } from "@/chat/ToolEvents";
-import { UncertainTurnRecovery, useTurnState } from "@/chat/UncertainTurnRecovery";
+import { UncertainTurnRecovery, useTurnAction, useTurnState } from "@/chat/UncertainTurnRecovery";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { PaneAction } from "@/components/PaneActions";
 import { Prose } from "@/components/Prose";
@@ -918,7 +918,14 @@ function DurableSessionView({
 
   const heinzelName = query.data?.name ?? t("durable.title");
   const retryBlocked =
-    busy || storageError || recoveryBlocked || agentChatUnavailable || !query.data || uncertain || turnStateLoading;
+    busy ||
+    storageError ||
+    recoveryBlocked ||
+    agentChatUnavailable ||
+    !query.data ||
+    uncertain ||
+    turnStateLoading ||
+    (!!query.data.queue_head && query.data.queue_head.id !== pending?.request_id);
   const opened = query.data?.session_id === sessionId;
   useEffect(() => {
     if (opened) rememberHeinzel(sessionId);
@@ -930,7 +937,8 @@ function DurableSessionView({
     return () => setConversationBusy(sessionId, false);
   }, [sessionId, conversationBusy]);
   const look = appearanceLook(query.data?.appearance);
-  const composerDisabled = busy || pending !== null || agentPending !== null || !query.data || recoveryBlocked;
+  const composerDisabled =
+    busy || pending !== null || agentPending !== null || !query.data || recoveryBlocked || !!query.data.queue_head;
   useComposerFocus(composerInput, !composerDisabled);
 
   return (
@@ -1574,6 +1582,18 @@ function DurableSessionView({
       </div>
       {/* One edge under the conversation, whichever sits below it: the composer, or a retired Heinzel's line. */}
       <div className="flex max-h-[60%] shrink-0 flex-col border-t border-border">
+        {query.data?.queue_head && query.data.queue_head.id !== pending?.request_id && (
+          <div className="min-h-0 overflow-y-auto p-3">
+            <QueueHeadRecovery
+              key={query.data.queue_head.id}
+              sessionId={sessionId}
+              message={query.data.queue_head}
+              busy={busy}
+              setBusy={setBusy}
+              onChanged={() => void client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] })}
+            />
+          </div>
+        )}
         {query.data?.state === "retired" ? (
           // A retired Heinzel takes no message: one line says so, and its page is where it comes back.
           <div className="flex flex-wrap items-center gap-2 p-3 text-sm">
@@ -1620,17 +1640,20 @@ function DurableSessionView({
               <div className="space-y-1 text-sm" role={pending ? undefined : "alert"}>
                 {!pending && <p>{t("durable.failed")}</p>}
                 {errorDetail && <p className="break-words text-muted-foreground">{errorDetail}</p>}
-                {errorDetail && (
-                  <>
-                    <p>{t("durable.aiAccessHint")}</p>
-                    <PaneAction
-                      icon={Settings}
-                      to={`?${new URLSearchParams([...[...params.entries()].filter(([key]) => key !== "settings"), ["settings", "ai"]])}`}
-                    >
-                      {t("durable.aiAccessLink")}
-                    </PaneAction>
-                  </>
-                )}
+                {errorDetail &&
+                  /(?:authentication|unauthorized|credentials|login|sign.in|api key|subscription)/i.test(
+                    errorDetail,
+                  ) && (
+                    <>
+                      <p>{t("durable.aiAccessHint")}</p>
+                      <PaneAction
+                        icon={Settings}
+                        to={`?${new URLSearchParams([...[...params.entries()].filter(([key]) => key !== "settings"), ["settings", "ai"]])}`}
+                      >
+                        {t("durable.aiAccessLink")}
+                      </PaneAction>
+                    </>
+                  )}
               </div>
             )}
             {pending?.outcome === "subscription_usage_limit" && (
@@ -1718,6 +1741,103 @@ function DurableSessionView({
         )}
       </div>
     </div>
+  );
+}
+
+function QueueHeadRecovery({
+  sessionId,
+  message,
+  busy,
+  setBusy,
+  onChanged,
+}: Readonly<{
+  sessionId: string;
+  message: NonNullable<SchemaSessionSnapshot["queue_head"]>;
+  busy: boolean;
+  setBusy: (busy: boolean) => void;
+  onChanged: () => void;
+}>) {
+  const state = useTurnState(sessionId, message.id);
+  const begin = useTurnAction(sessionId, message.id);
+  const expiredInput =
+    message.status === "expired" && ["cli", "api-bearer", "web-session", "web-device"].includes(message.origin);
+  const [error, setError] = useState(false);
+  const answer = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(false);
+    const action = begin();
+    try {
+      if (!action.current()) return;
+      const checked = await state.refetch();
+      if (!action.current()) return;
+      if (checked.data?.status !== "pending" || checked.isError) throw new Error("Turn state changed");
+      const reply = await stream<SchemaUserChatAnswer>("/heinzel/answer-chat", {}, () => {}, action.signal, {
+        session_id: sessionId,
+        request_id: message.id,
+      });
+      if (!action.current()) return;
+      if (reply.session_id !== sessionId || reply.request_id !== message.id || reply.message.role !== "assistant")
+        throw new Error("Unexpected answer");
+    } catch {
+      if (action.current()) setError(true);
+    } finally {
+      if (action.current()) await state.refetch();
+      if (action.current()) {
+        onChanged();
+        setBusy(false);
+      }
+      action.finish();
+    }
+  };
+  return (
+    <section
+      aria-label="Earlier message blocking the queue"
+      className="space-y-2 rounded border border-border p-2 text-sm"
+    >
+      <p>An earlier message must be resolved before later messages can be answered.</p>
+      <p className="break-words">{message.status === "expired" ? "Message no longer retained" : message.text}</p>
+      {state.isError && <p role="alert">The saved turn state could not be checked.</p>}
+      {state.data?.status === "completed" && (
+        <output className="block">An answer was recorded. Check again to update the queue.</output>
+      )}
+      {error && <p role="alert">The answer was not confirmed. Check the saved turn before continuing.</p>}
+      {state.data?.status === "pending" && message.status !== "expired" && message.origin !== "daemon" && (
+        <Button type="button" size="sm" disabled={busy || state.isFetching} onClick={() => void answer()}>
+          Answer this earlier message
+        </Button>
+      )}
+      {!busy &&
+        (state.data?.status === "unresolved" ||
+          state.data?.status === "abandoned" ||
+          message.origin === "daemon" ||
+          expiredInput) && (
+          <UncertainTurnRecovery
+            sessionId={sessionId}
+            requestId={message.id}
+            allowPendingDaemon={message.origin === "daemon"}
+            allowPendingExpired={expiredInput}
+            onResolved={onChanged}
+          />
+        )}
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={busy || state.isFetching}
+        onClick={() => {
+          const action = begin();
+          void state
+            .refetch()
+            .then(() => {
+              if (action.current()) onChanged();
+            })
+            .finally(action.finish);
+        }}
+      >
+        Check earlier turn
+      </Button>
+    </section>
   );
 }
 
