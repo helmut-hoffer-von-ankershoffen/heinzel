@@ -7,9 +7,10 @@ from pydantic import Field
 
 from heinzel import Config, Kernel, Module, Settings
 from heinzel import HeinzelError as HeinzelError
-from heinzel.kernel import HeadRefresh, PersistentWeb, WebHeadRefresh, WebOverview
+from heinzel.kernel import HeadRefresh, Installation, PersistentWeb, WebHeadRefresh, WebOverview
 from heinzel.modules.ui._overview import WebOverviewService
 from heinzel.modules.ui._service import WebChange, WebRestart, WebService, WebStatus
+from heinzel.modules.ui._strays import retire_strays
 
 module = Module("ui", "Open the web workspace or manage its optional persistent service.")
 module.service(WebService, WebService.for_user)
@@ -25,7 +26,15 @@ def _persistent_web(kernel: Kernel) -> PersistentWeb:
             return None
         return kernel.resolve(WebService).open_local()
 
-    return PersistentWeb(open_local=open_local)
+    def attach(port: int, bridge: str | None) -> str:
+        return kernel.resolve(WebService).attach(port, bridge=bridge)
+
+    def retire() -> tuple[list[int], list[int]]:
+        installation = kernel.resolve(Installation)
+        # Only the owned uv tool: a dev checkout's servers are its developer's business.
+        return retire_strays(installation.prefix) if installation.is_tool else ([], [])
+
+    return PersistentWeb(open_local=open_local, attach=attach, retire_strays=retire)
 
 
 module.service(PersistentWeb, _persistent_web)
