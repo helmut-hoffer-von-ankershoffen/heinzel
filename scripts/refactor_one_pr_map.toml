@@ -1,0 +1,238 @@
+# One-PR refactor map: every moved file, old path and new path (scripts/refactor_one_pr.py reads it).
+
+[[move]]
+stage = "python"
+old = "src/heinzel/modules/system/_update.py"
+new = "src/heinzel/modules/system/updater/_update.py"
+
+[[move]]
+stage = "python"
+old = "src/heinzel/modules/system/_announced.py"
+new = "src/heinzel/modules/system/updater/_announced.py"
+
+[[move]]
+stage = "python"
+old = "src/heinzel/modules/system/_phases.py"
+new = "src/heinzel/modules/system/updater/_phases.py"
+
+[[move]]
+stage = "python"
+old = "src/heinzel/modules/system/_plugin_releases.py"
+new = "src/heinzel/modules/system/updater/_plugin_releases.py"
+
+[[move]]
+stage = "python"
+old = "src/heinzel/modules/system/_plugin_standing.py"
+new = "src/heinzel/modules/system/updater/_plugin_standing.py"
+
+[[move]]
+stage = "python"
+old = "src/heinzel/modules/ui/_launcher_transition.py"
+new = "src/heinzel/modules/system/lifecycle/_launcher_transition.py"
+
+[[move]]
+stage = "python"
+old = "src/heinzel/modules/ui/_historical_launcher.py"
+new = "src/heinzel/modules/system/lifecycle/_historical_launcher.py"
+
+[[move]]
+stage = "python"
+old = "tests/unit/modules/system_update_test.py"
+new = "tests/unit/runtime/updater/system_update_test.py"
+
+[[move]]
+stage = "python"
+old = "tests/unit/modules/system_update_all_test.py"
+new = "tests/unit/runtime/updater/system_update_all_test.py"
+
+[[move]]
+stage = "python"
+old = "tests/unit/modules/system_update_python_test.py"
+new = "tests/unit/runtime/updater/system_update_python_test.py"
+
+[[move]]
+stage = "python"
+old = "tests/unit/modules/system_announced_test.py"
+new = "tests/unit/runtime/updater/system_announced_test.py"
+
+[[move]]
+stage = "python"
+old = "tests/unit/modules/system_plugin_standing_test.py"
+new = "tests/unit/runtime/updater/system_plugin_standing_test.py"
+
+[[move]]
+stage = "python"
+old = "tests/unit/modules/plugin_releases_test.py"
+new = "tests/unit/runtime/updater/plugin_releases_test.py"
+
+[[move]]
+stage = "python"
+old = "tests/unit/modules/ui_historical_launcher_test.py"
+new = "tests/unit/runtime/lifecycle/ui_historical_launcher_test.py"
+
+[[move]]
+stage = "web"
+old = "web/src/heinzel/page/LifecycleSection.test.tsx"
+new = "web/src/features/runtime/LifecycleSection.test.tsx"
+
+[[move]]
+stage = "web"
+old = "web/src/heinzel/page/LifecycleSection.tsx"
+new = "web/src/features/runtime/LifecycleSection.tsx"
+
+[[move]]
+stage = "web"
+old = "web/src/layout/UpdateStatus.test.tsx"
+new = "web/src/features/runtime/UpdateStatus.test.tsx"
+
+[[move]]
+stage = "web"
+old = "web/src/layout/UpdateStatus.tsx"
+new = "web/src/features/runtime/UpdateStatus.tsx"
+
+[[move]]
+stage = "web"
+old = "web/src/layout/UpdateStatusInstalled.test.tsx"
+new = "web/src/features/runtime/UpdateStatusInstalled.test.tsx"
+
+[[move]]
+stage = "web"
+old = "web/src/lifecycle/RestartAndApply.test.tsx"
+new = "web/src/features/runtime/lifecycle/RestartAndApply.test.tsx"
+
+[[move]]
+stage = "web"
+old = "web/src/lifecycle/RestartAndApply.tsx"
+new = "web/src/features/runtime/lifecycle/RestartAndApply.tsx"
+
+[[move]]
+stage = "web"
+old = "web/src/lifecycle/applySteps.test.ts"
+new = "web/src/features/runtime/lifecycle/applySteps.test.ts"
+
+[[move]]
+stage = "web"
+old = "web/src/lifecycle/applySteps.ts"
+new = "web/src/features/runtime/lifecycle/applySteps.ts"
+
+[[move]]
+stage = "web"
+old = "web/src/lifecycle/controller.test.ts"
+new = "web/src/features/runtime/lifecycle/controller.test.ts"
+
+[[move]]
+stage = "web"
+old = "web/src/lifecycle/controller.ts"
+new = "web/src/features/runtime/lifecycle/controller.ts"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/AutoUpdate.test.tsx"
+new = "web/src/features/runtime/updates/AutoUpdate.test.tsx"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/AutoUpdate.tsx"
+new = "web/src/features/runtime/updates/AutoUpdate.tsx"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/AutoUpdateRace.test.tsx"
+new = "web/src/features/runtime/updates/AutoUpdateRace.test.tsx"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/AutoUpdateToggle.tsx"
+new = "web/src/features/runtime/updates/AutoUpdateToggle.tsx"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/UpdatePlanDetails.tsx"
+new = "web/src/features/runtime/updates/UpdatePlanDetails.tsx"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/autoLoad.test.ts"
+new = "web/src/features/runtime/updates/autoLoad.test.ts"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/autoLoad.ts"
+new = "web/src/features/runtime/updates/autoLoad.ts"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/autoUpdateApi.test.ts"
+new = "web/src/features/runtime/updates/autoUpdateApi.test.ts"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/autoUpdateApi.ts"
+new = "web/src/features/runtime/updates/autoUpdateApi.ts"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/controller.test.ts"
+new = "web/src/features/runtime/updates/controller.test.ts"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/controller.ts"
+new = "web/src/features/runtime/updates/controller.ts"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/frontendSkew.test.ts"
+new = "web/src/features/runtime/updates/frontendSkew.test.ts"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/frontendSkew.ts"
+new = "web/src/features/runtime/updates/frontendSkew.ts"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/loadInstalled.test.ts"
+new = "web/src/features/runtime/updates/loadInstalled.test.ts"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/updatePlan.test.ts"
+new = "web/src/features/runtime/updates/updatePlan.test.ts"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/updateState.test.ts"
+new = "web/src/features/runtime/updates/updateState.test.ts"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/updateState.ts"
+new = "web/src/features/runtime/updates/updateState.ts"
+
+[[move]]
+stage = "web"
+old = "web/src/updates/work.ts"
+new = "web/src/features/runtime/updates/work.ts"
+
+# A mixed `from PKG import moved, kept` cannot be a package swap: it becomes two imports.
+[[edit]]
+stage = "python"
+file = "tests/fixtures/auto_update/fake_release.py"
+old = """    from heinzel.modules.system import _plugin_releases, _service, _update
+    from heinzel.modules.system._models import AnnouncedUpdate
+"""
+new = """    from heinzel.modules.system import _service
+    from heinzel.modules.system._models import AnnouncedUpdate
+    from heinzel.modules.system.updater import _plugin_releases, _update
+"""
+
+# A docstring that names the moved module would pass the line limit: it is wrapped, the name is rewritten after.
+[[edit]]
+stage = "python"
+file = "src/heinzel/heads/_desktop_installation.py"
+old = '''"""How long `hz app install --restart` waits for an open app to quit (`heinzel.modules.system._update` mirrors it)."""'''
+new = '''"""How long `hz app install --restart` waits for an open app to quit.
+
+`heinzel.modules.system._update` mirrors it.
+"""'''
