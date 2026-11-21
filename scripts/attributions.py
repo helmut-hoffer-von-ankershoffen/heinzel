@@ -220,6 +220,8 @@ def reviewed_build(directory: Path) -> tuple[str, Path] | None:
         return None
     name = str(json.loads(run(*BOOTSTRAP, "pins"))["name"])
     built = run(*BOOTSTRAP, "build", "--lock", str(ROOT / "uv.lock"), "--wheel-dir", str(directory / "reviewed"))
+    if not built.strip():  # the lock selects a version with upstream wheels: nothing was built
+        return None
     return name, Path(built.strip())
 
 

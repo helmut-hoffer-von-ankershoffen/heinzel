@@ -61,7 +61,7 @@ Installed with `hz`: the runtime dependencies of the core and of every first-par
 | [python-dateutil](#python-dateutil-300) | 3.0.0 | Apache-2.0 OR BSD |
 | [python-dotenv](#python-dotenv-124) | 1.2.4 | BSD-3-Clause |
 | [python-multipart](#python-multipart-0032) | 0.0.32 | Apache-2.0 |
-| [pyyaml](#pyyaml-603) | 6.0.3 | MIT |
+| [pyyaml](#pyyaml-604) | 6.0.4 | MIT |
 | [referencing](#referencing-0370) | 0.37.0 | MIT |
 | [rich](#rich-1500) | 15.0.0 | MIT |
 | [rpds-py](#rpds-py-202691) | 2026.9.1 | MIT |
@@ -2412,7 +2412,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 </details>
 
-### pyyaml 6.0.3
+### pyyaml 6.0.4
 
 - License: MIT
 - Homepage: <https://github.com/yaml/pyyaml>

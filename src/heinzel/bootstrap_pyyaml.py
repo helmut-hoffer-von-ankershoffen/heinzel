@@ -175,6 +175,19 @@ def install(wheel: Path, python: str) -> None:
     (Path(site) / f"{NAME}-{VERSION}.dist-info" / "direct_url.json").unlink(missing_ok=True)
 
 
+def locked_wheel(path: Path) -> str | None:
+    """The version a lock pins when upstream publishes a wheel of it for the newest Python, else nothing.
+
+    PyYAML 6.0.4 ships cp315 wheels, so a lock that selects it needs no reviewed build: the plain wheel install does.
+    """
+    packages: list[dict[str, Any]] = tomllib.loads(path.read_text(encoding="utf-8")).get("package", [])
+    absent: dict[str, Any] = {}
+    package = next((item for item in packages if item.get("name") == NAME), absent)
+    wheels = [str(item.get("url", "")) for item in package.get("wheels", [])]
+    tag = "-cp{}{}-".format(*NO_WHEEL_FROM)
+    return str(package["version"]) if any(tag in url for url in wheels) else None
+
+
 def _checked(arguments: argparse.Namespace) -> None:
     if arguments.lock:
         check_uv_lock(Path(arguments.lock))
@@ -203,6 +216,24 @@ def main(argv: list[str] | None = None) -> int:
     if arguments.command == "needed":
         version = tuple(map(int, arguments.python.split("."))) if arguments.python else None
         return 0 if needed(version) else 1
+    wheel_version = locked_wheel(Path(arguments.lock)) if arguments.lock else None
+    if wheel_version:  # upstream wheels exist for this lock: nothing to build; `install` takes the plain wheel
+        if arguments.command == "build":
+            Path(arguments.wheel_dir).mkdir(parents=True, exist_ok=True)
+        else:
+            _run(
+                [
+                    "uv",
+                    "pip",
+                    "install",
+                    "--python",
+                    arguments.python,
+                    "--no-build",
+                    "--no-deps",
+                    f"{NAME}=={wheel_version}",
+                ]
+            )
+        return 0
     _checked(arguments)  # before any download or backend
     python = arguments.python or os.environ.get("UV_PYTHON") or ".".join(map(str, NO_WHEEL_FROM))
     with tempfile.TemporaryDirectory(prefix="bootstrap-pyyaml-") as temporary:
