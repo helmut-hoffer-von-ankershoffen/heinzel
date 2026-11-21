@@ -68,6 +68,8 @@ TEST_OUTPUT_TOKENS = 16
 DETAIL_LIMIT = 300
 SET_MODEL = "hz system config set ai.access.model anthropic:claude-sonnet-4-5"
 SET_KEY = "hz system credential set ai.access api-key"
+SETTINGS_CHANGED = "Model API settings changed"
+RESTART = "Restart Heinzel before testing."
 
 ModelFactory = Callable[..., Any]
 """Builds a Pydantic AI model from the model name, the key and the endpoint, plus `api` as a keyword when configured;
@@ -303,6 +305,10 @@ class PydanticAiAccess:
             return os.environ[variable], variable
         return None, ""
 
+    def _settings_changed(self) -> bool:
+        latest, settings = self._current_settings(), self._settings
+        return (latest.model, latest.base_url, latest.api) != (settings.model, settings.base_url, settings.api)
+
     def check_configuration(self, expected_model: str) -> None:
         """Verify the option is selected and configured exactly as built, for `expected_model`; no credential is read.
 
@@ -384,6 +390,8 @@ class PydanticAiAccess:
 
     def status(self) -> AccessStatus:  # noqa: PLR0911 - one answer per thing that can be missing
         """Whether a model is configured, its client installed and a key present where one is needed; offline."""
+        if self._settings_changed():
+            return AccessStatus(title=TITLE, summary=SUMMARY, installed=False, detail=SETTINGS_CHANGED, fix=RESTART)
         settings = self._settings
         model, base, vendor = settings.model, settings.base_url, vendor_of(settings)
         listed = self._cache.load(self._source) if model else []
@@ -402,6 +410,8 @@ class PydanticAiAccess:
             )
             return status.model_copy(update={"detail": f"the {vendor} client ({package}) is not installed", "fix": fix})
         key, source = self._key()
+        if self._settings_changed():
+            return status.model_copy(update={"detail": SETTINGS_CHANGED, "fix": RESTART})
         if base is not None:
             if key and not safe_for_key(base):
                 detail = f"a key goes only over https, or over http to this machine; {base} is neither"
@@ -502,6 +512,8 @@ class PydanticAiAccess:
 
     def test(self) -> AccessTest:
         """List the API's models, then one request with a few output tokens; a failure is a result."""
+        if self._settings_changed():
+            return AccessTest(ok=False, detail=SETTINGS_CHANGED, fix=RESTART)
         settings = self._settings
         model, base = settings.model, settings.base_url
         if model is None:
@@ -511,8 +523,16 @@ class PydanticAiAccess:
             return AccessTest(ok=False, detail=f"a key goes only over https, or over http to this machine: {base}")
         if not (found := self.status()).installed:  # nothing reaches the network for an option that can't run
             return AccessTest(ok=False, detail=found.detail, fix=found.fix)
+        # Status also reads credentials. Recheck after every read before the captured key can leave this process.
+        if self._settings_changed():
+            return AccessTest(ok=False, detail=SETTINGS_CHANGED, fix=RESTART)
+        return self._probe(model, key)
+
+    def _probe(self, model: str, key: str | None) -> AccessTest:
         started = time.monotonic()
         listed = self._discover(key)
+        if self._settings_changed():
+            return AccessTest(ok=False, detail=SETTINGS_CHANGED, fix=RESTART)
         try:
             import pydantic_ai  # noqa: PLC0415 - a heavy import, only on a test
             from pydantic_ai.usage import UsageLimits  # noqa: PLC0415

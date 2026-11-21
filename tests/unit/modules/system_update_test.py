@@ -2,6 +2,7 @@ import json
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -158,7 +159,7 @@ def test_a_tag_pinned_install_moves_to_the_latest_release_keeping_plugins(tmp_pa
     result = service.update(current="0.2.0")
     assert uv.commands == [install_command(f"heinzel @ git+{REPO}@v0.4.0", PLUGIN)]
     assert (result.before, result.after, result.latest, result.updated) == ("0.2.0", "0.4.0", "0.4.0", True)
-    assert result.message.splitlines()[0] == "Updated hz 0.2.0 → 0.4.0."
+    assert result.message.splitlines()[0] == "Updated hz 0.2.0 → 0.4.0"
 
 
 def test_a_manual_update_never_asks_for_the_acceptance_verdict(tmp_path):
@@ -255,7 +256,7 @@ def test_a_main_install_is_updated_in_place_keeping_plugins(tmp_path):
     result = service.update(current="0.5.0.dev3", channel="main")
     assert uv.commands == [install_command(f"heinzel @ git+{REPO}@main", PLUGIN)]
     assert (result.message.splitlines()[0], result.updated, result.after, result.next) == (
-        "Updated hz 0.5.0.dev3 → 0.5.0.dev7.",
+        "Updated hz 0.5.0.dev3 → 0.5.0.dev7",
         True,
         "0.5.0.dev7",
         [],
@@ -346,7 +347,7 @@ def test_an_upgrade_that_brings_a_newer_version_says_so(tmp_path):
     uv = FakeUv("0.2.0")
     service = UpdateService(installation(tmp_path, f'git = "{REPO}"', uv), FakeReleases())
     uv.next_version = "0.3.0"  # what uv finds on the default branch
-    assert service.update(current="0.2.0").message.splitlines()[0] == "Updated hz 0.2.0 → 0.3.0."
+    assert service.update(current="0.2.0").message.splitlines()[0] == "Updated hz 0.2.0 → 0.3.0"
 
 
 def test_source_reinstalls_from_there_keeping_plugins(tmp_path):
@@ -582,7 +583,7 @@ def test_channel_release_moves_a_main_install_to_the_newest_release_and_stays_th
     service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=main"', uv), FakeReleases("0.4.0"))
     result = service.update(current="0.3.0.dev1")
     assert uv.commands == [install_command(f"heinzel @ git+{REPO}@v0.4.0", PLUGIN)]
-    assert result.message.splitlines()[0] == "Updated hz 0.3.0.dev1 → 0.4.0."
+    assert result.message.splitlines()[0] == "Updated hz 0.3.0.dev1 → 0.4.0"
 
 
 def test_a_main_install_ahead_of_the_latest_release_stays_and_says_when_it_moves(tmp_path):
@@ -939,6 +940,11 @@ class FakeMutationLifecycle:
         self.requested = True
         return DaemonHandoverRequest(requested=plan.active, reason="fake manager")
 
+    def finish_without_handover(self):
+        self.events.append("left")
+        self.aborted = True
+        self.pending = False
+
 
 def test_core_update_holds_lifecycle_from_before_uv_through_checkpoint_and_handover(tmp_path):
     events = []
@@ -966,8 +972,8 @@ def test_core_update_holds_lifecycle_from_before_uv_through_checkpoint_and_hando
     assert "Daemon: pending. The daemon was asked to restart" in result.message
 
 
-def test_plugin_only_refresh_keeps_plain_sdk_unseeded_and_hands_over(tmp_path):
-    events = []
+def plugin_refresh(tmp_path, events, *, newer: str | None):
+    """A tool at hz 0.4.0 whose plugin follows the index, with `newer` the plugin's release there (none: no change)."""
 
     class TrackingUv(FakeUv):
         def __call__(self, command, environment=None):
@@ -975,6 +981,8 @@ def test_plugin_only_refresh_keeps_plain_sdk_unseeded_and_hands_over(tmp_path):
             return super().__call__(command, environment)
 
     uv = TrackingUv("0.4.0")
+    if newer is not None:
+        uv.available = {"heinzel-acme": newer}
     target = installation(tmp_path, f'git = "{REPO}?rev=v0.4.0"', uv)
     (target.prefix / "uv-receipt.toml").write_text(
         f'[tool]\nrequirements = [{{ name = "heinzel", git = "{REPO}?rev=v0.4.0" }},'
@@ -987,11 +995,73 @@ def test_plugin_only_refresh_keeps_plain_sdk_unseeded_and_hands_over(tmp_path):
     target.verify_installed_requirements = lambda requirements, **kwargs: (  # type: ignore[method-assign]
         events.append("metadata") or {"heinzel": "0.4.0", **uv.plugins}
     )
+    return target
+
+
+def test_plugin_only_refresh_keeps_plain_sdk_unseeded_and_hands_over(tmp_path):
+    events = []
+    target = plugin_refresh(tmp_path, events, newer="1.2.0")
     lifecycle = FakeMutationLifecycle(events, checkpoint_matched=False)
-    UpdateService(target, FakeReleases("0.4.0"), lifecycle=lifecycle).update(current="0.4.0")
+    result = UpdateService(target, FakeReleases("0.4.0"), lifecycle=lifecycle).update(current="0.4.0")
+    assert result.updated
     assert events.index("capture") < events.index("uv") < events.index("metadata") < events.index("request")
     assert "checkpoint" not in events
     assert not lifecycle.pending
+
+
+def test_a_plugin_refresh_that_changes_nothing_does_not_hand_the_daemon_over(tmp_path):
+    events = []
+    target = plugin_refresh(tmp_path, events, newer=None)
+    lifecycle = FakeMutationLifecycle(events, checkpoint_matched=False)
+    result = UpdateService(target, FakeReleases("0.4.0"), lifecycle=lifecycle).update(current="0.4.0")
+    assert not result.updated
+    assert "abort" in events
+    assert "request" not in events
+    assert not lifecycle.pending
+    assert "handover" not in result.message
+    assert [(head.head, head.status) for head in result.heads] == [("daemon", "not-installed")]
+
+
+def test_no_daemon_finishes_a_change_without_restarting_it_and_names_the_command(tmp_path):
+    events = []
+    target = plugin_refresh(tmp_path, events, newer="1.2.0")
+    lifecycle = FakeMutationLifecycle(events, checkpoint_matched=False)
+    result = UpdateService(target, FakeReleases("0.4.0"), lifecycle=lifecycle).update(current="0.4.0", daemon=False)
+    assert "request" not in events
+    assert "left" in events
+    assert not lifecycle.pending
+    [head] = result.heads
+    assert (head.status, head.restarted) == ("pending", False)
+    assert "still runs the old version: `hz system daemon restart`" in head.detail
+
+
+def test_a_daemon_on_older_code_is_restarted_even_when_nothing_changed(tmp_path):
+    events = []
+    target = plugin_refresh(tmp_path, events, newer=None)
+    lifecycle = FakeMutationLifecycle(events, checkpoint_matched=False)
+    status = SimpleNamespace(installed=True, version="0.3.0", installed_version="0.4.0", version_mismatch=True)
+    attestation = SimpleNamespace(status=lambda: status)
+    service = UpdateService(target, FakeReleases("0.4.0"), lifecycle=lifecycle, daemon=attestation)
+    result = service.update(current="0.4.0")
+    assert not result.updated
+    assert events.count("request") == 1  # once, by the stale daemon check, not by the plugin refresh
+    [head] = result.heads
+    assert head.head == "daemon"
+    assert head.before == "0.3.0"
+
+
+def test_a_daemon_that_runs_the_installed_code_is_left_alone_when_nothing_changed(tmp_path):
+    events = []
+    target = plugin_refresh(tmp_path, events, newer=None)
+    lifecycle = FakeMutationLifecycle(events, checkpoint_matched=False)
+    status = SimpleNamespace(installed=True, version="0.4.0", installed_version="0.4.0", version_mismatch=False)
+    service = UpdateService(
+        target, FakeReleases("0.4.0"), lifecycle=lifecycle, daemon=SimpleNamespace(status=lambda: status)
+    )
+    result = service.update(current="0.4.0")
+    assert "request" not in events
+    [head] = result.heads
+    assert (head.status, head.restarted, head.version) == ("verified", False, "0.4.0")
 
 
 def test_failed_unchanged_update_clears_its_pending_token(tmp_path):
@@ -1564,6 +1634,9 @@ def _channels(pin, releases):
         core_pin=lambda: pin, requirements=lambda: [pin.requirement], plugin_pins=list
     )
     service._releases = releases
+    service._clock, service._home = time.monotonic, None
+    service._daemon = service._lifecycle = service._web = None
+    service._running = lambda: False
     service._automatic_generation = lambda _current: None
     service._with_plugins = lambda result, *_a: result
     service.installs = []
@@ -2088,16 +2161,15 @@ def test_an_update_tells_each_step_and_each_plugin_as_it_ends(tmp_path):
         installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv), FakeReleases("0.4.0"), progress=progress
     )
     service.update(current="0.2.0")
-    assert [e["state"] for e in progress.events[:4]] == ["pending"] * 4  # the plan comes first: the bar's segments
-    assert [e["id"] for e in progress.events[:4]] == ["check", "install", "plugin:heinzel-acme", "heads"]
+    assert [e["state"] for e in progress.events[:2]] == ["pending"] * 2  # the plan comes first: every row pending
+    assert [e["id"] for e in progress.events[:2]] == ["check", "plugin:heinzel-acme"]
+    assert all(e.get("checklist") is True for e in progress.events)  # a terminal draws them as one checklist
     assert final_steps(progress) == {
-        "check": ("done", None),
-        "install": ("done", "Updated hz 0.2.0 → 0.4.0."),
+        "check": ("done", "0.2.0 → 0.4.0"),
         "plugin:heinzel-acme": ("done", "Updated 1.0.0 → 1.2.0"),
-        "heads": ("done", None),
     }
     running = [e["id"] for e in progress.events if e["state"] == "running"]
-    assert running == ["check", "install", "heads"]
+    assert running == ["check"]
 
 
 def test_a_held_back_plugin_is_a_warning_step_and_hz_still_updates(tmp_path):
@@ -2120,10 +2192,8 @@ def test_an_up_to_date_hz_skips_installing_and_restarting(tmp_path):
     )
     service.update(current="0.4.0")
     steps = final_steps(progress)
-    assert steps["check"][0] == "done"
-    assert steps["install"] == ("skipped", "Nothing newer to install.")
-    assert steps["plugin:heinzel-acme"][0] == "skipped"
-    assert steps["heads"] == ("skipped", "Nothing changed, so nothing restarts.")
+    assert steps["check"] == ("done", "newest release")
+    assert steps["plugin:heinzel-acme"][0] == "skipped"  # unchanged plugins are one row in the result, none live
 
 
 def test_a_failed_update_marks_the_step_that_failed(tmp_path):
@@ -2136,7 +2206,7 @@ def test_a_failed_update_marks_the_step_that_failed(tmp_path):
         service.update(current="0.2.0")
     steps = final_steps(progress)
     assert steps["check"][0] == "failed"
-    assert steps["install"] == ("pending", None)
+    assert steps["plugin:heinzel-acme"] == ("pending", None)
 
 
 def _step_events(caplog):
@@ -2155,7 +2225,7 @@ def test_each_update_step_logs_a_start_and_an_outcome_with_fields(tmp_path, capl
         current="0.2.0"
     )
     events = _step_events(caplog)
-    for step in ("check", "install", "plugin:heinzel-acme", "heads"):
+    for step in ("check", "plugin:heinzel-acme"):
         assert [e[0] for e in events if e[1] == step] == ["operation.step.start", "operation.step.outcome"]
     plugin = next(e for e in events if e[1] == "plugin:heinzel-acme" and e[2])
     assert plugin[2:] == ("done", "heinzel-acme", "1.2.0")

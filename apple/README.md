@@ -47,7 +47,11 @@ The device user chooses what to share. Test on a physical device by starting ano
 intended content in the picker, checking that the visualizer reacts, and then stopping sharing. Apple's
 [iOS capture sample](https://developer.apple.com/documentation/screencapturekit/capturing-screen-content-on-ios)
 requires the `screen-capture` background mode to continue a full-display stream when its app is backgrounded; this
-app does not currently declare that mode, so uninterrupted background capture is not promised.
+app declares that mode only for its iOS app target. The native stream can continue while the app is backgrounded;
+the visualizer draws when visible. Background survival and signal recovery still require physical-device
+acceptance. This does not enable microphone capture or background audio playback. Before uploading an archive,
+verify the resolved app plist contains exactly `UIBackgroundModes = [screen-capture]` and the widget declares no
+background modes; preserve enrollment, signed groups and the exact build/source checks.
 
 For a signed iPhone or iPad build, enable Associated Domains for the app ID and
 build with `HEINZEL_IOS_ENTITLEMENTS=App/UniversalLinks.entitlements HEINZEL_HTTPS_LINKS=YES`.
@@ -73,6 +77,26 @@ the existing durable chat API; the regular web interface is unchanged. A confirm
 to follow the response. Unconfirmed sends keep a private copy on this device and retry with the same request ID,
 so a lost acknowledgement does not duplicate the prompt. **Discard** removes that retry copy but does not cancel
 work the host may already have accepted. Prompt text is never saved in shared widget storage or widget links.
+
+### TestFlight upload
+
+Build the signed iOS archive with the intended build number and set
+`HEINZEL_SOURCE_REVISION` to the full source commit. The app and widget extension
+must both contain those exact values. Use an App Store export options plist
+with `destination` set to `upload` and `manageAppVersionAndBuildNumber` set to
+Boolean false.
+
+Run the checked uploader from the repository root:
+```sh
+python3 apple/scripts/widget_configuration.py upload ARCHIVE EXPORT_OPTIONS EXPORT_PATH \
+  --build BUILD --revision SOURCE_COMMIT
+```
+
+The command verifies app-only background capture modes and the archive's signatures, enrollment configuration, signed
+groups, build numbers, and source revisions before it invokes Xcode's upload.
+Xcode may re-sign during export. Use its
+`archive ARCHIVE --build BUILD --revision SOURCE_COMMIT` mode for verification
+without uploading. Device and App Store acceptance are separate checks.
 
 ## TestFlight without an Apple ID session
 

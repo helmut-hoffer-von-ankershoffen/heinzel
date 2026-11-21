@@ -547,7 +547,7 @@ class _MutationScope:
 
     def request(self, plan: DaemonHandoverPlan) -> DaemonHandoverRequest:
         self._require_active()
-        if self.expected is None or self.plan is not plan or self.requested:
+        if self.expected is None or self.plan is not plan or self.requested or self.aborted:
             msg = "The daemon handover does not match this verified mutation."
             raise HeinzelError(msg)
         self._verify(self.expected)
@@ -557,6 +557,15 @@ class _MutationScope:
             raise HeinzelError(msg)
         self.requested = True
         return result
+
+    def finish_without_handover(self) -> None:
+        self._require_active()
+        if self.expected is None or self.requested or self.aborted:
+            msg = "The mutation was not verified, or it was already handed over."
+            raise HeinzelError(msg)
+        self._verify(self.expected)
+        self.authority.pending_path.unlink()
+        self.aborted = True  # nothing is left to commit; the daemon keeps running what it loaded
 
     def commit(self) -> None:
         if self.aborted:

@@ -490,6 +490,50 @@ def test_model_discovers_and_calls_external_tool_on_demand(kernel, owner):
     assert servers.called == ["read"]
 
 
+def test_gateway_diagnostics_use_existing_authorized_discovery_only(kernel, owner):
+    from heinzel.modules.heinzel._chat_diagnostics import prepare_toolbox
+
+    servers = LazyServers()
+    kernel.bind(FoundMcpServers, servers)
+    events = []
+    box, diagnostic = asyncio.run(
+        prepare_toolbox(kernel, HEINZEL, owner, attended=True, emit=lambda _name, data: events.append(data), started=0)
+    )
+    assert box is not None
+    assert diagnostic is not None
+    tools = {tool.name: tool for tool in box.pydantic_tools(pictures=False, record=lambda *_: None)}
+    assert servers.listings == 0
+    tools["mcp__external__tools"].function(server="srv")
+    assert servers.listings == 1
+    [row] = events[-1]["servers"]
+    assert row["gateway_tool_count"] == 2
+    assert [tool["name"] for tool in row["gateway_tools"]] == ["mcp__srv__read", "mcp__srv__send"]
+    assert row["gateway_tools"][0]["description"] == "(MCP server srv) Read data."
+    assert row["offered"] is False
+    assert row["tool_count"] is None
+    assert row["tools"] == []
+    diagnostic.capture(
+        SimpleNamespace(
+            model_request_parameters=SimpleNamespace(function_tools=[]),
+            messages=[],
+            model=SimpleNamespace(context_window=None),
+        )
+    )
+    diagnostic.publish()
+    assert events[-1]["servers"][0]["gateway_tool_count"] == 2
+    assert servers.listings == 1
+    other_events = []
+    other_box, other_diagnostic = asyncio.run(
+        prepare_toolbox(
+            kernel, OTHER, "foreign-owner", attended=True, emit=lambda _name, data: other_events.append(data), started=0
+        )
+    )
+    assert other_box is None
+    assert other_diagnostic is not None
+    assert other_events[-1]["servers"] == []
+    assert servers.listings == 1
+
+
 def test_external_schema_chunks_preserve_schema_and_cannot_close_data_boundary(kernel, owner):
     schema = {
         "type": "object",

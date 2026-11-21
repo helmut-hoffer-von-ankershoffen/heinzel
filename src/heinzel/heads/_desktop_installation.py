@@ -12,7 +12,7 @@ import struct
 import subprocess
 import sys
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from heinzel import HeinzelError
 from heinzel.heads import _desktop_messages as say
+from heinzel.heads import _desktop_widget as widget
 from heinzel.heads._desktop_archive import BUNDLE_NAME, extract_bundle
 from heinzel.heads._desktop_log import step
 from heinzel.heads._desktop_release import VERSION, DesktopFlavor, fetch_archive
@@ -73,7 +74,7 @@ LOCK_WAIT = 120.0
 _LOCK_NOTE_AFTER = 1.0
 SYSTEM_APPLICATIONS = Path("/Applications")
 """Where Finder, Launchpad and Spotlight expect apps; used whenever this user may write there without a password."""
-type DesktopInstallStatus = Literal["installed", "updated", "current", "deferred", "absent"]
+type DesktopInstallStatus = Literal["installed", "updated", "current", "deferred", "absent", "installed-pending"]
 
 
 class DesktopInstallationError(HeinzelError):
@@ -130,6 +131,8 @@ class _Journal(BaseModel):
     bundle: _MoveIdentity
     binding: _MoveIdentity
     receipt: _MoveIdentity
+    native_lifecycle: bool = False
+    registered: bool = False
     applications: str | None = None
     """The folder the bundle moves in; absent in journals written before /Applications was supported."""
 
@@ -443,6 +446,47 @@ def _in_use(bundle: Path) -> bool:
     )
 
 
+QUIT_SECONDS = 20.0
+"""How long `hz app install --restart` waits for an open app to quit (`heinzel.modules.system._update` mirrors it)."""
+_QUIT_POLL_SECONDS = 0.5
+_QUIT_SCRIPT = ("on run argv", "tell application (item 1 of argv) to quit", "end run")
+
+
+def is_open(bundle: Path) -> bool:
+    """Whether the app at `bundle` is open now."""
+    return _in_use(bundle)
+
+
+def quit_app(  # noqa: PLR0913 - the seams a test replaces: the clock, the wait, the quit and the check
+    bundle: Path,
+    *,
+    wait: float = QUIT_SECONDS,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    run: Callable[..., object] = subprocess.run,
+    running: Callable[[Path], bool] = _in_use,
+) -> bool:
+    """Ask the open app to quit with an Apple event and wait up to `wait` seconds; whether it is gone.
+
+    It never signals the process: an app that is still open after `wait` (an unsaved-changes dialog, a refusal, no
+    Automation permission) stays open and the caller defers. The path goes in as an argument, never into the script.
+    """
+    with step("install", "quit", path=str(bundle)) as result:
+        command = ["/usr/bin/osascript", *(part for line in _QUIT_SCRIPT for part in ("-e", line)), str(bundle)]
+        try:
+            run(command, check=False, capture_output=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            result["asked"] = False
+        deadline = clock() + wait
+        while running(bundle):
+            if clock() >= deadline:
+                result["outcome"] = "open"
+                return False
+            sleep(_QUIT_POLL_SECONDS)
+        result["outcome"] = "gone"
+        return True
+
+
 def _verify_bundle(bundle: Path, version: str, flavor: DesktopFlavor = DesktopFlavor.ELECTRON) -> None:
     bundle_id, executable_name = (
         ("team.heinzel.apple", "Heinzel") if flavor == DesktopFlavor.SWIFT else (_BUNDLE_ID, _BUNDLE_EXECUTABLE)
@@ -606,12 +650,33 @@ def _recover_transaction(bundle: Path, config: Path) -> None:
             raise DesktopInstallationError(_CONFLICT, say.not_matching())
 
     _owned_installation(bundle, config)
+    if not _native_cleanup_ready(bundle, config, journal):
+        return
     for directory, _ in directories:
         with suppress(FileNotFoundError):
             shutil.rmtree(directory)
         _sync_directory(directory.parent)
     (config / _JOURNAL).unlink()
     _sync_directory(config)
+
+
+def _native_cleanup_ready(bundle: Path, config: Path, journal: _Journal) -> bool:
+    if not journal.native_lifecycle:
+        return True
+    if journal.operation != "install":
+        raise DesktopInstallationError(_CONFLICT, say.not_matching())
+    retired = bundle.parent / journal.staging / BUNDLE_NAME
+    retired_identity = _identity(retired)
+    expected_retired = journal.bundle.public if journal.state == "committed" else journal.bundle.private
+    if retired_identity is not None and retired_identity != expected_retired:
+        raise DesktopInstallationError(_CONFLICT, say.not_matching())
+    if journal.state == "committed" and not journal.registered:
+        if not widget.register(bundle):
+            return False  # Installed; preserve the journal so same-version retry actually registers.
+        journal.registered = True
+        _write_journal(config, journal)
+    # Never roll back an installed app or delete possibly mapped retired resources.
+    return retired_identity is None or not widget.retired_in_use(retired, bundle)
 
 
 def _rollback_pending(config: Path, journal: _Journal, moves: tuple[_Move, ...]) -> None:
@@ -630,13 +695,22 @@ def _move_identity(public: Path, private: Path) -> _MoveIdentity:
     return _MoveIdentity(public=_identity(public), private=_identity(private))
 
 
-def _commit(bundle: Path, config: Path, staging: Path, files: Path, operation: Literal["install", "uninstall"]) -> None:
+def _commit(  # noqa: PLR0913 - one transaction and its native cleanup policy
+    bundle: Path,
+    config: Path,
+    staging: Path,
+    files: Path,
+    operation: Literal["install", "uninstall"],
+    *,
+    native_lifecycle: bool = False,
+) -> None:
     staging_identity = _identity(staging)
     metadata_identity = _identity(files)
     if staging_identity is None or metadata_identity is None:
         raise DesktopInstallationError(_CONFLICT, say.not_matching())
     journal = _Journal(
         operation=operation,
+        native_lifecycle=native_lifecycle,
         staging=staging.name,
         metadata=files.name,
         staging_identity=staging_identity,
@@ -689,7 +763,29 @@ def _recover_before_use(home: Path, config: Path) -> bool:
             msg = _MSG_JOURNAL_KEPT.format(error=exc, journal=config / _JOURNAL)
             applications = home / "Applications"
             raise DesktopInstallationError(msg, say.interrupted(applications, everyone=False)) from exc
-    return True
+    return not os.path.lexists(config / _JOURNAL)
+
+
+def _resume_native_install(home: Path, config: Path) -> bool | None:
+    """Resume only committed native cleanup; other operations keep the conservative recovery gate.
+
+    Raises:
+        DesktopInstallationError: If a retained transaction is untrusted.
+    """
+    data = _read_metadata(config / _JOURNAL)
+    if data is None:
+        return None
+    try:
+        journal = _Journal.model_validate_json(data)
+    except ValidationError as exc:
+        raise DesktopInstallationError(_CONFLICT, say.not_matching()) from exc
+    if not (journal.native_lifecycle and journal.operation == "install" and journal.state == "committed"):
+        return None
+    with _desktop_use(config) as locked:
+        if not locked:
+            return None
+        _recover_transaction(home / "Applications" / BUNDLE_NAME, config)
+        return not os.path.lexists(config / _JOURNAL)
 
 
 def _migrate(bundle: Path, config: Path) -> Path:
@@ -701,8 +797,10 @@ def _migrate(bundle: Path, config: Path) -> Path:
     target = SYSTEM_APPLICATIONS / BUNDLE_NAME
     if bundle == target or not system_applications_usable():
         return bundle
+    record = _owned_installation(bundle, config)
+    in_use = widget.in_use if record is not None and record.flavor == "swift" else _in_use
     with _desktop_use(config) as locked:
-        if not locked or _in_use(bundle):
+        if not locked or in_use(bundle):
             return bundle
         try:
             _rename(bundle, target)
@@ -754,6 +852,9 @@ def install_desktop(  # noqa: PLR0913 - keyword-only options of one CLI command
     notes = [] if notes is None else notes
     options = {"version": version, "update_only": update_only, "replace": replace, "forget": forget}
     with step("install", "run", **options) as result, _locked_config(home, reporter) as config:
+        if _resume_native_install(home, config) is False:
+            result["outcome"] = "installed-pending"
+            return "installed-pending"
         state = _install_steps(
             version,
             executable,
@@ -862,7 +963,14 @@ def _install_release(  # noqa: PLR0913, PLR0917 - the transaction needs each of 
         and existing.executable == str(executable)
     ):
         return "current"
-    if existing and _in_use(bundle):
+    # The old image needs safe retirement even when replacing Swift with Electron.
+    native_lifecycle = flavor == DesktopFlavor.SWIFT or (existing is not None and existing.flavor == "swift")
+    in_use = widget.in_use if native_lifecycle else _in_use
+    if (
+        existing
+        and in_use(bundle)
+        and not (native_lifecycle and existing.flavor == "swift" and widget.can_stage(bundle))
+    ):
         return "deferred"
     with _staging(bundle.parent, config) as (staging, files):
         archive = (
@@ -898,12 +1006,36 @@ def _install_release(  # noqa: PLR0913, PLR0917 - the transaction needs each of 
             _write_private(files / _BINDING, binding)
             _sync_tree(staging / BUNDLE_NAME)
             _sync_tree(files)
-        with _desktop_use(config) as locked, reporter.phase(say.install_into(bundle.parent)):
-            if not locked or (existing and _in_use(bundle)):
-                return "deferred"
-            if _owned_installation(bundle, config) != existing:
-                raise DesktopInstallationError(_CONFLICT, say.not_matching())
-            _commit(bundle, config, staging, files, "install")
+        return _install_candidate(bundle, config, staging, files, existing, reporter, native_lifecycle=native_lifecycle)
+
+
+def _install_candidate(  # noqa: PLR0913, PLR0917 - staged transaction context
+    bundle: Path,
+    config: Path,
+    staging: Path,
+    files: Path,
+    existing: _Receipt | None,
+    reporter: Reporter,
+    *,
+    native_lifecycle: bool,
+) -> DesktopInstallStatus:
+    in_use = widget.in_use if native_lifecycle else _in_use
+    with _desktop_use(config) as locked, reporter.phase(say.install_into(bundle.parent)):
+        if not locked:
+            return "deferred"
+        if _owned_installation(bundle, config) != existing:
+            raise DesktopInstallationError(_CONFLICT, say.not_matching())
+        if (
+            existing
+            and in_use(bundle)
+            and not (native_lifecycle and existing.flavor == "swift" and widget.quiesce(bundle))
+        ):
+            return "deferred"
+        if (existing and in_use(bundle)) or _owned_installation(bundle, config) != existing:
+            return "deferred"
+        _commit(bundle, config, staging, files, "install", native_lifecycle=native_lifecycle)
+        if os.path.lexists(config / _JOURNAL):
+            return "installed-pending"
     return "updated" if existing else "installed"
 
 

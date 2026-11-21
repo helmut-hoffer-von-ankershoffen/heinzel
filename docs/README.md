@@ -175,6 +175,7 @@ How drift is prevented:
 - The `docs-reviewer` agent reviews prose against the code in every pull request that changes behaviour.
 
 - [Private HTTPS web sharing](PRIVATE_WEB_SHARING.md): exact proxy origins, pairing and terminal security.
+- [AI settings and their scope](AI_SETTINGS.md): provider controls, budget limits and chat retention.
 
 
 Site guides: [Install](guides/install.md) · [First steps](guides/first-steps.md) · [Product tour](guides/tour.md) · [Contribute](guides/contribute.md) · [Architecture tour](guides/architecture.md) · [Catalog metadata and automation](guides/catalog.md) · [Vision](VISION.md) · [Catalog](CATALOG.md).

@@ -219,6 +219,18 @@ def parity_problem(path: str, generated: set[Path]) -> str | None:
     return "symlink it into template/ (or generate it), or add it to CORE_ONLY with the reason"
 
 
+def test_template_locks_the_reviewed_pyyaml():
+    """A fresh plugin lock resolves the PyYAML the bootstrap reviewed, named once in src/heinzel/bootstrap_pyyaml.py;
+    the starter carries a copy this test keeps equal."""
+    reviewed = re.search(r'(?m)^VERSION = "([^"]+)"$', (REPO / "src/heinzel/bootstrap_pyyaml.py").read_text())
+    assert reviewed is not None
+    for source in (TEMPLATE / "pyproject.toml.jinja", REPO / "starter" / "pyproject.toml.jinja"):
+        rendered = source.read_text(encoding="utf-8")
+        assert f'constraint-dependencies = ["pyyaml=={reviewed.group(1)}"]' in rendered, source
+    starter = (REPO / "starter" / "pyproject.toml.jinja").read_text(encoding="utf-8")
+    assert f'"pyyaml=={reviewed.group(1)}"]' in starter.split("[dependency-groups]")[1].split("\n\n")[0]
+
+
 def test_finds_parity_problems():
     assert parity_problem(".claude/hooks/missing_hook.py", set()) is not None
     assert parity_problem("scripts/sync_template.py", set()) is None

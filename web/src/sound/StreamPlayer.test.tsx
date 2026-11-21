@@ -300,6 +300,29 @@ describe("playback help pane", () => {
     expect(info()).toHaveAttribute("aria-expanded", "false");
   });
 
+  it("portals help above clipped player containers and keeps hover and focus working", () => {
+    vi.useFakeTimers();
+    mount();
+    fireEvent.mouseEnter(info());
+    const pane = screen.getByRole("region", { name: "Playback or sign-in trouble?" });
+    expect(pane.parentElement?.parentElement).toBe(document.body);
+    fireEvent.mouseLeave(info().parentElement as HTMLElement);
+    fireEvent.mouseEnter(pane.parentElement as HTMLElement);
+    act(() => vi.advanceTimersByTime(250));
+    expect(pane).toBeVisible();
+    info().focus();
+    fireEvent.keyDown(info(), { key: "Tab" });
+    const first = screen.getByRole("button", { name: "Use YouTube sign-in" });
+    expect(first).toHaveFocus();
+    fireEvent.keyDown(first, { key: "Tab", shiftKey: true });
+    expect(info()).toHaveFocus();
+    const action = screen.getByRole("button", { name: "Retry player" });
+    action.focus();
+    fireEvent.keyDown(action, { key: "Escape" });
+    expect(info()).toHaveFocus();
+    expect(screen.queryByRole("region", { name: "Playback or sign-in trouble?" })).toBeNull();
+  });
+
   it("shows an attention dot, named for assistive technology, only when playback needs attention", () => {
     mount();
     expect(attention()).toBeNull();
