@@ -97,3 +97,16 @@ groups, build numbers, and source revisions before it invokes Xcode's upload.
 Xcode may re-sign during export. Use its
 `archive ARCHIVE --build BUILD --revision SOURCE_COMMIT` mode for verification
 without uploading. Device and App Store acceptance are separate checks.
+
+## TestFlight without an Apple ID session
+
+`apple/scripts/testflight` talks to App Store Connect with an API key (ASC_KEY_ID, ASC_ISSUER_ID and
+ASC_KEY_PATH from `~/.appstoreconnect/heinzel-mini.env`, override with `ASC_ENV_FILE`; the key is never printed).
+
+- `testflight upload X.xcarchive` runs `xcodebuild -exportArchive` with `distribution/ExportOptions-testflight.plist`
+  (`destination=upload`) and the `-authenticationKey*` flags, so no Xcode sign-in is needed.
+- `testflight status [BUILD]` lists processing state and group membership of "Heinzel Internal Auto".
+- That internal group has automatic distribution ON (set once in the web UI; Apple refuses it over the API,
+  `hasAccessToAllBuilds` cannot be updated), so every processed build reaches the testers by itself.
+- `testflight assign [BUILD]` is therefore optional: it adds a processed build the group does not hold yet.
+- `testflight setup` only reports the group's `hasAccessToAllBuilds` state.

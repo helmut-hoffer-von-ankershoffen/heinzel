@@ -1,0 +1,157 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pyjwt[crypto]"]
+# ///
+"""TestFlight without an Apple ID session: upload, status, assign, setup.
+
+Credentials come from the env file (default ~/.appstoreconnect/heinzel-mini.env,
+override with ASC_ENV_FILE): ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH. The key
+file is never read for display; it only signs the JWT.
+"""
+import argparse
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+
+import jwt
+
+APP_ID = "6835027321"
+GROUP_NAME = "Heinzel Internal Auto"
+API = "https://api.appstoreconnect.apple.com"
+PLIST = pathlib.Path(__file__).resolve().parent.parent / "distribution" / "ExportOptions-testflight.plist"
+
+
+def load_env() -> dict[str, str]:
+    path = pathlib.Path(os.environ.get("ASC_ENV_FILE", "~/.appstoreconnect/heinzel-mini.env")).expanduser()
+    env = {}
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, value = line.partition("=")
+            env[key.removeprefix("export ").strip()] = value.strip().strip("'\"")
+    for name in ("ASC_KEY_ID", "ASC_ISSUER_ID", "ASC_KEY_PATH"):
+        if name not in env:
+            sys.exit(f"{name} missing in {path}")
+    env["ASC_KEY_PATH"] = str(pathlib.Path(os.path.expandvars(env["ASC_KEY_PATH"])).expanduser())
+    return env
+
+
+def token(env: dict[str, str]) -> str:
+    key = pathlib.Path(env["ASC_KEY_PATH"]).read_text()
+    now = int(time.time())
+    payload = {"iss": env["ASC_ISSUER_ID"], "iat": now, "exp": now + 1200, "aud": "appstoreconnect-v1"}
+    return jwt.encode(payload, key, algorithm="ES256", headers={"kid": env["ASC_KEY_ID"]})
+
+
+def call(env, method: str, path: str, body: dict | None = None) -> dict:
+    req = urllib.request.Request(
+        API + path if path.startswith("/") else path,
+        method=method,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={"Authorization": f"Bearer {token(env)}", "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as err:
+        detail = err.read().decode()[:600]
+        sys.exit(f"{method} {path}: HTTP {err.code} {detail}")
+    return json.loads(raw) if raw else {}
+
+
+def group_id(env) -> str:
+    data = call(env, "GET", f"/v1/apps/{APP_ID}/betaGroups?limit=200")["data"]
+    for group in data:
+        if group["attributes"]["name"] == GROUP_NAME:
+            return group["id"]
+    sys.exit(f"group {GROUP_NAME!r} not found")
+
+
+def builds(env) -> list[dict]:
+    out = call(env, "GET", f"/v1/builds?filter[app]={APP_ID}&include=preReleaseVersion&limit=200&sort=-uploadedDate")
+    versions = {i["id"]: i["attributes"]["version"] for i in out.get("included", [])}
+    rows = []
+    for item in out["data"]:
+        pre = item["relationships"]["preReleaseVersion"]["data"]
+        rows.append({
+            "id": item["id"],
+            "build": item["attributes"]["version"],
+            "short": versions.get(pre["id"]) if pre else None,
+            "state": item["attributes"]["processingState"],
+            "expired": item["attributes"]["expired"],
+        })
+    return rows
+
+
+def group_build_ids(env, gid: str) -> set[str]:
+    data = call(env, "GET", f"/v1/betaGroups/{gid}/relationships/builds?limit=200")["data"]
+    return {item["id"] for item in data}
+
+
+def cmd_setup(env, _args) -> None:
+    gid = group_id(env)
+    attrs = call(env, "GET", f"/v1/betaGroups/{gid}")["data"]["attributes"]
+    print(f"group {gid} hasAccessToAllBuilds={attrs.get('hasAccessToAllBuilds')}")
+    if not attrs.get("hasAccessToAllBuilds"):  # create-only; normally ON already
+        body = {"data": {"type": "betaGroups", "id": gid, "attributes": {"hasAccessToAllBuilds": True}}}
+        # Apple (2026-11-21): hasAccessToAllBuilds is create-only (HTTP 409 on PATCH).
+        # Automatic distribution is a one-time web toggle; `assign` covers it meanwhile.
+        out = call(env, "PATCH", f"/v1/betaGroups/{gid}", body)
+        print("PATCH ok: hasAccessToAllBuilds=", out["data"]["attributes"].get("hasAccessToAllBuilds"))
+
+
+def cmd_status(env, args) -> None:
+    members = group_build_ids(env, group_id(env))
+    for row in builds(env):
+        if args.build and row["build"] != args.build:
+            continue
+        flag = "in-group" if row["id"] in members else "NOT-in-group"
+        print(f"{row['short']} ({row['build']}) {row['state']} expired={row['expired']} {flag} id={row['id']}")
+
+
+def cmd_assign(env, args) -> None:
+    gid = group_id(env)
+    members = group_build_ids(env, gid)
+    for row in builds(env):
+        if args.build and row["build"] != args.build:
+            continue
+        if row["state"] != "VALID" or row["expired"] or row["id"] in members:
+            continue
+        call(env, "POST", f"/v1/betaGroups/{gid}/relationships/builds",
+             {"data": [{"type": "builds", "id": row["id"]}]})
+        print(f"assigned build {row['build']} ({row['id']})")
+
+
+def cmd_upload(env, args) -> None:
+    cmd = ["xcrun", "xcodebuild", "-exportArchive", "-archivePath", args.archive,
+           "-exportOptionsPlist", args.plist, "-exportPath", args.export_path,
+           "-allowProvisioningUpdates",
+           "-authenticationKeyPath", env["ASC_KEY_PATH"],
+           "-authenticationKeyID", env["ASC_KEY_ID"],
+           "-authenticationKeyIssuerID", env["ASC_ISSUER_ID"]]
+    sys.exit(subprocess.run(cmd, check=False).returncode)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("setup", help="enable automatic distribution on the internal group")
+    for name in ("status", "assign"):
+        p = sub.add_parser(name)
+        p.add_argument("build", nargs="?", help="build number; default all")
+    up = sub.add_parser("upload", help="export and upload an .xcarchive")
+    up.add_argument("archive")
+    up.add_argument("--plist", default=str(PLIST))
+    up.add_argument("--export-path", default=".build/testflight-export")
+    args = parser.parse_args()
+    {"setup": cmd_setup, "status": cmd_status, "assign": cmd_assign, "upload": cmd_upload}[args.cmd](load_env(), args)
+
+
+if __name__ == "__main__":
+    main()
