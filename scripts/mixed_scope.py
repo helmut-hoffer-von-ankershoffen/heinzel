@@ -23,7 +23,10 @@ from pathlib import Path
 APPLE_SOURCES = frozenset(
     {
         "apple/App/HeinzelApp.swift",
+        "apple/App/NativePrompt.swift",
+        "apple/App/Navigation.swift",
         "apple/App/SystemAudio.swift",
+        "apple/App/TitleBarDragLayout.swift",
         "apple/App/WorkspaceView.swift",
         "apple/Heinzel.xcodeproj/project.pbxproj",
         "apple/Shared/ActivityCatalog.swift",
