@@ -7,7 +7,6 @@ The service reads only user-scope configuration (site and user files and the env
 `hz.toml`), so the unit, the receipts and the logs are the same wherever `hz` runs, and a repository can't move them.
 """
 
-import hashlib
 import json
 import logging
 import os
@@ -15,7 +14,6 @@ import re
 import secrets
 import shutil
 import stat
-import subprocess
 import sys
 import time
 import tomllib
@@ -44,18 +42,13 @@ from heinzel import (
     Status,
     __version__,
 )
-from heinzel._adapter_service import Job as ManagerJob
-from heinzel._adapter_service import LaunchdServiceManager, ManagerRefused, SystemdServiceManager
 from heinzel.kernel import (
     KERNEL_SECTION,
-    DaemonHandoverAssessment,
     DaemonHandoverObservation,
     DaemonHandoverPlan,
-    DaemonHandoverRequest,
     DaemonLifecycleWait,
     DaemonMutationScope,
     Installation,
-    MaintenanceLocks,
     ProcessOutcome,
     host_maintenance_gate,
     private_directory,
@@ -65,23 +58,28 @@ from heinzel.kernel import (
     tick_interval,
 )
 from heinzel.kernel._logging import log_event
-from heinzel.kernel.install._tool_uninstall import OwnedFile, owned_file, remove_owned_file
 from heinzel.modules.system.daemon import _process_birth
 from heinzel.modules.system.daemon import _schedule as schedule
-from heinzel.modules.system.daemon._abandoned_mutation import host_boot, marker_token_matches, mutation_record
+from heinzel.modules.system.daemon._abandoned_mutation import host_boot, mutation_record
 from heinzel.modules.system.daemon._handover_files import (
     _handover_absolute_path,
     _invalid_handover,
     _open_verified_handover_file,
     _safely_absent,
 )
+from heinzel.modules.system.daemon._handover_request import (
+    MAX_BOOT_IDENTITY,
+    MAX_HANDOVER_CONTRIBUTIONS,
+    MAX_HANDOVER_FILE_BYTES,
+    MAX_OBSERVATION_BYTES,
+    STALE_TICKS,
+    _HandoverRequest,
+    _heartbeat_covers,
+)
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._manager_commands import (
-    _launchctl_quiescent_output,
-    _launchctl_records,
     _linux_user_manager_identity,
     _quiescence_command,
-    _systemd_quiescent_unit,
 )
 from heinzel.modules.system.daemon._models import (
     DaemonSettings,
@@ -97,15 +95,14 @@ from heinzel.modules.system.daemon._models import (
     Uninstalled,
     Wake,
 )
-from heinzel.modules.system.daemon._mutation_scope import DaemonRemoval, _MutationAuthority, _MutationScope
+from heinzel.modules.system.daemon._mutation_scope import _MutationAuthority, _MutationScope
 from heinzel.modules.system.daemon._ownership import (
     ManagerState,
-    launchd_owned,
     profile_digest,
     profile_environment,
-    systemd_owned,
-    tick_environment,
 )
+from heinzel.modules.system.daemon._quiescence import _Quiescence
+from heinzel.modules.system.daemon._removal import _Removal
 from heinzel.modules.system.daemon._runtime import (
     Outcome,
     Runner,
@@ -125,6 +122,7 @@ from heinzel.modules.system.daemon._units import (
     LABEL,
     LOGIN_ITEM_HINT,
     NOTIFIER_APP,
+    PLATFORMS,
     SYSTEMD_NAME,
     check_interval,
     launchd_plist,
@@ -134,7 +132,6 @@ from heinzel.modules.system.daemon._units import (
     systemd_timer,
 )
 from heinzel.modules.system.updater._phases import Phases
-from heinzel.ports import ServiceManager
 
 if TYPE_CHECKING:
     import threading
@@ -142,22 +139,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 DEFAULT_INTERVAL = 5
 """Minutes between ticks unless `install --interval` says otherwise."""
-STALE_TICKS = 3
-"""A daemon that missed this many intervals in a row is reported as degraded."""
 SESSION_STEP = "Checking this is your Mac's desktop session"
 NOTIFIER_STEP = "Setting up desktop notifications"
 LOAD_FIX = "run `hz system daemon status` in a terminal for what the service manager says."
-PLATFORMS = ("darwin", "linux")
-"""launchd and systemd read unit files; they hold no secrets."""
 MODULE_SECTION = "system.daemon"
 LIFECYCLE_POLL_SECONDS = 2.0
-MAX_HANDOVER_FILE_BYTES = 256 * 1024
-MAX_HANDOVER_CONTRIBUTIONS = 512
-MAX_HANDOVER_TEXT = 512
-HANDOVER_ROW_FIELDS = 3
-MAX_BOOT_IDENTITY = 128
 UUID_TEXT_LENGTH = 36
-MAX_OBSERVATION_BYTES = 128 * 1024
 LINUX_BOOT_ID = Path("/proc/sys/kernel/random/boot_id")
 MACOS_BOOT_ID_COMMAND = "/usr/sbin/sysctl"
 
@@ -218,16 +205,6 @@ def _failed_once_after_success(ledger: Ledger, job: str) -> bool:
     return len(ran) > 1 and ran[-1].disposition is Disposition.FAILED and ran[-2].disposition is Disposition.RENDERED
 
 
-def _heartbeat_covers(heartbeat: dict[str, str | int], tick_at: str, version: str) -> bool:
-    last_tick = heartbeat.get("last_tick")
-    if not isinstance(last_tick, str) or heartbeat.get("version") != version:
-        return False
-    try:
-        return datetime.fromisoformat(last_tick) >= datetime.fromisoformat(tick_at)
-    except (ValueError, TypeError):
-        return False
-
-
 _HOLDERS = {"tick": "the background service's current run of its jobs", "other": "an update or another Heinzel change"}
 """Plain words for who holds the lifecycle lock, by the stable token the log records."""
 
@@ -240,7 +217,7 @@ def _budget(seconds: float) -> str:
     return f"{seconds:g} s" if seconds < _SECONDS_SHOWN_BELOW else f"{round(seconds / 60)} min"
 
 
-class DaemonService:
+class DaemonService(_Quiescence, _HandoverRequest, _Removal):
     """Installs, inspects and pauses the daemon, and runs ticks."""
 
     def __init__(  # noqa: PLR0913, PLR0917 - the seams tests replace, all defaulted
@@ -837,773 +814,6 @@ class DaemonService:
                 scope.commit()
             finally:
                 scope.active = False
-
-    def _mutation_token_matches(self, token: str, name: str = "mutation-pending.json") -> bool:
-        try:
-            with _open_verified_handover_file(self.state_dir / name) as handle:
-                info = os.fstat(handle.fileno())
-                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
-                    return False
-                raw = handle.read(256)
-                if name == "mutation-pending.json":
-                    return marker_token_matches(raw, token)
-                return raw == (json.dumps({"token": token}, indent=2) + "\n").encode()
-        except (OSError, HeinzelError):
-            return False
-
-    def _quiescence_target(self, binary: Path) -> bool:
-        installation = self._quiescence_installation
-        if installation is None or installation.prefix.name != "heinzel" or binary.is_relative_to(installation.prefix):
-            return False
-        prefix = installation.prefix
-        store = prefix.parent
-        try:
-            for path in (store, binary):
-                info = path.lstat()
-                if (
-                    not path.is_absolute()
-                    or path.resolve(strict=True) != path
-                    or not stat.S_ISDIR(info.st_mode)
-                    or info.st_uid != os.getuid()
-                    or info.st_mode & 0o022
-                ):
-                    return False
-            if _safely_absent(prefix):
-                return all(_safely_absent(binary / name) for name in ("hz", "heinzel", "hz-install"))
-            info = prefix.lstat()
-            if (
-                not stat.S_ISDIR(info.st_mode)
-                or info.st_uid != os.getuid()
-                or info.st_mode & 0o022
-                or prefix.resolve(strict=True) != prefix
-            ):
-                return False
-            installation.verify_tool_destination(store, binary)
-        except (OSError, HeinzelError):
-            return False
-        else:
-            return True
-
-    @property
-    def recovery_platform(self) -> str:
-        """The platform selected by this daemon authority."""
-        return self._platform
-
-    @property
-    def recovery_profile(self) -> dict[str, str]:
-        """A copy of the selected profile routing for explicit recovery inspection."""
-        return dict(self._profile)
-
-    @property
-    def recovery_installation(self) -> Installation | None:
-        """The existing installation bound to this daemon's quiescence checks."""
-        return self._quiescence_installation
-
-    def recovery_uid(self) -> int:
-        """Observe the same user identity used by normal daemon authority checks."""
-        return self._uid()
-
-    def recovery_now(self) -> datetime:
-        """Observe this service's clock for completed-history validation."""
-        return self._clock()
-
-    def recovery_token_matches(self, token: str, name: str) -> bool:
-        """Check the exact existing mutation token without modifying its gate."""
-        return self._mutation_token_matches(token, name)
-
-    @contextmanager
-    def recovery_writer(self) -> Generator[None]:
-        """Hold the same lifecycle writer used by ordinary daemon mutations."""
-        with self._lifecycle_writer():
-            yield
-
-    def owned_manager_command(self, command: list[str]) -> subprocess.CompletedProcess[str]:
-        """Use only the fixed, bounded manager in this verified user session, before and after the request.
-
-        Raises:
-            HeinzelError: If manager authority changes or the request cannot be observed completely.
-        """
-        expected = "/bin/launchctl" if self._platform == "darwin" else "/usr/bin/systemctl"
-        if self._platform not in PLATFORMS or not command or command[0] != expected:
-            msg = "The daemon request is not addressed to the fixed local user manager."
-            raise HeinzelError(msg)
-        identity = self._linux_manager_identity() if self._platform == "linux" else None
-        if (self._platform == "linux" and identity is None) or (
-            self._platform == "darwin" and not self._mac_session_verified()
-        ):
-            msg = "The daemon's user service manager cannot be verified; nothing was changed."
-            raise HeinzelError(msg)
-        result = self._quiescence_probe(command)
-        stable = (
-            self._linux_manager_identity() == identity if self._platform == "linux" else self._mac_session_verified()
-        )
-        if not stable or result.truncated or result.returncode is None:
-            msg = "The daemon manager request is uncertain; inspect its actual state before retrying."
-            raise HeinzelError(msg)
-        return subprocess.CompletedProcess(command, result.returncode, result.stdout, result.stderr)
-
-    def owned_unit_state(self, binary: Path, *, allow_absent: bool = False) -> bool:
-        """Whether exact safe files, receipt, profile and tool authority agree; absence is explicit."""
-        present = not all(_safely_absent(path) for path in (*self._unit_paths(), self.state_dir / "install.json"))
-        return (present or allow_absent) and self._quiescence_unit_state(binary)
-
-    def owned_manager_state(self, binary: Path) -> ManagerState:
-        """Observe an owned registration and activation, or verified absence, with its current tick PID.
-
-        Raises:
-            HeinzelError: If files, manager argv/profile or user-session authority cannot be verified.
-        """
-        if not self.owned_unit_state(binary, allow_absent=True):
-            msg = "The daemon files belong to another profile or were changed; nothing was changed."
-            raise HeinzelError(msg)
-        executable = binary / "hz"
-        environment = tick_environment(executable, self._profile)
-        if self._platform == "darwin":
-            result = self.owned_manager_command(["/bin/launchctl", "print", f"gui/{self._uid()}/{LABEL}"])
-            if result.returncode != 0:
-                records = self.owned_manager_command(["/bin/launchctl", "list"])
-                listing = _launchctl_records(records.stdout) if records.returncode == 0 else None
-                if listing is None or LABEL in listing:
-                    msg = "The daemon's manager registration is unknown; nothing was changed."
-                    raise HeinzelError(msg)
-                return ManagerState(registered=False, active=False, enabled=False)
-            state = launchd_owned(result.stdout, plist_path(self.unit_dir), executable, environment)
-        else:
-            outputs: list[str] = []
-            for unit in (f"{SYSTEMD_NAME}.service", f"{SYSTEMD_NAME}.timer"):
-                result = self.owned_manager_command(
-                    [
-                        "/usr/bin/systemctl",
-                        "--user",
-                        "show",
-                        unit,
-                        "--property=Id,LoadState,FragmentPath,DropInPaths,ExecStart,Triggers,Environment,WorkingDirectory,ActiveState,UnitFileState,MainPID,ControlPID,Job",
-                    ]
-                )
-                if result.returncode != 0:
-                    msg = "The daemon's user manager unit cannot be inspected; nothing was changed."
-                    raise HeinzelError(msg)
-                outputs.append(result.stdout)
-            state = systemd_owned(outputs[0], outputs[1], systemd_paths(self.unit_dir), executable, environment)
-        if state.registered and not self.owned_unit_state(binary):
-            msg = "A daemon label is loaded without this profile's exact owned files; nothing was changed."
-            raise HeinzelError(msg)
-        return state
-
-    def _quiescence_unit_state(self, binary: Path) -> bool:
-        paths = self._unit_paths()
-        marker = self.state_dir / "install.json"
-        absent = [_safely_absent(path) for path in paths]
-        marker_absent = _safely_absent(marker)
-        if all(absent) and marker_absent:
-            return True
-        if any(absent) or marker_absent or self._quiescence_installation is None:
-            return False
-        try:
-            self._handover_signature()
-            recorded = self._read_state("install.json")
-            executable = binary / "hz"
-            minutes = recorded.get("interval_minutes")
-            if (
-                recorded.get("profile") != profile_digest(self._profile)
-                or recorded.get("executable") != str(executable)
-                or recorded.get("platform") != self._platform
-                or type(minutes) is not int
-                or minutes <= 0
-            ):
-                return False
-            # On macOS uv uninstall removes the tool environment and shims, retaining an owned stopped unit.
-            # The enclosing snapshot still requires a trusted empty destination and actual manager absence.
-            if self._platform != "darwin" or not _safely_absent(self._quiescence_installation.prefix):
-                self._quiescence_installation.verify_tool_destination(
-                    self._quiescence_installation.prefix.parent, binary
-                )
-            return all(path.read_text() == content for path, content in self._unit_files(executable, minutes).items())
-        except (OSError, ValueError, HeinzelError):  # UnicodeError and a marker's impossible interval are ValueErrors
-            return False
-
-    def _recover_retained_unit(self, binary: Path) -> None:
-        """Retain only a profile-bound owned stopped unit; unknown legacy definitions are never retired.
-
-        A released byte format and a dead PID do not establish which profile or loaded job owns a fixed label.
-        Recovery never bootouts, moves or deletes those definitions on the basis of that weaker evidence.
-        """
-        self._quiescence_advice = None
-        if all(_safely_absent(path) for path in (*self._unit_paths(), self.state_dir / "install.json")):
-            return
-        self._quiescence_advice = (
-            "The retained daemon definition or its profile cannot be verified. Inspect the user service manager, "
-            "the selected configuration and existing unit before changing them; "
-            "no definition was moved or unloaded. "
-            "For an older daemon, follow the explicit recovery guide: https://heinzel.team/DAEMON_RECOVERY/."
-        )
-        if self.owned_unit_state(binary):
-            self._quiescence_advice = None
-
-    def _quiescent_snapshot(
-        self,
-        binary: Path,
-        token: str | None = None,
-        *,
-        gate: Path | None = None,
-        compatibility_gates: tuple[Path, ...] = (),
-    ) -> bool:
-        self._quiescence_problem = "The selected installation destination could not be verified."
-        if self._platform not in {"darwin", "linux"} or not self._quiescence_target(binary):
-            return False
-        paths = [
-            self.state_dir / name
-            for name in ("handover-pending.json", "handover-request.json", "mutation-pending.json")
-        ]
-
-        def pending_valid() -> bool:
-            if gate is not None:
-                installation = self._quiescence_installation
-                return (
-                    installation is not None
-                    and gate == host_maintenance_gate(installation.prefix)
-                    and (
-                        private_read(self.state_dir / "standard-install-pending.json")
-                        == json.dumps({"token": token}, indent=2) + "\n"
-                        if compatibility_gates == (self.state_dir / "standard-install-pending.json",)
-                        else not compatibility_gates
-                        and _safely_absent(self.state_dir / "standard-install-pending.json")
-                    )
-                    and private_read(gate) == json.dumps({"token": token}, indent=2) + "\n"
-                )
-            if self._quiescence_installation is not None and not _safely_absent(
-                host_maintenance_gate(self._quiescence_installation.prefix)
-            ):
-                return False
-            if token is None:
-                return _safely_absent(self.state_dir / "standard-install-pending.json")
-            return self._mutation_token_matches(token, "standard-install-pending.json")
-
-        self._quiescence_problem = "A previous daemon or installation transaction requires recovery."
-        if not (pending_valid() and all(_safely_absent(path) for path in paths)):
-            return False
-        self._quiescence_problem = "The retained daemon unit or install receipt could not be verified."
-        if not self._quiescence_unit_state(binary):
-            return False
-        if self._platform == "linux":
-            return self._linux_quiescent_snapshot(binary, pending_valid, paths)
-        if not self._mac_manager_absent():
-            return False
-        self._quiescence_problem = "The installation or daemon evidence changed during verification."
-        return (
-            pending_valid()
-            and all(_safely_absent(path) for path in paths)
-            and self._quiescence_unit_state(binary)
-            and self._quiescence_target(binary)
-        )
-
-    def _mac_session_verified(self) -> bool:
-        try:
-            results = [
-                self._quiescence_probe(command)
-                for command in (["/bin/launchctl", "managername"], ["/bin/launchctl", "manageruid"])
-            ]
-        except (OSError, ValueError, HeinzelError):
-            return False
-        name, uid = results
-        return (
-            name.returncode == uid.returncode == 0
-            and name.stdout.strip() == "Aqua"
-            and uid.stdout.strip() == str(self._uid())
-        )
-
-    def _mac_manager_absent(self) -> bool:
-        commands = [
-            ["/bin/launchctl", "managername"],
-            ["/bin/launchctl", "manageruid"],
-            ["/bin/launchctl", "list"],
-            ["/bin/launchctl", "managername"],
-            ["/bin/launchctl", "manageruid"],
-        ]
-        self._quiescence_problem = "macOS service-manager inspection failed or returned incomplete evidence."
-        try:
-            results = [self._quiescence_probe(command) for command in commands]
-            if any(result.returncode != 0 or result.truncated for result in results):
-                return False
-            name1, uid1, listing, name2, uid2 = [result.stdout for result in results]
-            if not (name1.strip() == name2.strip() == "Aqua" and uid1.strip() == uid2.strip() == str(self._uid())):
-                self._quiescence_problem = (
-                    "The current process is not in a verified macOS desktop session for this user."
-                )
-                return False
-            self._quiescence_problem = (
-                "macOS did not confirm daemon absence; the service is loaded or its list is invalid."
-            )
-            return _launchctl_quiescent_output(listing)
-        except (OSError, ValueError, HeinzelError):
-            return False
-
-    def _linux_quiescent_snapshot(self, binary: Path, pending_valid: Callable[[], bool], paths: list[Path]) -> bool:
-        identity = self._linux_manager_identity()
-        if identity is None:
-            return False
-        manager = ["/usr/bin/systemctl", "--user", "--no-pager", "show", "--all", "--property=Version"]
-        units = [f"{SYSTEMD_NAME}.service", f"{SYSTEMD_NAME}.timer"]
-        commands = [manager]
-        commands.extend(
-            [
-                "/usr/bin/systemctl",
-                "--user",
-                "--no-pager",
-                "show",
-                "--all",
-                "--property=Id,LoadState,ActiveState,SubState,Job,MainPID,ControlPID",
-                unit,
-            ]
-            for unit in (*units, *units)
-        )
-        commands.append(manager)
-        try:
-            results = [self._quiescence_probe(command) for command in commands]
-            if any(result.returncode != 0 or result.truncated for result in results):
-                return False
-            first, *observations, last = [result.stdout for result in results]
-            return (
-                bool(re.fullmatch(r"Version=[^\r\n=]{1,128}\n?", first))
-                and first == last
-                and all(
-                    _systemd_quiescent_unit(output, unit)
-                    for output, unit in zip(observations, (*units, *units), strict=True)
-                )
-                and self._linux_manager_identity() == identity
-                and pending_valid()
-                and all(_safely_absent(path) for path in paths)
-                and self._quiescence_unit_state(binary)
-                and self._quiescence_target(binary)
-            )
-        except (OSError, ValueError, HeinzelError):
-            return False
-
-    @contextmanager
-    def quiescence_guard(self, binary: Path) -> Generator[None]:
-        """Hold lifecycle and tick locks through a trusted, quiescent standard installation.
-
-        Non-GUI, unsupported or malformed manager evidence denies. This does not fence noncooperating OS actors or
-        interpreter startup. The selected Installation must be bound before resolving this service.
-
-        Yields:
-            Control while cooperating daemon dispatch and lifecycle changes are fenced.
-
-        Raises:
-            HeinzelError: If a lock is busy or daemon quiescence cannot be established.
-        """
-        with lock(self.state_dir / "lifecycle.lock") as lifecycle:
-            if not lifecycle or self._handover_pending():
-                msg = "The daemon lifecycle is changing or requires recovery."
-                raise HeinzelError(msg)
-            with lock(self.state_dir / "tick.lock") as tick:
-                if tick and self._platform == "linux" and self._linux_manager_identity() is None:
-                    msg = (
-                        "The daemon is not proven quiescent because your Linux user manager is unavailable or "
-                        "cannot be verified. Open a user session with its service manager and retry; "
-                        "inspect `hz system daemon status` if needed."
-                    )
-                    raise HeinzelError(msg)
-                if tick and self._platform == "darwin" and self._quiescence_installation is not None:
-                    with suppress(OSError, ValueError, HeinzelError):  # the snapshot below still decides
-                        self._recover_retained_unit(binary)
-                if not tick or not self._quiescent_snapshot(binary):
-                    if self._platform == "linux":
-                        msg = (
-                            "The daemon is not proven quiescent. In your Linux user session, check that the user "
-                            "service manager is available and inspect `hz system daemon status`; ensure both the "
-                            "service and timer are stopped before retrying."
-                        )
-                    elif self._platform == "darwin":
-                        problem = self._quiescence_problem if tick else "The daemon tick lock is busy."
-                        msg = (
-                            f"The daemon is not proven quiescent. {problem} "
-                            f"{self._quiescence_advice + ' ' if self._quiescence_advice else ''}"
-                            "Inspect `uvx --from heinzel hz system daemon status` before retrying. "
-                            "This inspection command also works when hz is not installed."
-                        )
-                    else:
-                        msg = "The daemon is not proven quiescent on this platform; inspect it before installing."
-                    raise HeinzelError(msg)
-                token = secrets.token_hex(32)
-                self._write_state("standard-install-pending.json", {"token": token})
-                yield
-                self._finish_quiescent_install(binary, token)
-
-    def _finish_quiescent_install(self, binary: Path, token: str) -> None:
-        installation = self._quiescence_installation
-        name = "standard-install-pending.json"
-        if installation is None or not self._mutation_token_matches(token, name):
-            msg = "The installer transaction changed; explicit recovery is required."
-            raise HeinzelError(msg)
-        fingerprint = installation.startup_fingerprint()
-        if (
-            not re.fullmatch(r"[a-f0-9]{64}", fingerprint)
-            or not installation.startup_state_matches()
-            or installation.startup_fingerprint() != fingerprint
-            or not self._quiescent_snapshot(binary, token)
-            or installation.startup_fingerprint() != fingerprint
-            or not installation.startup_state_matches()
-            or not self._mutation_token_matches(token, name)
-        ):
-            msg = "The installation or daemon could not be verified; explicit recovery is required."
-            raise HeinzelError(msg)
-        (self.state_dir / name).unlink()
-
-    def recover_quiescent_install(self, binary: Path) -> None:
-        """Explicitly clear a standard-install interruption only after independently restored evidence matches.
-
-        Raises:
-            HeinzelError: If the record, installation or manager state cannot be verified.
-        """
-        with lock(self.state_dir / "lifecycle.lock") as lifecycle, lock(self.state_dir / "tick.lock") as tick:
-            if not lifecycle or not tick:
-                msg = "The daemon lifecycle is changing; retry recovery."
-                raise HeinzelError(msg)
-            try:
-                with _open_verified_handover_file(self.state_dir / "standard-install-pending.json") as handle:
-                    data = json.loads(handle.read(256))
-                token = data["token"]
-            except (OSError, ValueError, KeyError, TypeError, HeinzelError) as exc:
-                msg = "The installer recovery record cannot be verified."
-                raise HeinzelError(msg) from exc
-            if not isinstance(token, str) or not re.fullmatch(r"[a-f0-9]{64}", token):
-                msg = "The installer recovery record cannot be verified."
-                raise HeinzelError(msg)
-            self._finish_quiescent_install(binary, token)
-
-    def request_handover(self, previous: DaemonHandoverPlan) -> DaemonHandoverRequest:
-        """Request a handover under the lifecycle writer lock.
-
-        Raises:
-            HeinzelError: If the service cannot be safely inspected.
-        """
-        with lock(self.state_dir / "lifecycle.lock") as acquired:
-            if not acquired or self._handover_pending():
-                return DaemonHandoverRequest(
-                    requested=False, reason="The daemon lifecycle is changing or requires recovery."
-                )
-            return self._request_handover_locked(previous)
-
-    def _request_handover_locked(self, previous: DaemonHandoverPlan) -> DaemonHandoverRequest:
-        """Ask only the unchanged active service to hand over; manager acceptance is not execution evidence.
-
-        Raises:
-            HeinzelError: If the manager rejects the request or service files cannot be inspected.
-        """
-        if type(previous) is not DaemonHandoverPlan:
-            msg = "The pre-change daemon observation is invalid."
-            raise HeinzelError(msg)
-        if not previous.active or previous.platform != self._platform or previous.unit_signature is None:
-            return DaemonHandoverRequest(requested=False, reason="The service was not active before the change.")
-        try:
-            current = self.capture_handover()
-        except (OSError, HeinzelError):
-            return DaemonHandoverRequest(
-                requested=False, reason="The owned service identity changed; no handover was requested."
-            )
-        if not current.active or current.unit_signature != previous.unit_signature:
-            return DaemonHandoverRequest(
-                requested=False, reason="The service state changed; no handover was requested."
-            )
-        request_id = secrets.token_hex(32)
-        boot = self._current_boot_identity()
-        fence = self._current_birth_fence()
-        data: dict[str, str | int] = {
-            "request_id": request_id,
-            "boot": boot or "",
-            "unit_signature": previous.unit_signature,
-        }
-        if fence is not None:
-            data.update({f"birth_{key}": value for key, value in fence.items()})
-        self._write_state("handover-request.json", data)
-        try:
-            self._service_manager().kickstart(
-                ManagerJob(LABEL if self._platform == "darwin" else f"{SYSTEMD_NAME}.timer")
-            )
-        except ManagerRefused as exc:
-            msg = f"The daemon handover request failed: {exc.detail}"
-            raise HeinzelError(msg) from exc
-        return DaemonHandoverRequest(
-            requested=True,
-            reason="The manager accepted the request; a later service tick must establish what ran.",
-            request_id=request_id,
-        )
-
-    def _service_manager(self) -> ServiceManager:
-        """Launchd or systemd for the daemon's own job, every command through the owned manager gate."""
-        if self._platform == "darwin":
-            return LaunchdServiceManager(
-                self.owned_manager_command, uid=self._uid(), base=["/bin/launchctl"], subject="daemon"
-            )
-        return SystemdServiceManager(
-            self.owned_manager_command, base=["/usr/bin/systemctl", "--user"], subject="daemon"
-        )
-
-    def handover_observation(self, request_id: str) -> DaemonHandoverObservation | None:
-        """Read the current request's manager-bound tick observation, or remain pending."""
-        request = self._read_state("handover-request.json")
-        boot = request.get("boot")
-        if (
-            not re.fullmatch(r"[a-f0-9]{64}", request_id)
-            or request.get("request_id") != request_id
-            or not isinstance(boot, str)
-            or not boot
-            or self._current_boot_identity() != boot
-            or self._continuity_fingerprint is None
-            or self._handover_pending()
-        ):
-            return None
-        path = self.state_dir / "handover-observation.json"
-        try:
-            with path.open("rb") as source:
-                raw = source.read(MAX_OBSERVATION_BYTES + 1)
-            if len(raw) > MAX_OBSERVATION_BYTES:
-                return None
-            result = TypeAdapter(DaemonHandoverObservation).validate_json(raw, strict=True)
-            heartbeat = self._read_state("heartbeat.json")
-            tick_at = datetime.fromisoformat(result.tick_at)
-            age = self._clock() - tick_at
-            if (
-                result.request_id != request_id
-                or result.old_unit_signature != request.get("unit_signature")
-                or result.new_unit_signature != self._handover_signature()
-                or not re.fullmatch(r"[a-f0-9]{64}", result.fingerprint)
-                or len(result.contributions) > MAX_HANDOVER_CONTRIBUTIONS
-                or not _heartbeat_covers(heartbeat, result.tick_at, result.version)
-                or age < timedelta(0)
-                or age > timedelta(minutes=STALE_TICKS * self._interval())
-            ):
-                return None
-        except (OSError, ValueError, TypeError, HeinzelError):
-            return None
-        try:
-            return result if self._continuity_fingerprint() == result.fingerprint else None
-        except Exception:  # noqa: BLE001 - a changed or unavailable local observation remains pending
-            return None
-
-    def assess_handover(
-        self,
-        request_id: str,
-        expected_version: str,
-        expected_fingerprint: str,
-        expected_contributions: tuple[tuple[str, str, str], ...],
-    ) -> DaemonHandoverAssessment:
-        """Compare a fresh active service observation with an explicit caller-owned target.
-
-        This does not compare the caller's imported version or rewrite the historical install marker.
-
-        Raises:
-            HeinzelError: If the expected target is malformed or unbounded.
-        """
-        if (
-            not expected_version
-            or len(expected_version) > MAX_BOOT_IDENTITY
-            or not re.fullmatch(r"[a-f0-9]{64}", expected_fingerprint)
-            or len(expected_contributions) > MAX_HANDOVER_CONTRIBUTIONS
-            or any(
-                len(row) != HANDOVER_ROW_FIELDS or any(not item or len(item) > MAX_HANDOVER_TEXT for item in row)
-                for row in expected_contributions
-            )
-            or len(set(expected_contributions)) != len(expected_contributions)
-        ):
-            msg = "The expected daemon handover target is invalid."
-            raise HeinzelError(msg)
-        try:
-            if not self.capture_handover().active:
-                return DaemonHandoverAssessment(status="pending", observed=None)
-            observed = self.handover_observation(request_id)
-        except (OSError, HeinzelError):
-            observed = None
-        if observed is None:
-            return DaemonHandoverAssessment(status="pending", observed=None)
-        matched = (
-            observed.version == expected_version
-            and observed.fingerprint == expected_fingerprint
-            and sorted(observed.contributions) == sorted(expected_contributions)
-        )
-        return DaemonHandoverAssessment(status="matched" if matched else "mismatched", observed=observed)
-
-    def idle_package_handover_matches(self, request: dict[str, str | int], binary: Path) -> bool:
-        """Verify the exact same-boot request and its unchanged, idle, active manager registration.
-
-        Raises:
-            HeinzelError: If the manager authority or loaded unit cannot be verified.
-        """
-        boot = self._current_boot_identity()
-        fence = self._request_birth_fence(request)
-        birth = self._process_birth()
-        return (
-            self._platform == "darwin"
-            and self._uid() == os.getuid()
-            and bool(boot)
-            and request.get("boot") == boot
-            and fence is not None
-            and birth is not None
-            and _process_birth.after_request(fence, birth)
-            and self._request_unit_matches(request)
-            and self.owned_unit_state(binary)
-            and self.owned_manager_state(binary) == ManagerState(registered=True, active=True, enabled=True)
-        )
-
-    def _request_unit_matches(self, request: dict[str, str | int]) -> bool:
-        signature = request.get("unit_signature")
-        try:
-            return isinstance(signature, str) and self._handover_signature() == signature
-        except (OSError, HeinzelError):
-            return False
-
-    def _handover_signature(self, marker_override: bytes | None = None) -> str:
-        """Bind an observation to the existing private unit and install marker, without following links.
-
-        Raises:
-            HeinzelError: If the unit cannot be safely observed.
-        """
-        digest = hashlib.sha256()
-        try:
-            for path in [*self._unit_paths(), self.state_dir / "install.json"]:
-                with _open_verified_handover_file(path) as handle:
-                    info = os.fstat(handle.fileno())
-                    if (
-                        not stat.S_ISREG(info.st_mode)
-                        or info.st_uid != os.getuid()
-                        or info.st_mode & 0o022
-                        or info.st_size > MAX_HANDOVER_FILE_BYTES
-                    ):
-                        _invalid_handover()
-                    payload = handle.read(MAX_HANDOVER_FILE_BYTES + 1)
-                    after = os.fstat(handle.fileno())
-                    if len(payload) != info.st_size or (
-                        after.st_dev,
-                        after.st_ino,
-                        after.st_size,
-                        after.st_mtime_ns,
-                        after.st_ctime_ns,
-                    ) != (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns):
-                        _invalid_handover()
-                if path == self.state_dir / "install.json" and marker_override is not None:
-                    payload = marker_override
-                digest.update(str(path).encode() + b"\0" + payload + b"\0")
-        except OSError as exc:
-            msg = "The existing daemon unit could not be verified; no handover was requested."
-            raise HeinzelError(msg) from exc
-        return digest.hexdigest()
-
-    def _offline_probe(self, command: list[str]) -> str | None:
-        result = self.owned_manager_command(command)
-        if result.returncode != 0:
-            return None
-        return result.stdout
-
-    def _offline_files(self, binary: Path) -> list[OwnedFile]:
-        if not self.owned_unit_state(binary, allow_absent=True):
-            msg = "The daemon's service files are foreign or changed; they were left unchanged."
-            raise HeinzelError(msg)
-        paths = [*self._unit_paths(), self.state_dir / "install.json"]
-        return [owned_file(path) for path in paths if os.path.lexists(path)]
-
-    def _offline_stop(
-        self,
-        binary: Path,
-        files: list[OwnedFile],
-        state: ManagerState,
-        token: str,
-        *,
-        fence: tuple[Path | None, tuple[Path, ...]] = (None, ()),
-    ) -> None:
-        from heinzel.modules.system.daemon._units import LABEL, SYSTEMD_NAME  # noqa: PLC0415 - fixed manager names
-
-        gate, compatibility_gates = fence
-        if any(owned_file(file.path) != file for file in files) or self.owned_manager_state(binary) != state:
-            msg = "The daemon changed before stopping; it was left unchanged."
-            raise HeinzelError(msg)
-        if state.registered:
-            command = (
-                ["/bin/launchctl", "bootout", f"gui/{self._uid()}/{LABEL}"]
-                if self._platform == "darwin"
-                else [
-                    "/usr/bin/systemctl",
-                    "--user",
-                    "disable",
-                    "--now",
-                    f"{SYSTEMD_NAME}.timer",
-                    f"{SYSTEMD_NAME}.service",
-                ]
-            )
-            if self._offline_probe(command) is None:
-                msg = "The owned daemon could not be stopped; its files and installation were retained."
-                raise HeinzelError(msg)
-        if not self._quiescent_snapshot(binary, token, gate=gate, compatibility_gates=compatibility_gates):
-            msg = (
-                "The daemon is not proven quiescent; the installation was retained. Inspect its local service manager."
-            )
-            raise HeinzelError(msg)
-
-    def _offline_manager_units(self, binary: Path, files: list[OwnedFile]) -> dict[str, dict[str, object]]:
-        from heinzel.modules.system.daemon._units import TICK  # noqa: PLC0415 - shared fixed argv
-
-        if self._platform != "linux" or not files:
-            return {}
-        service, timer = self._unit_paths()
-        executable = binary / "hz"
-        environment = tick_environment(executable, self._profile)
-        return {
-            service.name: {
-                "fragment": str(service),
-                "program": str(executable),
-                "arguments": f"{executable} {' '.join(TICK)}",
-                "environment": environment,
-                "directory": environment["HOME"],
-            },
-            timer.name: {"fragment": str(timer), "triggers": service.name, "disabled": True},
-        }
-
-    @contextmanager
-    def offline_removal_guard(
-        self,
-        binary: Path,
-        *,
-        locks: MaintenanceLocks | None = None,
-        gate: Path | None = None,
-        compatibility_gates: tuple[Path, ...] = (),
-    ) -> Generator[DaemonRemoval]:
-        """Hold daemon lifecycle/tick authority while a durable coordinator stops and removes one tool.
-
-        Yields:
-            Captured owned definitions and separate stop/final-cleanup actions.
-
-        Raises:
-            HeinzelError: If ownership, quiescence or final cleanup cannot be established.
-            OSError: If physical local authority cannot be inspected.
-        """
-        lifecycle, tick = self.state_dir / "lifecycle.lock", self.state_dir / "tick.lock"
-        with (
-            locks.guard(lifecycle) if locks is not None else private_lock(lifecycle),
-            locks.guard(tick) if locks is not None else private_lock(tick),
-        ):
-            if self._handover_pending():
-                msg = "A Heinzel lifecycle change requires recovery; nothing was uninstalled."
-                raise HeinzelError(msg)
-            files = self._offline_files(binary)
-            state = self.owned_manager_state(binary)
-
-            def stop(token: str) -> None:
-                self._offline_stop(binary, files, state, token, fence=(gate, compatibility_gates))
-
-            def finish() -> None:
-                if self._quiescence_installation is None or not _safely_absent(self._quiescence_installation.prefix):
-                    msg = "The Heinzel tool removal is incomplete; its stopped service files were retained."
-                    raise HeinzelError(msg)
-                for captured in files:
-                    remove_owned_file(captured)
-                if (
-                    self._platform == "linux"
-                    and self._offline_probe(["/usr/bin/systemctl", "--user", "daemon-reload"]) is None
-                ):
-                    msg = "Heinzel was removed, but the user manager needs a local reload; user data was kept."
-                    raise HeinzelError(msg)
-
-            yield DaemonRemoval(tuple(files), stop, finish, self._offline_manager_units(binary, files))
 
     def uninstall(self) -> Uninstalled:
         """Uninstall under the lifecycle writer lock.
