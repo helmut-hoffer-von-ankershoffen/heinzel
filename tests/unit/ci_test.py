@@ -1550,7 +1550,7 @@ def _ci_jobs() -> dict:
 @pytest.mark.parametrize(
     ("event", "candidate", "selected"),
     [
-        ("schedule", False, {"maintenance"}),
+        ("schedule", False, {"maintenance", "full", "paths"}),  # the nightly selects the full workload like main
         ("pull_request", False, {"release", "full", "paths"}),
         ("push", False, {"release", "full", "paths"}),
         ("workflow_dispatch", False, {"release", "full", "paths"}),
@@ -1565,9 +1565,11 @@ def test_changed_paths_event_policy(event, candidate, selected):
         "github.event_name == 'schedule'": event == "schedule",
         nonscheduled: event != "schedule",
         nonscheduled + " && steps.release.outputs.full_release != 'true'": event != "schedule" and not candidate,
+        None: True,
     }
-    assert {step["id"] for step in changes["steps"] if "id" in step and conditions[step["if"]]} == selected
-    assert all(step["if"] == nonscheduled for step in changes["steps"] if "uses" in step)
+    assert {step["id"] for step in changes["steps"] if "id" in step and conditions[step.get("if")]} == selected
+    # checkout and setup-uv run on every event, the schedule included: the paths step reads the checkout
+    assert all("if" not in step for step in changes["steps"] if "uses" in step)
     assert changes["outputs"]["scheduled_maintenance"] == "${{ steps.maintenance.outputs.selected }}"
     assert changes["outputs"]["full_release"] == "${{ steps.release.outputs.full_release }}"
     assert changes["outputs"]["full_ci"] == "${{ steps.full.outputs.selected }}"
@@ -1601,8 +1603,6 @@ def test_scheduled_maintenance_selects_only_canonical_main(tmp_path, repository,
 
 
 SCHEDULED_REQUIRED = ("admission", "changes", "lint", "secrets", "audit", "quarantine-registry")
-# The nightly is where the full macOS matrix runs (pull requests only run macOS unit, integration, specific, notifier).
-SCHEDULED_FULL_MATRIX = ("setup", "test", "e2e", "notifier", "macos-specific", "electron")
 
 
 def test_scheduled_jobs_keep_maintenance_separate_from_full_and_focused_tests():
@@ -1638,7 +1638,7 @@ def test_scheduled_jobs_keep_maintenance_separate_from_full_and_focused_tests():
         (None, "success", "", "Scheduled maintenance was not selected"),
         *(
             (job, outcome, "true", f"Required schedule workload job did not pass: {job}")
-            for job in (*SCHEDULED_REQUIRED, *SCHEDULED_FULL_MATRIX)
+            for job in SCHEDULED_REQUIRED
             for outcome in ("failure", "cancelled", "skipped")
         ),
     ],
@@ -1648,8 +1648,7 @@ def test_scheduled_aggregate_requires_every_maintenance_job(job, outcome, mainte
     step = next(step for step in jobs["ci-ok"]["steps"] if "EVENT" in step.get("env", {}))
     assert step["if"] == "github.event_name == 'schedule' || needs.changes.outputs.focused_mode != ''"
     results = {
-        name: {"result": "success" if name in (*SCHEDULED_REQUIRED, *SCHEDULED_FULL_MATRIX) else "skipped"}
-        for name in jobs["ci-ok"]["needs"]
+        name: {"result": "success" if name in SCHEDULED_REQUIRED else "skipped"} for name in jobs["ci-ok"]["needs"]
     }
     if job is not None:
         results[job]["result"] = outcome
@@ -2129,6 +2128,48 @@ def test_pull_requests_do_not_wait_for_lint_before_the_template_job_and_never_st
         assert jobs[name]["strategy"]["fail-fast"] is False
 
 
-def test_the_nightly_requires_the_whole_macos_matrix_to_pass():
-    script = "\n".join(step.get("run", "") for step in _ci_jobs()["ci-ok"]["steps"])
-    assert "required+=(setup test e2e notifier macos-specific electron)" in script
+_IF_TERM = re.compile(r"needs\.changes\.outputs\.(\w+)|github\.event_name|'[^']*'|==|!=|&&|\|\||[()]|\s+")
+
+
+def _evaluate_if(condition: str, event: str, outputs: dict[str, str]) -> bool:
+    """Evaluate the plain `&&`, `||`, `==` and `!=` conditions of a job against computed `changes` outputs."""
+    pieces = []
+    for match in _IF_TERM.finditer(condition):
+        token = match[0]
+        if match[1]:
+            pieces.append(repr(outputs.get(match[1], "")))
+        elif token == "github.event_name":
+            pieces.append(repr(event))
+        else:
+            pieces.append({"&&": " and ", "||": " or "}.get(token, token))
+    assert "".join(match[0] for match in _IF_TERM.finditer(condition)) == condition, condition
+    return bool(eval("".join(pieces)))  # noqa: S307 - only repo-owned workflow conditions, no builtins  # nosec B307
+
+
+def test_the_nightly_selects_and_runs_the_full_macos_matrix_end_to_end(tmp_path, ci_paths):
+    """Compute what the `changes` job selects on `schedule`, then which jobs start and on which operating systems."""
+    jobs = _ci_jobs()
+    changes = jobs["changes"]
+    steps = {step["id"]: step for step in changes["steps"] if "id" in step}
+    assert all("if" not in step for step in changes["steps"] if "uses" in step)  # checkout and setup-uv run
+    assert steps["full"].get("if") is None
+    assert steps["paths"].get("if") is None
+    assert steps["maintenance"]["if"] == "github.event_name == 'schedule'"
+    assert "release" in steps
+    assert steps["release"]["if"] == "github.event_name != 'schedule'"
+    raw = _changes_outputs(tmp_path, ci_paths, "schedule", "", release=True)  # `full` selects true, as in the workflow
+    outputs = dict(line.split("=", 1) for line in raw)
+    outputs["full_ci"] = "true"
+    outputs["scheduled_maintenance"] = "true"
+    required = ("setup", "test", "e2e", "notifier", "macos-specific", "electron", "coverage", "template")
+    for name in required:
+        assert _evaluate_if(jobs[name]["if"], "schedule", outputs), name
+    for name in ("setup", "e2e", "electron"):
+        assert "macos-latest" in _oses(jobs[name]["strategy"]["matrix"]["os"], "schedule")
+    assert {cell["os"] for cell in _macos_include(jobs["test"]["strategy"]["matrix"], "schedule", full=True)} == {
+        "macos-latest"
+    }
+    complete = next(step for step in jobs["ci-ok"]["steps"] if step.get("name", "").startswith("Require the complete"))
+    assert "if" not in complete  # the nightly requires the whole direct workload, macOS lanes included
+    for name in ("setup", "test", "e2e", "notifier", "macos-specific", "electron"):
+        assert name in complete["run"]
