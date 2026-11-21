@@ -879,7 +879,7 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `abandon-chat-turn`: Explicitly set aside a stopped uncertain...
+* `abandon-chat-turn`: Set aside a stopped uncertain turn or...
 * `amend-scheduled-agent`: Propose revised terms; an independent...
 * `answer-chat`: Answer one authenticated user&#x27;s accepted...
 * `approve-release-draft`: Review the current edited section and...
@@ -925,12 +925,12 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 
 ### `hz heinzel abandon-chat-turn`
 
-Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.
+Set aside a stopped uncertain turn or eligible unstarted input; never retry or undo effects.
 
 **Usage**:
 
 ```console
-$ hz heinzel abandon-chat-turn [OPTIONS] {session_id} {request_id} {acknowledge_uncertain}
+$ hz heinzel abandon-chat-turn [OPTIONS] {session_id} {request_id} {acknowledge_uncertain} {expected_status}
 ```
 
 **Arguments**:
@@ -938,6 +938,7 @@ $ hz heinzel abandon-chat-turn [OPTIONS] {session_id} {request_id} {acknowledge_
 * `session_id <str>`: [required]
 * `request_id <str>`: [required]
 * `acknowledge_uncertain <bool>`: Confirm the outcome may be unknown and no retry or undo occurs.  [required]
+* `expected_status <pending|unresolved>`: The exact state the owner acknowledged.  [required]
 
 **Options**:
 

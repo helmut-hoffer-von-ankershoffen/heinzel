@@ -211,7 +211,7 @@ def planned(tmp_path, plugin: str, found: PinnedPlugins, **kwargs) -> UpdatePlan
 
 def test_the_plan_names_the_core_and_where_a_commit_pin_moves(tmp_path):
     plan = planned(tmp_path, AT_COMMIT, newer()(5.0))
-    assert (plan.current, plan.latest, plan.core) == ("0.2.0", "0.4.0", "hz 0.2.0 → 0.4.0.")
+    assert (plan.current, plan.latest, plan.core) == ("0.2.0", "0.4.0", "hz 0.2.0 → 0.4.0")
     [plugin] = plan.plugins
     assert (plugin.action, plugin.installed, plugin.target) == ("update", "1.0.0", "1.2.0")
     assert plugin.detail == "Pinned to aaaaaaaaaaaa; moves to release 1.2.0, to the commit of its release tag."
@@ -261,7 +261,7 @@ def test_the_plan_in_plain_lines():
     plan = UpdatePlan(
         current="0.2.0",
         latest="0.4.0",
-        core="hz 0.2.0 → 0.4.0.",
+        core="hz 0.2.0 → 0.4.0",
         plugins=[
             PluginPlan(distribution="heinzel-a", installed="1.0.0", target="1.2.0", action="update", detail="Moves."),
             PluginPlan(distribution="heinzel-b", installed="2.0.0", action="current"),
@@ -270,7 +270,7 @@ def test_the_plan_in_plain_lines():
         desktop=True,
     )
     assert plan_text(plan).splitlines() == [
-        "hz 0.2.0 → 0.4.0.",
+        "hz 0.2.0 → 0.4.0",
         "Plugins:",
         "  heinzel-a: 1.0.0 → 1.2.0. Moves.",
         "  heinzel-b: already newest (2.0.0)",
@@ -492,7 +492,7 @@ class Service:
         return UpdatePlan(
             current="0.2.0",
             latest="0.4.0",
-            core="hz 0.2.0 → 0.4.0.",
+            core="hz 0.2.0 → 0.4.0",
             plugins=[plugin],
             desktop=True,
             daemon=True,
@@ -532,7 +532,7 @@ class Service:
             latest="0.4.0",
             pinned_to=None,
             updated=True,
-            message="Updated hz 0.2.0 → 0.4.0.",
+            message="Updated hz 0.2.0 → 0.4.0",
             next=[],
             plugins=[PluginUpdate(distribution="heinzel-acme", status="upgraded", before="1.0.0", after="1.2.0")],
         )
@@ -648,7 +648,7 @@ def test_a_preview_only_shows_the_plan_and_names_the_command_without_yes():
     assert result.plan is not None
     assert result.plan.token == "plan-1.2.0"
     text = render_update(result).plain
-    assert text.splitlines()[0] == "hz 0.2.0 → 0.4.0."
+    assert text.splitlines()[0] == "hz 0.2.0 → 0.4.0"
     assert text.endswith("This was a preview; nothing was changed.\nTo update: hz system update")
 
 

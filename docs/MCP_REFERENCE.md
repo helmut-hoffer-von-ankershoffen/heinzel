@@ -351,7 +351,7 @@ Module `heinzel`. Read-only. Result: `SkillDraftPage {items: list[SkillDraftRefe
 
 Create a durable personal Heinzel with an idempotent request, name and look.
 
-Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
+Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], queue_head: SessionMessage \| null, pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
 
 ```json
 {
@@ -520,7 +520,7 @@ Module `heinzel`. Read-only. Result: `SessionList {sessions: list[SessionSummary
 
 Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn.
 
-Module `heinzel`. Read-only. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
+Module `heinzel`. Read-only. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], queue_head: SessionMessage \| null, pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
 
 ```json
 {
@@ -566,7 +566,7 @@ Module `heinzel`. Read-only. Result: `SessionSnapshot {session_id: string, kind:
 
 Save this Heinzel's name or look against the exact profile revision you saw.
 
-Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
+Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], queue_head: SessionMessage \| null, pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
 
 ```json
 {
@@ -742,7 +742,7 @@ Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, k
 
 Propose local five-minute check-ins; the schedule stays inactive until activated.
 
-Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
+Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], queue_head: SessionMessage \| null, pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
 
 ```json
 {
@@ -1024,7 +1024,7 @@ Module `heinzel`. Read-only. Result: `ScheduledAgentProposal {session_id: string
 
 Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer.
 
-Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
+Module `heinzel`. Changes state. Result: `SessionSnapshot {session_id: string, kind: 'heinzel', heinzel_id: string, name: string, appearance: HeinzelAppearance, profile_revision: integer, contract_version: integer \| null, state: 'proposed' \| 'asleep' \| 'awake' \| 'waiting' \| 'paused' \| 'retired', last_seq: integer, messages: list[SessionMessage], queue_head: SessionMessage \| null, pending_actions: list[ActionProposal], questions: list[Question], contracts: list[ContractVersion], backend_binding: BackendBinding \| null, costs: SessionCosts, attachments: list[AttachmentRef], schedule: WakeScheduleView \| null, next_cursor: string \| null, next_after_seq: integer \| null, has_more: boolean}`.
 
 ```json
 {

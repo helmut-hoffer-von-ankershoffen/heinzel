@@ -105,6 +105,8 @@ def render_update(result: UpdateResult) -> RenderableType:
     rows = update_rows(result)
     width = max([27, *(len(label) + 2 for _, label, _ in rows)])
     lines = [f" {mark} {label:<{width}}{detail}".rstrip() for mark, label, detail in rows]
+    if not result.updated and getattr(result, "next", []):
+        lines += result.message.splitlines()[1:]
     lines.append(_summary(result, warned=any(mark != CHECK for mark, _, _ in rows)))
     lines += [f"To update: {command}" for command in getattr(result, "next", [])]
     automatic = getattr(result, "automatic", None)
@@ -122,7 +124,7 @@ def update_rows(result: UpdateResult) -> list[tuple[str, str, str]]:
     moved = result.updated and result.after != result.before
     rows: list[tuple[str, str, str]] = []
     heads = getattr(result, "heads", [])
-    if getattr(result, "pinned_to", None) is not None and not result.updated:
+    if not result.updated and getattr(result, "next", []):  # left pinned: the message says how to move it
         rows.append((WARN, f"hz {result.after}", result.message.splitlines()[0]))
     elif moved:
         rows.append((CHECK, "hz", f"{result.before} → {result.after}"))
@@ -156,9 +158,12 @@ def _plugin_word(update: "PluginUpdate") -> str:
     """Why a plugin has a row of its own although nothing moved: held back, taken out, failed or not asked."""
     if update.status == "unchanged":
         return standing(update).removesuffix(".")
-    if update.disabled:
-        return "taken out: it does not allow this hz yet"
-    return f"held back at {update.before or 'its version'}: it does not allow the new hz yet"
+    word = (
+        "taken out: it does not allow this hz yet"
+        if update.disabled
+        else f"held back at {update.before or 'its version'}: it does not allow the new hz yet"
+    )
+    return f"{word}; `{update.next[0]}`" if update.next else word
 
 
 def _services_row(services: "list[HeadRefresh]", after: str) -> tuple[str, str, str]:

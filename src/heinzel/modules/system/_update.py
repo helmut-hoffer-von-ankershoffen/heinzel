@@ -2221,7 +2221,7 @@ def _install_message(  # noqa: PLR0913 - report the resolved version and how the
         return f"hz {current} is up to date{f' ({channel})' if channel else ''}."
     if explicit_source:
         return f"Installed hz {after} from {target}; this process is running hz {current}."
-    return f"Updated hz {current} → {after}."
+    return f"Updated hz {current} → {after}"
 
 
 def _index_preferred_release(
@@ -2245,7 +2245,7 @@ def _core_line(current: str, latest: str | None, channel: str) -> str:
     if latest is None:
         return f"hz {current}: the newest release couldn't be asked; the update asks again."
     if _version(latest) > _version(current):
-        return f"hz {current} → {latest}."
+        return f"hz {current} → {latest}"
     return f"hz {current} is the newest release."
 
 

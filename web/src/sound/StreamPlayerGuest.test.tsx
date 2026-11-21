@@ -66,6 +66,24 @@ describe("desktop player guest", () => {
     expect(player).toHaveBeenCalledWith({ action: "close" });
   });
 
+  it("keeps playback help outside the native guest surface", async () => {
+    const player = vi.fn(async () => ({ status: "ready", ready: true, state: 1, error: false }));
+    desktop(player);
+    render(<StreamPlayer soundscape={soundscape} stream={stream} level={{ gain: 0, seconds: 0, playing: false }} />);
+    const help = screen.getByRole("button", { name: "Playback or sign-in trouble?" });
+    expect(help.closest("header")).not.toBeNull();
+    expect(screen.getByRole("img", { name: "FM player" }).contains(help)).toBe(false);
+    fireEvent.click(help);
+    const pane = screen.getByRole("region", { name: "Playback or sign-in trouble?" });
+    expect(pane).toBeVisible();
+    const header = help.closest("header") as HTMLElement;
+    const capture = vi.fn();
+    header.setPointerCapture = capture;
+    fireEvent.pointerDown(pane.querySelector("p") as HTMLElement, { pointerId: 1 });
+    expect(capture).not.toHaveBeenCalled();
+    await waitFor(() => expect(player).toHaveBeenCalledWith({ action: "hide" }));
+  });
+
   it("a player error from the guest asks for attention", async () => {
     desktop(vi.fn(async () => ({ status: "ready", ready: true, state: -1, error: true })));
     render(<StreamPlayer soundscape={soundscape} stream={stream} level={{ gain: 0.5, seconds: 0, playing: true }} />);

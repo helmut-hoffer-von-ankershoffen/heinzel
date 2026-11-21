@@ -20,8 +20,8 @@ class RunnerSettings(ModuleSettings):
     model: str | None = Field(
         default=None,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/@\[\]-]*$",  # a name, never an option: a project file may set it
-        title="Model",
-        description="The model every run uses; the agent's own default when not set.",
+        title="Claude Code / command model",
+        description="Leave empty for Claude subscription chat.",
         examples=["sonnet"],
     )
     claude_executable: str = Field(
@@ -124,7 +124,7 @@ class RunnerSettings(ModuleSettings):
         gt=0,
         allow_inf_nan=False,
         title="Most per answer",
-        description="The most one answer, or one chat message, may cost in US dollars.",
+        description="Requested cap; enforcement depends on the runner.",
         json_schema_extra={"x-unit": "usd"},
     )
 

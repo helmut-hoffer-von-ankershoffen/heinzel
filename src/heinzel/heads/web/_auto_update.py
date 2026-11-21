@@ -848,7 +848,7 @@ class AutoUpdater:
             executable = next((entry for entry in entries if entry.name == "hz"), None)
             if executable is not None:
                 status = install_desktop(self._version, executable, update_only=True)
-                if status in {"updated", "deferred"}:
+                if status in {"updated", "deferred", "installed-pending"}:
                     log.info("desktop automatic update: %s", status)
         except (HeinzelError, OSError, SubprocessError) as exc:
             log.warning("desktop automatic update could not finish: %s", exc)

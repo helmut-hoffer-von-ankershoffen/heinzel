@@ -246,8 +246,7 @@ def _install_app(  # noqa: PLR0913 - the options of hz app install, shared with 
             error.print(line, markup=False)
         raise typer.Exit(1)
     location = _located(error)
-    if state == "current":
-        output.print(say.current(__version__, location), markup=False, soft_wrap=True)
+    if _installed_status(state, location, output):
         return
     _report_done(output, error, location, folder)
     if reopen:
@@ -296,6 +295,17 @@ def _reopen(error: Console, location: Path) -> None:
 
 RESTART_DEFERRED = 75
 """The exit code when `--restart` found the app still open (EX_TEMPFAIL); `hz system update` reads it as deferred."""
+
+
+def _installed_status(state: str, location: Path, output: Console) -> bool:
+    if state == "installed-pending":
+        output.print("The app is installed; registration or old widget cleanup is still pending.", markup=False)
+        output.print("hz will retry during its next update check, or run hz app install again.", markup=False)
+        return True
+    if state == "current":
+        output.print(say.current(__version__, location), markup=False, soft_wrap=True)
+        return True
+    return False
 
 
 def _where_installed() -> Path:

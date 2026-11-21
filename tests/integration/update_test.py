@@ -187,11 +187,11 @@ def test_update_help_explains_automatic_updates_desktop_handoff_and_progress(app
     assert "2>&1" in help_text
 
 
-def test_a_tag_pinned_install_updates_to_the_latest_release_and_keeps_plugins(app, env, monkeypatch):
+def test_a_tag_pinned_install_updates_to_the_latest_release_and_keeps_plugins(app, env, monkeypatch, no_desktop_app):
     github_releases(monkeypatch, "v99.0.0", f"v{__version__}", "v99.1.0rc1")
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
-    lines = result.stdout.strip().splitlines()
+    lines = result.stdout.rstrip().splitlines()
     assert lines[:2] == [f" ✓ {'hz':<27}{__version__} → 99.0.0", f" ✓ {'heinzel-acme':<27}{KEPT}"]
     assert lines[2].startswith("Updated to hz 99.0.0 in ")
     assert lines[2].endswith(". What's new: hz system changelog --newer")
@@ -236,21 +236,21 @@ def test_the_latest_release_installed_is_said_not_silent(app, env, monkeypatch):
     github_releases(monkeypatch, f"v{__version__}")
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
-    assert result.stdout.strip().splitlines() == [
+    assert result.stdout.rstrip().splitlines() == [
         f" ✓ {'hz ' + __version__:<27}newest release",
         "Everything is up to date.",
     ]
     assert uv_log(env) == []
 
 
-def test_a_main_pin_is_updated_in_place_to_the_newest_commit(app, env, monkeypatch):
+def test_a_main_pin_is_updated_in_place_to_the_newest_commit(app, env, monkeypatch, no_desktop_app):
     receipt = env / "uv-receipt.toml"
     receipt.write_text(receipt.read_text().replace(f"rev=v{__version__}", "rev=main"))
     (env / "main-version").write_text("99.0.0.dev7")
     github_releases(monkeypatch, "v0.0.1")
     result = runner.invoke(app, ["system", "update", "--channel", "main"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
-    lines = result.stdout.strip().splitlines()
+    lines = result.stdout.rstrip().splitlines()
     assert lines[:2] == [f" ✓ {'hz':<27}{__version__} \u2192 99.0.0.dev7", f" ✓ {'heinzel-acme':<27}{KEPT}"]
     assert lines[3:] == [AUTOMATIC]
     [command] = uv_log(env)
@@ -278,8 +278,8 @@ def test_a_blocking_plugin_is_taken_out_and_hz_still_updates(app, env, monkeypat
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
     output = " ".join(result.output.split())
-    assert f"Updated hz {__version__} → 99.0.0." in output
-    assert "Plugin heinzel-acme: failed." in output
+    assert f"✓ hz {__version__} → 99.0.0" in output
+    assert "! heinzel-acme" in result.stdout
     assert f"hz system plugin add '{PLUGIN}' --confirm" in output
     first, second, third = uv_log(env)
     assert first == second  # kept at its spec, which fails too
@@ -303,7 +303,7 @@ def test_channel_release_switches_a_main_pin_to_the_newest_release(app, env, mon
     github_releases(monkeypatch, "v99.0.0")
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
-    assert result.stdout.strip().splitlines()[0] == f"Updated hz {__version__} \u2192 99.0.0."
+    assert result.stdout.rstrip().splitlines()[0] == f" ✓ {'hz':<27}{__version__} \u2192 99.0.0"
     assert "rev=v99.0.0" in receipt.read_text()
 
 
@@ -328,7 +328,7 @@ def test_wrong_installed_source_never_starts_the_changed_interpreter(app, env, m
 # One update for everything: the plan, the question on a terminal, and the answers in advance.
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def no_desktop_app(tmp_path, monkeypatch):
     """A home without a desktop app, so no machine's own app adds a question or a step to these runs."""
     home = tmp_path / "home"
@@ -337,7 +337,7 @@ def no_desktop_app(tmp_path, monkeypatch):
 
 
 PLAN = (
-    f"hz {__version__} → 99.0.0.\nPlugins:\n  heinzel-acme: kept at 1.0.0. Pinned to v1.0.0, which names no release "
+    f"hz {__version__} → 99.0.0\nPlugins:\n  heinzel-acme: kept at 1.0.0. Pinned to v1.0.0, which names no release "
     "to follow; an update leaves it as it is."
 )
 
