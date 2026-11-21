@@ -329,7 +329,8 @@ try {
       const geometry = () => {
         const rect = node.getBoundingClientRect();
         const scrolls = [];
-        for (let element = node.parentElement; element; element = element.parentElement) scrolls.push(element.scrollTop);
+        for (let element = node.parentElement; element; element = element.parentElement)
+          scrolls.push(element.scrollTop);
         return [rect.left, rect.top, rect.width, rect.height, ...scrolls];
       };
       let before = geometry();
