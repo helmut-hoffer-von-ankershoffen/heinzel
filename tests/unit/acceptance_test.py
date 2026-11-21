@@ -1271,6 +1271,13 @@ def test_bridge_sleep_credit_keeps_original_workload_deadline(monkeypatch, work_
         assert harness.Case.step(case, "original updater", lambda: "executed") == "executed"
 
 
+def test_acceptance_dry_run_is_skipped_on_release_pull_requests_and_dispatch_still_runs():
+    workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/acceptance.yml").read_text()
+    assert "if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')" in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "workflow_call:" in workflow
+
+
 def test_full_acceptance_quota_window_does_not_change_sharded_budget():
     workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/acceptance.yml").read_text()
     shard = (Path(__file__).resolve().parents[2] / ".github/workflows/acceptance-sharded.yml").read_text()
