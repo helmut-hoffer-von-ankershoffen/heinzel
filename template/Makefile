@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: ci-macos-arm help pyyaml install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-notifier test-e2e audit licenses secrets build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-publish-check release clean update-template preview
+.PHONY: ci-macos-arm help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-notifier test-e2e audit licenses secrets build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-publish-check release clean update-template preview
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -33,13 +33,8 @@ COVERED := uv run coverage erase && uv run coverage run -m pytest -m '(unit or i
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-pyyaml: ## Build the reviewed PyYAML into .venv (Python 3.15 has no wheel), so no later sync builds it from source
-	@uv venv --quiet --allow-existing --python 3.15
-	@bash scripts/bootstrap-pyyaml.sh
-
 install: ## Install what the build needs: Python with every dependency group (.venv) and the pinned tools (.tools)
 	@test -f uv.lock || uv lock --quiet
-	@$(MAKE) --no-print-directory pyyaml # no wheel on Python 3.15: the reviewed build goes in before any sync
 	@uv sync --frozen --all-groups --quiet && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
 	@$(TOOLS) install
 

@@ -83,9 +83,6 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
             "the secret must be configured in this repo"
         ),
         "unzip -l ": "asserts what the built wheel contains",
-        "bash scripts/bootstrap-pyyaml.sh --wheel-dir": (
-            "builds the reviewed PyYAML wheel the plugin tooling finds through UV_FIND_LINKS; installs nothing"
-        ),
         'changed="$(git diff --name-only': "decides from the changed paths whether a pull request builds the macOS app",
         "if compgen -G ": "selects the built core candidate or an independently released artifact for source plugins",
         "for result in $RESULTS": "the CI OK gate aggregates the results of the other jobs",
@@ -118,7 +115,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "docs.yml": {
         "sudo sed -i ": "selects the primary signed Ubuntu archive before browser dependency installation",
         "sudo apt-get update": "fonts for the terminal recordings, from the runner's packages",
-        "uv run --quiet --frozen --no-build --no-install-package pyyaml --group docs playwright install-deps": (
+        "uv run --quiet --frozen --no-build --group docs playwright install-deps": (
             "Chromium's system libraries, from the runner"
         ),
     },
@@ -1879,81 +1876,6 @@ def test_lint_job_leaves_room_for_the_candidate_web_component_suite():
     assert lint["timeout-minutes"] == 10
 
 
-def test_every_job_that_sets_up_uv_gets_the_reviewed_pyyaml_before_any_sync():
-    """Python 3.15 has no PyYAML wheel: no job may build it from source with an unpinned backend."""
-    action = yaml.safe_load((REPO / ".github" / "actions" / "setup-uv" / "action.yml").read_text(encoding="utf-8"))
-    steps = action["runs"]["steps"]
-    bootstrap = next(step for step in steps if "bootstrap-pyyaml.sh" in step.get("run", ""))
-    assert steps[-1] is bootstrap  # after uv and Python are set up, before the caller's first sync
-    assert "uv venv --allow-existing --python 3.15" in bootstrap["run"]
-    # the call itself, not only a guard that names the script
-    assert re.search(r"^\s*bash scripts/bootstrap-pyyaml\.sh$", bootstrap["run"], re.MULTILINE)
-    assert 'requires-python = ">=3.15"' in bootstrap["run"]
-    script = (REPO / "scripts" / "bootstrap-pyyaml.sh").read_text(encoding="utf-8")
-    assert 'install --lock uv.lock --python "$project_python"' in script
-    module = (REPO / "src" / "heinzel" / "bootstrap_pyyaml.py").read_text(encoding="utf-8")
-    assert '"direct_url.json").unlink(missing_ok=True)' in module  # a later sync never rebuilds it from source
-    for name, job in _ci_jobs().items():
-        for step in job.get("steps", []):
-            if "uv sync" in step.get("run", ""):
-                assert "--no-install-package pyyaml" in step["run"], f"{name}: syncs PyYAML from source"
-
-
-def _project_syncing(command: str) -> bool:
-    """Whether a `uv sync` or `uv run --no-build` line installs the project's locked dependencies."""
-    if not re.search(r"\buv (sync|run)\b", command) or "uvx" in command:
-        return False
-    if any(flag in command for flag in ("--no-project", "--script", "--no-sync", "UV_NO_SYNC")):
-        return False
-    return "uv sync" in command or "--no-build" in command
-
-
-def _commands_that_sync_the_project() -> list[tuple[str, str]]:
-    found: list[tuple[str, str]] = []
-    for path in sorted((REPO / ".github" / "workflows").glob("*.yml")):
-        jobs = yaml.safe_load(path.read_text(encoding="utf-8")).get("jobs", {})
-        for name, job in jobs.items():
-            if str(job.get("env", {}).get("UV_NO_SYNC")) == "1":
-                continue
-            for step in job.get("steps", []):
-                lines = step.get("run", "").replace("\\\n", " ").splitlines()
-                found.extend((f"{path.name}:{name}", line) for line in lines)
-    for path in [REPO / "Makefile", *sorted((REPO / "scripts").glob("*.sh")), *sorted((REPO / "scripts").glob("*.mk"))]:
-        lines = path.read_text(encoding="utf-8").replace("\\\n", " ").splitlines()
-        found.extend((f"{path.name}:{number}", line) for number, line in enumerate(lines, 1))
-    return [(where, line) for where, line in found if _project_syncing(line)]
-
-
-def test_no_project_sync_on_python_3_15_builds_or_requires_a_pyyaml_source_build():
-    """`--no-build` fails to resolve PyYAML (no 3.15 wheel) even when it is installed; each sync must leave it out."""
-    offenders = [(where, line) for where, line in _commands_that_sync_the_project() if "--no-build" in line]
-    assert [(w, line) for w, line in offenders if "--no-install-package" not in line or "pyyaml" not in line] == []
-    from importlib import util
-
-    spec = util.spec_from_file_location("focused_job", REPO / "scripts" / "focused_job.py")
-    module = util.module_from_spec(spec)
-    sys.modules["focused_job"] = module
-    spec.loader.exec_module(module)
-    sync = module.plan("pytest", "tests/unit/ci_test.py", Path("junit.xml"))[0]
-    assert sync[-2:] == ["--no-install-package", "pyyaml"]
-
-
-def test_every_job_with_its_own_uv_setup_builds_the_reviewed_pyyaml_before_it_syncs():
-    """The composite action does it for its callers; a workflow that sets uv up itself must do it explicitly."""
-    for path in sorted((REPO / ".github" / "workflows").glob("*.yml")):
-        jobs = yaml.safe_load(path.read_text(encoding="utf-8")).get("jobs", {})
-        for name, job in jobs.items():
-            steps = job.get("steps", [])
-            direct = [i for i, step in enumerate(steps) if str(step.get("uses", "")).startswith("astral-sh/setup-uv@")]
-            runs = [step.get("run", "") for step in steps]
-            if not direct or job.get("if") is False or not any(_project_syncing(run) or "make " in run for run in runs):
-                continue
-            bootstrap = [i for i, run in enumerate(runs) if "bootstrap-pyyaml.sh" in run or "make pyyaml" in run]
-            where = f"{path.name}:{name} syncs without the reviewed PyYAML"
-            assert bootstrap, where
-            assert bootstrap[0] > direct[0], where
-
-
 def test_no_script_or_workflow_resolves_a_fresh_environment_that_would_build_pyyaml():
     """A fresh environment (`uv run --isolated`) resolves from the index: PyYAML would build from source."""
     texts = {
@@ -1966,40 +1888,6 @@ def test_no_script_or_workflow_resolves_a_fresh_environment_that_would_build_pyy
     assert not any("test-all-pythons" in text for text in texts.values())
 
 
-def test_end_to_end_installs_resolve_the_reviewed_pyyaml_wheel():
-    conftest = (REPO / "tests" / "e2e" / "conftest.py").read_text(encoding="utf-8")
-    assert "def reviewed_pyyaml(" in conftest
-    assert '"UV_FIND_LINKS"' in conftest
-    assert "autouse=True" in conftest
-    assert "--wheel-dir" in (REPO / "scripts" / "bootstrap-pyyaml.sh").read_text(encoding="utf-8")
-
-
-def _flagged_then_bootstrapped(lines: list[str]) -> bool:
-    """`uv sync` is exact: a sync that leaves PyYAML out removes one installed before it, so the build must follow."""
-    last = max(
-        (i for i, line in enumerate(lines) if "uv " in line and "--no-install-package pyyaml" in line), default=-1
-    )
-    return last < 0 or any("bootstrap-pyyaml.sh" in line or "make pyyaml" in line for line in lines[last + 1 :])
-
-
-def test_the_reviewed_pyyaml_is_built_after_the_last_sync_that_leaves_it_out():
-    for path in sorted((REPO / ".github" / "workflows").glob("*.yml")):
-        for name, job in yaml.safe_load(path.read_text(encoding="utf-8")).get("jobs", {}).items():
-            lines = [line for step in job.get("steps", []) for line in step.get("run", "").splitlines()]
-            assert _flagged_then_bootstrapped(lines), f"{path.name}:{name} removes PyYAML and never builds it again"
-    for path in sorted((REPO / "scripts").glob("*.sh")):
-        lines = path.read_text(encoding="utf-8").splitlines()
-        assert _flagged_then_bootstrapped(lines), f"{path.name} removes PyYAML and never builds it again"
-    spec = importlib.util.spec_from_file_location("focused_job_order", REPO / "scripts" / "focused_job.py")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["focused_job_order"] = module
-    spec.loader.exec_module(module)
-    sync, bootstrap, tests = module.plan("pytest", "tests/unit/ci_test.py", Path("junit.xml"))
-    assert sync[:2] == ["uv", "sync"]
-    assert bootstrap == ["bash", "scripts/bootstrap-pyyaml.sh"]
-    assert "pytest" in tests
-
-
 def test_the_documented_app_launch_never_inherits_the_reviewed_pyyaml_find_links():
     """The e2e fixture exports UV_FIND_LINKS; an inherited one would become resolver policy in the managed tool."""
     source = (REPO / "tests" / "e2e" / "docs_test.py").read_text(encoding="utf-8")
@@ -2007,32 +1895,13 @@ def test_the_documented_app_launch_never_inherits_the_reviewed_pyyaml_find_links
     assert "UV_FIND_LINKS" not in source.replace("inherited UV_FIND_LINKS", "")
 
 
-def test_the_starter_journeys_find_the_reviewed_pyyaml_through_find_links():
-    lines = (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8").splitlines()
-    build = next(i for i, line in enumerate(lines) if "bootstrap-pyyaml.sh --wheel-dir" in line)
-    launch = next(i for i, line in enumerate(lines) if "scripts/starter-test.py" in line and "uv run" in line)
-    assert build < launch
-    assert lines[launch].lstrip().startswith('UV_FIND_LINKS="$pyyaml_wheels" ')
-
-
-@pytest.mark.parametrize("makefile", ["Makefile", "template/Makefile"])
-def test_install_builds_the_reviewed_pyyaml_after_the_lock_and_before_the_first_sync(makefile):
-    """`make setup` is the documented command: it must not leave PyYAML to a source build on Python 3.15."""
-    text = (REPO / makefile).read_text(encoding="utf-8")
-    recipe = text.split("\ninstall:", 1)[1].split("\n\n", 1)[0]
-    lock = recipe.index("uv lock --quiet")
-    pyyaml = recipe.index("pyyaml")
-    sync = min(recipe.index(token) for token in ("uv sync", "build.py sync") if token in recipe)
-    assert lock < pyyaml < sync
-
-
-def test_the_setup_uv_guard_matches_this_checkouts_lock():
-    """The action builds PyYAML only where uv.lock says >=3.15; a changed floor must not switch that off silently."""
-    action = yaml.safe_load((REPO / ".github" / "actions" / "setup-uv" / "action.yml").read_text(encoding="utf-8"))
-    step = next(item for item in action["runs"]["steps"] if "bootstrap-pyyaml.sh" in item.get("run", ""))
-    pattern = re.search(r"grep -q '([^']+)' uv\.lock", step["run"])
-    assert pattern, "the guard must stay a grep on uv.lock"
-    assert re.search(pattern[1], (REPO / "uv.lock").read_text(encoding="utf-8"), re.MULTILINE)
+def test_nothing_bootstraps_pyyaml_any_more():
+    """PyYAML 6.0.4 ships wheels for Python 3.15: every sync is the plain frozen, wheel-only one."""
+    for path in [*(REPO / ".github").rglob("*.yml"), *(REPO / "scripts").glob("*"), REPO / "Makefile"]:
+        if path.is_file():
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            assert "bootstrap-pyyaml" not in text, path
+            assert "--no-install-package pyyaml" not in text, path
 
 
 def test_the_readme_install_environment_carries_no_github_token():

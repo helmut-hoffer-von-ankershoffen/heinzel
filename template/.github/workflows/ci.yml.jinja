@@ -170,10 +170,9 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: ${{ matrix.python }}
-      - name: Install Python 3.15 dependencies with the verified PyYAML compatibility build
+      - name: Install Python 3.15 dependencies
         run: |
-          uv sync --frozen --no-build --no-dev --group test --no-install-package pyyaml
-          bash scripts/bootstrap-pyyaml.sh
+          uv sync --frozen --no-build --no-dev --group test
       - name: Unit and integration tests (unit first, 4 workers, stop at the first failure)
         env:
           UV_NO_SYNC: "1" # use the test group just installed
@@ -201,10 +200,9 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: "3.15"
-      - name: Install dependencies with the verified PyYAML compatibility build (no 3.15 wheel)
+      - name: Install dependencies
         run: |
-          uv sync --frozen --no-build --no-dev --group test --no-install-package pyyaml
-          bash scripts/bootstrap-pyyaml.sh
+          uv sync --frozen --no-build --no-dev --group test
       - run: make test
       - name: Record the total for the merge gate
         run: uv run --no-build coverage report --format=total --precision=2 > coverage-total.txt
@@ -242,10 +240,9 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: "3.15"
-      - name: Install dependencies with the verified PyYAML compatibility build (no 3.15 wheel)
+      - name: Install dependencies
         run: |
-          uv sync --frozen --no-build --no-dev --group test --no-install-package pyyaml
-          bash scripts/bootstrap-pyyaml.sh
+          uv sync --frozen --no-build --no-dev --group test
       - run: make test-perf
 
   e2e:

@@ -78,8 +78,7 @@ must match the pin before they are cached or installed, and the rewritten requir
 checks the wheel again under `--require-hashes`. `scripts/tools.py` falls back to `gh release download` the same way
 for pinned GitHub release assets after its retries, still checking the manifest checksum.
 
-CI's test dependency sync is frozen and wheel-only, with the same isolated, hash-verified Python 3.15 PyYAML build
-described above. Stdlib-only publication checks select Python explicitly and load no project dependencies.
+CI's test dependency sync is frozen and wheel-only (PyYAML 6.0.4 ships Python 3.15 wheels, so nothing is built from source). Stdlib-only publication checks select Python explicitly and load no project dependencies.
 Native actionlint replaces the source-only wrapper at the same version, including generated governed templates.
 
 The policy is scoped to these installation paths: core's all-group developer setup still permits the locked

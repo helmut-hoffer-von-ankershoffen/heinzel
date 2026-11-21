@@ -219,16 +219,10 @@ def parity_problem(path: str, generated: set[Path]) -> str | None:
     return "symlink it into template/ (or generate it), or add it to CORE_ONLY with the reason"
 
 
-def test_template_locks_the_reviewed_pyyaml():
-    """A fresh plugin lock resolves the PyYAML the bootstrap reviewed, named once in src/heinzel/bootstrap_pyyaml.py;
-    the starter carries a copy this test keeps equal."""
-    reviewed = re.search(r'(?m)^VERSION = "([^"]+)"$', (REPO / "src/heinzel/bootstrap_pyyaml.py").read_text())
-    assert reviewed is not None
+def test_template_never_pins_pyyaml_through_a_bootstrap():
+    """6.0.4 ships wheels for every supported Python: a fresh plugin lock needs no PyYAML constraint."""
     for source in (TEMPLATE / "pyproject.toml.jinja", REPO / "starter" / "pyproject.toml.jinja"):
-        rendered = source.read_text(encoding="utf-8")
-        assert f'constraint-dependencies = ["pyyaml=={reviewed.group(1)}"]' in rendered, source
-    starter = (REPO / "starter" / "pyproject.toml.jinja").read_text(encoding="utf-8")
-    assert f'"pyyaml=={reviewed.group(1)}"]' in starter.split("[dependency-groups]")[1].split("\n\n")[0]
+        assert "constraint-dependencies" not in source.read_text(encoding="utf-8"), source
 
 
 def test_finds_parity_problems():

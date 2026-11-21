@@ -77,14 +77,3 @@ runs:
         else
           echo 'node_identity static_header=unavailable'
         fi
-    - name: Build the reviewed PyYAML once (no upstream wheel for Python 3.15)
-      shell: bash
-      env:
-        ACTION_PATH: ${{ github.action_path }}
-      run: |
-        # Every later `uv sync` or `uv run` in this job finds it installed and never builds PyYAML from the source
-        # distribution with an unpinned build backend. Only checkouts that lock PyYAML 6.0.3 for Python 3.15 get it.
-        if [ -f uv.lock ] && [ -f scripts/bootstrap-pyyaml.sh ] && grep -q '^requires-python = ">=3.15"' uv.lock; then
-          uv venv --allow-existing --python 3.15 "${UV_PROJECT_ENVIRONMENT:-.venv}"
-          bash scripts/bootstrap-pyyaml.sh
-        fi

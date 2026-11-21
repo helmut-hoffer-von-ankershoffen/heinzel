@@ -33,8 +33,8 @@ def test_e2e_test_ids_run_serially_with_a_report():
 def test_pytest_ids_install_the_test_group_first():
     commands = focused_job.plan("pytest", "tests/unit/ci_test.py::test_every_job_has_a_timeout[ci.yml]", OUT)
     assert commands[0][:2] == ["uv", "sync"]
-    assert commands[1] == ["bash", "scripts/bootstrap-pyyaml.sh"]  # after the exact sync, before the tests
-    assert commands[2][-1] == "tests/unit/ci_test.py::test_every_job_has_a_timeout[ci.yml]"
+    assert "--no-install-package" not in commands[0]
+    assert commands[1][-1] == "tests/unit/ci_test.py::test_every_job_has_a_timeout[ci.yml]"
 
 
 def test_the_python_ci_limit_never_binds_a_real_selection():
