@@ -6,7 +6,7 @@ The command lines are exactly the ones the web service and the daemon handover r
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NoReturn
 
 if TYPE_CHECKING:
     import subprocess
@@ -15,7 +15,14 @@ if TYPE_CHECKING:
 
     from heinzel.ports import ProcessRunner, RunningProcess, ServiceJob
 
-__all__ = ["ForegroundServiceManager", "Job", "LaunchdServiceManager", "Status", "SystemdServiceManager"]
+__all__ = [
+    "ForegroundServiceManager",
+    "Job",
+    "LaunchdServiceManager",
+    "ManagerRefused",
+    "Status",
+    "SystemdServiceManager",
+]
 
 STOP_SECONDS = 5.0
 
@@ -37,9 +44,22 @@ class Status:
     version: str | None = None
 
 
-def _refusal(what: str, result: subprocess.CompletedProcess[str]) -> str:
-    detail = (result.stderr or result.stdout).strip()
-    return f"The service manager could not {what} ({detail or f'exit {result.returncode}'})."
+class ManagerRefused(OSError):  # noqa: N818 - an OSError the manager's refusal raises, named for what it says
+    """The manager answered with a failure; `detail` is its own words, or the exit code when it said none."""
+
+    def __init__(self, what: str, result: subprocess.CompletedProcess[str]) -> None:
+        """Name what was asked (`restart the web service`) and keep the manager's answer."""
+        self.detail = (result.stderr or result.stdout).strip() or f"exit {result.returncode}"
+        super().__init__(f"The service manager could not {what} ({self.detail}).")
+
+
+def _refuse(what: str, result: subprocess.CompletedProcess[str]) -> NoReturn:
+    """Raise the manager's refusal.
+
+    Raises:
+        ManagerRefused: Always.
+    """
+    raise ManagerRefused(what, result)
 
 
 class LaunchdServiceManager:
@@ -47,13 +67,17 @@ class LaunchdServiceManager:
 
     def __init__(
         self,
-        runner: Callable[[Sequence[str]], subprocess.CompletedProcess[str]],
+        runner: Callable[[list[str]], subprocess.CompletedProcess[str]],
         *,
         uid: int,
-        launchctl: str = "launchctl",
+        base: Sequence[str] = ("launchctl",),
+        subject: str = "job",
     ) -> None:
-        """Send every command through `runner`; `launchctl` is the executable it resolves."""
-        self._run, self._uid, self._launchctl = runner, uid, launchctl
+        """Send every command through `runner`; each starts with `base`, the manager and its fixed flags.
+
+        `subject` names the job in a refusal: "The service manager could not restart the <subject>".
+        """
+        self._run, self._uid, self._base, self._subject = runner, uid, list(base), subject
 
     def load(self, job: ServiceJob) -> None:
         """`launchctl bootstrap gui/<uid> <plist>`.
@@ -65,10 +89,9 @@ class LaunchdServiceManager:
         if definition is None:
             msg = f"{job.label} has no plist to load"
             raise OSError(msg)
-        result = self._run([self._launchctl, "bootstrap", f"gui/{self._uid}", str(definition)])
+        result = self._run([*self._base, "bootstrap", f"gui/{self._uid}", str(definition)])
         if result.returncode != 0:
-            msg = _refusal("load the job", result)
-            raise OSError(msg)
+            _refuse(f"load the {self._subject}", result)
 
     def kickstart(self, job: ServiceJob, *, force: bool = False) -> None:
         """`launchctl kickstart [-k] gui/<uid>/<label>`.
@@ -77,14 +100,13 @@ class LaunchdServiceManager:
             OSError: If launchd refuses.
         """
         flags = ["-k"] if force else []
-        result = self._run([self._launchctl, "kickstart", *flags, f"gui/{self._uid}/{job.label}"])
+        result = self._run([*self._base, "kickstart", *flags, f"gui/{self._uid}/{job.label}"])
         if result.returncode != 0:
-            msg = _refusal("restart the job", result)
-            raise OSError(msg)
+            _refuse(f"restart the {self._subject}", result)
 
     def status(self, job: ServiceJob) -> Status:
         """Loaded when `launchctl print` knows the job; its pid when it says one."""
-        result = self._run([self._launchctl, "print", f"gui/{self._uid}/{job.label}"])
+        result = self._run([*self._base, "print", f"gui/{self._uid}/{job.label}"])
         if result.returncode != 0:
             return Status(loaded=False)
         pid = next((int(w.split("=")[1]) for w in result.stdout.split("\n") if w.strip().startswith("pid = ")), None)
@@ -95,10 +117,14 @@ class SystemdServiceManager:
     """systemd in the user's own instance: `systemctl --user`."""
 
     def __init__(
-        self, runner: Callable[[Sequence[str]], subprocess.CompletedProcess[str]], *, systemctl: str = "systemctl"
+        self,
+        runner: Callable[[list[str]], subprocess.CompletedProcess[str]],
+        *,
+        base: Sequence[str] = ("systemctl", "--user"),
+        subject: str = "job",
     ) -> None:
-        """Send every command through `runner`; `systemctl` is the executable it resolves."""
-        self._run, self._systemctl = runner, systemctl
+        """Send every command through `runner`, each starting with `base` (`subject`: see launchd)."""
+        self._run, self._base, self._subject = runner, list(base), subject
 
     def load(self, job: ServiceJob) -> None:
         """`systemctl --user enable --now <unit>`.
@@ -106,10 +132,9 @@ class SystemdServiceManager:
         Raises:
             OSError: If systemd refuses.
         """
-        result = self._run([self._systemctl, "--user", "enable", "--now", job.label])
+        result = self._run([*self._base, "enable", "--now", job.label])
         if result.returncode != 0:
-            msg = _refusal("load the job", result)
-            raise OSError(msg)
+            _refuse(f"load the {self._subject}", result)
 
     def kickstart(self, job: ServiceJob, *, force: bool = False) -> None:
         """`systemctl --user restart <unit>`, or `try-restart` when it must not start a stopped job.
@@ -118,14 +143,13 @@ class SystemdServiceManager:
             OSError: If systemd refuses.
         """
         verb = "restart" if force else "try-restart"
-        result = self._run([self._systemctl, "--user", verb, job.label])
+        result = self._run([*self._base, verb, job.label])
         if result.returncode != 0:
-            msg = _refusal("restart the job", result)
-            raise OSError(msg)
+            _refuse(f"restart the {self._subject}", result)
 
     def status(self, job: ServiceJob) -> Status:
         """Loaded when the unit is known; its main pid when it runs."""
-        result = self._run([self._systemctl, "--user", "show", "--property=LoadState,MainPID", job.label])
+        result = self._run([*self._base, "show", "--property=LoadState,MainPID", job.label])
         fields = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
         loaded = result.returncode == 0 and fields.get("LoadState") == "loaded"
         pid = int(fields.get("MainPID", "0") or 0) or None

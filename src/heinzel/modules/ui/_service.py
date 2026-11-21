@@ -21,6 +21,7 @@ from typing import Protocol
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 from heinzel import Config, HeinzelError, Kernel, Settings
+from heinzel._adapter_service import Job, LaunchdServiceManager, SystemdServiceManager
 from heinzel.kernel import (
     HeadRefresh,
     HostServiceManager,
@@ -51,6 +52,7 @@ from heinzel.modules.ui._profile import (
     user_profile,
     validated_profile,
 )
+from heinzel.ports import ServiceManager
 
 LABEL = "io.github.helmut-hoffer-von-ankershoffen.heinzel.web"
 UNIT = "hz-web.service"
@@ -132,6 +134,7 @@ class WebService:
         *,
         platform: str = sys.platform,
         runner: Runner = _run,
+        manager: ServiceManager | None = None,
         which: Callable[[str], str | None] = shutil.which,
         uid: int | None = None,
         verify: Callable[[], bool] = lambda: False,
@@ -159,6 +162,7 @@ class WebService:
         self._clock, self._sleep = clock, sleep
         self.platform = platform
         self.runner = runner
+        self._manager_port = manager
         self.which = which
         self.uid = os.getuid() if uid is None else uid
         self.verify = verify
@@ -849,6 +853,19 @@ class WebService:
             message="Restart requested. Use `hz ui status` to verify a different ready instance.",
         )
 
+    def service_manager(self) -> ServiceManager:
+        """The platform's manager of the web job, sending its commands through `runner`.
+
+        Raises:
+            HeinzelError: If the platform has no supported manager.
+        """
+        if self._manager_port is not None:
+            return self._manager_port
+        base = self._command()
+        if self.platform == "darwin":
+            return LaunchdServiceManager(self.runner, uid=self.uid, base=base, subject="web service")
+        return SystemdServiceManager(self.runner, base=base, subject="web service")
+
     def restart_job(self, record: dict[str, JsonValue] | None = None) -> WebRestart:
         """Restart the owned web job through its service manager, which needs no control channel.
 
@@ -862,15 +879,10 @@ class WebService:
         if record is None or not loaded:
             msg = "No owned web service is loaded, so there is nothing to restart. Inspect `hz ui status`."
             raise HeinzelError(msg)
-        if self.platform == "darwin":
-            command = self._command("kickstart", "-k", f"gui/{self.uid}/{LABEL}")
-        else:
-            command = self._command("restart", UNIT)
-        result = self.runner(command)
-        if result.returncode != 0:
-            detail = (result.stderr or result.stdout).strip()
-            msg = f"The service manager could not restart the web service ({detail or f'exit {result.returncode}'})."
-            raise HeinzelError(msg)
+        try:
+            self.service_manager().kickstart(Job(LABEL if self.platform == "darwin" else UNIT), force=True)
+        except OSError as exc:
+            raise HeinzelError(str(exc)) from exc
         try:
             retiring = str(TypeAdapter(dict[str, JsonValue]).validate_json(private_read(self.runtime))["instance"])
         except (OSError, ValueError, KeyError, HeinzelError):

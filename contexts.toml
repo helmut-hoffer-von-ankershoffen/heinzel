@@ -29,7 +29,6 @@ src = [
     "src/heinzel/modules/system/lifecycle/**",
     "src/heinzel/_lifecycle_control.py",
     "src/heinzel/modules/ui/_service.py",
-    "src/heinzel/modules/ui/_adapter_service.py",
     "src/heinzel/heads/web/_lifecycle.py",
     "src/heinzel/heads/web/_supervision.py",
 ]
@@ -76,7 +75,7 @@ src = [
     "src/heinzel/modules/system/sound/**",
     "src/heinzel/modules/system/notify/**",
 ]
-exclude = ["src/heinzel/modules/ui/_service.py", "src/heinzel/modules/ui/_adapter_service.py"]
+exclude = ["src/heinzel/modules/ui/_service.py"]
 package = "heinzel.modules.ui"
 
 [context.leaf]

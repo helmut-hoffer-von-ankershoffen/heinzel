@@ -110,19 +110,31 @@ class ProcessRunner(Protocol):
 
 
 class ServiceJob(Protocol):
-    """One job a service manager owns: what to call it and how it identifies itself."""
+    """One job a service manager owns: what to call it."""
 
-    label: str
-    """launchd label or systemd unit name."""
+    @property
+    def label(self) -> str:
+        """The launchd label or systemd unit name."""
+        ...
 
 
 class ServiceStatus(Protocol):
     """What a service manager says about a job."""
 
-    loaded: bool
-    pid: int | None
-    version: str | None
-    """The Heinzelmännchen version the job's process reports; None when it doesn't say or isn't running."""
+    @property
+    def loaded(self) -> bool:
+        """Whether the manager knows the job."""
+        ...
+
+    @property
+    def pid(self) -> int | None:
+        """The process id while the job runs."""
+        ...
+
+    @property
+    def version(self) -> str | None:
+        """The Heinzelmännchen version the job's process reports; None when it doesn't say or isn't running."""
+        ...
 
 
 @runtime_checkable

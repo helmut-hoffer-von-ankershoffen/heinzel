@@ -10,13 +10,13 @@ from pathlib import Path
 import pytest
 
 from heinzel import _adapter_system
-from heinzel.modules.system.updater._adapter_state import FileInstallationState
-from heinzel.modules.ui._adapter_service import (
+from heinzel._adapter_service import (
     ForegroundServiceManager,
     Job,
     LaunchdServiceManager,
     SystemdServiceManager,
 )
+from heinzel.modules.system.updater._adapter_state import FileInstallationState
 from heinzel.ports import Clock, InstallationState, ProcessRunner, ReleaseSource, ServiceManager
 from heinzel.testing import (
     FakeClock,
@@ -160,10 +160,10 @@ def test_launchd_and_systemd_send_the_commands_the_service_always_ran():
         sent.append(list(command))
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    LaunchdServiceManager(run, uid=501, launchctl="/bin/launchctl").kickstart(Job("team.heinzel.web"), force=True)
-    LaunchdServiceManager(run, uid=501, launchctl="/bin/launchctl").kickstart(Job("team.heinzel.daemon"))
-    SystemdServiceManager(run, systemctl="/usr/bin/systemctl").kickstart(Job("heinzel-web.service"), force=True)
-    SystemdServiceManager(run, systemctl="/usr/bin/systemctl").kickstart(Job("heinzel.timer"))
+    LaunchdServiceManager(run, uid=501, base=["/bin/launchctl"]).kickstart(Job("team.heinzel.web"), force=True)
+    LaunchdServiceManager(run, uid=501, base=["/bin/launchctl"]).kickstart(Job("team.heinzel.daemon"))
+    SystemdServiceManager(run, base=["/usr/bin/systemctl", "--user"]).kickstart(Job("heinzel-web.service"), force=True)
+    SystemdServiceManager(run, base=["/usr/bin/systemctl", "--user"]).kickstart(Job("heinzel.timer"))
     assert sent == [
         ["/bin/launchctl", "kickstart", "-k", "gui/501/team.heinzel.web"],
         ["/bin/launchctl", "kickstart", "gui/501/team.heinzel.daemon"],

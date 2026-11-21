@@ -45,6 +45,8 @@ from heinzel import (
     Status,
     __version__,
 )
+from heinzel._adapter_service import Job as ManagerJob
+from heinzel._adapter_service import LaunchdServiceManager, ManagerRefused, SystemdServiceManager
 from heinzel.kernel import (
     KERNEL_SECTION,
     DaemonHandoverAssessment,
@@ -119,6 +121,7 @@ from heinzel.modules.system.daemon._units import (
     systemd_timer,
 )
 from heinzel.modules.system.updater._phases import Phases
+from heinzel.ports import ServiceManager
 
 if TYPE_CHECKING:
     import threading
@@ -1675,10 +1678,6 @@ class DaemonService:
             return DaemonHandoverRequest(
                 requested=False, reason="The service state changed; no handover was requested."
             )
-        if self._platform == "darwin":
-            command = ["/bin/launchctl", "kickstart", f"gui/{self._uid()}/{LABEL}"]
-        else:
-            command = ["/usr/bin/systemctl", "--user", "try-restart", f"{SYSTEMD_NAME}.timer"]
         request_id = secrets.token_hex(32)
         boot = self._current_boot_identity()
         fence = self._current_birth_fence()
@@ -1690,14 +1689,27 @@ class DaemonService:
         if fence is not None:
             data.update({f"birth_{key}": value for key, value in fence.items()})
         self._write_state("handover-request.json", data)
-        result = self.owned_manager_command(command)
-        if result.returncode != 0:
-            msg = f"The daemon handover request failed: {(result.stderr or result.stdout).strip()}"
-            raise HeinzelError(msg)
+        try:
+            self._service_manager().kickstart(
+                ManagerJob(LABEL if self._platform == "darwin" else f"{SYSTEMD_NAME}.timer")
+            )
+        except ManagerRefused as exc:
+            msg = f"The daemon handover request failed: {exc.detail}"
+            raise HeinzelError(msg) from exc
         return DaemonHandoverRequest(
             requested=True,
             reason="The manager accepted the request; a later service tick must establish what ran.",
             request_id=request_id,
+        )
+
+    def _service_manager(self) -> ServiceManager:
+        """Launchd or systemd for the daemon's own job, every command through the owned manager gate."""
+        if self._platform == "darwin":
+            return LaunchdServiceManager(
+                self.owned_manager_command, uid=self._uid(), base=["/bin/launchctl"], subject="daemon"
+            )
+        return SystemdServiceManager(
+            self.owned_manager_command, base=["/usr/bin/systemctl", "--user"], subject="daemon"
         )
 
     def handover_observation(self, request_id: str) -> DaemonHandoverObservation | None:
