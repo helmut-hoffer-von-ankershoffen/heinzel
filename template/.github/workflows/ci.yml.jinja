@@ -109,7 +109,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
-      fail-fast: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }} # stop waiting for other setup cells on a red PR
+      fail-fast: false # every red cell shows in one run, so one fix covers them all
       matrix:
         os: [ubuntu-24.04, macos-latest]
     steps:
@@ -151,7 +151,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
-      fail-fast: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }} # a red cell is enough to know on a pull request
+      fail-fast: false # every red cell shows in one run, so one fix covers them all
       matrix:
         os: [ubuntu-24.04]
         # Linux: oldest and newest Python on a pull request, every supported one on main, schedule and dispatch.

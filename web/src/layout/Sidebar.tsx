@@ -21,6 +21,7 @@ import {
   Stethoscope,
   Sun,
   UserRound,
+  X,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -117,11 +118,11 @@ function Full({ drawer, titlebar, onToggle, onSearch, onNotifications }: Omit<Pr
               size="icon"
               onClick={onToggle}
               aria-expanded
-              aria-label={t("nav.collapse")}
-              title={t("nav.collapse")}
+              aria-label={t(drawer ? "op.close" : "nav.collapse")}
+              title={t(drawer ? "op.close" : "nav.collapse")}
               className="relative shrink-0 text-icon before:absolute before:-inset-1 before:content-['']"
             >
-              <PanelLeftClose aria-hidden />
+              {drawer ? <X aria-hidden /> : <PanelLeftClose aria-hidden />}
             </Button>
             <NavLink to="/" end className={topButton} aria-label={t("nav.home")} title={t("nav.home")}>
               <Home aria-hidden />
@@ -166,11 +167,11 @@ function Full({ drawer, titlebar, onToggle, onSearch, onNotifications }: Omit<Pr
               size="icon"
               onClick={onToggle}
               aria-expanded
-              aria-label={t("nav.collapse")}
-              title={t("nav.collapse")}
+              aria-label={t(drawer ? "op.close" : "nav.collapse")}
+              title={t(drawer ? "op.close" : "nav.collapse")}
               className="relative ml-auto shrink-0 text-icon before:absolute before:-inset-1 before:content-['']"
             >
-              <PanelLeftClose aria-hidden />
+              {drawer ? <X aria-hidden /> : <PanelLeftClose aria-hidden />}
             </Button>
           </div>
           <div className={cn(HAIRLINE_BELOW, "h-12 justify-evenly")}>

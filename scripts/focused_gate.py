@@ -25,8 +25,11 @@ from scripts.focused_plan import (
     PLAN_VARIABLE,
     PROTECTED_FILES,
     Scope,
+    changed_paths,
+    decode_slot,
     git,
     git_blob,
+    object_id,
     raw_diff,
     registry_slots,
     require_pr_base_ancestor,
@@ -58,6 +61,7 @@ MAX_ARCHIVE = 5 * 1024 * 1024
 REMOTE_FIELDS = 2
 MAX_UPLOAD_LOG = 64 * 1024
 FULL_EXECUTION_INPUTS = (*PROTECTED_FILES, "Makefile", "pyproject.toml")
+FULL_PR_KIND = "full-pr-reviewed"
 UPLOAD_NAME = "Upload focused CI evidence"
 CANDIDATE_UPLOAD_NAME = "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
 STATIC_JOBS = {
@@ -462,15 +466,61 @@ def full_checkout(log: bytes) -> str:
     return matches[0].decode()
 
 
-def full_pr_jobs(gate: Gate, source: GateSource, base: str, read: Callable[[str], bytes]) -> list[dict[str, Any]]:
+def full_pr_inputs(source: GateSource, base: str, authorization: dict[str, Any] | None) -> None:
+    """Authorize only exact reviewed Makefile changes from the protected registry, never from PR bytes."""
+    actual = {path: git_blob(source.commit, path) for path in FULL_EXECUTION_INPUTS}
+    baseline = {path: git_blob(base, path) for path in FULL_EXECUTION_INPUTS}
+    if authorization is None:
+        require(actual == baseline, "full PR execution inputs differ from protected main")
+        return
+    require(
+        set(authorization) == {"schema", "kind", "repository", "head", "base", "tree", "changed", "execution"}
+        and type(authorization["schema"]) is int
+        and authorization["schema"] == 1
+        and authorization["kind"] == FULL_PR_KIND
+        and authorization["repository"] == REPOSITORY
+        and authorization["head"] == source.source.head
+        and authorization["base"] == base
+        and authorization["tree"] == object_id(f"{source.commit}^{{tree}}"),
+        "full PR authorization identity differs from the exact reviewed source",
+    )
+    changed = changed_paths(raw_diff(base, source.commit))
+    require(
+        authorization["changed"] == changed
+        and set(FULL_EXECUTION_INPUTS).intersection(changed) == {"Makefile"}
+        and changed.get("Makefile") == "M"
+        and authorization["execution"] == actual
+        and actual["Makefile"] != baseline["Makefile"]
+        and all(actual[path] == baseline[path] for path in FULL_EXECUTION_INPUTS if path != "Makefile"),
+        "full PR authorization must cover the exact change and only a reviewed Makefile execution input",
+    )
+
+
+def selected_pr_registry(manifest: str, slots: tuple[str, ...], key: str) -> str:
+    """Keep legacy focused duplicate compatibility, but require unique full-PR authorizations."""
+    selected = selected_registry(manifest, slots, key)  # validate bounds and conflicts before decoding again
+    seen = set()
+    registries = [json.loads(manifest or "{}", object_pairs_hook=unique_object), *(decode_slot(slot) for slot in slots)]
+    for registry in registries:
+        for entry_key, entry in registry.items():
+            if isinstance(entry, dict) and entry.get("kind") == FULL_PR_KIND:
+                require(entry_key not in seen, "duplicate full PR authorization")
+                seen.add(entry_key)
+    return selected
+
+
+def full_pr_jobs(
+    gate: Gate,
+    source: GateSource,
+    base: str,
+    read: Callable[[str], bytes],
+    authorization: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """Verify ordinary full CI without inventing a focused plan or release-candidate identity."""
     require(source.run["event"] == "pull_request", "full PR evidence requires the PR event")
     associated = source.run["pull_requests"]
     require(len(associated) == 1 and associated[0]["base"]["sha"] == base, "full PR evidence has a stale tested base")
-    require(
-        all(git_blob(source.commit, path) == git_blob(base, path) for path in FULL_EXECUTION_INPUTS),
-        "full PR execution inputs differ from protected main",
-    )
+    full_pr_inputs(source, base, authorization)
     workflow = git("show", f"{base}:{WORKFLOW}")
     require(
         b"name: Run the complete CI workload without an external admission plan" in workflow
@@ -503,8 +553,15 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes],
     snapshot = pull_identity(gate, gate.head)
     candidate = bool(release_version("pull_request", REPOSITORY, "", {"pull_request": snapshot[0]}))
     if not candidate:
-        manifest = selected_registry(manifest, slots, f"pull_request:{gate.head}")
-    full = not candidate and not json.loads(manifest, object_pairs_hook=unique_object)
+        manifest = selected_pr_registry(manifest, slots, f"pull_request:{gate.head}")
+    registry = json.loads(manifest, object_pairs_hook=unique_object) if not candidate else {}
+    authorization = registry.get(f"pull_request:{gate.head}") if not candidate else None
+    reviewed_full = isinstance(authorization, dict) and authorization.get("kind") == FULL_PR_KIND
+    require(
+        not isinstance(authorization, dict) or "kind" not in authorization or reviewed_full,
+        "unknown PR authorization kind",
+    )
+    full = not candidate and (not registry or reviewed_full)
     run = _authenticated_run(gate, run_id, candidate_composite=candidate)
     source = _pr_source(gate, run, snapshot, candidate=candidate)
     if (
@@ -514,7 +571,7 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes],
         != snapshot[2]
     ):
         source = _tested_source_after_main_moves(gate, source, manifest, snapshot[2], read)
-    full_jobs = full_pr_jobs(gate, source, snapshot[2], read) if full else None
+    full_jobs = full_pr_jobs(gate, source, snapshot[2], read, authorization) if full else None
     scope = None
     if not full:
         scope = resolve(

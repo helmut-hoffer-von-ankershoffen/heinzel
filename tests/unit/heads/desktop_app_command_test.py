@@ -123,3 +123,16 @@ def test_uninstall_cancelled_leaves_the_app_and_exits_130(monkeypatch):
     result = CliRunner().invoke(group, ["uninstall"])
     assert result.exit_code == 130
     assert "Cancelled. The app was left as it was." in error.export_text()
+
+
+def test_installed_pending_status_does_not_claim_widget_adoption(monkeypatch, tmp_path):
+    monkeypatch.setattr(installer, "install_desktop", Mock(return_value="installed-pending"))
+    monkeypatch.setattr(_app, "desktop_executable", lambda _: tmp_path / "hz")
+    monkeypatch.setattr(_app, "_located", lambda _: tmp_path / "Heinzelmaennchen.app")
+    group, output, _ = _group()
+    result = CliRunner().invoke(group, ["install"])
+    assert result.exit_code == 0, result.output
+    printed = output.export_text()
+    assert "app is installed" in printed
+    assert "still pending" in printed
+    assert "hz app install again" in printed

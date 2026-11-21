@@ -5,7 +5,7 @@ from collections.abc import Callable
 from datetime import date, datetime, time
 from enum import StrEnum
 from types import UnionType
-from typing import Annotated, Any, Literal, get_args, get_origin
+from typing import Annotated, Any, Literal, cast, get_args, get_origin
 
 import typer
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -159,17 +159,25 @@ def _present(
         epilogue()
 
 
+def _hidden(field: FieldInfo) -> bool:
+    """Whether the operation's `Field(json_schema_extra={"hidden": True})` keeps this option out of `--help`."""
+    extra: object = field.json_schema_extra
+    return isinstance(extra, dict) and bool(cast("dict[str, object]", extra).get("hidden"))
+
+
 def _cli_parameter(parameter: inspect.Parameter) -> inspect.Parameter:
     annotation = parameter.annotation
-    description = None
+    description, hidden = None, False
     if get_origin(annotation) is Annotated:
         annotation, *metadata = get_args(annotation)
-        description = next((m.description for m in metadata if isinstance(m, FieldInfo)), None)
+        fields = [m for m in metadata if isinstance(m, FieldInfo)]
+        description = next((m.description for m in fields), None)
+        hidden = any(_hidden(m) for m in fields)
     parser = _json_parser(annotation) if _structured(annotation) else None
     info = (
-        typer.Argument(help=description, metavar=_metavar(annotation), parser=parser)
+        typer.Argument(help=description, metavar=_metavar(annotation), parser=parser, hidden=hidden)
         if parameter.default is inspect.Parameter.empty
-        else typer.Option(help=description, metavar=_metavar(annotation), parser=parser)
+        else typer.Option(help=description, metavar=_metavar(annotation), parser=parser, hidden=hidden)
     )
     return parameter.replace(annotation=Annotated[_as_text(annotation), info], kind=inspect.Parameter.KEYWORD_ONLY)
 

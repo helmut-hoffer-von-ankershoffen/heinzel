@@ -443,7 +443,10 @@ try {
     await drawer.waitFor({ state: "hidden" });
     assert.equal(new URL(page.url()).pathname, "/team");
     await page.getByRole("button", { name: "More workspace actions" }).click();
-    await page.getByRole("menuitem", { name: "Open calendar" }).click();
+    await page
+      .getByRole("region", { name: "More workspace actions" })
+      .getByRole("button", { name: "Open calendar" })
+      .click();
     await page.getByRole("tab", { name: "Calendar", exact: true }).waitFor();
     await page.setViewportSize({ width: 1366, height: 1024 });
     await trigger.waitFor({ state: "hidden" });
@@ -1621,7 +1624,9 @@ try {
     await assertTouchTarget(playbackHelp, "playback help button", "short-landscape");
     await playbackHelp.tap();
     await assertContained(soundPage, player, "expanded playback recovery");
-    const accountChoice = player.getByRole("button", { name: "Use YouTube sign-in" });
+    const recoveryPane = soundPage.getByRole("region", { name: /Playback or sign-in trouble\?/ });
+    await assertContained(soundPage, recoveryPane, "playback recovery popover");
+    const accountChoice = recoveryPane.getByRole("button", { name: "Use YouTube sign-in" });
     await assertTouchTarget(accountChoice, "YouTube account player choice", "short-landscape");
     await accountChoice.tap();
     assert.ok(
@@ -1639,17 +1644,17 @@ try {
     }
     await playbackHelp.tap();
     const accountFrame = await player.locator("iframe").elementHandle();
-    await player.getByRole("button", { name: "Retry player" }).tap();
+    await recoveryPane.getByRole("button", { name: "Retry player" }).tap();
     assert.equal(await accountFrame.evaluate((frame) => frame.isConnected), false, "retry must replace the frame");
     await playbackHelp.tap();
-    await player.getByRole("button", { name: "Use private player" }).tap();
+    await recoveryPane.getByRole("button", { name: "Use private player" }).tap();
     assert.ok(
       (await player.locator("iframe").getAttribute("src")).startsWith("https://www.youtube-nocookie.com/embed/"),
       "private player choice must restore the privacy-enhanced origin",
     );
     // The private-player switch remounts Help. Open it, then tap Help again before using the header link.
     await playbackHelp.tap();
-    await player.getByRole("region", { name: "Playback or sign-in trouble?" }).waitFor();
+    await recoveryPane.waitFor();
     await player.getByRole("button", { name: /Playback or sign-in trouble\?/, expanded: true }).waitFor();
     await playbackHelp.tap();
     await player.getByRole("button", { name: /Playback or sign-in trouble\?/, expanded: false }).waitFor();

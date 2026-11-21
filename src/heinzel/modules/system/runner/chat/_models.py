@@ -27,8 +27,7 @@ class ChatSettings(ModuleSettings):
         gt=0,
         allow_inf_nan=False,
         title="Most per chat",
-        description="The most one chat may cost in US dollars, all its messages together. One "
-        "message never costs more than the most per answer.",
+        description="Stops new messages at the recorded spending limit.",
         json_schema_extra={"x-unit": "usd"},
     )
     keep_days: int = Field(
@@ -36,7 +35,7 @@ class ChatSettings(ModuleSettings):
         ge=1,
         le=3650,
         title="Keep chats for",
-        description="How long a chat is kept after its last message, then removed.",
+        description="Runner chats only; personal conversations are excluded.",
         json_schema_extra={"x-unit": "days"},
     )
     keep_sessions: int = Field(
@@ -44,7 +43,7 @@ class ChatSettings(ModuleSettings):
         ge=1,
         le=1000,
         title="Chats kept",
-        description="How many chats are kept at most; the oldest beyond that are removed.",
+        description="Oldest runner chats are removed; personal chats stay.",
     )
 
     tools: Literal["everyday", "all"] = Field(

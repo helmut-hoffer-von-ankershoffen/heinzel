@@ -88,9 +88,10 @@ linux-user-manager-proof: ## Inspect an existing Linux user manager without star
 	uv run python tests/integration/linux_user_manager_probe.py --prefix "$${PROBE_PREFIX:?Set PROBE_PREFIX to an isolated heinzel-probe- name}"
 
 # The pre-push hook (scripts/scoped_checks.py push) narrows UNIT_TARGETS to the tests related to the branch and sets
-# FAST_TYPES to the type checks; by hand both stay empty and this is the full unit run.
+# FAST_TYPES to the type checks, and empties UNIT_STOP (no -x); by hand this is the full unit run, stopping at the first failure.
 FAST_TYPES ?=
 UNIT_TARGETS ?=
+UNIT_STOP ?= -x
 # Unit tests take every core and have a 5 s budget each; Vitest beside them starved them into timeouts, so it runs after.
 check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts, generated files, unit tests
 	@uv run --quiet --script scripts/scoped_checks.py early-fast
@@ -106,7 +107,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		$(FAST_TYPES) $(WEB_LINT) $(WEB_TYPES) \
-		"unit=uv run pytest $(UNIT_TARGETS) -m 'unit and not perf' -n auto -x -q --session-timeout=120" $(subst &web-tests,web-tests,$(WEB_TESTS)) $(MANAGED_CHECK)
+		"unit=uv run pytest $(UNIT_TARGETS) -m 'unit and not perf' -n auto $(UNIT_STOP) -q --session-timeout=120" $(subst &web-tests,web-tests,$(WEB_TESTS)) $(MANAGED_CHECK)
 
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
 	@uv run --quiet --script scripts/scoped_checks.py early-preflight --base "$(BASE)"
@@ -272,7 +273,8 @@ test-perf: ## Run the performance tests (timing assertions such as linear time);
 test-macos-specific: ## Tests that exercise only macOS behaviour, serially (CI's required macOS job; build the notifier first: make notifier)
 	$(STEPS) "macos=uv run pytest -m macos_specific -q -p no:cacheprovider --durations=10 --session-timeout=420"
 
-test-apple-ci: ## Run required Apple fixtures and reject skipped tests
+test-apple-ci: ## Verify iOS widget source configuration and required Apple fixtures
+	uv run --frozen --no-sync python apple/scripts/widget_configuration.py source
 	uv run --frozen --no-sync pytest -m macos_specific tests/integration/apple_activity_catalog_test.py tests/integration/apple_audio_samples_test.py tests/integration/apple_browser_clear_test.py tests/integration/apple_local_service_test.py tests/integration/apple_prompt_lifecycle_test.py -q --junitxml=reports/apple-ci.xml
 	uv run --script scripts/check_apple_ci.py reports/apple-ci.xml
 

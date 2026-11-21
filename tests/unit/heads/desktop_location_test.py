@@ -10,6 +10,7 @@ import shutil
 import struct
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -73,6 +74,11 @@ def mac(monkeypatch, tmp_path):
     monkeypatch.setattr(desktop, "extract_bundle", _extract)
     monkeypatch.setattr(desktop, "_prepare_for_gatekeeper", lambda _bundle, **_options: None)
     monkeypatch.setattr(desktop, "_in_use", lambda _bundle: False)
+    # Location/transaction fixtures have no native processes or LaunchServices registration.
+    # Keep production lifecycle decisions, but isolate both OS boundaries for every flavor.
+    monkeypatch.setattr(desktop.widget, "inventory", lambda: ())
+    native = SimpleNamespace(register=lambda _bundle: True)
+    monkeypatch.setattr(desktop.widget, "Native", lambda: native)
     if sys.platform != "darwin":
         monkeypatch.setattr(desktop, "_rename", _rename)
     yield home, system, executable
@@ -109,7 +115,20 @@ def test_swift_install_and_update_preserve_flavor(mac, monkeypatch):
     assert desktop.install_desktop("1.0.0", executable, home=home, flavor=desktop.DesktopFlavor.SWIFT) == "installed"
     assert desktop.install_desktop("1.0.1", executable, home=home, update_only=True) == "updated"
     assert flavors == [desktop.DesktopFlavor.SWIFT, desktop.DesktopFlavor.SWIFT]
-    assert desktop._locate(home, home / ".config" / "heinzel")[1].flavor == "swift"
+    config = home / ".config" / "heinzel"
+    assert desktop._locate(home, config)[1].flavor == "swift"
+    assert not (config / desktop._JOURNAL).exists()
+    assert not list(_system.glob(".heinzel-desktop-*"))
+
+    def unavailable_inventory():
+        raise desktop.widget.NativeUnavailableError
+
+    # A real unknown inventory still refuses replacement, preserving the installed receipt.
+    before = (config / desktop._RECEIPT).read_bytes()
+    monkeypatch.setattr(desktop.widget, "inventory", unavailable_inventory)
+    assert desktop.install_desktop("1.0.2", executable, home=home, update_only=True) == "deferred"
+    assert (config / desktop._RECEIPT).read_bytes() == before
+    assert flavors == [desktop.DesktopFlavor.SWIFT, desktop.DesktopFlavor.SWIFT]
 
 
 class LegacyReceipt(BaseModel):

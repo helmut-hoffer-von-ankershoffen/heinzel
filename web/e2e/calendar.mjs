@@ -16,7 +16,7 @@ for (const [name, engine] of [
       ["phone", { width: 375, height: 812 }],
       ["desktop", { width: 1280, height: 800 }],
     ]) {
-      const context = await browser.newContext({ viewport, serviceWorkers: "block" });
+      const context = await browser.newContext({ viewport, timezoneId: "UTC", serviceWorkers: "block" });
       const page = await context.newPage();
       let served = 0;
       const requests = [];
@@ -35,7 +35,10 @@ for (const [name, engine] of [
           body: 'event: result\ndata: {"data":"Calendar reminder service installed."}\n\n',
         });
       });
-      const now = Date.now();
+      // This journey ends with Today: wall-clock midnight would add Tomorrow and split the running meeting.
+      // Fix Date only, keeping animation and request timers real. Midnight grouping has its own model regression.
+      const now = Date.UTC(2026, 10, 16, 12);
+      await page.clock.setFixedTime(now);
       const current = {
         id: "a",
         title: "Standup with an exceptionally long meeting title that must not hide the ending time",

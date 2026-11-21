@@ -145,6 +145,7 @@ jobs:
           --candidate-wheel-sha256 "$CANDIDATE_WHEEL_SHA256"
           --candidate-profile-url "$CANDIDATE_PROFILE_URL"
           --chrome-no-sandbox "$NO_SANDBOX"
+          --bridge-quota-wait-seconds 3900
       - name: Summarize the result
         if: always()
         run: >-

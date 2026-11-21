@@ -266,8 +266,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.
-         * @description Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.
+         * Set aside a stopped uncertain turn or eligible unstarted input; never retry or undo effects.
+         * @description Set aside a stopped uncertain turn or eligible unstarted input; never retry or undo effects.
          *
          *     Raises:
          *         HeinzelError: If the uncertain outcome was not acknowledged.
@@ -4680,17 +4680,17 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking.
-         * @description Update Heinzelmännchen, every plugin and the desktop app, after showing the plan and asking.
+         * Update Heinzelmännchen, every plugin and the desktop app in one pass, without asking anything.
+         * @description Update Heinzelmännchen, every plugin and the desktop app in one pass, without asking anything.
          *
-         *     See what the releases bring with `hz system changelog --newer`. One command for everything: on a terminal it
-         *     first shows the plan (hz, each plugin, the desktop app) and asks `Update now? [Y/n]`; `--yes` agrees in advance
-         *     and `--preview` only shows the plan. Once you agree, a plugin that `hz system plugin add` pinned to the exact
-         *     version or GitHub commit it installed moves too: to the newest release on the package index, which it follows
-         *     from then on, or to the commit of its newest release tag (`<distribution>/vX.Y.Z`). A plugin from a branch, a
-         *     folder, a URL, or a commit of a repository that tags no releases stays as it is, as does every pin with
-         *     `--keep-pins`. Where nobody can answer (a script, `--json`, the REST API) and `--yes` is not given, nothing is
-         *     asked and pins stay.
+         *     See what the releases bring with `hz system changelog --newer`. The output is one checklist: hz, each plugin that
+         *     changed (the ones that did not are one row), the daemon and web server, and the desktop app. `--preview` shows
+         *     the plan and installs nothing. Pins move by default: a plugin that `hz system plugin add` pinned to the exact
+         *     version or GitHub commit it installed moves to the newest release on the package index, which it follows from
+         *     then on, or to the commit of its newest release tag (`<distribution>/vX.Y.Z`). A plugin from a branch, a folder,
+         *     a URL, or a commit of a repository that tags no releases stays as it is, as does every pin with `--keep-pins`.
+         *     The terminal, `--json`, the REST API and MCP all run these defaults and never ask; `--yes` is accepted and does
+         *     nothing.
          *
          *     Installed from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases
          *     only if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`
@@ -4705,17 +4705,18 @@ export interface paths {
          *     Following a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new
          *     version, the error names it and the previous version stays installed.
          *
+         *     The daemon and the web server restart onto the new version when hz or a plugin changed, or when the daemon runs
+         *     older code than is installed (`--no-daemon` leaves them). The desktop app is replaced with `hz app install`; an open
+         *     app is quit and reopened (`--no-desktop-app-restart`: it installs when you quit it, `--no-desktop-app`: left alone).
+         *
          *     Why it is not always automatic: automatic updates (setting `auto_update`, `hz system config set auto_update true`)
          *     run in the web server. About every 30 minutes it looks for the newest published stable release (not a draft or
          *     prerelease) and installs it once it is `auto_update_min_age_hours` old (plugins:
-         *     `auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait. The desktop
-         *     app is not part of the tool: after a change, a terminal asks `Update the desktop app now? [Y/n]`, and `--desktop`,
-         *     `--no-desktop` or `--yes` answer in advance. Left alone, it updates itself at the web server's next automatic
-         *     update check, or with `hz app install`. The output says which applies.
+         *     `auto_update_plugin_min_age_hours`); this command installs that same release now, without the wait.
          *
-         *     Each step shows as it runs, on stderr: a bar on a terminal, a line per step otherwise. With `--json` stdout holds
-         *     only the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are left out so
-         *     the output still parses.
+         *     Each step shows as it runs, on stderr: the checklist on a terminal, a line per step otherwise. With `--json`
+         *     stdout holds only the result and each step goes to stderr as one JSON object per line; with `2>&1` the steps are
+         *     left out so the output still parses.
          *
          *     Raises:
          *         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
@@ -4799,6 +4800,23 @@ export interface paths {
          * @description Show your team: its repository, checkout and members, and what is wrong with them.
          */
         get: operations["team_show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspace-version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workspace Version */
+        get: operations["workspace_version_workspace_version_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8201,6 +8219,11 @@ export interface components {
              */
             last_tick: string | null;
             /**
+             * Last Tick Interval Minutes
+             * @description Interval recorded by that manager-bound tick; none if it was not recorded.
+             */
+            last_tick_interval_minutes?: number | null;
+            /**
              * Loaded
              * @description Whether launchd or systemd has the unit loaded.
              */
@@ -9440,6 +9463,11 @@ export interface components {
          */
         HeadRefresh: {
             /**
+             * Before
+             * @description The version it ran before the update, when it was asked.
+             */
+            before?: string | null;
+            /**
              * Detail
              * @description What happened, and the command that checks or finishes it.
              * @default
@@ -9452,6 +9480,16 @@ export interface components {
              */
             head: "daemon" | "web" | "notifier" | "desktop";
             /**
+             * Reopened
+             * @description The desktop app only: whether it was quit and reopened.
+             */
+            reopened?: boolean | null;
+            /**
+             * Restarted
+             * @description Whether the update restarted it; none if not asked.
+             */
+            restarted?: boolean | null;
+            /**
              * Status
              * @description verified: its live process reported the target version; pending: requested, not yet observed; failed: it reported another version or could not restart; not-installed: nothing to refresh; self: the process that ran the update hosts this head and restarts itself afterwards.
              * @enum {string}
@@ -9462,6 +9500,11 @@ export interface components {
              * @description The version its live process reported, when observed.
              */
             version?: string | null;
+            /**
+             * Was Running
+             * @description The desktop app only: whether it was open before.
+             */
+            was_running?: boolean | null;
         };
         /**
          * HealthReport
@@ -14342,6 +14385,8 @@ export interface components {
              * @description Stored questions and their exact answer revisions.
              */
             questions?: components["schemas"]["Question"][];
+            /** @description The earliest accepted message without a recorded answer or resolution, across all pages. */
+            queue_head?: components["schemas"]["SessionMessage"] | null;
             /** @description The authoritative schedule and effective eligibility, when available. */
             schedule?: components["schemas"]["WakeScheduleView"] | null;
             /**
@@ -16978,11 +17023,23 @@ export interface components {
              */
             current: string;
             /**
+             * Daemon
+             * @description Whether the daemon and the web server restart onto the update.
+             * @default false
+             */
+            daemon: boolean;
+            /**
              * Desktop
              * @description Whether a desktop app is installed that the update can bring along afterwards.
              * @default false
              */
             desktop: boolean;
+            /**
+             * Desktop Running
+             * @description Whether that desktop app is open now.
+             * @default false
+             */
+            desktop_running: boolean;
             /**
              * Latest
              * @description The newest stable release, when it could be asked.
@@ -17042,7 +17099,7 @@ export interface components {
              * @description The release tag, branch, commit, path, URL or version specifier the installation is pinned to now; none if it follows a git repository's default branch or the package index without a specifier.
              */
             pinned_to: string | null;
-            /** @description What the update would change, when this answer is a preview or the person was asked first. */
+            /** @description What the update would change, when this answer is a preview or what it was run with. */
             plan?: components["schemas"]["UpdatePlan"] | null;
             /**
              * Plugins
@@ -17051,10 +17108,15 @@ export interface components {
             plugins?: components["schemas"]["PluginUpdate"][];
             /**
              * Previewed
-             * @description Whether this was only a preview (`--preview`, or the question was answered with no): nothing was changed.
+             * @description Whether this was only a preview (`--preview`, or a plan that changed since it was shown): nothing was changed.
              * @default false
              */
             previewed: boolean;
+            /**
+             * Seconds
+             * @description How long the update took, in seconds.
+             */
+            seconds?: number | null;
             /**
              * Updated
              * @description Whether Heinzelmännchen was reinstalled.
@@ -17545,6 +17607,110 @@ export interface components {
              */
             widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"] | components["schemas"]["ChartWidget"]) | null;
         };
+        /**
+         * WorkspaceDaemonVersion
+         * @description The daemon's last verified tick, distinct from a currently running process.
+         */
+        WorkspaceDaemonVersion: {
+            /**
+             * Last Observed At
+             * @description When that manager-bound tick started.
+             */
+            last_observed_at?: string | null;
+            /**
+             * Last Observed Version
+             * @description Version reported by the last manager-bound tick.
+             */
+            last_observed_version?: string | null;
+            /**
+             * Loaded
+             * @description True when the manager verified the unit loaded; otherwise unknown.
+             */
+            loaded?: boolean | null;
+            /**
+             * Observation Stale
+             * @description Whether the last tick exceeds three recorded intervals; null when not calculable.
+             */
+            observation_stale?: boolean | null;
+            /**
+             * Owned
+             * @description True when the selected unit's manager identity was verified; otherwise unknown.
+             */
+            owned?: boolean | null;
+            /**
+             * Registered At
+             * @description Time in the unit's install marker, not proof of current registration or a Core update time.
+             */
+            registered_at?: string | null;
+            /**
+             * Running Since
+             * @description Unknown without a verified process start time.
+             */
+            running_since?: string | null;
+            /**
+             * Running Version
+             * @description Unknown without a current process attestation.
+             */
+            running_version?: string | null;
+            /**
+             * Status Observed At
+             * @description When this daemon status was obtained.
+             */
+            status_observed_at?: string | null;
+        };
+        /**
+         * WorkspaceInstalledVersion
+         * @description The separately inspected installation, not a guess from the web server's imported package.
+         */
+        WorkspaceInstalledVersion: {
+            /**
+             * Updated At
+             * @description Unknown unless an installation event is verified.
+             */
+            updated_at?: string | null;
+            /**
+             * Version
+             * @description Verified installed Core version, or null if unavailable.
+             */
+            version?: string | null;
+        };
+        /**
+         * WorkspaceVersion
+         * @description Version facts read on this request, with missing evidence represented as null.
+         */
+        WorkspaceVersion: {
+            daemon: components["schemas"]["WorkspaceDaemonVersion"];
+            installed: components["schemas"]["WorkspaceInstalledVersion"];
+            /**
+             * Observed At
+             * Format: date-time
+             * @description When this response's observations started.
+             */
+            observed_at: string;
+            web: components["schemas"]["WorkspaceWebVersion"];
+        };
+        /**
+         * WorkspaceWebVersion
+         * @description The answering server's own loaded code and when this server instance was created.
+         */
+        WorkspaceWebVersion: {
+            /**
+             * Observed Since
+             * Format: date-time
+             * @description When this server instance was initialized; not process start time.
+             */
+            observed_since: string;
+            /**
+             * Running Since
+             * @description Unknown without a verified process start time.
+             */
+            running_since?: string | null;
+            /**
+             * Version
+             * @description Core version loaded by the answering web server.
+             */
+            version: string;
+        };
         /** ai_access_remove_key_Input */
         ai_access_remove_key_Input: Record<string, never>;
         /** ai_access_set_key_Input */
@@ -17563,6 +17729,12 @@ export interface components {
              * @description Confirm the outcome may be unknown and no retry or undo occurs.
              */
             acknowledge_uncertain: boolean;
+            /**
+             * Expected Status
+             * @description The exact state the owner acknowledged.
+             * @enum {string}
+             */
+            expected_status: "pending" | "unresolved";
             /**
              * Request Id
              * @description A stable client request id; reuse it only for an exact retry.
@@ -18865,6 +19037,10 @@ export type SchemaWakeScheduleView = components['schemas']['WakeScheduleView'];
 export type SchemaWeek = components['schemas']['Week'];
 export type SchemaWidgetAction = components['schemas']['WidgetAction'];
 export type SchemaWidgetEntry = components['schemas']['WidgetEntry'];
+export type SchemaWorkspaceDaemonVersion = components['schemas']['WorkspaceDaemonVersion'];
+export type SchemaWorkspaceInstalledVersion = components['schemas']['WorkspaceInstalledVersion'];
+export type SchemaWorkspaceVersion = components['schemas']['WorkspaceVersion'];
+export type SchemaWorkspaceWebVersion = components['schemas']['WorkspaceWebVersion'];
 export type SchemaAiAccessRemoveKeyInput = components['schemas']['ai_access_remove_key_Input'];
 export type SchemaAiAccessSetKeyInput = components['schemas']['ai_access_set_key_Input'];
 export type SchemaHeinzelAbandonChatTurnInput = components['schemas']['heinzel_abandon_chat_turn_Input'];
@@ -25850,16 +26026,22 @@ export interface operations {
                 source?: string | null;
                 /** @description Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest published stable release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit. */
                 channel?: ("stable" | "edge" | "main" | "release") | null;
-                /** @description Agree to the plan without being asked: update hz and every plugin, also the ones pinned to the version or commit they were added at, and the desktop app if one is installed. Whoever passes it agrees for the person: a script, an agent over MCP or a REST client then moves pins and, unless `desktop` is false, runs `hz app install` without another question. */
+                /** @description Accepted and ignored: the update never asks, so there is nothing to agree to. */
                 yes?: boolean;
-                /** @description The `token` of the plan that was shown (`--preview`). With `yes`, the update then installs exactly that plan; if a release appeared since, it changes nothing and answers with the new plan. */
+                /** @description The `token` of the plan that was shown (`--preview`). The update then installs exactly that plan; if a release appeared since, it changes nothing and answers with the new plan. */
                 plan?: string | null;
                 /** @description Only show what the update would change (`plan`); nothing is installed. */
                 preview?: boolean;
                 /** @description Leave plugins pinned to an exact version or a commit where they are. */
                 keep_pins?: boolean;
-                /** @description Whether to update an installed desktop app afterwards with `hz app install`. Unset: asked on a terminal, yes with `--yes`, otherwise left for the app's own next update. */
+                /** @description Earlier name of `desktop_app`: false leaves the desktop app alone. */
                 desktop?: boolean | null;
+                /** @description Whether to bring an installed desktop app along with `hz app install`; `--no-desktop-app` leaves it. */
+                desktop_app?: boolean;
+                /** @description Whether an open desktop app is quit and reopened so it can be replaced. `--no-desktop-app-restart` never quits it: it then installs when you quit it. The app's own service never quits the app, whatever this says. */
+                desktop_app_restart?: boolean;
+                /** @description Whether the daemon and the web server are restarted onto what was installed. `--no-daemon` leaves them running and says which version they still run. */
+                daemon?: boolean;
             };
             header?: never;
             path?: never;
@@ -25993,6 +26175,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TeamShow"];
+                };
+            };
+        };
+    };
+    workspace_version_workspace_version_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceVersion"];
                 };
             };
         };

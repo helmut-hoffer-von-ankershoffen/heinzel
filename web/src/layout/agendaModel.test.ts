@@ -140,3 +140,28 @@ it("rowTimes gives start over end and nothing that looks like a date", () => {
   const times = rowTimes({ event: event("a", "2026-11-08T08:00:00Z", "2026-11-08T08:45:00Z"), edge: "only" }, BERLIN);
   expect(times).toEqual({ allDay: false, top: "09:00", bottom: "09:45" });
 });
+
+it("splits a running meeting at UTC midnight and gives the following meeting a Tomorrow group", () => {
+  const days = group(
+    [
+      event("current", "2026-11-16T23:52:00Z", "2026-11-17T00:03:00Z"),
+      event("next", "2026-11-17T00:13:00Z", "2026-11-17T00:23:00Z"),
+    ],
+    {
+      now: Date.parse("2026-11-16T23:53:00Z"),
+      tz: "UTC",
+      since: "2026-11-13T00:00:00Z",
+      until: "2026-11-20T00:00:00Z",
+    },
+  );
+  expect(days.map((day) => [day.relation, day.events.map(({ event, edge }) => [event.id, edge])])).toEqual([
+    ["today", [["current", "start"]]],
+    [
+      "tomorrow",
+      [
+        ["current", "end"],
+        ["next", "only"],
+      ],
+    ],
+  ]);
+});

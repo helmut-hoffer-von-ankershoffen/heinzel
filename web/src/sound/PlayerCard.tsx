@@ -21,9 +21,9 @@ const HEADER = 44;
 const DRAG_PX = 6;
 const STEP = 16;
 
-type Props = { title: string; watchUrl?: string; host: string; children: ReactNode };
+type Props = { title: string; watchUrl?: string; host: string; children: ReactNode; headerAction?: ReactNode };
 
-export function PlayerCard({ title, watchUrl, host, children }: Props) {
+export function PlayerCard({ title, watchUrl, host, children, headerAction }: Props) {
   const pref = useDockPref();
   const slot = useDockSlot();
   const docked = pref.docked && slot !== null;
@@ -114,7 +114,9 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
   };
 
   const down = (event: PointerEvent<HTMLElement>) => {
-    if ((event.target as HTMLElement).closest("a,button")) return;
+    if (!event.currentTarget.contains(event.target as Node)) return;
+    const action = (event.target as Element).closest("a,button");
+    if (action && !action.hasAttribute("data-player-drag-handle")) return;
     const rect = card.current?.getBoundingClientRect();
     drag.current = {
       x: event.clientX,
@@ -200,8 +202,9 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
           <p className="truncate text-xs text-muted-foreground">{t("sound.playsFrom", { host })}</p>
         </div>
         <div data-pane-chrome="" className="flex shrink-0 items-center gap-1.5">
+          {headerAction}
           {!docked && (
-            <PaneAction ghost icon={GripHorizontal} onKeyDown={key}>
+            <PaneAction ghost icon={GripHorizontal} data-player-drag-handle onKeyDown={key}>
               {t("sound.move")}
             </PaneAction>
           )}
