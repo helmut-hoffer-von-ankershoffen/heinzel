@@ -6,11 +6,11 @@ import contextlib
 import fcntl
 import os
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterator
-    from pathlib import Path
 
 __all__ = ["FileInstallationState"]
 
@@ -29,9 +29,10 @@ def _checked(name: str) -> str:
 class FileInstallationState:
     """One installation's state folder (mode 0700); its files are written for this user only."""
 
-    def __init__(self, folder: Path) -> None:
-        """Use `folder`; it is created on first use."""
+    def __init__(self, folder: Path, home: Path | None = None) -> None:
+        """Use `folder`, created on first use; `home` is where the desktop app's files live (the person's home)."""
         self._folder = folder
+        self._home = home
 
     @property
     def folder(self) -> Path:
@@ -58,6 +59,17 @@ class FileInstallationState:
         except FileNotFoundError:
             return iter(())
         return iter(text.splitlines())
+
+    def home_file(self, relative: str) -> str | None:
+        """The text of `relative` under the home folder; None if it is missing, unreadable or outside the home."""
+        home = self._home or Path.home()
+        path = (home / relative).resolve()
+        if not path.is_relative_to(home.resolve()):
+            return None
+        try:
+            return path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
 
     def append(self, name: str, line: str) -> None:
         """Add one line to `<name>.journal` and flush it to disk before returning.

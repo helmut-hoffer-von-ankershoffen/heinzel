@@ -213,3 +213,10 @@ class InstallationState(Protocol):
     def append(self, name: str, line: str) -> None:
         """Add one line to journal `name`, durably: a reader in another process sees it at once."""
         ...
+
+    def home_file(self, relative: str) -> str | None:
+        """The text of a file the installation keeps under the person's home folder (the desktop app's receipt).
+
+        None when it does not exist or cannot be read; `relative` may not leave the home folder.
+        """
+        ...
