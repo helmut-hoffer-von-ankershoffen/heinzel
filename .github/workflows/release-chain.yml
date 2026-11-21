@@ -38,7 +38,7 @@ on:
     paths:
       - ".github/workflows/release-chain.yml"
       - ".github/workflows/release-freeze.yml"
-      - "scripts/release_chain.py"
+      - "scripts/release_chain.*"
       - "tests/unit/release_chain_test.py"
 
 permissions: {}
@@ -166,7 +166,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           else
-            HAS_RELEASE_TOKEN=false uv run --no-project --frozen --no-build --python 3.15 python .chain/scripts/release_chain.py need-token
+            cd .chain && HAS_RELEASE_TOKEN=false uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py need-token
           fi
       - name: Prepare the release commit on the gated tip
         env:
@@ -180,8 +180,8 @@ jobs:
         env:
           PREVIOUS: ${{ needs.plan.outputs.previous }}
         run: |
-          uv run --no-project --frozen --no-build --python 3.15 python .chain/scripts/release_chain.py scope \
-            --base "$BASE" --version "$VERSION" --previous "$PREVIOUS"
+          (cd .chain && uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py scope \
+            --repo "$GITHUB_WORKSPACE" --base "$BASE" --version "$VERSION" --previous "$PREVIOUS")
           {
             echo "### v$VERSION from ${BASE:0:9}"
             echo '```'

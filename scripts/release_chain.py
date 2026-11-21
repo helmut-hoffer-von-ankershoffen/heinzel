@@ -1048,6 +1048,7 @@ def parser() -> argparse.ArgumentParser:
             ("--wait", {"type": float, "default": 3600}),
         ),
         "scope": (
+            ("--repo", {"type": Path, "default": Path()}),
             ("--base", {"required": True}),
             ("--version", {"required": True}),
             ("--previous", {"required": True}),
@@ -1089,8 +1090,8 @@ def cmd_plan(args: argparse.Namespace) -> int:
 
 def cmd_scope(args: argparse.Namespace) -> int:
     """Check the prepared release commit and its notes."""
-    head = verify_scope(Path.cwd(), args.base, args.version)
-    audit_notes(Path.cwd(), args.previous, args.base, args.version)
+    head = verify_scope(args.repo.resolve(), args.base, args.version)
+    audit_notes(args.repo.resolve(), args.previous, args.base, args.version)
     say(f"ok   release commit {head[:9]}: only release files, notes name every commit since v{args.previous}")
     output({"head": head})
     return 0

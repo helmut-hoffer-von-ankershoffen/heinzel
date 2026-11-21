@@ -134,9 +134,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "echo /.chain/": "keeps the chain's own checkout out of the release tree",
         'if [ -n "$RELEASE_TOKEN" ]': "commits as the owner identity the ruleset needs",
         "git checkout -q -B main": "puts main at the gated tip, the branch release.sh prepares from",
-        "uv run --no-project --frozen --no-build --python 3.15 python .chain/scripts/release_chain.py": (
-            "checks the release commit with the chain's own reviewed script"
-        ),
+        "(cd .chain && uv run": "checks the release commit with the chain's own reviewed script",
         'tip="$(GH_TOKEN=': "refuses to push a cut when main moved during it",
         "uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py": (
             "one step of the release chain, reading GitHub first"
