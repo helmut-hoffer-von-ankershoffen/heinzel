@@ -55,7 +55,10 @@ REQUIRED = frozenset({"build", "web"})
 """Groups whose missing tools fail `make doctor`; `web` only where there is a web/ app (not in plugins)."""
 WEB_APP = ROOT / "web" / "package.json"
 TIMEOUT = 120
-DOWNLOAD_ATTEMPTS = 3
+DOWNLOAD_RETRIES = 5  # the uv retry fix of PR 890 (curl --retry 5): five retries after the first attempt
+DOWNLOAD_ATTEMPTS = DOWNLOAD_RETRIES + 1
+# Statuses that are retried: 403 and 429 are how anonymous GitHub release downloads report rate limits and edge blocks.
+TRANSIENT_STATUS = (403, 429, 502, 503, 504)
 DOWNLOAD_ERROR_PATH_LIMIT = 256
 SHA256 = re.compile(r"[0-9a-f]{64}")
 RELEASE_ASSET = re.compile(
@@ -230,10 +233,10 @@ def _interrupted_transport(error: OSError | http.client.HTTPException) -> bool:
 
 
 def http_get(url: str) -> bytes:
-    """The URL's body, with at most three attempts for interrupted transfers or transient gateways.
+    """The URL's body, with at most six attempts (one plus five retries) for interruptions and transient statuses.
 
     Retry socket timeouts use the original budget's remaining time. Redirects and proxies use urllib's defaults.
-    Certificate, protocol and HTTP errors other than 502/503/504 fail immediately.
+    Certificate, protocol and HTTP errors other than TRANSIENT_STATUS fail immediately.
 
     Raises:
         OSError: the connection or TLS verification failed.
@@ -250,13 +253,13 @@ def http_get(url: str) -> bytes:
             ) as response:
                 return bytes(response.read())
         except (OSError, http.client.HTTPException) as error:
-            transient_gateway = isinstance(error, urllib.error.HTTPError) and error.code in (502, 503, 504)
+            transient_status = isinstance(error, urllib.error.HTTPError) and error.code in TRANSIENT_STATUS
             if isinstance(error, urllib.error.HTTPError):
                 error.close()
             attempt += 1
             delay = 0.5 * attempt * (0.5 + secrets.randbelow(1001) / 1000)  # jitter spreads the retries
             if (
-                not (transient_gateway or _interrupted_transport(error))
+                not (transient_status or _interrupted_transport(error))
                 or attempt == DOWNLOAD_ATTEMPTS
                 or deadline - time.monotonic() <= delay
             ):
@@ -274,7 +277,8 @@ def _download_failure_detail(error: OSError | http.client.HTTPException) -> str:
     notes: list[str] = getattr(error, "__notes__", [])
     prefix = "heinzel-download-attempts="
     counts = [note.removeprefix(prefix) for note in notes if note.startswith(prefix)]
-    attempts = next((count for count in reversed(counts) if count in {"1", "2", "3"}), None)
+    known = {str(number) for number in range(1, DOWNLOAD_ATTEMPTS + 1)}
+    attempts = next((count for count in reversed(counts) if count in known), None)
     detail = str(error) or type(error).__name__
     if isinstance(error, urllib.error.HTTPError):
         # HTTP error text and signed query strings can contain credentials. Only the
