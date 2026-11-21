@@ -17,7 +17,8 @@ from heinzel.kernel._head_refresh import HeadRefresh
 from heinzel.modules import system
 from heinzel.modules.system._models import PluginPlan, PluginUpdate, UpdatePlan, UpdateResult
 from heinzel.modules.system._render import plan_text, render_update
-from heinzel.modules.system.updater import _update
+from heinzel.modules.system.updater import _update_core, _update_heads, _update_rules
+from heinzel.modules.system.updater._adapter_state import FileInstallationState
 from heinzel.modules.system.updater._plugin_releases import PinnedPlugins, PyPIPluginReleases
 from heinzel.modules.system.updater._plugin_standing import standing
 from heinzel.modules.system.updater._update import UpdateService
@@ -289,10 +290,10 @@ def test_the_plan_in_plain_lines():
 @pytest.fixture
 def desktop_home(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    receipt = home / _update.DESKTOP_RECEIPT
+    receipt = home / _update_rules.DESKTOP_RECEIPT
     receipt.parent.mkdir(parents=True)
     receipt.write_text("{}", encoding="utf-8")
-    monkeypatch.setattr(_update.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(_update_heads.platform, "system", lambda: "Darwin")
     return home
 
 
@@ -375,7 +376,7 @@ def test_a_closed_app_is_updated_without_a_restart_even_when_one_is_asked_for(tm
 
 
 def test_an_app_still_open_after_the_wait_is_deferred_and_a_warning_never_a_failure(tmp_path, desktop_home):
-    app = App(_update.DEFERRED, "Heinzelmännchen is still open after 20 s, so it was not replaced.")
+    app = App(_update_rules.DEFERRED, "Heinzelmännchen is still open after 20 s, so it was not replaced.")
     result = with_desktop(tmp_path, desktop_home, app, running=True).update(current="0.2.0", desktop=True, restart=True)
     [head] = result.heads
     assert (head.status, head.reopened) == ("pending", False)
@@ -388,8 +389,8 @@ def test_the_deferred_code_and_the_wait_are_the_ones_the_installer_uses():
     from heinzel.heads import _desktop_installation
     from heinzel.heads.cli import _app
 
-    assert _update.QUIT_SECONDS == _desktop_installation.QUIT_SECONDS
-    assert _update.DEFERRED == _app.RESTART_DEFERRED
+    assert _update_rules.QUIT_SECONDS == _desktop_installation.QUIT_SECONDS
+    assert _update_rules.DEFERRED == _app.RESTART_DEFERRED
 
 
 def test_a_desktop_app_that_cannot_be_updated_never_undoes_the_update(tmp_path, desktop_home, caplog):
@@ -429,7 +430,7 @@ def test_nothing_newer_leaves_the_desktop_app_alone(tmp_path, desktop_home):
 
 
 def test_an_app_already_at_the_new_version_is_not_installed_again(tmp_path, desktop_home):
-    (desktop_home / _update.DESKTOP_RECEIPT).write_text('{"release": "0.4.0"}', encoding="utf-8")
+    (desktop_home / _update_rules.DESKTOP_RECEIPT).write_text('{"release": "0.4.0"}', encoding="utf-8")
     app = App()
     result = with_desktop(tmp_path, desktop_home, app, running=True).update(current="0.2.0", desktop=True, restart=True)
     assert app.calls == []
@@ -437,7 +438,7 @@ def test_an_app_already_at_the_new_version_is_not_installed_again(tmp_path, desk
 
 
 def test_an_app_behind_hz_is_updated_even_when_hz_itself_is_current(tmp_path, desktop_home):
-    (desktop_home / _update.DESKTOP_RECEIPT).write_text('{"release": "0.3.0"}', encoding="utf-8")
+    (desktop_home / _update_rules.DESKTOP_RECEIPT).write_text('{"release": "0.3.0"}', encoding="utf-8")
     app = App()
     uv = FakeUv("0.4.0")
     target = installation(tmp_path, f'git = "{REPO}?rev=v0.4.0"', uv)
@@ -454,7 +455,7 @@ def test_the_real_desktop_step_runs_hz_app_install_in_a_fresh_interpreter(monkey
         ran.append((command, kwargs))
         return SimpleNamespace(returncode=3, stdout="out", stderr="")
 
-    monkeypatch.setattr(_update.subprocess, "run", run)
+    monkeypatch.setattr(_update_core.subprocess, "run", run)
     uv = FakeUv("0.2.0")
     service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv), FakeReleases())
     assert service._app_install() == (3, "out")
@@ -462,7 +463,7 @@ def test_the_real_desktop_step_runs_hz_app_install_in_a_fresh_interpreter(monkey
     [(command, kwargs), (restarting, _)] = ran
     assert command[-4:] == ["-m", "heinzel", "app", "install"]
     assert restarting[-5:] == ["-m", "heinzel", "app", "install", "--restart"]
-    assert (kwargs["timeout"], kwargs["stdin"], kwargs["check"]) == (900, _update.subprocess.DEVNULL, False)
+    assert (kwargs["timeout"], kwargs["stdin"], kwargs["check"]) == (900, _update_core.subprocess.DEVNULL, False)
 
 
 # The operation: one pass, no questions, the flags that answer in advance.
@@ -822,7 +823,7 @@ def test_the_agreement_belongs_to_one_call_and_is_gone_afterwards(tmp_path):
     service = UpdateService(target, FakeReleases("0.4.0"), pinned=newer(commit=None))
     agree(service)
     assert uv.commands[-1][-1] == "heinzel-acme>=1.2.0"
-    assert _update._AGREED.get().moves == {}
+    assert _update_rules.AGREED.get().moves == {}
     [pin] = target.plugin_pins()
     assert service._spec(pin, "new", "heinzel", None) == "heinzel-acme==1.0.0"  # nobody agreed: the pin as it is
 
@@ -847,7 +848,7 @@ def test_a_second_update_while_one_installs_is_refused_and_cannot_touch_its_agre
     try:
         assert installing.wait(10)
         # Another request, in its own thread, sees no agreement and may not start a second update.
-        assert _update._AGREED.get().moves == {}
+        assert _update_rules.AGREED.get().moves == {}
         with pytest.raises(HeinzelError, match="An update is already running here"):
             service.update(current="0.2.0")
     finally:
@@ -857,6 +858,29 @@ def test_a_second_update_while_one_installs_is_refused_and_cannot_touch_its_agre
     assert seen["result"].plugins[0].after == "1.2.0"  # type: ignore[attr-defined]
     assert service._updating.acquire(blocking=False)  # and the lock is free again
     service._updating.release()
+
+
+def test_an_update_waits_for_one_another_process_holds_on_the_same_state_folder(tmp_path):
+    uv = FakeUv("0.2.0")
+    target = tool(tmp_path, AT_VERSION, uv)
+    service = UpdateService(target, FakeReleases("0.4.0"), state=FileInstallationState(tmp_path / "state"))
+    other = FileInstallationState(tmp_path / "state")  # another hz on the same installation: its own lock file handle
+    started, done = threading.Event(), threading.Event()
+
+    def update():
+        started.set()
+        service.update(current="0.2.0")
+        done.set()
+
+    with other.lock("update"):
+        worker = threading.Thread(target=update)
+        worker.start()
+        assert started.wait(10)
+        assert not done.wait(0.3)  # held off while the other process updates
+        assert uv.commands == []
+    assert done.wait(10)
+    worker.join(10)
+    assert uv.commands  # once the other one let go, this update ran
 
 
 @pytest.mark.parametrize("error", [LookupError("no such release"), KeyError("tag_name"), TypeError("not a list")])

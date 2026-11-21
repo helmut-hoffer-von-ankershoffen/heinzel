@@ -11,8 +11,8 @@ from fastapi.testclient import TestClient
 
 from heinzel import Settings
 from heinzel.heads import web
-from heinzel.heads.web import _auto_update as auto
-from heinzel.heads.web._auto_update import Activity, AutoUpdater, Plan
+from heinzel.heads.web import _auto_update as routes
+from heinzel.heads.web._auto_update import Activity, AutoUpdater
 from heinzel.kernel import (
     CorePin,
     Installation,
@@ -23,6 +23,8 @@ from heinzel.kernel import (
     ReleaseFacts,
     ReleaseSource,
 )
+from heinzel.modules.system.updater import _schedule as auto
+from heinzel.modules.system.updater._schedule import Plan
 
 pytestmark = pytest.mark.unit
 START = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
@@ -124,10 +126,10 @@ def test_the_plan_survives_the_state_file_but_a_countdown_does_not():
 
 
 def test_only_requests_that_change_state_count_as_work():
-    assert auto.counts_as_work("POST", "/api/heinzel/answer-chat")
-    assert auto.counts_as_work("POST", "/mcp")  # an outside agent's write holds off an update like the app's own
-    assert not auto.counts_as_work("GET", "/api/heinzel/sessions")
-    assert not auto.counts_as_work("POST", "/api/auto-update/postpone")
+    assert routes.counts_as_work("POST", "/api/heinzel/answer-chat")
+    assert routes.counts_as_work("POST", "/mcp")  # an outside agent's write holds off an update like the app's own
+    assert not routes.counts_as_work("GET", "/api/heinzel/sessions")
+    assert not routes.counts_as_work("POST", "/api/auto-update/postpone")
     activity = Activity()
     activity.enter()
     assert activity.busy
@@ -532,7 +534,8 @@ def test_only_one_server_applies_while_the_other_waits(make_kernel, tmp_path):
     made, clock, calls, kernel = updater(make_kernel, tmp_path)
     other_calls = {"update": 0}
     other = twin(made, kernel, clock, other_calls)
-    holder = auto._try_lock(tmp_path / "state" / "web" / "auto-update-apply.lock")  # the first server applies now
+    # the first server applies now
+    holder = auto._try_lock(tmp_path / "state" / "web" / "auto-update-apply.lock", routes.STATE_FILES)
     assert holder is not None
     try:
         other._next_check = clock.now
@@ -665,7 +668,7 @@ def test_a_left_copy_is_put_back_at_start_only_while_no_other_server_applies(mak
     kernel = make_kernel(builtins=True, settings_=settings)
     AutoUpdater(kernel, restart=lambda: None, development=None)
     assert asked == [True]
-    holder = auto._try_lock(tmp_path / "state" / "web" / "auto-update-apply.lock")
+    holder = auto._try_lock(tmp_path / "state" / "web" / "auto-update-apply.lock", routes.STATE_FILES)
     try:
         AutoUpdater(kernel, restart=lambda: None, development=None)
     finally:
@@ -720,7 +723,7 @@ def test_a_restart_that_fails_stops_showing_applying_and_says_what_to_do(make_ke
 def test_the_log_says_what_holds_the_countdown_off_and_when_it_opens(make_kernel, tmp_path, caplog):
     made, clock, _, _ = updater(make_kernel, tmp_path)
     made._activity.enter("POST /api/system/config/set")
-    with caplog.at_level("INFO", logger=auto.__name__):
+    with caplog.at_level("INFO", logger=routes.__name__):
         advance(made, clock, 5 * 60)
         made._activity.leave("POST /api/system/config/set")
         advance(made, clock, 1)
@@ -1013,22 +1016,22 @@ def test_desktop_refresh_only_updates_an_existing_installation(make_kernel, tmp_
     made, _, _, kernel = updater(make_kernel, tmp_path)
     calls = []
     receipt = kernel.resolve(Installation)
-    monkeypatch.setattr(auto.platform, "system", lambda: "Darwin")
-    monkeypatch.setattr(auto.os.path, "lexists", lambda _: True)
+    monkeypatch.setattr(routes.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(routes.os.path, "lexists", lambda _: True)
     monkeypatch.setattr(receipt, "tool_entrypoints", lambda: [Path("/isolated/bin/hz")], raising=False)
     monkeypatch.setattr(_desktop_installation, "install_desktop", lambda *a, **kw: calls.append((a, kw)) or "updated")
     made._refresh_desktop()
     assert calls == [(("1.0.0", Path("/isolated/bin/hz")), {"update_only": True})]
-    monkeypatch.setattr(auto.os.path, "lexists", lambda _: False)
+    monkeypatch.setattr(routes.os.path, "lexists", lambda _: False)
     made._refresh_desktop()
     assert len(calls) == 1
-    monkeypatch.setattr(auto.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(routes.platform, "system", lambda: "Linux")
     made._refresh_desktop()
     assert len(calls) == 1
 
     # An installed tool without an hz entry point must not create an app.
-    monkeypatch.setattr(auto.platform, "system", lambda: "Darwin")
-    monkeypatch.setattr(auto.os.path, "lexists", lambda _: True)
+    monkeypatch.setattr(routes.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(routes.os.path, "lexists", lambda _: True)
     monkeypatch.setattr(receipt, "tool_entrypoints", lambda: [SimpleNamespace(name="other")], raising=False)
     made._refresh_desktop()
     assert len(calls) == 1

@@ -439,7 +439,7 @@ def install_fake_release(folder: Path) -> None:  # noqa: C901 - one patch of the
     """
     from heinzel import __version__  # noqa: PLC0415 - these fakes patch the running installation, so it is imported late
 
-    _auto_update = importlib.import_module("heinzel.heads.web._auto_update")
+    _schedule = importlib.import_module("heinzel.modules.system.updater._schedule")
     from heinzel.kernel import CorePin, Installation, PluginNews, PluginRelease, ReleaseFacts  # noqa: PLC0415 - these fakes patch the running installation, so it is imported late
 
     _service = importlib.import_module("heinzel.modules.system._service")
@@ -510,9 +510,9 @@ def install_fake_release(folder: Path) -> None:  # noqa: C901 - one patch of the
     _update.UpdateService.apply_announced = apply_announced
     _plugin_releases.PyPIPluginReleases.release = release
     _plugin_releases.PyPIPluginReleases.announceable = announceable
-    setattr(_auto_update, "_now", now)  # noqa: B010 - a name this module does not declare
-    setattr(_auto_update, "FIRST_CHECK", (timedelta(seconds=1), timedelta(seconds=2)))  # noqa: B010 - a name this module does not declare
-    setattr(_auto_update, "CHECK_EVERY", timedelta(seconds=2))  # noqa: B010 - a name this module does not declare
-    setattr(_auto_update, "JITTER", timedelta(0))  # noqa: B010 - a name this module does not declare
+    setattr(_schedule, "_now", now)  # noqa: B010 - a name this module does not declare
+    setattr(_schedule, "FIRST_CHECK", (timedelta(seconds=1), timedelta(seconds=2)))  # noqa: B010 - a name this module does not declare
+    setattr(_schedule, "CHECK_EVERY", timedelta(seconds=2))  # noqa: B010 - a name this module does not declare
+    setattr(_schedule, "JITTER", timedelta(0))  # noqa: B010 - a name this module does not declare
 
     Installation.core_pin = core_pin  # type: ignore[method-assign]

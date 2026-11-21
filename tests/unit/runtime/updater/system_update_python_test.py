@@ -255,17 +255,17 @@ class Recreated:
 
 @pytest.mark.parametrize(("after", "same"), [("same files", True), ("other files", False)])
 def test_a_restore_into_a_recreated_folder_counts_by_content_and_renews_the_record(after, same):
-    from heinzel.modules.system.updater._update import _ORIGINALS
+    from heinzel.modules.system.updater._update_rules import ORIGINALS
 
     tool = Recreated("same files")
     updates = UpdateService(tool, None)  # type: ignore[arg-type] - only the generation seams are used
-    token = _ORIGINALS.set({})
+    token = ORIGINALS.set({})
     try:
         original = updates._original_generation()
         tool.generation, tool.content = "new folder", after
         assert updates._same_generation(original) is same
     finally:
-        _ORIGINALS.reset(token)
+        ORIGINALS.reset(token)
     assert tool.recorded == (["new folder"] if same else [])
 
 
