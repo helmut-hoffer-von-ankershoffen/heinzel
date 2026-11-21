@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-version=${1:?Pass the matching stable Heinzel version}
+# The app's marketing version is Heinzel's version in pyproject.toml; an explicit argument must equal it.
+heinzel_version=$(sed -n 's/^version = "\(.*\)"$/\1/p' ../pyproject.toml | head -1)
+version=${1:-$heinzel_version}
 [[ $version =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+if [[ "$version" != "$heinzel_version" ]]; then
+    printf 'Version %s differs from pyproject.toml (%s).\n' "$version" "$heinzel_version" >&2
+    exit 2
+fi
 https_links=${HEINZEL_HTTPS_LINKS:-NO}
 case "$https_links" in
     YES|NO) ;;
@@ -24,6 +30,7 @@ stage="$(mktemp -d)"
 trap 'rm -rf -- "$stage"' EXIT
 xcodebuild -scheme Heinzel -configuration Release -destination 'generic/platform=macOS' \
     -derivedDataPath "$out" ARCHS=arm64 MARKETING_VERSION="$version" HEINZEL_MANAGED_INSTALL=YES \
+    HEINZEL_SOURCE_REVISION="$(git rev-parse HEAD)" \
     HEINZEL_HTTPS_LINKS="$https_links" ${signing[@]+"${signing[@]}"} build -quiet
 app="$stage/Heinzelmaennchen.app"
 /usr/bin/ditto "$out/Build/Products/Release/Heinzel.app" "$app"

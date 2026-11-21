@@ -18,6 +18,6 @@
 		<string>Heinzel iOS Widgets App Store Mini</string>
 	</dict>
 	<key>manageAppVersionAndBuildNumber</key>
-	<true/>
+	<false/>
 </dict>
 </plist>

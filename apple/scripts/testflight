@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["pyjwt[crypto]"]
 # ///
-"""TestFlight without an Apple ID session: upload, status, assign, setup.
+"""TestFlight without an Apple ID session: upload, status, assign, beta, notes, setup.
 
 Credentials come from the env file (default ~/.appstoreconnect/heinzel-mini.env,
 override with ASC_ENV_FILE): ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH. The key
@@ -13,16 +13,19 @@ import argparse
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import time
 import urllib.error
+import unicodedata
 import urllib.request
 
 import jwt
 
 APP_ID = "6835027321"
 GROUP_NAME = "Heinzel Internal Auto"
+NOTES_LOCALE = "en-US"
 API = "https://api.appstoreconnect.apple.com"
 PLIST = pathlib.Path(__file__).resolve().parent.parent / "distribution" / "ExportOptions-testflight.plist"
 
@@ -128,6 +131,47 @@ def cmd_assign(env, args) -> None:
         print(f"assigned build {row['build']} ({row['id']})")
 
 
+def build_id(env, number: str) -> str:
+    for row in builds(env):
+        if row["build"] == number:
+            return row["id"]
+    sys.exit(f"build {number} not found")
+
+
+def cmd_beta(env, args) -> None:
+    """The internal beta state: IN_BETA_TESTING once testers can install it (MISSING_EXPORT_COMPLIANCE, PROCESSING_EXCEPTION ...)."""
+    bid = build_id(env, args.build)
+    state = call(env, "GET", f"/v1/builds/{bid}/buildBetaDetail")["data"]["attributes"].get("internalBuildState")
+    print(f"build {args.build} internalBuildState={state}")
+
+
+def plain_notes(markdown: str) -> str:
+    """Release notes as App Store Connect accepts them: plain text without links markup, headings or symbols
+    (Apple refuses emoji and other pictographs in whatsNew, HTTP 409 INVALID_TEXT), at most 4000 characters."""
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", markdown)
+    text = re.sub(r"^#+\s*", "", text, flags=re.MULTILINE).replace("**", "").replace("`", "")
+    text = "".join(c for c in text if unicodedata.category(c) not in ("So", "Sk", "Cs", "Co", "Cn", "Mn", "Cf") or c in "\n\t")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = "\n".join(line.strip() for line in text.splitlines())
+    return re.sub(r"\n{3,}", "\n\n", text).strip()[:4000]
+
+
+def cmd_notes(env, args) -> None:
+    """Set the build's "What to Test" text (en-US) from a file; creates the localization when it is missing."""
+    text = plain_notes(pathlib.Path(args.file).read_text())
+    bid = build_id(env, args.build)
+    found = call(env, "GET", f"/v1/builds/{bid}/betaBuildLocalizations?limit=50")["data"]
+    current = next((item for item in found if item["attributes"].get("locale") == NOTES_LOCALE), None)
+    if current:
+        call(env, "PATCH", f"/v1/betaBuildLocalizations/{current['id']}",
+             {"data": {"type": "betaBuildLocalizations", "id": current["id"], "attributes": {"whatsNew": text}}})
+    else:
+        call(env, "POST", "/v1/betaBuildLocalizations",
+             {"data": {"type": "betaBuildLocalizations", "attributes": {"locale": NOTES_LOCALE, "whatsNew": text},
+                       "relationships": {"build": {"data": {"type": "builds", "id": bid}}}}})
+    print(f"notes set for build {args.build} ({len(text)} characters)")
+
+
 def cmd_upload(env, args) -> None:
     cmd = ["xcrun", "xcodebuild", "-exportArchive", "-archivePath", args.archive,
            "-exportOptionsPlist", args.plist, "-exportPath", args.export_path,
@@ -145,12 +189,18 @@ def main() -> None:
     for name in ("status", "assign"):
         p = sub.add_parser(name)
         p.add_argument("build", nargs="?", help="build number; default all")
+    beta = sub.add_parser("beta", help="print a build's internal beta state")
+    beta.add_argument("build")
+    notes = sub.add_parser("notes", help="set a build's What to Test text from a file")
+    notes.add_argument("build")
+    notes.add_argument("file")
     up = sub.add_parser("upload", help="export and upload an .xcarchive")
     up.add_argument("archive")
     up.add_argument("--plist", default=str(PLIST))
     up.add_argument("--export-path", default=".build/testflight-export")
     args = parser.parse_args()
-    {"setup": cmd_setup, "status": cmd_status, "assign": cmd_assign, "upload": cmd_upload}[args.cmd](load_env(), args)
+    commands = {"setup": cmd_setup, "status": cmd_status, "assign": cmd_assign, "beta": cmd_beta, "notes": cmd_notes, "upload": cmd_upload}
+    commands[args.cmd](load_env(), args)
 
 
 if __name__ == "__main__":
