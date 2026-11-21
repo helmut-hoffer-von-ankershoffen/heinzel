@@ -1,7 +1,8 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { everyday, heinzelmaennchen, shell } from "@/test/fixtures";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 describe("Heinzelmännchen", () => {
   it("lists each Heinzelmännchen with its contract, owner, state and runs", async () => {

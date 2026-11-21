@@ -1,7 +1,7 @@
 // Mount the real footer panes (Core's and a plugin's, drawn by Core) and production styles in a phone-sized footer.
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
-import { Providers, queryClient } from "../src/App";
+import { Providers, queryClient } from "../src/app/providers";
 import { StatusItems } from "../src/components/Contributions";
 import { DurableHeinzelStatus } from "../src/layout/DurableHeinzelStatus";
 import { HealthStatus } from "../src/layout/HealthStatus";

@@ -3,7 +3,8 @@ import { resolve } from "node:path";
 import { screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { config, noTeam, shell } from "@/test/fixtures";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 import { heinzelDanceSvg } from "./heinzel";
 
 const quiet = {

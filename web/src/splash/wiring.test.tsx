@@ -1,9 +1,9 @@
 // What reports to the page's splash: failed calls, the notice stream, a restart and the theme.
 import { render, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { Providers, queryClient } from "@/App";
 import { ApiError } from "@/api/client";
 import { useRestartServer } from "@/api/queries";
+import { Providers, queryClient } from "@/app/providers";
 import { ThemeTokens } from "@/layout/ThemeTokens";
 import { follow } from "@/notifications/stream";
 import { acmeTheme, themeList } from "@/test/fixtures";

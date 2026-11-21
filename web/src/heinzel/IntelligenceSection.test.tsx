@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { Providers, queryClient } from "@/App";
 import type { SchemaLevelView } from "@/api/client";
+import { Providers, queryClient } from "@/app/providers";
 import { expectAccessible, mockApi } from "@/test/render";
 import { IntelligenceSection, sourceSentence, withoutModels } from "./IntelligenceSection";
 

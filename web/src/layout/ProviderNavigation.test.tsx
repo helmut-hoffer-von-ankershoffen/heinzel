@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 import type { SchemaNavEntry, SchemaPluginInfo } from "@/api/client";
 import { ICONS } from "@/components/Contributions";
 import { config, shell } from "@/test/fixtures";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 import { sourceLabel } from "./PluginsSection";
 import { pageOf, settingsNav } from "./settingsSections";
 

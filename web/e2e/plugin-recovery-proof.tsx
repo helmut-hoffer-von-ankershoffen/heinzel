@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import { Providers, queryClient } from "../src/App";
+import { Providers, queryClient } from "../src/app/providers";
 import { OperationDialog } from "../src/components/OperationDialog";
 import { PluginsSection } from "../src/layout/PluginsSection";
 import "../src/index.css";

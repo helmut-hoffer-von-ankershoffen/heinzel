@@ -2,7 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, expect, it } from "vitest";
-import { Providers, queryClient, routes } from "@/App";
+import { routes } from "@/App";
+import { Providers, queryClient } from "@/app/providers";
 import type { ViewEntry } from "@/plugins/Views";
 import { base } from "@/test/chat";
 import { mockApi } from "@/test/render";

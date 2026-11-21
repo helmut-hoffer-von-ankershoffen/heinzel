@@ -2,7 +2,8 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { everyday, shell, theme, themeList } from "@/test/fixtures";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 /** The swarm's figures inside `root`: the product mark is a team, never one Heinzel. */
 const figures = (root: HTMLElement) =>

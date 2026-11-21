@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { shell } from "@/test/fixtures";
 import document from "@/test/fixtures/graph.jgf.json";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 const withGraph = { ...shell, "/api/graph": document };
 

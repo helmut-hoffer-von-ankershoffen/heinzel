@@ -4,7 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { SchemaAccessList, SchemaAccessOption } from "@/api/client";
 import { shell } from "@/test/fixtures";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 // The restart itself is the lifecycle controller's, tested on its own: here it runs the install and tells its phases.
 vi.mock("@/lifecycle/controller", async (importOriginal) => ({

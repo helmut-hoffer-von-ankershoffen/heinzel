@@ -1,8 +1,8 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Providers, queryClient } from "@/App";
 import type { SchemaDaemonStatus } from "@/api/client";
+import { Providers, queryClient } from "@/app/providers";
 import { resetOperationRun } from "@/lib/operationRun";
 import { config, shell } from "@/test/fixtures";
 import { eventStream, expectAccessible, mockApi } from "@/test/render";

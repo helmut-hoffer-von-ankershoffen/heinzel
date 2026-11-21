@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { expect, it } from "vitest";
 import type { SchemaSettingInfo } from "@/api/client";
 import { config, expert, shell } from "@/test/fixtures";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 const fields: [string, string, string][] = [
   ["ai", "daily_budget_usd", "Usage meter"],

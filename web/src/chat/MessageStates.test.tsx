@@ -5,9 +5,11 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, it } from "vitest";
-import { Providers, queryClient, routes } from "@/App";
+import { routes } from "@/App";
+import { Providers, queryClient } from "@/app/providers";
 import { base } from "@/test/chat";
-import { mockApi, renderAt } from "@/test/render";
+import { mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 const helmi = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
 const at = "2026-11-14T09:00:00Z";

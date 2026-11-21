@@ -1,13 +1,15 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Providers, queryClient, routes } from "@/App";
+import { routes } from "@/App";
 import { daemonStatusKey } from "@/api/daemon";
+import { Providers, queryClient } from "@/app/providers";
 import { DurableSession, grownReply } from "@/chat/DurableSession";
 import { HeinzelPage } from "@/heinzel/HeinzelPage";
 import { frame } from "@/test/chat";
 import { config, shell } from "@/test/fixtures";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 import { preserveUpdateWork } from "@/updates/work";
 
 const sessionId = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";

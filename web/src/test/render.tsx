@@ -1,9 +1,6 @@
-// Render a screen inside the app's providers, with the API answered by made-up data.
-import { render } from "@testing-library/react";
+// Made-up API answers and the accessibility check; `renderAt` (in `renderApp.tsx`) mounts the whole app.
 import axe from "axe-core";
-import { createMemoryRouter, RouterProvider } from "react-router";
-import { afterEach, expect, vi } from "vitest";
-import { Providers, queryClient, routes } from "@/App";
+import { expect, vi } from "vitest";
 
 export type Answer = { status?: number; body: unknown };
 type AnswerSource = unknown | Answer | ((request: Request) => unknown | Answer | Promise<unknown | Answer>);
@@ -63,38 +60,6 @@ export function eventStream(events: [string, object][], result: object = {}): Re
     ([kind, data]) => `event: ${kind}\ndata: ${JSON.stringify(data)}\n\n`,
   );
   return new Response(frames.join(""), { headers: { "Content-Type": "text/event-stream" } });
-}
-
-const footerObservers = new Set<MutationObserver>();
-afterEach(() => {
-  for (const observer of footerObservers) observer.disconnect();
-  footerObservers.clear();
-});
-
-export function renderAt(path: string) {
-  sessionStorage.setItem("hz.token", "test-token");
-  const router = createMemoryRouter(routes, { initialEntries: [path] });
-  const view = render(
-    <Providers client={queryClient()}>
-      <RouterProvider router={router} />
-    </Providers>,
-  );
-  // jsdom supplies zero geometry. Measure only footer fixture nodes, leaving every other element's geometry and
-  // per-instance spies untouched. Geometry-specific tests keep their own explicit prototype measurements.
-  if (!vi.isMockFunction(Element.prototype.getBoundingClientRect)) {
-    const measure = () => {
-      for (const element of view.container.querySelectorAll<HTMLElement>("footer,[data-footer-content]")) {
-        if (Object.hasOwn(element, "getBoundingClientRect")) continue;
-        element.getBoundingClientRect = () =>
-          new DOMRect(0, 0, element.tagName === "FOOTER" ? window.innerWidth : element.childElementCount ? 24 : 0, 24);
-      }
-    };
-    measure();
-    const observer = new MutationObserver(measure);
-    observer.observe(view.container, { childList: true, subtree: true });
-    footerObservers.add(observer);
-  }
-  return view;
 }
 
 /** Fail on any WCAG 2.x A/AA violation axe finds (ADR 0039); colour contrast needs a real browser (Playwright). */

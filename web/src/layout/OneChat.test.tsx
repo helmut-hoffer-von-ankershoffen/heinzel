@@ -4,7 +4,8 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { base, empty } from "@/test/chat";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 const helmi = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
 const fritz = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW";

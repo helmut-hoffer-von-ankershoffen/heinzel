@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { expect, it } from "vitest";
 import { shell } from "@/test/fixtures";
 import { expectPane } from "@/test/pane";
-import { mockApi, renderAt } from "@/test/render";
+import { mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 const pending = {
   restart_required: true,

@@ -2,7 +2,8 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { shell } from "@/test/fixtures";
-import { mockApi, renderAt } from "@/test/render";
+import { mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 import { loadInstalledCore, startUpdate } from "@/updates/controller";
 
 vi.mock("@/updates/controller", async (load) => ({

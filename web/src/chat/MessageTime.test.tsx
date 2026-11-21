@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageTime } from "@/chat/MessageTime";
 import { base } from "@/test/chat";
 import { config } from "@/test/fixtures";
-import { mockApi, renderAt } from "@/test/render";
+import { mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 const helmi = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
 const zone = "Europe/Berlin";

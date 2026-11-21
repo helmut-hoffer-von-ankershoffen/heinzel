@@ -1,12 +1,13 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
-import { Providers, queryClient } from "@/App";
 import { requestMenuAction } from "@/about/menu";
+import { Providers, queryClient } from "@/app/providers";
 import { type Phase, type PhaseState, resetOperationRun } from "@/lib/operationRun";
 import { shell } from "@/test/fixtures";
 import { expectPane } from "@/test/pane";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 import { KEY } from "@/updates/autoUpdateApi";
 import { readUpdatePlan, startUpdate } from "@/updates/controller";
 import { UpdateStatus } from "./UpdateStatus";

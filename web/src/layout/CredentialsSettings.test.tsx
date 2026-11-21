@@ -2,7 +2,8 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { config, shell } from "@/test/fixtures";
-import { mockApi, renderAt } from "@/test/render";
+import { mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 describe("credential settings ownership", () => {
   it("keeps credentials off Daemon and renders them on their own Settings page", async () => {

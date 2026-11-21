@@ -5,7 +5,8 @@ import type { SchemaChannel, SchemaTested } from "@/api/client";
 import { OPEN_TERMINAL } from "@/lib/terminal";
 import * as registration from "@/pwa/register";
 import { base } from "@/test/chat";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 
 const notice = {
   id: "20261024T0900-ab12",

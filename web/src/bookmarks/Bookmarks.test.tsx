@@ -2,11 +2,12 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Providers, queryClient } from "@/App";
 import { MENU_EVENT } from "@/about/menu";
 import type { SchemaBookmarkList } from "@/api/client";
+import { Providers, queryClient } from "@/app/providers";
 import { shell } from "@/test/fixtures";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi } from "@/test/render";
+import { renderAt } from "@/test/renderApp";
 import { BookmarkNavigation } from "./BookmarkNavigation";
 import { BookmarkBar } from "./BookmarkStar";
 import { Favicon } from "./Favicon";
