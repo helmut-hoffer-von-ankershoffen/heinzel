@@ -14,6 +14,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { _electron as electron } from "../../web/node_modules/playwright-core/index.mjs";
 import { cleanupHarness, withTimeout } from "./harness-cleanup.mjs";
+import { installIsolatedService, stopService } from "./isolated-service.mjs";
 import { RACE_TRIES, RACE_WAITS, SEAM_EVERY, SHOP, WIDGET, startSite } from "./browser-journey-site.mjs";
 
 const journey = process.argv[2];
@@ -627,8 +628,10 @@ try {
   site = await startSite(join(root, "site"));
   // `hz` on the app's PATH: this checkout's CLI, with the journey's scripted runner added (browser_journey_hz.py).
   const helper = fileURLToPath(new URL("./browser_journey_hz.py", import.meta.url));
-  await writeFile(join(root, "bin", "hz"),
+  await writeFile(join(root, "bin", "hz-journey"),
     `#!${python} -I\nimport runpy\nrunpy.run_path(${JSON.stringify(helper)}, run_name="__main__")\n`, { mode: 0o700 });
+  // The app attaches; the fixture stands in for the owned service with the journey's CLI, so no OS job is touched.
+  await installIsolatedService(join(root, "bin"), join(root, "bin", "hz-journey"));
   await writeFile(join(root, "config", "config.toml"), '[hz]\ndisabled_modules = ["tailscale", "clock"]\nupdate_check = false\n', { mode: 0o600 });
   const env = {
     HOME: join(root, "home"), TMPDIR: join(root, "tmp"), PATH: `${join(root, "bin")}:/usr/bin:/bin:/usr/sbin:/sbin`,
@@ -698,6 +701,7 @@ try {
     `Race: the frame was shown in ${found.raceShown} of ${RACE_TRIES} tries, ${found.raceInFrame} presses landed in it, ${found.raceClicks} tries clicked the button first, ${found.strayClicks} called-off presses were heard by the page as a click beside the button, on: ${found.strayTargets.join(", ") || "nothing"}. Tries by the page's wait in ms: ${raceLine.join(" ")}. Seam (the engine's press held until the frame was drawn): ${found.seam.join(", ")}. The person's own click after a called-off press: ${found.personClicks ? `went through, tab paused by it: ${found.personPaused}` : "not part of this journey"}.`);
 } finally {
   site?.close();
+  if (!(await stopService(root))) console.error(`The journey's service did not stop; evidence kept at ${root}.`);
   await cleanupHarness({
     app, electronProcess, stopped, root, ownedPid, launchAttempted,
     loadPid: async () => Number(await readFile(join(root, "owned-pid"), "utf8")),

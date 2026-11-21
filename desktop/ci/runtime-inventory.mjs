@@ -8,7 +8,8 @@ import { extractFile, getRawHeader, listPackage, statFile, uncacheAll } from "@e
 export const RUNTIME_FILES = Object.freeze([
   "app-menu.js", "browser-agent.js", "browser-bridge.js", "connection.js", "identity.js", "instance-lifecycle.js",
   "lifecycle-ipc.js", "main.js", "media-player.js", "mini-browser-network.js", "mini-browser-policy.js",
-  "mini-browser.js", "native-permissions.js", "owned-cli.js", "preload.cjs", "public-media.js", "settings-store.js",
+  "mini-browser.js", "native-permissions.js", "owned-cli.js", "preload.cjs", "public-media.js", "reattach.js",
+  "settings-store.js",
   "shutdown.js", "signal-quit.js", "ui-navigation.js", "window-options.js",
   "workspace-audio.js", "workspace-brand.svg",
   "workspace-controller.js", "workspace-directory.js", "workspace-picker-preload.cjs", "workspace-picker.css",

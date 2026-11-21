@@ -15,7 +15,6 @@ ROOT = Path(__file__).resolve().parents[2]
 LINTED = [*sorted((ROOT / "tests/unit/runtime").rglob("*_test.py")), ROOT / "tests/unit/ports_contract_test.py"]
 LEGACY = {
     "tests/unit/runtime/lifecycle/ui_historical_launcher_test.py",
-    "tests/unit/runtime/updater/system_announced_test.py",
     "tests/unit/runtime/updater/system_update_all_test.py",
 }
 """Tests moved into the contexts as they were, with bare limits; the list only shrinks."""

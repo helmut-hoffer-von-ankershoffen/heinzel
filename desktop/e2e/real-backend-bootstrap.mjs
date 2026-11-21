@@ -42,10 +42,10 @@ app.on("web-contents-created", (_event, contents) => {
 const spawn = childProcess.spawn;
 childProcess.spawn = function observeOwned(command, args, options) {
   const child = spawn(command, args, options);
-  if (command === "hz" && JSON.stringify(args) === JSON.stringify(["ui", "serve", "--port", "0", "--no-browser"])) {
+  if (command === "hz" && JSON.stringify(args) === JSON.stringify(["ui", "attach", "--bridge-token-stdin"])) {
     globalThis.ownedTestChild = child;
     writeFileSync(join(root, "owned-pid"), String(child.pid), { mode: 0o600 });
-    phase("service started");
+    phase("attach started");
     child.once("exit", (code, signal) => phase(`service exit ${code} ${signal}`));
     child.once("exit", (code, signal) => writeFileSync(join(root, "owned-exit"), JSON.stringify({ code, signal }), { mode: 0o600 }));
     let pending = "";

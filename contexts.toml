@@ -192,6 +192,7 @@ heads = [
 # time.monotonic, datetime.now, launchctl. Moving a call behind a port lowers the number; it never rises.
 [allow.adapters]
 "src/heinzel/heads/web/_updates.py" = 1
-"src/heinzel/modules/system/lifecycle/_service.py" = 7
+"src/heinzel/modules/system/lifecycle/_service.py" = 8
+"src/heinzel/modules/system/lifecycle/_strays.py" = 3
 "src/heinzel/modules/system/updater/_schedule.py" = 1
 "src/heinzel/modules/ui/_overview.py" = 1

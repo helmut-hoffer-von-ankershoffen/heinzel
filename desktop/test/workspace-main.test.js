@@ -11,6 +11,7 @@ import { createLifecycleHandler } from "../src/lifecycle-ipc.js";
 import { createWorkspaceController, isPickerFrame } from "../src/workspace-controller.js";
 import { guardUiNavigation, openProductUi } from "../src/ui-navigation.js";
 import { stopWithReport } from "../src/shutdown.js";
+import { reattach } from "../src/reattach.js";
 import { createMiniBrowser } from "../src/mini-browser.js";
 import { createMediaPlayer } from "../src/media-player.js";
 
@@ -20,7 +21,7 @@ const local = { origin: "http://127.0.0.1:1234", token: "l".repeat(32) };
 const remote = { kind: "link", link: `https://studio.example/#token=${"r".repeat(32)}` };
 const flush = () => new Promise(setImmediate);
 
-async function fixture({ startupFails = false, failSecondProbe = false, initialLoadFails = false, deferredStartup = false, deferredLoad = false } = {}) {
+async function fixture({ startupFails = false, failSecondProbe = false, initialLoadFails = false, deferredStartup = false, deferredLoad = false, reattachFailures = 0 } = {}) {
   const windows = [], sessions = [], handlers = new Map(), events = [];
   let menu, rejected = false, focused;
   let remoteProbes = 0;
@@ -87,14 +88,28 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
   let serviceCount = 0, running = !startupFails;
   let finishStartup, failStartup;
   const startup = new Promise((resolve, reject) => { finishStartup = resolve; failStartup = reject; });
-  const cli = () => {
+  const cliOptions = [], losses = [], waits = [];
+  let onWait = () => {};
+  let failuresLeft = reattachFailures;
+  const cli = (options = {}) => {
     serviceCount++;
+    cliOptions.push(options);
     const connection = serviceCount === 1 ? local : { origin: "http://127.0.0.1:4567", token: "n".repeat(32) };
-    return { exited: () => new Promise(() => {}), isRunning: () => running,
+    let lose;
+    const exited = new Promise((resolve) => { lose = resolve; });
+    losses.push(() => { running = false; lose({ code: null, signal: null, serviceLost: true }); });
+    return { exited: () => exited, isRunning: () => running,
       start: async () => {
         events.push("start-local");
         if (deferredStartup && serviceCount === 1) await startup;
         if (startupFails) throw new Error("startup");
+        if (serviceCount > 1 && failuresLeft > 0) {
+          failuresLeft--;
+          // As the real handle does: a failed attach also settles its exited() with failedToStart. It settles once the
+          // controller is idle again, so a handler that wrongly reacts to it can start a connection of its own.
+          setImmediate(() => lose({ code: null, signal: null, failedToStart: true }));
+          throw new Error("service still restarting");
+        }
         running = true; return connection;
       },
       stop: async () => { events.push("stop-local"); running = false; return { outcome: "graceful" }; },
@@ -129,6 +144,8 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
     newBridgeToken: () => "bridge-secret", BRIDGE_TOKEN_ENV: "BRIDGE", createOwnedCli: cli,
     installSignalQuit: () => ({}), createAboutHandler: () => () => {}, createAboutLinkHandler: () => () => {},
     createPublicMediaHandler: () => () => {}, appMenuTemplate, menuLogLine: () => "menu", stopWithReport,
+    developmentCli: () => "hz",
+    reattach: (attempt, options) => reattach(attempt, { ...options, wait: async (ms) => { waits.push(ms); await onWait(ms); } }),
   });
   await flush(); await flush();
   const openPicker = async () => {
@@ -138,6 +155,7 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
   const request = (picker, value) => handlers.get("hz:workspace")({ sender: picker.webContents, senderFrame: picker.webContents.mainFrame }, value);
   const surface = (window, name, value) => handlers.get(name)({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, value);
   return { windows, sessions, handlers, events, openPicker, request, surface, services: () => serviceCount,
+    cliOptions, waits, loseService: () => losses.at(-1)(), duringWait: (callback) => { onWait = callback; },
     reject: () => { rejected = true; }, stopLocal: () => { running = false; }, finishStartup, failStartup, finishLoad, failLoad,
     expireLoad: () => expireLoad() };
 }
@@ -380,4 +398,73 @@ test("a stalled initial window is destroyed and the selected remote opens despit
   assert.equal(first.isVisible(), false);
   assert.equal(selected.isDestroyed(), false);
   assert.equal((await f.request(picker, { kind: "state" })).current, "https://studio.example");
+});
+
+
+test("a lost service is attached again with a new session link and the same bridge token re-registered", async () => {
+  const f = await fixture();
+  assert.equal(f.services(), 1);
+  assert.equal(f.cliOptions[0].bridgeToken, "bridge-secret");
+  f.loseService(); // the owned service crashed: launchd restarted it with a new session token
+  for (let i = 0; i < 10 && f.services() < 2; i++) await flush();
+  await flush(); await flush();
+  assert.equal(f.services(), 2, "the app attached again");
+  assert.equal(f.cliOptions[1].bridgeToken, "bridge-secret", "the bridge token goes to the new attach");
+  assert.ok(f.windows.at(-1).webContents.mainFrame.url.startsWith("http://127.0.0.1:4567"), "the new session link is loaded");
+  assert.ok(f.events.filter((event) => event === "bridge-start").length >= 2, "the browser bridge starts again");
+  assert.deepEqual(f.waits, []);
+  assert.equal(f.events.includes("error-box"), false);
+});
+
+test("re-attach retries with bounded backoff before it gives up", async () => {
+  const f = await fixture({ reattachFailures: 2 });
+  f.loseService();
+  for (let i = 0; i < 40 && f.waits.length < 2; i++) await flush();
+  for (let i = 0; i < 10; i++) await flush();
+  assert.deepEqual(f.waits, [5000, 10000]);
+  assert.ok(f.windows.at(-1).webContents.mainFrame.url.startsWith("http://127.0.0.1:4567"));
+});
+
+test("when every re-attach fails the connection screen opens with Try Again", async () => {
+  const f = await fixture({ reattachFailures: 99 });
+  f.loseService();
+  for (let i = 0; i < 80 && f.waits.length < 4; i++) await flush();
+  for (let i = 0; i < 10; i++) await flush();
+  assert.deepEqual(f.waits, [5000, 10000, 20000, 40000]);
+  assert.equal(f.services(), 6, "one attempt now and one after each delay");
+  const picker = f.windows.find((window) => window.options.webPreferences.preload.endsWith("workspace-picker-preload.cjs"));
+  assert.ok(picker && picker.isVisible(), "the connection screen is shown");
+  assert.equal((await f.request(picker, { kind: "back" })).canRetry, true, "it offers Try Again");
+});
+
+
+test("a failed re-attach attempt never opens the connection screen before the last attempt", async () => {
+  const f = await fixture({ reattachFailures: 99 });
+  const pickerShown = () => f.windows.some((window) => window.options.webPreferences.preload.endsWith("workspace-picker-preload.cjs") && window.isVisible());
+  const shownDuringBackoff = [];
+  f.duringWait(async () => { await flush(); await flush(); shownDuringBackoff.push(pickerShown()); });
+  f.loseService();
+  for (let i = 0; i < 120 && f.waits.length < 4; i++) await flush();
+  for (let i = 0; i < 10; i++) await flush();
+  assert.deepEqual(shownDuringBackoff, [false, false, false, false]);
+  assert.deepEqual(f.waits, [5000, 10000, 20000, 40000], "one backoff, not one per failed attempt");
+  assert.equal(f.services(), 6);
+  assert.equal(f.events.includes("error-box"), false);
+  assert.equal(pickerShown(), true, "after the last attempt it opens");
+});
+
+test("switching to a remote workspace during the backoff ends the re-attach", async () => {
+  const f = await fixture({ reattachFailures: 99 });
+  let switched = false;
+  f.duringWait(async () => {
+    if (switched) return;
+    switched = true;
+    const picker = await f.openPicker();
+    assert.equal((await f.request(picker, remote)).message, "Connected");
+  });
+  f.loseService();
+  for (let i = 0; i < 120; i++) await flush();
+  assert.deepEqual(f.waits, [5000], "no attempt after the person chose a remote workspace");
+  assert.equal(f.services(), 2);
+  assert.match(f.windows.at(-1).options.webPreferences.preload, /workspace-remote-preload/);
 });

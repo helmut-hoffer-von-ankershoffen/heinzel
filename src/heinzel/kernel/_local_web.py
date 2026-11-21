@@ -50,3 +50,7 @@ class PersistentWeb:
     """
 
     open_local: Callable[[], str | None]
+    attach: Callable[[int, str | None], str] | None = None
+    """Ensure the owned service runs and return its session link (`hz ui attach`); None where it can't."""
+    retire_strays: Callable[[], tuple[list[int], list[int]]] = lambda: ([], [])
+    """Stop orphaned app-spawned `--port 0` servers; return (stopped, survivors)."""
