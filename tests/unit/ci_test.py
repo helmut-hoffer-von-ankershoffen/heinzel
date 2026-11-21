@@ -925,7 +925,7 @@ def test_the_release_keeps_changelog_introductions():
     step = next(s for s in release["jobs"]["pull-request"]["steps"] if "release.sh" in s.get("run", ""))
     assert not any("gh pr merge" in s.get("run", "") for s in release["jobs"]["pull-request"]["steps"])
     assert step["env"]["INTRO"] == "${{ inputs.intro }}"
-    for name in ("changelog_intros", "changelog_combines"):
+    for name in ("changelog_intros", "changelog_combines", "steps"):  # `.py.jinja`: Sonar must not count a copy
         assert (REPO / "template" / "scripts" / f"{name}.py.jinja").resolve() == REPO / "scripts" / f"{name}.py"
 
 
