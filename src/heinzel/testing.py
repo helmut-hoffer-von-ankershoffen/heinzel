@@ -40,6 +40,22 @@ if TYPE_CHECKING:
 
 CATEGORIES = ("unit", "integration", "e2e")  # also the order they run in: fastest first, so failures show early
 TIMEOUTS = {"unit": 5, "integration": 15, "e2e": 120}  # seconds per test unless a test sets @pytest.mark.timeout
+TIMEOUT_SCALE_VARIABLE = "HZ_TEST_TIMEOUT_SCALE"  # CI sets it (about 3) on slow hosted macOS runners; unset means 1
+
+
+def timeout_scale() -> float:
+    """The factor for every wall-clock limit in tests: the variable's value, or 1 when unset, invalid or below 1."""
+    try:
+        scale = float(os.environ.get(TIMEOUT_SCALE_VARIABLE, "1"))
+    except ValueError:
+        return 1.0
+    return scale if scale >= 1 and scale == scale and scale != float("inf") else 1.0  # noqa: PLR0124 - NaN check
+
+
+def scaled(seconds: float) -> float:
+    """A subprocess or readiness limit multiplied by `timeout_scale()`; use it instead of a bare number of seconds."""
+    return seconds * timeout_scale()
+
 
 ISOLATED = (
     "HZ_CONFIG",
@@ -115,9 +131,14 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     items.sort(key=_category_index)
     if not config.pluginmanager.hasplugin("timeout"):
         return
+    scale = timeout_scale()
     for item in items:
-        if item.get_closest_marker("timeout") is None:
-            item.add_marker(pytest.mark.timeout(TIMEOUTS[CATEGORIES[_category_index(item)]]))
+        marker = item.get_closest_marker("timeout")
+        if marker is None:
+            item.add_marker(pytest.mark.timeout(scaled(TIMEOUTS[CATEGORIES[_category_index(item)]])))
+        elif scale != 1 and (marker.args or "timeout" in marker.kwargs):
+            seconds = marker.args[0] if marker.args else marker.kwargs["timeout"]
+            item.add_marker(pytest.mark.timeout(seconds * scale), append=False)  # first marker wins
 
 
 def _category_index(item: pytest.Item) -> int:

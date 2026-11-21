@@ -5,6 +5,8 @@ import sys
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.integration
 
 
@@ -57,7 +59,9 @@ from heinzel.heads.web._agent_titles import claude_title
 assert claude_title(-1) is None
 assert {"psutil", "croniter", "rich.markdown", "rich.syntax"} <= sys.modules.keys()
 """
-    result = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, check=False, timeout=10)
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", code], capture_output=True, text=True, check=False, timeout=scaled(10)
+    )
     assert result.returncode == 0, result.stderr
 
 
@@ -97,5 +101,7 @@ full = typer.main.get_command(cli.build(kernel))
 assert {'setup', 'join', 'chat', 'ui'} <= full.commands.keys()
 assert {'heinzel.heads.cli._setup', 'heinzel.heads.cli._join', 'heinzel.heads.cli._chat'} <= sys.modules.keys()
 """
-    result = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, check=False, timeout=10)
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", code], capture_output=True, text=True, check=False, timeout=scaled(10)
+    )
     assert result.returncode == 0, result.stderr
