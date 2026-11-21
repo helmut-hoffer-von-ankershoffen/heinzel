@@ -112,13 +112,12 @@ jobs:
             exit 1
           fi
           echo 'selected=true' >> "$GITHUB_OUTPUT"
-      - if: github.event_name != 'schedule'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The nightly selects the complete workload like a push to main, macOS e2e included.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - if: github.event_name != 'schedule'
-        uses: ./.github/actions/setup-uv
+      - uses: ./.github/actions/setup-uv
         with:
           enable-cache: false
       - id: release
@@ -129,11 +128,9 @@ jobs:
         run: python3 -I scripts/release_candidate.py select --output "$GITHUB_OUTPUT"
       - id: full
         name: Run the complete CI workload without an external admission plan
-        if: github.event_name != 'schedule'
         run: echo 'selected=true' >> "$GITHUB_OUTPUT"
       - id: paths
         name: Heinzel Notifier is built always, except on a pull request that leaves its sources alone
-        if: github.event_name != 'schedule'
         env:
           EVENT: ${{ github.event_name }}
           FULL_RELEASE: ${{ steps.full.outputs.selected }}
@@ -159,8 +156,9 @@ jobs:
             site_only=true
           fi
           echo "site_only=$site_only" >> "$GITHUB_OUTPUT"
-          # PR portable tests run on Linux plus real macOS smoke. Native/platform changes retain macOS E2E and Electron;
-          # only known portable UI, model and CI paths omit them; build/dependency inputs and unknown paths keep them.
+          # Pull requests never run the macOS setup, e2e and Electron lanes (a release PR keeps them): those run on main, schedule
+          # and dispatch.
+          # macos_full still scopes the Linux Electron lane on a PR (native and unknown paths keep it).
           # Non-PR runs always retain the complete macOS matrix.
           macos_full=true
           if [ "$EVENT" = pull_request ] && [ "$full_release" != true ] && [ -n "$changed" ] \
@@ -316,9 +314,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
-      fail-fast: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }} # stop waiting for other setup cells on a red PR
+      fail-fast: false # every red cell shows in one run, so one fix covers them all
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.macos_full != 'true' && '["ubuntu-24.04","ubuntu-24.04-arm"]' || '["ubuntu-24.04","ubuntu-24.04-arm","macos-latest"]') }}
+        os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '["ubuntu-24.04","ubuntu-24.04-arm"]' || '["ubuntu-24.04","ubuntu-24.04-arm","macos-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -363,7 +361,7 @@ jobs:
     # Integration runs two sequential sessions, each still capped at 420 seconds; allow setup and cleanup too.
     timeout-minutes: ${{ matrix.levels == 'integration' && 15 || 10 }}
     strategy:
-      fail-fast: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') }} # a red cell is enough to know on a pull request
+      fail-fast: false # every red cell shows in one run, so one fix covers them all
       matrix:
         os: [ubuntu-24.04]
         # Linux: oldest and newest Python on a pull request, every supported one on main, schedule and dispatch.
@@ -503,7 +501,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.macos_full != 'true' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-latest"]') }}
+        os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-latest"]') }}
         # Core E2E lanes: supervised cold starts, tool-install/CLI, and three browser shards; every lane blocks CI OK.
         suite: [cli, supervised, web-1, web-2, web-3]
     steps:
@@ -546,7 +544,7 @@ jobs:
     permissions:
       contents: read
     name: Plugin template
-    needs: [lint, changes] # the slowest offline check runs only once the cheap ones pass
+    needs: changes # starts with the Linux jobs; lint gates the merge through CI OK
     if: needs.changes.outputs.full_ci == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -672,7 +670,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.macos_full != 'true' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-latest"]') }}
+        os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1219,8 +1217,7 @@ jobs:
             jq -e --arg job "$job" '.[$job].result == "success"' <<< "$RESULTS" >/dev/null \
               || { echo "::error::Required $EVENT workload job did not pass: $job"; exit 1; }
           done
-      - name: Require the complete direct CI workload
-        if: github.event_name != 'schedule'
+      - name: Require the complete direct CI workload # the nightly too: the full macOS matrix must pass
         env:
           RESULTS: ${{ toJSON(needs) }}
           EVENT: ${{ github.event_name }}

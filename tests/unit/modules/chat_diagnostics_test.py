@@ -273,3 +273,20 @@ def test_concurrent_tool_timings_are_categorized_without_private_payloads():
     assert events[-1]["mcp_discovery_ms"] == 7
     assert events[-1]["mcp_tool_ms"] == 5
     assert "doctor" not in repr(events)
+
+
+def test_gateway_details_are_bounded_sanitized_and_separate_for_each_turn():
+    events = []
+    diagnostics = TurnDiagnostics(lambda _name, data: events.append(data))
+    tools = [SimpleNamespace(name=f"read{index}\x1b", description="safe\u202e" + "x" * 500) for index in range(300)]
+    for server in ("first", "second", "third", "fourth"):
+        diagnostics.observe_gateway(server, tools)
+    rows = events[-1]["servers"]
+    assert [row["gateway_tool_count"] for row in rows] == [300] * 4
+    assert [len(row["gateway_tools"]) for row in rows] == [100, 100, 50, 0]
+    assert rows[0]["gateway_tools"][0] == {"name": "read0", "description": "safe" + "x" * 252}
+    assert all(row["tool_count"] is None and not row["offered"] for row in rows)
+    diagnostics.observe_gateway("first", [])
+    assert events[-1]["servers"][0]["gateway_tool_count"] == 0
+    assert rows[0]["gateway_tool_count"] == 300  # published snapshots remain unchanged
+    assert TurnDiagnostics(lambda *_: None).gateway == {}

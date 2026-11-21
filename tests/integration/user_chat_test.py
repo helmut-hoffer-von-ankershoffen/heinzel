@@ -13,6 +13,41 @@ from tests.unit.modules.user_chat_test import FixtureConfig, fake_claude
 pytestmark = pytest.mark.integration
 
 
+def test_expired_input_cancellation_requires_authenticated_explicit_expected_state(make_kernel, tmp_path):
+    kernel = make_kernel(builtins=True)
+    current = kernel.resolve(CurrentUser)
+    crud = kernel.resolve(SessionCrud)
+    client = web_client(kernel, tmp_path)
+    created = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "expired-input"})
+    session = created.json()["session_id"]
+    request = {"session_id": session, "request_id": "expired"}
+    assert client.post("/api/heinzel/chat", headers=AUTH, json={**request, "message": "Old input"}).status_code == 200
+    with current.local("cli"):
+        accepted = next(e for e in crud.repository.control_read(session).events if e.key == "message-expired")
+        path = (
+            current.directory.parent
+            / "heinzel-sessions"
+            / current.principal().id
+            / "control"
+            / session
+            / "turns"
+            / f"{accepted.data['body_id']}.jsonl"
+        )
+        path.unlink()
+    endpoint = "/api/heinzel/abandon-chat-turn"
+    payload = {**request, "acknowledge_uncertain": True, "expected_status": "pending"}
+    assert client.post(endpoint, json=payload).status_code == 401
+    assert client.post(endpoint, headers=AUTH, json={**payload, "acknowledge_uncertain": False}).status_code == 400
+    assert client.post(endpoint, headers=AUTH, json={**payload, "expected_status": "unresolved"}).status_code == 400
+    before = client.get("/api/heinzel/session", headers=AUTH, params={"session_id": session}).json()
+    assert before["queue_head"]["status"] == "expired"
+    resolved = client.post(endpoint, headers=AUTH, json=payload)
+    assert resolved.status_code == 200, resolved.text
+    assert resolved.json() == {**request, "status": "abandoned"}
+    assert client.post("/api/heinzel/answer-chat", headers=AUTH, json=request).status_code == 400
+    assert client.get("/api/heinzel/session", headers=AUTH, params={"session_id": session}).json()["queue_head"] is None
+
+
 def test_private_answer_and_activity_operations_use_durable_request(make_kernel, tmp_path):
     kernel = make_kernel(builtins=True)
     current = kernel.resolve(CurrentUser)
@@ -185,12 +220,24 @@ def test_owner_explicitly_sets_aside_uncertain_turn_and_can_continue(make_kernel
     assert client.get(state_path, headers=AUTH, params=first).json()["status"] == "unresolved"
     path = "/api/heinzel/abandon-chat-turn"
     assert client.post(path, json={**first, "acknowledge_uncertain": True}).status_code == 401
-    assert client.post(path, headers=AUTH, json={**first, "acknowledge_uncertain": False}).status_code == 400
-    resolved = client.post(path, headers=AUTH, json={**first, "acknowledge_uncertain": True})
+    assert (
+        client.post(
+            path, headers=AUTH, json={**first, "acknowledge_uncertain": False, "expected_status": "unresolved"}
+        ).status_code
+        == 400
+    )
+    resolved = client.post(
+        path, headers=AUTH, json={**first, "acknowledge_uncertain": True, "expected_status": "unresolved"}
+    )
     assert resolved.status_code == 200, resolved.text
     assert resolved.json() == {**first, "status": "abandoned"}
     assert client.get(state_path, headers=AUTH, params=first).json()["status"] == "abandoned"
-    assert client.post(path, headers=AUTH, json={**first, "acknowledge_uncertain": True}).json() == resolved.json()
+    assert (
+        client.post(
+            path, headers=AUTH, json={**first, "acknowledge_uncertain": True, "expected_status": "unresolved"}
+        ).json()
+        == resolved.json()
+    )
     assert client.post("/api/heinzel/answer-chat", headers=AUTH, json=first).status_code == 400
     result = client.post("/api/heinzel/answer-chat", headers=AUTH, json=second)
     assert result.status_code == 200, result.text

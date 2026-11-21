@@ -191,18 +191,22 @@ def _install_app(  # noqa: PLR0913 - the options of hz app install, shared with 
     yes: bool = False,
     details: bool = False,
     flavor: DesktopFlavor | None = None,
+    restart: bool = False,
 ) -> None:
     """Install or refresh the app, asking once in a terminal before forgetting an install whose app is gone.
+
+    With `restart` an open app that needs the update is quit first and reopened afterwards; one that does not quit
+    within `QUIT_SECONDS` is left open and the command ends with `RESTART_DEFERRED`.
 
     Raises:
         typer.Exit: If the app cannot be installed now.
     """
     from heinzel.heads._desktop_installation import (  # noqa: PLC0415 - native install only
-        SYSTEM_APPLICATIONS,
         LeftoverInstallError,
         install_desktop,
     )
 
+    reopen = restart and _quit_for_update(error)
     notes: list[str] = []
     steps, folder = _plan(error, keep_quarantine=keep_quarantine)
 
@@ -242,12 +246,66 @@ def _install_app(  # noqa: PLR0913 - the options of hz app install, shared with 
             error.print(line, markup=False)
         raise typer.Exit(1)
     location = _located(error)
-    if state == "current":
-        output.print(say.current(__version__, location), markup=False, soft_wrap=True)
+    if _installed_status(state, location, output):
         return
+    _report_done(output, error, location, folder)
+    if reopen:
+        _reopen(error, location)
+
+
+def _report_done(output: Console, error: Console, location: Path, folder: Path) -> None:
+    from heinzel.heads._desktop_installation import SYSTEM_APPLICATIONS  # noqa: PLC0415 - native install only
+
     if location.parent != folder:
         error.print(say.not_moved(location, SYSTEM_APPLICATIONS), markup=False, soft_wrap=True)
     output.print(say.done(location), markup=False, soft_wrap=True)
+
+
+def _quit_for_update(error: Console) -> bool:
+    """Quit the open app that needs the update, so it can be replaced; whether it was open (and is reopened after).
+
+    Raises:
+        typer.Exit: With `RESTART_DEFERRED` if the app is still open after `QUIT_SECONDS`; it is left open.
+    """
+    from heinzel.heads._desktop_installation import (  # noqa: PLC0415 - native install only
+        QUIT_SECONDS,
+        desktop_installed,
+        is_open,
+        quit_app,
+    )
+
+    installed = desktop_installed()
+    if installed is None or installed[1] == __version__ or not is_open(installed[0]):
+        return False
+    if not quit_app(installed[0]):
+        for line in say.restart_deferred(QUIT_SECONDS).lines():
+            error.print(line, markup=False)
+        raise typer.Exit(RESTART_DEFERRED)
+    return True
+
+
+def _reopen(error: Console, location: Path) -> None:
+    """Open the app again after a restart; the app is updated either way, so a failure is only told."""
+    try:
+        _launch(location)
+    except _RefusedError as refused:
+        for line in refused.problem.lines():
+            error.print(line, markup=False)
+
+
+RESTART_DEFERRED = 75
+"""The exit code when `--restart` found the app still open (EX_TEMPFAIL); `hz system update` reads it as deferred."""
+
+
+def _installed_status(state: str, location: Path, output: Console) -> bool:
+    if state == "installed-pending":
+        output.print("The app is installed; registration or old widget cleanup is still pending.", markup=False)
+        output.print("hz will retry during its next update check, or run hz app install again.", markup=False)
+        return True
+    if state == "current":
+        output.print(say.current(__version__, location), markup=False, soft_wrap=True)
+        return True
+    return False
 
 
 def _where_installed() -> Path:
@@ -378,7 +436,7 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
 
     @app.command("update")
     @app.command("install")
-    def install(
+    def install(  # noqa: PLR0913, PLR0917 - one option per flag of the command
         keep_quarantine: Annotated[
             bool,
             typer.Option(
@@ -406,6 +464,15 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
                 "--flavor", help="Desktop app flavor. Defaults to the installed flavor, or Electron for a new install."
             ),
         ] = None,
+        restart: Annotated[
+            bool,
+            typer.Option(
+                "--restart",
+                help="If the app is open and needs the update, quit it, install, and open it again. It waits up to "
+                "20 seconds for the quit and never forces it: an app still open then is left open and the command "
+                "ends with exit code 75.",
+            ),
+        ] = False,
     ) -> None:
         """Install the desktop app for this version of Heinzel.
 
@@ -426,6 +493,7 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
             yes=yes,
             details=details,
             flavor=flavor,
+            restart=restart,
         )
 
     @app.command("open")
