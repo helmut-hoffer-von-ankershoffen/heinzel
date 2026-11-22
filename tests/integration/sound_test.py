@@ -494,7 +494,7 @@ def test_the_page_admits_no_media_origin_the_head_does_not_know(kernel, static, 
     assert client(kernel("heinzel_sound_demo"), static).get("/").headers["content-security-policy"] == web.CSP
 
 
-@pytest.mark.parametrize("broken", [b"[hz\n", b'title = "caf\xe9"\n'], ids=["not TOML", "not UTF-8"])
+@pytest.mark.parametrize("broken", [b"[hz\n", b'title = "\xe9"\n'], ids=["not TOML", "not UTF-8"])
 def test_a_broken_configuration_leaves_layered_files_served_and_the_page_strict(kernel, static, broken):
     web_client = client(kernel("heinzel_sound_demo"), static)
     configure("")
