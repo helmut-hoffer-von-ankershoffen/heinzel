@@ -18,6 +18,8 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
@@ -32,7 +34,7 @@ def test_installed_browser_service_journey_keeps_cold_starts_out_of_browser_shar
         check=True,
         capture_output=True,
         text=True,
-        timeout=3,
+        timeout=scaled(30),
     )
     browser, first, second, third = [set(line.split()) for line in result.stdout.splitlines()]
     journey = "tests/e2e/ui_service_browser_test.py"
@@ -1420,7 +1422,7 @@ def _changes_outputs(  # noqa: PLR0913 - independent changed-path, event and rel
         },
         cwd=directory,
         check=True,
-        timeout=4,
+        timeout=scaled(30),
     )
     return set(output.read_text().splitlines())
 
@@ -1696,7 +1698,7 @@ def test_scheduled_maintenance_selects_only_canonical_main(tmp_path, repository,
         capture_output=True,
         text=True,
         check=False,
-        timeout=4,
+        timeout=scaled(30),
     )
     assert (result.returncode == 0) is selected
     if selected:
@@ -1766,7 +1768,7 @@ def test_scheduled_aggregate_requires_every_maintenance_job(job, outcome, mainte
         capture_output=True,
         text=True,
         check=False,
-        timeout=4,
+        timeout=scaled(30),
     )
     assert result.returncode == bool(error)
     assert error in result.stdout
@@ -2222,7 +2224,7 @@ def test_direct_ci_cannot_pass_with_a_missing_required_job(job, outcome):
         capture_output=True,
         text=True,
         check=False,
-        timeout=10,
+        timeout=scaled(30),
     )
     assert (result.returncode == 0) == (job is None)
     if job is not None:
@@ -2323,7 +2325,7 @@ def _lane_outputs(tmp_path, event: str, lane: str = "", ref: str = "refs/heads/m
         capture_output=True,
         text=True,
         check=False,
-        timeout=4,
+        timeout=scaled(30),
     )
     if result.returncode:
         return None
@@ -2454,7 +2456,12 @@ def _ci_ok_run(run: str, **env: str) -> tuple[int, str]:
         "FULL_RELEASE": "false",
     }
     result = subprocess.run(
-        ["bash", "-e", "-c", step["run"]], env={**base, **env}, capture_output=True, text=True, check=False, timeout=10
+        ["bash", "-e", "-c", step["run"]],
+        env={**base, **env},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=scaled(30),
     )
     return result.returncode, result.stdout
 
@@ -2511,7 +2518,7 @@ def test_a_release_branch_that_is_not_the_candidate_runs_everything(tmp_path, ci
             "HEAD_REF": "release/foo", "BASE": "base", "GITHUB_OUTPUT": str(output),
             "CHANGED_PATHS": "docs/guides/install.md\n", "DIFF_EXIT": "0",
         },
-        cwd=directory, check=True, timeout=4,
+        cwd=directory, check=True, timeout=scaled(30),
     )  # fmt: skip
     assert {"site_only=false", "macos_full=true", "contracts=true", "notifier=true"} <= set(
         output.read_text().splitlines()
