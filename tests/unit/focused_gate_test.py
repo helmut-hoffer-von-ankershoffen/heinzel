@@ -1020,3 +1020,86 @@ def test_full_pr_refuses_changes_to_each_protected_execution_input(focused_gate,
         )
         with pytest.raises(focused_gate.CandidateError, match="execution inputs differ"):
             focused_gate.full_pr_jobs(SimpleNamespace(), source, base, lambda _: b"")
+
+
+def test_coverage_notes_name_measured_required_and_the_least_covered_files(focused_gate):
+    recorded = {
+        "coverage": {
+            "covered": 30,
+            "total": 40,
+            "files": {
+                "heinzel/a.py": {"statements": [10, 10], "branches": [0, 0]},
+                "heinzel/b.py": {"statements": [14, 20], "branches": [6, 10]},
+            },
+        }
+    }
+    raw = json.dumps({"files": {"heinzel/b.py": {"missing_lines": [3, 4, 5, 9]}, "heinzel/a.py": {}}}).encode()
+    notes = focused_gate.coverage_notes("python", recorded, raw)
+    assert "measured 75.00% (30/40" in notes[0]
+    assert "required 80% floor and 90% report threshold" in notes[0]
+    assert len(notes) == 2
+    assert "heinzel/b.py: 20/30 (66.7%), 10 uncovered; missing lines 3-5, 9" in notes[1]
+    assert focused_gate.coverage_notes("macos", {}, b"") == []
+
+
+def test_coverage_notes_survive_an_unreadable_measurement(focused_gate):
+    recorded = {"coverage": {"covered": 1, "total": 2, "files": {"heinzel/a.py": {"statements": [1, 2]}}}}
+    notes = focused_gate.coverage_notes("python", recorded, b"not json")
+    assert any("unavailable" in note for note in notes)
+    assert any("heinzel/a.py" in note for note in notes)
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        ("candidate", "coverage-floor FAILED (not met): full PR evidence has a stale tested base"),
+        ("tool", "coverage-floor TOOL ERROR (the gate itself broke, coverage was not judged): KeyError: 'x'"),
+    ],
+)
+def test_main_publishes_why_it_failed_and_still_fails(  # noqa: PLR0913, PLR0917 - env, output and cases
+    focused_gate, monkeypatch, tmp_path, capsys, error, expected
+):
+    output = tmp_path / "out"
+    for name, value in {
+        "PR_HEAD_SHA": "a" * 40,
+        "GITHUB_TOKEN": "t",
+        "CI_RUN_ID": "7",
+        "GITHUB_OUTPUT": str(output),
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv("FOCUSED_MAIN_BASE", raising=False)
+
+    def verify(*_args, notes, **_kwargs):
+        notes.append("Scope: 1 changed file(s), 1 production: heinzel/a.py")
+        key, message = "x", "full PR evidence has a stale tested base"
+        if error == "tool":
+            raise KeyError(key)
+        raise focused_gate.CandidateError(message)
+
+    monkeypatch.setattr(focused_gate, "verify", verify)
+    with pytest.raises(KeyError if error == "tool" else focused_gate.CandidateError):
+        focused_gate.main()
+    written = output.read_text()
+    assert written.startswith("verdict<<GATE_EOF\n" + expected)
+    assert "Scope: 1 changed file(s)" in written
+    assert expected in capsys.readouterr().out
+
+
+def test_main_publishes_the_passing_verdict_with_its_scope(focused_gate, monkeypatch, tmp_path):
+    output = tmp_path / "out"
+    for name, value in {
+        "PR_HEAD_SHA": "a" * 40,
+        "GITHUB_TOKEN": "t",
+        "CI_RUN_ID": "7",
+        "GITHUB_OUTPUT": str(output),
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv("FOCUSED_MAIN_BASE", raising=False)
+
+    def verify(*_args, notes, **_kwargs):
+        notes.append("Scope: 2 changed file(s)")
+        return "PR scoped coverage passed"
+
+    monkeypatch.setattr(focused_gate, "verify", verify)
+    focused_gate.main()
+    assert output.read_text() == "verdict<<GATE_EOF\nPR scoped coverage passed\nScope: 2 changed file(s)\nGATE_EOF\n"

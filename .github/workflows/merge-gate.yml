@@ -105,8 +105,14 @@ jobs:
             outcome_var="${check}_OUTCOME"
             outcome="${!outcome_var}"
             [ "$outcome" = success ] && conclusion=success || conclusion=failure
-            summary="The gate step ended with ${outcome:-no result}. See the linked run."
-            if [ "$check" = COVERAGE_FLOOR ] && [ "$conclusion" = success ]; then summary="$COVERAGE_VERDICT"; fi
+            summary="The gate step ended with ${outcome:-no result} and wrote no report (it died before the tool ran, e.g. a setup or download error, or was cancelled). See the linked run."
+            # The tool writes its headline and details (measured vs required, scope, top uncovered files) for a pass,
+            # a coverage shortfall and a tool error alike.
+            title="$conclusion"
+            if [ "$check" = COVERAGE_FLOOR ] && [ -n "$COVERAGE_VERDICT" ]; then
+              summary="$COVERAGE_VERDICT"
+              title="$(printf '%s' "$COVERAGE_VERDICT" | head -n1 | cut -c1-200)"
+            fi
             gh api --method PATCH "repos/$GITHUB_REPOSITORY/check-runs/$id" -f status=completed \
-              -f conclusion="$conclusion" -f "output[title]=$conclusion" -f "output[summary]=$summary" >/dev/null
+              -f conclusion="$conclusion" -f "output[title]=$title" -f "output[summary]=$summary" >/dev/null
           done
