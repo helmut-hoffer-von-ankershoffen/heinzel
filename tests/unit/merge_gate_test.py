@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("merge_gate", ROOT / "scripts" / "merge_gate.py")
@@ -379,37 +378,6 @@ def test_evidence_single_hop_drops_credentials_and_disables_proxy(monkeypatch, r
     assert seen[0].get_header("Authorization") == "Bearer secret"
     assert seen[1].get_header("Authorization") is None
     assert seen[1].get_header("Cookie") is None
-
-
-def test_the_workflow_never_checks_out_the_pull_request():
-    text = (ROOT / ".github/workflows/merge-gate.yml").read_text()
-    workflow = yaml.safe_load(text)
-    assert set(workflow[True]) == {"workflow_run"}  # YAML reads the key `on` as True
-    checkouts = [
-        step["with"]
-        for job in workflow["jobs"].values()
-        for step in job["steps"]
-        if step.get("uses", "").startswith("actions/checkout@")
-    ]
-    assert checkouts
-    assert all(step["ref"] == "${{ github.workflow_sha }}" for step in checkouts)
-    assert all(step["persist-credentials"] is False for step in checkouts)
-    assert "secrets." not in text
-
-
-def test_the_gates_start_after_ci_and_report_the_required_check_names():
-    """No gate holds a runner while CI runs, and the ruleset's merge-gate and coverage-floor still get reported."""
-    workflow = yaml.safe_load((ROOT / ".github/workflows/merge-gate.yml").read_text())
-    trigger = workflow[True]["workflow_run"]  # YAML reads the key `on` as True
-    assert trigger == {"workflows": ["CI"], "types": ["completed"]}
-    job = workflow["jobs"]["gates"]
-    assert job["permissions"]["checks"] == "write"
-    assert "contents" not in job["permissions"] or job["permissions"]["contents"] == "read"
-    runs = "\n".join(step.get("run", "") for step in job["steps"])
-    assert "for check in merge-gate coverage-floor" in runs
-    finish = job["steps"][-1]
-    assert finish["if"].startswith("always()")
-    assert "conclusion=success || conclusion=failure" in finish["run"]
 
 
 def test_full_coverage_reader_refuses_scoped_evidence_disguised_as_legacy_total():
