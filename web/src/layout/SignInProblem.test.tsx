@@ -6,7 +6,8 @@ import { SignInProblem, signInStep } from "./SignInProblem";
 const run = vi.hoisted(() => vi.fn());
 vi.mock("@/components/CommandActions", () => ({ runCommand: run }));
 
-const expired = "gws is not signed in to Google, or its sign-in expired (invalid_grant). Sign in again: hz setup google.";
+const expired =
+  "gws is not signed in to Google, or its sign-in expired (invalid_grant). Sign in again: hz setup google.";
 
 it("names the setup step an expired sign-in points to", () => {
   expect(signInStep(expired)).toEqual({ command: "hz setup google", name: "Google" });

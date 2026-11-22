@@ -36,8 +36,8 @@ import {
   weekCaption,
 } from "./agendaModel";
 import { spanText } from "./calendarModel";
-import { CONNECTORS } from "./settingsSections";
 import { SignInProblem } from "./SignInProblem";
+import { CONNECTORS } from "./settingsSections";
 
 type Person = { name?: string | null; email?: string | null };
 type Event = {

@@ -42,7 +42,7 @@ it("shows one MCP switch even when the configuration schema includes it", async 
   expect(within(dialog).getByRole("switch", { name: "Serve MCP to other agents" })).toBeInTheDocument();
   await user.type(within(dialog).getByRole("searchbox"), "mcp");
   expect(within(dialog).queryByRole("switch")).not.toBeInTheDocument();
-  await user.click(within(dialog).getAllByRole("button", { name: "MCP" })[1]);
+  await user.click(within(dialog).getAllByRole("button", { name: "MCP" })[1] as HTMLElement);
   expect(await within(dialog).findAllByRole("switch")).toHaveLength(1);
 });
 
