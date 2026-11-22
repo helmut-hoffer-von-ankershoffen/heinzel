@@ -38,3 +38,5 @@ def test_native_footer_rejects_untrusted_or_stale_geometry(tmp_path: Path) -> No
     result = subprocess.run([str(binary)], capture_output=True, text=True, check=True, timeout=scaled(20))
     assert "PASS: native footer slot is bounded" in result.stdout
     assert "PASS: version refresh preserves offline cache and rejects superseded workspaces" in result.stdout
+    assert "PASS: iCloud sign-in sync defaults on and keeps an explicit off" in result.stdout
+    assert "PASS: iCloud sign-in uses a renewable device token" in result.stdout

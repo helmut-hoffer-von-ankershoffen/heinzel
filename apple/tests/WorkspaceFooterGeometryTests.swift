@@ -49,8 +49,30 @@ import Foundation
         precondition(!WorkspaceVersionObservation.record(observed, origin: origin, selectedOrigin: origin,
                                                          requestRevision: 1, currentRevision: 2, into: &versions))
         try verifyAppBuildObservation(now: now)
+        verifyCloudSyncPreference()
         await verifyVersionRefresh(now: now)
         print("PASS: native footer slot is bounded to the current viewport")
+    }
+
+    private static func verifyCloudSyncPreference() {
+        let suite = "team.heinzel.tests.cloud-sync-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        precondition(CloudSyncPreference.isEnabled(defaults), "missing value migrates to on")
+        CloudSyncPreference.set(false, in: defaults)
+        precondition(!CloudSyncPreference.isEnabled(defaults), "an explicit off stays off")
+        CloudSyncPreference.set(true, in: defaults)
+        precondition(CloudSyncPreference.isEnabled(defaults))
+        let now = Date(timeIntervalSince1970: 3_000_000)
+        let fresh = now.addingTimeInterval(-3600)
+        let stale = now.addingTimeInterval(-15 * 24 * 3600)
+        precondition(CloudSignInPlan.decide(existingToken: nil, publishedAt: nil, hostRefusedIt: false, now: now) == .mint)
+        precondition(CloudSignInPlan.decide(existingToken: "session-token", publishedAt: fresh, hostRefusedIt: false, now: now) == .mint)
+        precondition(CloudSignInPlan.decide(existingToken: "hzd_abc", publishedAt: fresh, hostRefusedIt: false, now: now) == .keep)
+        precondition(CloudSignInPlan.decide(existingToken: "hzd_abc", publishedAt: fresh, hostRefusedIt: true, now: now) == .mint)
+        precondition(CloudSignInPlan.decide(existingToken: "hzd_abc", publishedAt: stale, hostRefusedIt: false, now: now) == .mint)
+        print("PASS: iCloud sign-in uses a renewable device token")
+        print("PASS: iCloud sign-in sync defaults on and keeps an explicit off")
     }
 
     @MainActor private static func verifyVersionRefresh(now: Date) async {
