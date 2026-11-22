@@ -311,7 +311,8 @@ struct ConnectionView: View {
     @State private var attemptedCloudSignIns: [String: Date] = [:]
     @State private var cloudSignInInProgress = false
     #if os(macOS)
-    @AppStorage("syncWorkspaceSignIn") private var syncWorkspaceSignIn = false
+    @AppStorage(CloudSyncPreference.key) private var syncWorkspaceSignIn = true
+    @AppStorage("cloudPublishNoticeShown") private var cloudPublishNoticeShown = false
     @AppStorage("publishedWorkspaceOrigin") private var publishedWorkspaceOrigin = ""
     @State private var syncStatus: String?
     private let offersCloudSignIn = Bundle.main.object(forInfoDictionaryKey: "HeinzelCloudSignIn") as? String == "YES"
@@ -2161,7 +2162,11 @@ struct ConnectionView: View {
     #if os(macOS)
     private func removePublishedSignIn() {
         guard !publishedWorkspaceOrigin.isEmpty else { return }
-        if WorkspaceKeychain.remove(address: publishedWorkspaceOrigin) {
+        let address = publishedWorkspaceOrigin
+        let issued = WorkspaceKeychain.published(address: address)?.token
+        if WorkspaceKeychain.remove(address: address) {
+            // Switching sync off also revokes the iCloud device token on the host.
+            if let issued { Task { await Self.revokeIssued(token: issued, address: address) } }
             publishedWorkspaceOrigin = ""
             syncStatus = nil
         } else {
@@ -2169,8 +2174,29 @@ struct ConnectionView: View {
         }
     }
 
+    private static func revokeIssued(token: String, address: String) async {
+        guard token.hasPrefix("hzd_"), let remote = Endpoint(address + "/#token=" + token) else { return }
+        await remote.revokeDeviceToken()
+    }
+
+    /// The token for the iCloud item: a named device token, minted once and renewed after 14 days or a refusal.
+    private func cloudToken(for address: String, endpoint: Endpoint) async throws -> (token: String, minted: Bool) {
+        let existing = WorkspaceKeychain.published(address: address)
+        var refused = false
+        if let existing, existing.token.hasPrefix("hzd_"), let remote = Endpoint(address + "/#token=" + existing.token) {
+            do { _ = try await remote.readLifecycle() } catch ConnectionError.authentication { refused = true } catch {}
+        }
+        if CloudSignInPlan.decide(existingToken: existing?.token, publishedAt: existing?.publishedAt,
+                                  hostRefusedIt: refused) == .keep, let existing {
+            return (existing.token, false)
+        }
+        let fresh = try await endpoint.mintDeviceToken(name: CloudSignInPlan.deviceName)
+        if let old = existing?.token { await Self.revokeIssued(token: old, address: address) }
+        return (fresh, true)
+    }
+
     private func publishLocalSignIn() async {
-        guard offersCloudSignIn, syncWorkspaceSignIn, let endpoint, endpoint.origin.scheme == "http", let token = endpoint.token else { return }
+        guard offersCloudSignIn, syncWorkspaceSignIn, let endpoint, endpoint.origin.scheme == "http", endpoint.token != nil else { return }
         while !Task.isCancelled, syncWorkspaceSignIn, self.endpoint == endpoint {
             do {
                 let target = try await endpoint.sharedSignInOrigin()
@@ -2179,9 +2205,15 @@ struct ConnectionView: View {
                     let address = target.origin.absoluteString
                     if publishedWorkspaceOrigin != address { removePublishedSignIn() }
                     let item = RecentWorkspace(address: address, hostName: Host.current().localizedName, lastUsed: .now, source: .iCloud)
-                    if WorkspaceKeychain.publish(workspace: item, token: token) {
+                    let issued = try await cloudToken(for: address, endpoint: endpoint)
+                    guard !Task.isCancelled, syncWorkspaceSignIn, self.endpoint == endpoint else { return }
+                    if WorkspaceKeychain.publish(workspace: item, token: issued.token) {
                         publishedWorkspaceOrigin = address
                         syncStatus = "Available to your devices through iCloud Keychain."
+                        if !cloudPublishNoticeShown {
+                            cloudPublishNoticeShown = true
+                            await WorkspaceNotifications.shared.announceCloudPublish()
+                        }
                     } else {
                         syncStatus = "iCloud Keychain couldn’t save the sign-in."
                     }
