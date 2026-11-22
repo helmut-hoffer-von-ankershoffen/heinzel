@@ -2495,6 +2495,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/changelog/released": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show when the installed version was released: day and time, the publish time on GitHub if it can be asked.
+         * @description Show when the installed version was released: day and time, the publish time on GitHub if it can be asked.
+         *
+         *     Asks GitHub once for the release (then remembers the answer); offline it falls back to the changelog's header,
+         *     which names the cut time, or on older releases only the day.
+         */
+        get: operations["system_changelog_released"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/channel": {
         parameters: {
             query?: never;
@@ -13397,7 +13420,7 @@ export interface components {
         ReleaseNotes: {
             /**
              * Date
-             * @description When it was published; none if the source didn't say.
+             * @description The day it was published; none if the source didn't say.
              */
             date: string | null;
             /**
@@ -13406,10 +13429,41 @@ export interface components {
              */
             notes: string;
             /**
+             * Published At
+             * @description The moment it was published (UTC); none if the source didn't say.
+             */
+            published_at?: string | null;
+            /**
              * Url
              * @description Its release page, on github.com.
              */
             url: string | null;
+            /**
+             * Version
+             * @description Version of the release.
+             */
+            version: string;
+        };
+        /**
+         * ReleaseTime
+         * @description When the installed release was published: the moment if known, else the day its changelog section names.
+         */
+        ReleaseTime: {
+            /**
+             * Day
+             * @description The day it was released, when no moment is known.
+             */
+            day: string | null;
+            /**
+             * Published At
+             * @description The moment it was published (UTC): from GitHub, or the cut time in the changelog header.
+             */
+            published_at: string | null;
+            /**
+             * Source
+             * @description Where the answer came from; none if unknown.
+             */
+            source: ("github" | "changelog") | null;
             /**
              * Version
              * @description Version of the release.
@@ -18973,6 +19027,7 @@ export type SchemaReleaseCheck = components['schemas']['ReleaseCheck'];
 export type SchemaReleaseFeedBaseline = components['schemas']['ReleaseFeedBaseline'];
 export type SchemaReleaseFeedIdentity = components['schemas']['ReleaseFeedIdentity'];
 export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
+export type SchemaReleaseTime = components['schemas']['ReleaseTime'];
 export type SchemaRendererBlock = components['schemas']['RendererBlock'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
 export type SchemaResolveWhen = components['schemas']['ResolveWhen'];
@@ -23008,6 +23063,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_changelog_released: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseTime"];
                 };
             };
         };

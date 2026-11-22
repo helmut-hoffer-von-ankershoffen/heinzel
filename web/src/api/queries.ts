@@ -178,6 +178,14 @@ export const useChangelog = (newer: boolean) =>
     staleTime: 60 * 60 * 1000,
   });
 
+/** `hz system changelog released`: when this version was released, from GitHub's publish time or the changelog. */
+export const useReleased = () =>
+  useQuery({
+    queryKey: ["system", "changelog", "released"],
+    queryFn: () => unwrap(api.GET("/system/changelog/released")),
+    staleTime: 60 * 60 * 1000,
+  });
+
 export const useInfo = () =>
   useQuery({ queryKey: ["system", "info"], queryFn: () => unwrap(api.GET("/system/info")), staleTime: 10 * 60 * 1000 });
 

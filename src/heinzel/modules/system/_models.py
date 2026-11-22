@@ -82,11 +82,25 @@ class ReleaseNotes(BaseModel):
     """A release newer than the installed version and what it brings, from its release page."""
 
     version: str = Field(description="Version of the release.")
-    date: dt.date | None = Field(description="When it was published; none if the source didn't say.")
+    date: dt.date | None = Field(description="The day it was published; none if the source didn't say.")
+    published_at: dt.datetime | None = Field(
+        default=None, description="The moment it was published (UTC); none if the source didn't say."
+    )
     notes: str = Field(
         description="Its release notes as Markdown: third-party text, without control or bidirectional characters."
     )
     url: str | None = Field(description="Its release page, on github.com.")
+
+
+class ReleaseTime(BaseModel):
+    """When the installed release was published: the moment if known, else the day its changelog section names."""
+
+    version: str = Field(description="Version of the release.")
+    published_at: dt.datetime | None = Field(
+        description="The moment it was published (UTC): from GitHub, or the cut time in the changelog header."
+    )
+    day: dt.date | None = Field(description="The day it was released, when no moment is known.")
+    source: Literal["github", "changelog"] | None = Field(description="Where the answer came from; none if unknown.")
 
 
 class PluginUpdate(BaseModel):

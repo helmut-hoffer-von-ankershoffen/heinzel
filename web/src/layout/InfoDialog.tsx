@@ -6,6 +6,7 @@ import { CopyCommand, Loaded } from "@/components/common";
 import { PaneAction } from "@/components/PaneActions";
 import { Prose } from "@/components/Prose";
 import { t } from "@/i18n";
+import { releaseTime } from "@/lib/releaseTime";
 import { cn } from "@/lib/utils";
 
 export type Panel = "changelog" | "help";
@@ -73,7 +74,7 @@ function Changelog() {
               {data.map((release) => (
                 <section key={release.version} className="mb-6">
                   <h3 className="text-lg font-semibold">
-                    {release.version} <span className="text-sm font-normal text-muted-foreground">{release.date}</span>
+                    {release.version} <span className="text-sm font-normal text-muted-foreground">{releaseTime(release.published_at, release.date)}</span>
                   </h3>
                   <Prose>{release.notes}</Prose>
                 </section>

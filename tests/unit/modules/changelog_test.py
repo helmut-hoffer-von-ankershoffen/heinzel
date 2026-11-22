@@ -254,3 +254,68 @@ def test_render_shows_each_newer_release_with_date_page_and_notes_and_link_targe
 def test_render_says_when_nothing_is_newer_and_shows_the_changelog_as_before():
     assert rendered([]).strip() == f"hz {__version__} is the latest release; nothing newer to show."
     assert rendered("# Changelog").strip() == "Changelog"
+
+
+HEADED = (
+    "## [0.9.54](https://x/v0.9.54) - 2026-11-22 07:41 UTC\n\nIntro.\n\n"
+    "## [0.9.53](https://x/v0.9.53) - 2026-11-21\n\nOld.\n"
+)
+
+
+def test_changelog_header_time_is_read_with_or_without_a_time():
+    from datetime import UTC, date, datetime  # noqa: PLC0415
+
+    from heinzel.modules.system._service import changelog_release_time  # noqa: PLC0415
+
+    new = changelog_release_time(HEADED, "0.9.54")
+    assert new.published_at == datetime(2026, 11, 22, 7, 41, tzinfo=UTC)
+    assert new.day == date(2026, 11, 22)
+    old = changelog_release_time(HEADED, "0.9.53")
+    assert old.published_at is None
+    assert old.day == date(2026, 11, 21)
+    assert changelog_release_time(HEADED, "0.1.0").source is None
+
+
+def test_release_time_prefers_github_caches_it_and_falls_back_offline(monkeypatch, tmp_path):
+    from datetime import UTC, datetime  # noqa: PLC0415
+
+    from heinzel.modules.system import _github as github  # noqa: PLC0415
+    from heinzel.modules.system._service import release_time  # noqa: PLC0415
+
+    calls = []
+
+    def answer(url, token, timeout):
+        calls.append(url)
+        return {"published_at": "2026-11-22T08:15:30Z"}
+
+    monkeypatch.setattr(github, "get_json", answer)
+    installation = Installation(Progress(), prefix=tmp_path, uv="uv")
+    first = release_time(installation, tmp_path, "0.9.54", HEADED)
+    assert (first.source, first.published_at) == ("github", datetime(2026, 11, 22, 8, 15, 30, tzinfo=UTC))
+
+    def offline(url, token, timeout):
+        raise OSError("offline")
+
+    monkeypatch.setattr(github, "get_json", offline)
+    assert release_time(installation, tmp_path, "0.9.54", HEADED).source == "github"  # from the cache, no request
+    assert len(calls) == 1
+    fallback = release_time(installation, tmp_path, "0.9.53", HEADED)
+    assert (fallback.source, fallback.published_at, fallback.day.isoformat()) == ("changelog", None, "2026-11-21")
+    cut = release_time(installation, tmp_path, "0.9.54x", HEADED.replace("0.9.54", "0.9.54x"))
+    assert cut.source == "changelog"
+    assert cut.published_at == datetime(2026, 11, 22, 7, 41, tzinfo=UTC)
+
+
+def test_newer_release_shows_publish_time_with_zone(monkeypatch):
+    from datetime import UTC, datetime  # noqa: PLC0415
+
+    monkeypatch.setenv("TZ", "Europe/Berlin")
+    import time  # noqa: PLC0415
+
+    time.tzset()
+    moment = datetime(2026, 11, 22, 7, 41, tzinfo=UTC)
+    note = ReleaseNotes(version="1.0.0", date=moment.date(), published_at=moment, notes="n", url=None)
+    console = Console(width=200, force_terminal=False)
+    with console.capture() as capture:
+        console.print(render([note]))
+    assert "hz 1.0.0 (2026-11-22 08:41 CET)" in capture.get()

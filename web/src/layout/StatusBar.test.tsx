@@ -179,6 +179,7 @@ describe("Footer items are icons with a state and a pane", () => {
     ],
     "/api/org/agenda": { current: null, next: null, problem: "no calendar", fix: null },
     "/api/org/meeting": null,
+    "/api/system/changelog/released": { version: "0.4.0", published_at: "2026-10-25T07:41:00Z", day: "2026-10-25", source: "github" },
     "/api/system/changelog": "## [0.4.0] - 2026-10-25\n\n### Features\n\n- Something new\n",
   };
   const widthBefore = window.innerWidth;
@@ -482,6 +483,7 @@ describe("Footer items are icons with a state and a pane", () => {
     const pane = await screen.findByRole("region", { name: "v0.4.0" });
     expect(within(pane).getByText("Backend v0.4.0")).toBeInTheDocument();
     expect(within(pane).queryByText(/Desktop app/)).not.toBeInTheDocument();
+    expect(await within(pane).findByText(/^Released 25 Oct 2026, \d\d:\d\d \S+$/)).toBeInTheDocument();
     unmount();
     Object.defineProperty(window, "heinzelDesktop", {
       value: { about: async () => ({ version: "0.9.38", path: "/Applications/H.app" }) },

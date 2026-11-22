@@ -1,6 +1,7 @@
 """The changelog submodule of system: release notes of the installed version, and of the releases newer than it."""
 
 import urllib.error
+from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
 from typing import Annotated, ClassVar
@@ -12,10 +13,10 @@ from rich.console import Group, RenderableType
 from rich.rule import Rule
 from rich.text import Text
 
-from heinzel import HeinzelError, Module, ModuleSettings, __version__
+from heinzel import HeinzelError, Kernel, Module, ModuleSettings, __version__
 from heinzel.kernel import Installation
-from heinzel.modules.system._models import ReleaseNotes
-from heinzel.modules.system._service import RELEASE_TIMEOUT, clean, installed_releases
+from heinzel.modules.system._models import ReleaseNotes, ReleaseTime
+from heinzel.modules.system._service import RELEASE_TIMEOUT, clean, installed_releases, release_time
 
 FILENAME = "CHANGELOG.md"
 
@@ -59,6 +60,20 @@ def as_markdown(text: str, *, hyperlinks: bool = True) -> RenderableType:
     return markdown
 
 
+def local_time(moment: datetime) -> str:
+    """`moment` in this machine's time zone with the zone shown, e.g. `2026-11-22 08:41 CET`."""
+    return moment.astimezone().strftime("%Y-%m-%d %H:%M %Z")
+
+
+def render_released(result: ReleaseTime) -> RenderableType:
+    """When the release was done, in local time with the zone; the day only if no moment is known."""
+    if result.published_at:
+        return Text(f"hz {result.version} was released {local_time(result.published_at)}.")
+    if result.day:
+        return Text(f"hz {result.version} was released {result.day.isoformat()}.")
+    return Text(f"When hz {result.version} was released is not known.")
+
+
 def render(result: str | list[ReleaseNotes]) -> RenderableType:
     """The installed changelog, or each newer release under a heading with its date and page."""
     if isinstance(result, str):
@@ -73,7 +88,8 @@ def render(result: str | list[ReleaseNotes]) -> RenderableType:
         )
     ]
     for release in result:
-        title = f"hz {release.version}" + (f" ({release.date.isoformat()})" if release.date else "")
+        when = local_time(release.published_at) if release.published_at else release.date and release.date.isoformat()
+        title = f"hz {release.version}" + (f" ({when})" if when else "")
         parts.append(Rule(Text(title, style="bold"), align="left"))
         if release.url:
             parts.append(Text(release.url, style="dim"))
@@ -114,6 +130,24 @@ def changelog(
         return source_tree.read_text(encoding="utf-8")
     msg = f"{FILENAME} is not packaged with this installation of Heinzelmännchen."
     raise HeinzelError(msg)
+
+
+def _read_changelog() -> str:
+    packaged = files("heinzel").joinpath(FILENAME)
+    if packaged.is_file():
+        return packaged.read_text(encoding="utf-8")
+    source_tree = Path(__file__).resolve().parents[5] / FILENAME
+    return source_tree.read_text(encoding="utf-8") if source_tree.is_file() else ""
+
+
+@module.operation(render=render_released)
+def released(installation: Installation, kernel: Kernel, settings: ChangelogSettings) -> ReleaseTime:
+    """Show when the installed version was released: day and time, the publish time on GitHub if it can be asked.
+
+    Asks GitHub once for the release (then remembers the answer); offline it falls back to the changelog's header,
+    which names the cut time, or on older releases only the day.
+    """
+    return release_time(installation, kernel.settings.cache_dir, __version__, _read_changelog(), settings.github_token)
 
 
 def _newer(installation: Installation, token: SecretStr | None) -> list[ReleaseNotes]:
