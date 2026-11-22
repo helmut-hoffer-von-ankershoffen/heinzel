@@ -306,7 +306,7 @@ def test_update_desktop_app_starts_the_restart_install_in_its_own_session(make_k
     _app_here(monkeypatch, "0.0.1", "native")
     started = []
     monkeypatch.setattr(_updates.platform, "system", lambda: "Darwin")
-    monkeypatch.setattr(_updates.subprocess, "Popen", lambda command, **kwargs: started.append((command, kwargs)))
+    monkeypatch.setattr(_updates.SYSTEM_RUNNER, "spawn", lambda command, **kwargs: started.append((command, kwargs)))
     app = client(make_kernel, tmp_path)
     assert app.post("/api/update-status/desktop").status_code == 401
     response = app.post("/api/update-status/desktop", headers=AUTH)
@@ -314,7 +314,7 @@ def test_update_desktop_app_starts_the_restart_install_in_its_own_session(make_k
     assert response.json() == {"started": True, "command": "hz app install --restart"}
     [(command, kwargs)] = started
     assert command[-4:] == ["heinzel", "app", "install", "--restart"]
-    assert kwargs["start_new_session"] is True  # it outlives the app it quits and the server that app may stop
+    assert kwargs["detached"] is True  # it outlives the app it quits and the server that app may stop
 
 
 @pytest.mark.parametrize("version", [__version__, None])
@@ -323,7 +323,7 @@ def test_update_desktop_app_refuses_without_an_out_of_date_app(make_kernel, tmp_
         _app_here(monkeypatch, version)
     started = []
     monkeypatch.setattr(_updates.platform, "system", lambda: "Darwin")
-    monkeypatch.setattr(_updates.subprocess, "Popen", lambda command, **kwargs: started.append(command))
+    monkeypatch.setattr(_updates.SYSTEM_RUNNER, "spawn", lambda command, **kwargs: started.append(command))
     response = client(make_kernel, tmp_path).post("/api/update-status/desktop", headers=AUTH)
     assert response.status_code == 409
     assert started == []

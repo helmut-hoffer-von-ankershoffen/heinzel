@@ -6,7 +6,6 @@ import logging
 import platform
 import re
 import stat
-import subprocess
 import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -19,7 +18,7 @@ from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, Field
 
 from heinzel import __version__
-from heinzel._adapter_system import SYSTEM_CLOCK
+from heinzel._adapter_system import SYSTEM_CLOCK, SYSTEM_RUNNER
 from heinzel.kernel import HeinzelError, Installation, Kernel, ReleaseCache, subprocess_environment
 from heinzel.kernel._desktop_app import DesktopVariant, desktop_app_here
 from heinzel.kernel._logging import log_event
@@ -230,13 +229,10 @@ def _start_desktop_update() -> None:
     The installer asks the app to quit, waits, never forces it, replaces it and opens it again; it logs every step.
     """
     flags = ["-I", "-B"] if sys.dont_write_bytecode else ["-I"]
-    subprocess.Popen(  # noqa: S603 - this interpreter and fixed arguments, no shell
+    SYSTEM_RUNNER.spawn(
         [sys.executable, *flags, "-m", "heinzel", "app", "install", "--restart"],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
         env=subprocess_environment() | {"HZ_UPDATE_CHECK": "false"},
+        detached=True,
     )
 
 

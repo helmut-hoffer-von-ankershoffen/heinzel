@@ -14,7 +14,8 @@ from heinzel.kernel import (
     DaemonInstallationLifecycle,
     HeadRefresh,
 )
-from heinzel.kernel._desktop_app import DesktopApp, promise_update_on_quit
+from heinzel.kernel._desktop_app import DesktopApp
+from heinzel.kernel._desktop_update_promise import promise_update_on_quit
 from heinzel.kernel._logging import log_event, step
 from heinzel.modules.system._models import UpdateResult
 from heinzel.modules.system.updater._update_core import UpdateCore

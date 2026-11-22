@@ -20,7 +20,8 @@ from heinzel.heads._desktop_release import DesktopFlavor, platform_flavor
 from heinzel.heads.cli._progress import StepReporter
 from heinzel.heads.cli._render import message
 from heinzel.kernel import KERNEL_SECTION, Installation, Kernel
-from heinzel.kernel._desktop_app import read_bundle, update_on_quit_done, update_on_quit_promised
+from heinzel.kernel._desktop_app import read_bundle
+from heinzel.kernel._desktop_update_promise import update_on_quit_done, update_on_quit_promised
 
 if TYPE_CHECKING:
     from heinzel.heads._desktop_seal import SealReport

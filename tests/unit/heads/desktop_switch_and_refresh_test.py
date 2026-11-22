@@ -22,7 +22,7 @@ from heinzel.heads import _desktop_release
 from heinzel.heads import _desktop_widget as widget
 from heinzel.heads.cli import _app
 from heinzel.kernel import CorePin
-from heinzel.kernel import _desktop_app as desktop_app
+from heinzel.kernel import _desktop_update_promise as update_promise
 from heinzel.kernel._desktop_app import DesktopApp
 
 pytestmark = pytest.mark.unit
@@ -205,14 +205,14 @@ def test_a_promised_update_installs_at_quit_even_with_automatic_updates_off(monk
     monkeypatch.setattr(_app.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(_app.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(installer, "install_desktop", lambda *args, **kwargs: calls.append(kwargs) or next(states))
-    desktop_app.promise_update_on_quit(tmp_path, __version__)
-    assert desktop_app.update_on_quit_promised(tmp_path)
+    update_promise.promise_update_on_quit(tmp_path, __version__)
+    assert update_promise.update_on_quit_promised(tmp_path)
 
     _app._refresh_after_exit(_kernel(tmp_path, auto_update=auto_update), home=tmp_path)  # type: ignore[arg-type]
 
     assert len(calls) == 3  # waits while the quitting app still runs, then installs
     assert all(call == {"update_only": True} for call in calls)
-    assert not desktop_app.update_on_quit_promised(tmp_path)  # kept, so forgotten
+    assert not update_promise.update_on_quit_promised(tmp_path)  # kept, so forgotten
 
 
 def test_without_a_promise_automatic_updates_off_still_leave_the_app_alone(monkeypatch, tmp_path):
@@ -227,9 +227,9 @@ def test_a_promise_is_kept_until_the_install_happens(monkeypatch, tmp_path):
     monkeypatch.setattr(_app.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(_app.time, "monotonic", lambda: next(clock))
     monkeypatch.setattr(installer, "install_desktop", lambda *_a, **_k: "deferred")
-    desktop_app.promise_update_on_quit(tmp_path, __version__)
+    update_promise.promise_update_on_quit(tmp_path, __version__)
     _app._refresh_after_exit(_kernel(tmp_path, auto_update=False), home=tmp_path)  # type: ignore[arg-type]
-    assert desktop_app.update_on_quit_promised(tmp_path)  # still open at the deadline: the next quit tries again
+    assert update_promise.update_on_quit_promised(tmp_path)  # still open at the deadline: the next quit tries again
 
 
 def test_the_update_that_says_installs_when_you_quit_records_the_promise(tmp_path):
@@ -241,7 +241,7 @@ def test_the_update_that_says_installs_when_you_quit_records_the_promise(tmp_pat
     result = UpdateResult.model_construct(after="9.9.9", updated=True)
     head = heads._app_outcome(result, App("1.0.0", running=True, variant="electron"), (True, True, True))
     assert head.detail == "installs when you quit the app."
-    assert (tmp_path / desktop_app.UPDATE_ON_QUIT).read_text() == "9.9.9"
+    assert (tmp_path / update_promise.UPDATE_ON_QUIT).read_text() == "9.9.9"
 
 
 def test_the_exit_code_of_a_deferred_switch_is_the_one_the_update_reads():
