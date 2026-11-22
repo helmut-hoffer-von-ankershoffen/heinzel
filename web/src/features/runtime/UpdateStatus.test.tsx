@@ -384,6 +384,46 @@ it.each(["button", "menu"] as const)("refreshes failed plugin news when the %s r
   expect(calls.filter((call) => call.url.endsWith("/api/auto-update/check"))).toHaveLength(1);
 });
 
+it("spins the check icon from the click until the check finishes, then stops", async () => {
+  let finish: () => void = () => {};
+  const done = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  mockApi({
+    ...shell,
+    "/api/update-status": status,
+    "/api/auto-update/check": async () => {
+      await done;
+      return { ...plan, plugins_checked: true };
+    },
+  });
+  const user = userEvent.setup();
+  renderAt("/");
+  await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
+  const button = await screen.findByRole("button", { name: "Check for updates" });
+  expect(button.querySelector("svg")).not.toHaveAttribute("data-spinning");
+  await user.click(button);
+  await waitFor(() => expect(button.querySelector("svg")).toHaveAttribute("data-spinning"));
+  expect(button.querySelector("svg")).toHaveClass("animate-spin");
+  finish();
+  await waitFor(() => expect(button.querySelector("svg")).not.toHaveAttribute("data-spinning"));
+});
+
+it("stops the check icon and shows the error when the check fails", async () => {
+  mockApi({
+    ...shell,
+    "/api/update-status": status,
+    "/api/auto-update/check": { status: 503, body: {} },
+  });
+  const user = userEvent.setup();
+  renderAt("/");
+  await user.click(await screen.findByRole("button", { name: "Updates available, warning" }));
+  const button = await screen.findByRole("button", { name: "Check for updates" });
+  await user.click(button);
+  expect(await screen.findByRole("alert")).toHaveTextContent("The check for updates did not finish.");
+  expect(button.querySelector("svg")).not.toHaveAttribute("data-spinning");
+});
+
 it("shows why the check could not ask", async () => {
   mockApi({
     ...shell,

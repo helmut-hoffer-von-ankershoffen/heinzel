@@ -28,6 +28,8 @@ export type AutoUpdateStatus = {
   checked_at?: string | null;
   /** A newer Heinzel release held back because its release is not accepted yet; "Update anyway" still installs it. */
   core_held?: string | null;
+  /** Why the last look for news or the last automatic update failed; null when they went well. */
+  error?: string | null;
   core_checked?: boolean | null;
   plugins_checked?: boolean | null;
 };

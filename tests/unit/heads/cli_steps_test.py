@@ -115,4 +115,45 @@ def test_a_checklist_draws_every_row_in_place_and_hides_the_skipped_ones():
     assert lines[1] == "! heinzel-acme               held back"
     assert "heinzel-old" not in "\n".join(lines)
     assert lines[2].endswith("Daemon, web server")
-    assert len(lines) == 3
+    assert lines[3].endswith("2/3 Daemon, web server")  # the overall bar: skipped steps are not counted
+    assert len(lines) == 4
+
+
+def _checklist_board(mode: str, console: Console) -> StepBoard:
+    board = StepBoard(console, mode)
+    for id_, label in PLAN:
+        board.event({"id": id_, "label": label, "state": "pending", "checklist": True})
+    board.event({"id": "check", "label": PLAN[0][1], "state": "done", "checklist": True})
+    board.event({"id": "install", "label": PLAN[1][1], "state": "running", "checklist": True})
+    return board
+
+
+def test_a_terminal_checklist_has_an_overall_bar_with_steps_done_and_the_current_step():
+    console = Console(record=True, width=100, force_terminal=True)
+    text = Console(record=True, width=100)
+    board = _checklist_board("live", console)
+    try:
+        text.print(StepBoard.checklist(list(board._steps.values())))
+    finally:
+        board.close()  # the live display takes over sys.stdout and stderr until it stops; later tests must not see it
+    last = text.export_text().splitlines()[-1]
+    assert "1/3" in last
+    assert "Installing the update" in last
+    assert "━" in last
+
+
+def test_plain_and_json_modes_draw_no_bar_only_lines_and_json_events():
+    plain = Console(record=True, width=100)
+    _checklist_board("plain", plain)
+    out = plain.export_text()
+    assert "━" not in out
+    assert "\x1b" not in out
+    assert out.splitlines() == [
+        "[1/3] Finding the newest version: done",
+        "[2/3] Installing the update ...",
+    ]
+    machine = Console(record=True, width=100)
+    _checklist_board("json", machine)
+    events = [json.loads(line) for line in machine.export_text().splitlines()]
+    assert {event["event"] for event in events} == {"phase"}
+    assert "━" not in machine.export_text()

@@ -4,7 +4,7 @@ import { Copy, ExternalLink, FileText, X } from "lucide-react";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useInfo } from "@/api/queries";
-import { HeinzelAvatar } from "@/components/HeinzelAvatar";
+import { HeinzelSwarm } from "@/components/HeinzelSwarm";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { format, t } from "@/i18n";
 import { loadedFrontend, surfaceDetails } from "@/lib/surfaceDiagnostics";
@@ -179,7 +179,9 @@ export function AboutDialog() {
       <div className="flex max-h-full w-[min(32rem,100%)] flex-col overflow-hidden rounded-xl border border-border bg-popover text-sm shadow-2xl">
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
           <header className="flex items-center gap-3">
-            <HeinzelAvatar view="head" label={t("app.name")} className="size-12 overflow-hidden" />
+            <span role="img" aria-label={t("app.name")} className="size-12 shrink-0 overflow-hidden">
+              <HeinzelSwarm className="size-12" />
+            </span>
             <div>
               <h2 id={titleId} className="text-lg font-medium">
                 {t("app.name")}
