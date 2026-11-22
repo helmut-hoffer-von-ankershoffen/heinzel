@@ -65,7 +65,7 @@ def test_route_lists_the_recorded_clients(tmp_path: Path):
     clients = ConnectedClients(tmp_path)
     clients.record(parse_client({"x-heinzel-client": client_header("electron", "1", "2", "Air")}, NOW))
     app = FastAPI()
-    add_connected_clients(app, clients)
+    add_connected_clients(app, tmp_path)
     body = TestClient(app).get("/connected-clients").json()
     assert body[0]["flavor"] == "electron"
     assert body[0]["machine"] == "Air"

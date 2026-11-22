@@ -47,6 +47,7 @@ import threading
 import webbrowser as webbrowser
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
@@ -88,14 +89,10 @@ from heinzel.kernel import (
     ViewLet,
     read_view_asset,
 )
-from heinzel.modules.system.client import (
-    ConnectedClients,
-    Devices,
-    McpTokens,
-    now_utc,
-    parse_client,
-    tokens_for_user,
-)
+from heinzel.modules.system.client import Devices, McpTokens, tokens_for_user
+
+if TYPE_CHECKING:
+    from heinzel.modules.system.client import ConnectedClients
 
 HEAD = "web"
 WEB_LIFECYCLE_WAIT_SECONDS = 10.0
@@ -163,9 +160,19 @@ def devices_for_user() -> Devices:
     return Devices(settings.state_dir / "web")
 
 
-def _noting_client(clients: ConnectedClients, request: Request, response: Response) -> Response:
+def _connected_clients(directory: Path) -> "ConnectedClients":
+    """The list of connected desktop apps, imported late for the same reason as in `_noting_client`."""
+    from heinzel.modules.system.client import ConnectedClients  # noqa: PLC0415 - late: old names in a swapped process
+
+    return ConnectedClients(directory)
+
+
+def _noting_client(clients: "ConnectedClients", request: Request, response: Response) -> Response:
     """Record which desktop app called the API, once it was let in; the response passes through."""
     if request.url.path.startswith("/api/") and response.status_code < HTTP_ERROR:
+        # Imported here: a published process finishing its update has the package's old names (cross-version test).
+        from heinzel.modules.system.client import now_utc, parse_client  # noqa: PLC0415 - late: old names in a swapped process
+
         clients.touch(parse_client(request.headers, now_utc()))
     return response
 
@@ -199,7 +206,7 @@ def api_app(
 
     add_lifecycle(app, kernel, restart)
     add_workspace_version(app, kernel)
-    add_connected_clients(app, ConnectedClients(kernel.settings.state_dir / "web"))
+    add_connected_clients(app, kernel.settings.state_dir / "web")
     app.state.chatgpt_sign_in = sign_in = ChatGptSignIn(kernel, port)
     sign_in.add_start(app)
     return app
@@ -246,7 +253,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     kernel.bind(LocalWebRuntime, runtime)
     kernel.bind(Progress, StreamProgress())  # operations' events reach the stream of the request that runs them
     kernel.bind(DaemonLifecycleWait, DaemonLifecycleWait(WEB_LIFECYCLE_WAIT_SECONDS))
-    activity, clients = Activity(), ConnectedClients(kernel.settings.state_dir / "web")
+    activity, clients = Activity(), _connected_clients(kernel.settings.state_dir / "web")
 
     @app.middleware("http")
     async def guarded(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
