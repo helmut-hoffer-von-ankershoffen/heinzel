@@ -201,7 +201,7 @@ if sys.argv[1:2] == ["automatic-015"]:
     from functools import partial
 
     # This branch runs inside the published 0.9.14 tool, never the candidate: it must name 0.9.14's module paths,
-    # whatever the current tree calls them (tests/unit/legacy_fixture_published_imports_test.py pins this).
+    # whatever the current tree calls them (tests/unit/cross_version_imports_test.py pins this).
     from heinzel.modules.system._announced import Announcement, trial_start
     from heinzel.modules.system._update import UpdateService
 
