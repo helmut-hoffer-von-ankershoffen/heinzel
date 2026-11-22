@@ -13,10 +13,10 @@ from typer.testing import CliRunner
 
 from heinzel.heads import web
 from heinzel.heads._exposure import MCP_HTTP, exposed
-from heinzel.heads._mcp_tokens import McpTokens
 from heinzel.heads.cli import build
-from heinzel.heads.web._devices import Devices
 from heinzel.kernel import Config
+from heinzel.modules.system.client._devices import Devices
+from heinzel.modules.system.client._mcp_tokens import McpTokens
 
 pytestmark = pytest.mark.integration
 

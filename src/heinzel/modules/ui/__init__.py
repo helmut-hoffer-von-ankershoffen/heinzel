@@ -8,10 +8,10 @@ from pydantic import Field
 from heinzel import Check, Config, Kernel, Module, Settings, Status, __version__
 from heinzel import HeinzelError as HeinzelError
 from heinzel.kernel import HeadRefresh, Installation, PersistentWeb, WebHeadRefresh, WebOverview
+from heinzel.modules.system.lifecycle._runtime import runtime_checks
+from heinzel.modules.system.lifecycle._service import WebChange, WebRestart, WebService, WebStatus
+from heinzel.modules.system.lifecycle._strays import retire_strays
 from heinzel.modules.ui._overview import WebOverviewService
-from heinzel.modules.ui._runtime import runtime_checks
-from heinzel.modules.ui._service import WebChange, WebRestart, WebService, WebStatus
-from heinzel.modules.ui._strays import retire_strays
 
 module = Module("ui", "Open the web workspace or manage its optional persistent service.")
 module.service(WebService, WebService.for_user)

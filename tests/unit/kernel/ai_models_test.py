@@ -20,7 +20,8 @@ from heinzel.kernel import (
     ModelUnavailableError,
     OperationLet,
 )
-from heinzel.kernel._ai_models import (
+from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
+from heinzel.kernel.ai._ai_models import (
     EFFORT_BUDGETS,
     OUTPUT_TOKENS,
     PROMPT_CACHE,
@@ -30,8 +31,7 @@ from heinzel.kernel._ai_models import (
     list_offers,
     model_for_level,
 )
-from heinzel.kernel._capabilities import declared_unsupported
-from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
+from heinzel.kernel.ai._capabilities import declared_unsupported
 
 pytestmark = pytest.mark.unit
 
@@ -227,7 +227,7 @@ class Flaky:
 
 
 def test_listing_keeps_the_last_good_list_when_the_plugin_fails_or_stalls(monkeypatch):
-    monkeypatch.setattr("heinzel.kernel._ai_models.LIST_TTL", 0.0)
+    monkeypatch.setattr("heinzel.kernel.ai._ai_models.LIST_TTL", 0.0)
     flaky = Flaky()
     source = _source(flaky, name="flaky-test")
     offers, note = list_offers(source)
@@ -289,7 +289,7 @@ def test_model_for_level_picks_the_marked_usable_offer_else_the_first_usable(cap
 
 
 def test_the_last_good_ids_survive_a_restart_with_a_broken_plugin(tmp_path, monkeypatch):
-    monkeypatch.setattr("heinzel.kernel._ai_models.LIST_TTL", 0.0)
+    monkeypatch.setattr("heinzel.kernel.ai._ai_models.LIST_TTL", 0.0)
     kept = tmp_path / "ai" / "plugin-models" / "acme.json"
     good = Levels([ModelOffer(id="big", title="Big", level="high"), ModelOffer(id="gone", available=False)])
     offers, _note = list_offers(AiModelsSource("acme", "acme", "heinzel-acme", "1.0.0", good, kept))  # type: ignore[arg-type]

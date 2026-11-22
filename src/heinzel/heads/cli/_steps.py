@@ -1,6 +1,6 @@
 """The CLI head's view of an operation's named steps: the same `phase` events the web app's dialog shows.
 
-An operation tells its steps through `Phases` (`heinzel.modules.system._phases`): one `phase` event per change,
+An operation tells its steps through `Phases` (`heinzel.modules.system.updater._phases`): one `phase` event per change,
 `{id, label, state, detail?}`, planned steps first as `pending`. The web app turns them into its checklist; this
 turns them into a segmented bar (one segment per step) above the running step on a terminal, a line per step where
 output is plain (redirected, `NO_COLOR`, `CI`), and one JSON object per line on stderr for `--format json`, so stdout

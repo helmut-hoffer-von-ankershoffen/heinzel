@@ -31,7 +31,7 @@ module. How do we merge unfinished work and keep it invisible until it is done?
 
 Chosen option: **a registry of named flags, off by default**.
 
-- `src/heinzel/kernel/_features.py` lists every flag with a one-line reason; all are off by default.
+- `src/heinzel/kernel/ai/_features.py` lists every flag with a one-line reason; all are off by default.
 - The expert setting `features` (environment `HZ_FEATURES`) switches flags on by name.
 - `feature_enabled(name)` raises on a name that is not registered.
 - A flag is deleted with its checks when the work ships. A flag hides behaviour, never state schema changes.

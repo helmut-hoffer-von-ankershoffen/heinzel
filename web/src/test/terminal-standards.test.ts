@@ -3,11 +3,17 @@
 // progress. A command may appear only where a person asked for one: a Details disclosure, a copy button, the terminal
 // panel itself. This test reads the app's copy (i18n.ts) for instructions to go to a terminal, run a command or restart
 // hz by hand. The allowlist only shrinks; each entry says why it is still there.
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const SOURCE = readFileSync(join(__dirname, "..", "i18n.ts"), "utf8");
+/** The catalogue's source: the index and every messages/ file. */
+const catalogue = (src: string) =>
+  [join(src, "i18n.ts"), ...readdirSync(join(src, "messages")).map((f) => join(src, "messages", f))]
+    .map((f) => readFileSync(f, "utf8"))
+    .join("\n");
+
+const SOURCE = catalogue(join(__dirname, ".."));
 
 /** A backticked hz command, an installer command, "in a terminal", or "restart `hz …`" (a button saying Restart is fine). */
 const TERMINAL =

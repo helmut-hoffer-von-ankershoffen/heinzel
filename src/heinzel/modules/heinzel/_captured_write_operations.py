@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
 from heinzel import CurrentUser, HeinzelError, Module
 from heinzel.kernel import CapturedWriteDraft, CapturedWriteService, Kernel
 from heinzel.kernel._approval import ApprovalConfirmation
-from heinzel.kernel._features import feature_enabled
+from heinzel.kernel.ai._features import feature_enabled
 from heinzel.modules.heinzel._captured_write_activity import CapturedWriteActivityPage, captured_write_activity
 from heinzel.modules.heinzel._captured_write_binding import SelectedWriteService
 from heinzel.modules.heinzel._captured_write_host import CapturedWriteHost, CapturedWriteStatus

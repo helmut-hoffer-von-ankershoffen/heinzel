@@ -127,7 +127,7 @@ def test_timed_out_manager_child_is_terminated_before_observation_returns(monkey
     import subprocess
     import sys
 
-    from heinzel.modules.system.daemon import _service
+    from heinzel.modules.system.daemon import _manager_commands
 
     children = []
     original = subprocess.Popen
@@ -137,8 +137,8 @@ def test_timed_out_manager_child_is_terminated_before_observation_returns(monkey
         children.append(process)
         return process
 
-    monkeypatch.setattr(_service.subprocess, "Popen", start)
-    result = _service.bounded_manager_command(
+    monkeypatch.setattr(_manager_commands.subprocess, "Popen", start)
+    result = _manager_commands.bounded_manager_command(
         [sys.executable, "-c", "import time; time.sleep(30)"],
         deadline=time.monotonic() + 0.02,
         env={"PATH": "/usr/bin:/bin", "LANG": "C"},

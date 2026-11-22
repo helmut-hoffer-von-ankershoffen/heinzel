@@ -13,8 +13,8 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from heinzel.kernel import Effort, HeinzelError
-from heinzel.kernel._ai_models import MODEL_ID_PATTERN, ModelOffer
-from heinzel.kernel._ai_models import Level as Tier
+from heinzel.kernel.ai._ai_models import MODEL_ID_PATTERN, ModelOffer
+from heinzel.kernel.ai._ai_models import Level as Tier
 
 Level = Literal["auto", "low", "medium", "high"]
 """What a person picks for a Heinzel: how hard it thinks, never a model name."""

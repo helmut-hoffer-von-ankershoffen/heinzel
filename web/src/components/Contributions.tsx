@@ -77,13 +77,13 @@ import { OperationDialog } from "@/components/OperationDialog";
 import { PaneAction, PaneActions, PaneChrome } from "@/components/PaneActions";
 import { Progress } from "@/components/Progress";
 import { Button } from "@/components/ui/button";
+import { restartAndApply } from "@/features/runtime/lifecycle/controller";
 import { type MessageKey, t } from "@/i18n";
 import { contributionPath } from "@/lib/navigation";
 import { appCallFor } from "@/lib/operationCalls";
 import { requestOperation } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
 import { zoneClock, zoneTime } from "@/lib/zoneTime";
-import { restartAndApply } from "@/lifecycle/controller";
 
 export type Icon = NonNullable<SchemaStatusItem["icon"]>;
 export type Effect = NonNullable<SchemaStatusItem["effect"]>;

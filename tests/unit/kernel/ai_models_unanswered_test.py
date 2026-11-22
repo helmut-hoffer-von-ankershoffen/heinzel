@@ -6,7 +6,7 @@ import stat
 import pytest
 
 from heinzel.kernel import AiModelsSource, ModelOffer, ModelUnavailableError
-from heinzel.kernel._ai_models import choose, list_offers, mark_answered, model_for_level
+from heinzel.kernel.ai._ai_models import choose, list_offers, mark_answered, model_for_level
 
 pytestmark = pytest.mark.unit
 

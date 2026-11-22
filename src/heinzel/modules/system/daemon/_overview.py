@@ -10,8 +10,8 @@ from pathlib import Path
 from pydantic import JsonValue, TypeAdapter
 
 from heinzel.kernel import Config, DaemonOverview, LocalObservation, Settings
+from heinzel.modules.system.daemon._manager_commands import bounded_manager_command
 from heinzel.modules.system.daemon._models import DaemonSettings
-from heinzel.modules.system.daemon._service import bounded_manager_command
 from heinzel.modules.system.daemon._units import LABEL, SYSTEMD_NAME, plist_path, systemd_paths
 
 MAX_HISTORY_BYTES = 4096

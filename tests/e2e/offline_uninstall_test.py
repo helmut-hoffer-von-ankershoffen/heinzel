@@ -263,7 +263,7 @@ def probe(command):
 daemon._quiescence_command = probe
 daemon._linux_user_manager_identity = lambda: (1, 2, 3)
 
-from heinzel.modules.ui import _service as web_service
+from heinzel.modules.system.lifecycle import _service as web_service
 if not hasattr(web_service.WebService, "historical_record"):
     defaults = web_service.WebService.__init__.__kwdefaults__
     assert defaults is not None and "which" in defaults

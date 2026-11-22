@@ -133,7 +133,7 @@ swapped for a link, and the tools attached to a Pydantic AI `TestModel` turn as 
 allowlists, export markers, modes, conflicts, sync and unexport), `tests/unit/heads/mcp_skills_test.py` (prompts and
 resources on stdio only, none over HTTP or in a chat), `tests/unit/modules/plugin_service_test.py` (a plugin change
 runs the sync and survives its failure) and `tests/integration/skill_test.py` (the CLI). The import-linter contracts
-list `heinzel.kernel._skills` as private and `system.skill` as an independent submodule.
+list `heinzel.kernel.ai._skills` as private and `system.skill` as an independent submodule.
 
 ## More Information
 

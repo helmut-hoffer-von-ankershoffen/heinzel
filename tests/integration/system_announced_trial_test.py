@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from heinzel.modules.system import _announced as announced
+from heinzel.modules.system.updater import _announced as announced
 
 pytestmark = pytest.mark.integration
 

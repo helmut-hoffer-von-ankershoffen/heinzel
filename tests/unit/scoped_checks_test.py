@@ -332,9 +332,9 @@ def overrides(changed):
 
 
 def test_the_push_hook_runs_the_types_and_only_the_unit_tests_related_to_the_change():
-    given = overrides(["src/heinzel/modules/system/_update.py"])
+    given = overrides(["src/heinzel/modules/system/updater/_update.py"])
     targets = given["UNIT_TARGETS"].split()
-    assert "tests/unit/modules/system_update_test.py" in targets
+    assert "tests/unit/runtime/updater/system_update_test.py" in targets
     assert 0 < len(targets) < 20  # not the ~340 test files of the full run
     assert "mypy" in given["FAST_TYPES"]
     assert "pyright" in given["FAST_TYPES"]
@@ -348,7 +348,11 @@ def test_a_changed_test_file_runs_itself_and_a_changed_script_runs_the_tests_tha
 
 @pytest.mark.parametrize(
     "changed",
-    [["pyproject.toml"], ["tests/conftest.py"], ["src/heinzel/modules/system/_update.py", "src/heinzel/x.json"]],
+    [
+        ["pyproject.toml"],
+        ["tests/conftest.py"],
+        ["src/heinzel/modules/system/updater/_update.py", "src/heinzel/x.json"],
+    ],
 )
 def test_changes_that_cannot_be_mapped_to_tests_never_run_the_whole_unit_suite(changed):
     assert scoped_related.related_tests(changed) is None
@@ -364,8 +368,10 @@ def test_a_change_no_test_reaches_still_runs_the_hooks_own_test():
 def test_imports_follow_the_defining_module_not_the_package_that_re_exports_it():
     """`from heinzel import Config` must not make every test depend on everything `heinzel` imports."""
     graph = scoped_related.graph()
-    assert "src/heinzel/modules/system/_update.py" not in graph.imports["tests/conftest.py"]
-    assert "tests/unit/modules/system_update_test.py" in graph.dependents({"src/heinzel/modules/system/_update.py"})
+    assert "src/heinzel/modules/system/updater/_update.py" not in graph.imports["tests/conftest.py"]
+    assert "tests/unit/runtime/updater/system_update_test.py" in graph.dependents(
+        {"src/heinzel/modules/system/updater/_update.py"}
+    )
 
 
 @pytest.mark.parametrize(

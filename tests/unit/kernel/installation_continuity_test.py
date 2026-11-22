@@ -9,7 +9,8 @@ from pathlib import Path
 import pytest
 
 from heinzel import HeinzelError, Progress
-from heinzel.kernel import Installation, _installation, _installation_continuity
+from heinzel.kernel import Installation
+from heinzel.kernel.install import _installation, _installation_continuity
 
 pytestmark = pytest.mark.unit
 

@@ -19,8 +19,8 @@ from heinzel.kernel import (
     ThemeLogoFiles,
     font_stack_problem,
 )
-from heinzel.kernel import _themes as themes
-from heinzel.kernel._themes import (
+from heinzel.kernel.look import _themes as themes
+from heinzel.kernel.look._themes import (
     LOGO_NAMES,
     MAX_FONT_BYTES,
     MAX_LOGO_BYTES,

@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import pytest
 
 from heinzel.modules.system.daemon import _overview as daemon_overview
+from heinzel.modules.system.lifecycle._service import LABEL
 from heinzel.modules.ui import _overview
-from heinzel.modules.ui._service import LABEL
 
 pytestmark = pytest.mark.unit
 

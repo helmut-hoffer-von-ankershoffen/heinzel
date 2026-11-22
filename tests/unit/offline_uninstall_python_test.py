@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from heinzel.kernel import _installation_continuity as continuity
-from heinzel.kernel import _uninstall_recovery as recovery
+from heinzel.kernel.install import _installation_continuity as continuity
+from heinzel.kernel.install import _uninstall_recovery as recovery
 
 pytestmark = pytest.mark.unit
 

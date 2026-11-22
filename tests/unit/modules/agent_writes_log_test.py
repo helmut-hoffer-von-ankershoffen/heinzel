@@ -18,8 +18,8 @@ from heinzel.kernel import (
     discover,
     restricts,
 )
-from heinzel.kernel._agent_writes import arguments_digest
-from heinzel.kernel._chat_tools import write_log, write_policy
+from heinzel.kernel.ai._agent_writes import arguments_digest
+from heinzel.kernel.session._chat_tools import write_log, write_policy
 from heinzel.modules.system import write
 from heinzel.modules.system.runner.chat._service import ChatService
 from heinzel.modules.system.write import WriteLog, health, render_plugins, render_writes

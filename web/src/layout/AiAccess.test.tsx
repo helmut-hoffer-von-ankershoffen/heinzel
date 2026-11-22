@@ -8,7 +8,7 @@ import { expectAccessible, mockApi } from "@/test/render";
 import { renderAt } from "@/test/renderApp";
 
 // The restart itself is the lifecycle controller's, tested on its own: here it runs the install and tells its phases.
-vi.mock("@/lifecycle/controller", async (importOriginal) => ({
+vi.mock("@/features/runtime/lifecycle/controller", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   restartAndApply: async (
     request: { preserve?: (signal: AbortSignal) => Promise<boolean | undefined> },

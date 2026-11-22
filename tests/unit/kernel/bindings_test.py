@@ -1162,7 +1162,7 @@ def test_inventory_declaration_rejects_writes_pins_and_capabilities_without_insp
 
 
 def test_capability_inspection_allowlist_rejects_unknown_and_write_methods():
-    from heinzel.kernel._capabilities import Capability
+    from heinzel.kernel.ai._capabilities import Capability
 
     for method in ["unknown", "write"]:
         with pytest.raises(ValueError, match="declared read methods"):

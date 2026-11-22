@@ -23,7 +23,10 @@ from pathlib import Path
 APPLE_SOURCES = frozenset(
     {
         "apple/App/HeinzelApp.swift",
+        "apple/App/NativePrompt.swift",
+        "apple/App/Navigation.swift",
         "apple/App/SystemAudio.swift",
+        "apple/App/TitleBarDragLayout.swift",
         "apple/App/WorkspaceView.swift",
         "apple/Heinzel.xcodeproj/project.pbxproj",
         "apple/Shared/ActivityCatalog.swift",
@@ -57,7 +60,13 @@ WIDGET_CORE = frozenset(
     for name in ("__init__", "_devices", "_widget", "_widget_fence", "_widget_fence_routes")
 )
 CORE_INTEGRATION = frozenset({"tests/integration/web_widget_test.py", "tests/integration/web_widget_fence_test.py"})
-PAIRING_SOURCES = frozenset({"src/heinzel/heads/web/_auto_update.py", "src/heinzel/heads/web/_state_directory.py"})
+PAIRING_SOURCES = frozenset(
+    {
+        "src/heinzel/heads/web/_auto_update.py",
+        "src/heinzel/modules/system/client/_state_directory.py",
+        "src/heinzel/modules/system/updater/_schedule.py",
+    }
+)
 PAIRING_INTEGRATION = frozenset({"tests/integration/web_state_directory_test.py"})
 APPLE_INTEGRATION = frozenset(
     {

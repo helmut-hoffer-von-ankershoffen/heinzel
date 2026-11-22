@@ -4,7 +4,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { CommandDialog } from "@/components/CommandDialog";
 import { assertActionStructure } from "@/components/PaneActions";
-import { RestartAndApply } from "@/lifecycle/RestartAndApply";
+import { RestartAndApply } from "@/features/runtime/lifecycle/RestartAndApply";
 
 const names = (container: HTMLElement) =>
   within(container)

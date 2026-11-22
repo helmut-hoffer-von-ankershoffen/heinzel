@@ -38,6 +38,37 @@ if TYPE_CHECKING:
 # Heinzelmännchen itself is imported inside the fixtures: pytest loads this plugin before coverage measurement starts,
 # and a top-level import would hide the import-time lines of every module from the coverage report.
 
+_FAKES = (
+    "FakeClock",
+    "FakeInstallation",
+    "FakeJob",
+    "FakeProcess",
+    "FakeReleaseSource",
+    "FakeServer",
+    "FakeServiceManager",
+    "FakeStatus",
+    "MemoryInstallationState",
+    "ScriptedProcessRunner",
+    "install_fake_release",
+    "installation",
+)
+"""The fakes of `heinzel.ports`, loaded on first use for the reason above: `from heinzel.testing import FakeClock`."""
+
+
+def __getattr__(name: str) -> object:
+    """Hand out a fake of a port from `heinzel._testing_fakes` without importing Heinzelmännchen at plugin load.
+
+    Raises:
+        AttributeError: If `name` is not one of the fakes.
+    """
+    if name in _FAKES:
+        from heinzel import _testing_fakes  # noqa: PLC0415 - see the note above: no top-level Heinzelmännchen import
+
+        return getattr(_testing_fakes, name)
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)
+
+
 CATEGORIES = ("unit", "integration", "e2e")  # also the order they run in: fastest first, so failures show early
 TIMEOUTS = {"unit": 5, "integration": 15, "e2e": 120}  # seconds per test unless a test sets @pytest.mark.timeout
 TIMEOUT_SCALE_VARIABLE = "HZ_TEST_TIMEOUT_SCALE"  # CI sets it (about 3) on slow hosted macOS runners; unset means 1
@@ -228,7 +259,7 @@ def assert_adapter(adapter: object, capability: str, modes: Iterable[str] = ("re
         ValueError: If `capability` is not one the core defines.
     """
     from heinzel.kernel import CAPABILITIES  # noqa: PLC0415 - see the module comment
-    from heinzel.kernel._capabilities import declared_unsupported  # noqa: PLC0415 - see the module comment
+    from heinzel.kernel.ai._capabilities import declared_unsupported  # noqa: PLC0415 - see the module comment
 
     spec = CAPABILITIES.get(capability)
     if spec is None:

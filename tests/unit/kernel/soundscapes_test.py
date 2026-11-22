@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from heinzel import Module, SoundAssets, SoundLayer, Soundscape, SoundscapeLet, SoundStream, ThemeChoice
 from heinzel.kernel import SIGNALS, SOUND_CSP, SOUND_ROUTE, STREAM_PROVIDERS
-from heinzel.kernel._soundscapes import (
+from heinzel.kernel.look._soundscapes import (
     MAX_ASSET_BYTES,
     MAX_SOUNDSCAPE_BYTES,
     audio_type,

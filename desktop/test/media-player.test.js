@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { createMediaPlayer, PLAYER_ORIGIN, playerScript, playerState, playerUrl } from "../src/media-player.js";
 import { BROWSER_PARTITION, createMiniBrowser } from "../src/mini-browser.js";
+import { mainSource } from "./main-source.js";
 
 const ORIGIN = "http://127.0.0.1:8737";
 const VIDEO = "abcdefghijk";
@@ -261,9 +262,9 @@ test("a player still opening when browsing data is cleared is restored after the
 });
 
 test("main hands the player's page to the browser's lease, so Clear browsing data reaches the player", async () => {
-  const main = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
-  const wiring = /const mediaPlayer = createMediaPlayer\(\{([\s\S]*?)\n\}\);/.exec(main)?.[1] ?? "";
-  assert.match(wiring, /\blease: \((\w+)\) => miniBrowser\.lease\(\1\),/, "the lease must forward the page it is given");
+  const main = mainSource();
+  const wiring = /ctx\.mediaPlayer = createMediaPlayer\(\{([\s\S]*?)\n  \}\);/.exec(main)?.[1] ?? "";
+  assert.match(wiring, /\blease: \((\w+)\) => ctx\.miniBrowser\.lease\(\1\),/, "the lease must forward the page it is given");
 });
 
 /** As Electron does once a window is destroyed: it says so, and everything else of it throws. */
