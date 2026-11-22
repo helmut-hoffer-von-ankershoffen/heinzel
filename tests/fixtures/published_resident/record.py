@@ -10,7 +10,9 @@ script runs inside a published interpreter, standard library only, with its own 
 Record a published version (never against a real profile):
 
     HOME="$(mktemp -d)" uv run --no-project --isolated --with heinzel==VERSION python -I \
-        tests/fixtures/published_resident/record.py > tests/fixtures/published_resident/VERSION.txt
+        tests/fixtures/published_resident/record.py | gzip -n -9 > tests/fixtures/published_resident/VERSION.txt.gz
+
+Stored compressed: the names are a published version's own, and text scans of the tests must not read them.
 """
 
 import ast

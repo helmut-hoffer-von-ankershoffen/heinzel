@@ -12,6 +12,7 @@ Two kinds of code run across a version boundary:
 """
 
 import ast
+import gzip
 import importlib
 import importlib.util
 from collections.abc import Iterator
@@ -55,7 +56,7 @@ class Published:
 
 def published(version: str) -> Published:
     record = Published()
-    for line in (MANIFESTS / f"{version}.txt").read_text().splitlines():
+    for line in gzip.decompress((MANIFESTS / f"{version}.txt.gz").read_bytes()).decode().splitlines():
         kind, *rest = line.split(" ")
         if kind == "resident":
             record.resident[rest[0]] = set(rest[1:])
