@@ -492,3 +492,30 @@ def test_signal_exit_reports_only_the_owned_process_phase(tmp_path, phase):
     assert not any(value in message for value in ("12345", "67890", "private", "secret"))
     (tmp_path / "startup-phases.txt").write_text("67890 isolated\n12345 unrecognized\n")
     assert fixture.startup_phase() == "unobserved"
+
+
+def test_a_signal_exit_reads_the_trace_the_isolated_interpreter_wrote_to_its_private_file(tmp_path):
+    child = SimpleNamespace(pid=1, poll=lambda: -11, communicate=lambda timeout: (b"", b"stderr was replaced"))
+    fixture = running(child)
+    fixture.service.directory = tmp_path
+    fixture.service.status = lambda: SimpleNamespace(ready=False)
+    (tmp_path / "startup-crash.txt").write_bytes(
+        b"Fatal Python error: Segmentation fault\n\nThread 0x1 (most recent call first):\n"
+        b'  File "/x/site-packages/uvicorn/server.py", line 70 in serve\n'
+    )
+    with pytest.raises(pytest.fail.Exception) as failure:
+        fixture.ready()
+    assert "crash trace={'error': 'Segmentation fault', 'frames': [('uvicorn/server.py', 70)]}" in str(failure.value)
+    fixture.service.directory = tmp_path / "missing"
+    assert fixture.crash_file() == b""
+
+
+def test_startup_diagnostics_send_a_real_fatal_signal_to_the_private_file(tmp_path):
+    prefix = tmp_path / "prefix"
+    site = prefix / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+    site.mkdir(parents=True)
+    _ui_service.startup_diagnostics(prefix, tmp_path)
+    code = f"import site, faulthandler; site.addsitedir({str(site)!r}); faulthandler._sigsegv()"
+    crash = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, timeout=20, check=False)
+    assert crash.returncode in {-11, 139}
+    assert b"Fatal Python error: Segmentation fault" in (tmp_path / "startup-crash.txt").read_bytes()
