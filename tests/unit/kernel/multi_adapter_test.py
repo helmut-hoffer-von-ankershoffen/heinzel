@@ -21,6 +21,7 @@ from heinzel import (
 )
 from heinzel.kernel import CAPABILITIES, Requirement
 from heinzel.kernel._bindings import CapabilitySettings
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -84,7 +85,7 @@ class Hanging:
         return Document(ref=ref, title="", text="")
 
     def search(self, query: str, limit: int) -> list[DocumentHit]:
-        RELEASE.wait(5)
+        RELEASE.wait(scaled(5))
         return []
 
 

@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 
@@ -46,7 +48,7 @@ def test_wrapper_does_not_export_resolver_policy_to_descendants(starter, tmp_pat
         [str(wrapper), *arguments],
         env={**os.environ, "UV_FIND_LINKS": "must-not-propagate"},
         check=True,
-        timeout=15,
+        timeout=scaled(15),
     )
     actual, inherited = json.loads(observed.read_text())
     assert inherited is None
@@ -74,7 +76,7 @@ def test_nested_uv_run_keeps_policy_out_of_child_and_retains_explicit_wrapper(st
         [wrapper, "run", "--offline", "--no-project", "--python", sys.executable, "python", "-c", probe],
         env=environment,
         check=True,
-        timeout=15,
+        timeout=scaled(15),
     )
 
 

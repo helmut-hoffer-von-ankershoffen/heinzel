@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -34,7 +36,7 @@ def test_committed_manifest_matches_its_regeneration_byte_for_byte(release_polic
 
 
 def _tracked() -> list[str]:
-    run = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, check=True, timeout=30)
+    run = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, check=True, timeout=scaled(30))
     return [path for path in run.stdout.decode().split("\0") if path]
 
 

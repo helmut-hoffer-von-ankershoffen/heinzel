@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 REPO = Path(__file__).resolve().parents[2]
 
@@ -40,7 +42,7 @@ def test_browser_setup_installs_both_engines_and_only_linux_system_packages(tmp_
         capture_output=True,
         text=True,
         check=True,
-        timeout=10,
+        timeout=scaled(10),
     )
     expected = ["exec", "playwright-core", "install"]
     if platform == "Linux":
@@ -140,7 +142,7 @@ def test_docs_browser_dependencies_use_primary_archive_without_changing_signed_p
     mirrored.write_text(mirror_sources)
     for fixture in (mirrors, mirrored):
         result = subprocess.run(
-            ["sed", command[3], str(fixture)], check=True, capture_output=True, text=True, timeout=5
+            ["sed", command[3], str(fixture)], check=True, capture_output=True, text=True, timeout=scaled(5)
         )
         fixture.write_text(result.stdout)
     assert mirrors.read_text() == "https://archive.ubuntu.com/ubuntu/\nhttp://archive.ubuntu.com/ubuntu/\n"
@@ -148,12 +150,16 @@ def test_docs_browser_dependencies_use_primary_archive_without_changing_signed_p
     sources = tmp_path / "ubuntu.sources"
     sources.write_text(source)
     # Execute the actual workflow substitution against a private fixture, without sudo or host changes.
-    result = subprocess.run(["sed", command[3], str(sources)], check=True, capture_output=True, text=True, timeout=5)
+    result = subprocess.run(
+        ["sed", command[3], str(sources)], check=True, capture_output=True, text=True, timeout=scaled(5)
+    )
     sources.write_text(result.stdout)
     assert sources.read_text() == source.replace(
         "http://azure.archive.ubuntu.com/ubuntu", "https://archive.ubuntu.com/ubuntu"
     )
-    result = subprocess.run(["sed", command[3], str(sources)], check=True, capture_output=True, text=True, timeout=5)
+    result = subprocess.run(
+        ["sed", command[3], str(sources)], check=True, capture_output=True, text=True, timeout=scaled(5)
+    )
     sources.write_text(result.stdout)
     assert sources.read_text().count("https://archive.ubuntu.com/ubuntu") == 1
     assert "--install $(if $(CI),--with-deps)" in (REPO / "Makefile").read_text()

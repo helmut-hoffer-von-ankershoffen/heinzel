@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "apple" / "scripts" / "package-macos"
@@ -27,7 +29,7 @@ def test_site_prefix_does_not_enable_mac_https(tmp_path, prefix):
         "APPLE_APPLICATION_IDENTIFIER_PREFIX": prefix,
         "HEINZEL_HTTPS_LINKS": "",
     }
-    result = subprocess.run([str(SCRIPT)], env=env, capture_output=True, check=False, timeout=30)
+    result = subprocess.run([str(SCRIPT)], env=env, capture_output=True, check=False, timeout=scaled(30))
     assert result.returncode == 42
     built = args.read_text().splitlines()
     assert "HEINZEL_HTTPS_LINKS=NO" in built
@@ -36,13 +38,13 @@ def test_site_prefix_does_not_enable_mac_https(tmp_path, prefix):
 
 
 def test_version_other_than_pyproject_refused_before_build():
-    result = subprocess.run([str(SCRIPT), "1.2.3"], capture_output=True, text=True, check=False, timeout=30)
+    result = subprocess.run([str(SCRIPT), "1.2.3"], capture_output=True, text=True, check=False, timeout=scaled(30))
     assert result.returncode == 2
     assert f"differs from pyproject.toml ({VERSION})" in result.stderr
 
 
 def test_explicit_https_refused_before_build():
     env = {**os.environ, "HEINZEL_HTTPS_LINKS": "YES", "HEINZEL_MAC_SIGNING_TEAM": "ABCDEFGHIJ"}
-    result = subprocess.run([str(SCRIPT)], env=env, capture_output=True, text=True, check=False, timeout=30)
+    result = subprocess.run([str(SCRIPT)], env=env, capture_output=True, text=True, check=False, timeout=scaled(30))
     assert result.returncode == 2
     assert "Associated Domains" in result.stderr

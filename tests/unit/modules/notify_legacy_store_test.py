@@ -12,6 +12,7 @@ import pytest
 from heinzel import CapabilityState, Notice, NoticeKind, ResolveWhen
 from heinzel.modules.system.notify import _resolve
 from heinzel.modules.system.notify._store import MAX_NOTICES, Store
+from heinzel.testing import scaled
 
 pytestmark = [pytest.mark.unit, pytest.mark.timeout(30)]  # subprocess-heavy: past 5 s in a loaded hook
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "notify_v0929"
@@ -92,7 +93,7 @@ def test_actual_v0929_reader_writer_preserves_conditions_and_receipt(tmp_path, k
         capture_output=True,
         text=True,
         check=False,
-        timeout=10,
+        timeout=scaled(10),
     )
     assert result.returncode == 0, result.stderr
     (restored,) = store.read()

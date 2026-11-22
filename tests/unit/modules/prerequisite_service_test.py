@@ -14,6 +14,7 @@ from heinzel.kernel import ProcessOutcome
 from heinzel.modules.system.prerequisite import prerequisites as prerequisite_health
 from heinzel.modules.system.prerequisite._host import ToolHost
 from heinzel.modules.system.prerequisite._service import BREW_FLAGS, ToolPrerequisites
+from heinzel.testing import scaled
 from tests._prerequisite_machine import BREW, Machine
 
 pytestmark = pytest.mark.unit
@@ -1081,7 +1082,7 @@ def test_the_suite_describes_the_real_machine_as_a_linux_host_that_refuses_homeb
 
     assert host.platform == "linux"
     with pytest.raises(AssertionError, match="real brew"):
-        host.execute(["/opt/homebrew/bin/brew", "--version"], input=None, cwd=None, env={}, timeout=1.0)
+        host.execute(["/opt/homebrew/bin/brew", "--version"], input=None, cwd=None, env={}, timeout=scaled(1.0))
 
 
 def test_a_tool_directory_joins_the_path_once():

@@ -30,6 +30,7 @@ from heinzel.modules.heinzel._interactive_turn import InteractiveTurn
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import MessageRequest, SessionCosts
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -548,7 +549,7 @@ def test_input_snapshot_serializes_inflight_read_and_owner_revoke(connected):
     def while_reading():
         thread = threading.Thread(target=revoke)
         thread.start()
-        thread.join(5)
+        thread.join(scaled(5))
         assert not thread.is_alive()
 
     state["read_hook"] = while_reading
@@ -660,7 +661,7 @@ def test_preparation_fences_concurrent_suggestion_change_until_persisted(connect
 
     def wait_in_provider(*args):
         entered.set()
-        assert release.wait(5)
+        assert release.wait(scaled(5))
         return observe(*args)
 
     monkeypatch.setattr(grants, "_observe", wait_in_provider)
@@ -672,7 +673,7 @@ def test_preparation_fences_concurrent_suggestion_change_until_persisted(connect
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(prepare)
         try:
-            assert entered.wait(5)
+            assert entered.wait(scaled(5))
 
             def amend():
                 with repo.main_writer(session) as writer:
@@ -684,7 +685,7 @@ def test_preparation_fences_concurrent_suggestion_change_until_persisted(connect
             assert state["opens"] == 0
         finally:
             release.set()
-        assert future.result(timeout=5).review.fixed_arguments == fixed
+        assert future.result(timeout=scaled(5)).review.fixed_arguments == fixed
     assert state["opens"] == 1
     with repo.main_writer(session) as writer:
         newer = SourceSuggestionTools(crud, session, "next", repo.principal_id, writer, lambda: True)

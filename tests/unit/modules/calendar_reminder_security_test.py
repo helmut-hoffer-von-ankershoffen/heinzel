@@ -15,6 +15,7 @@ from heinzel.modules.org import _reminder_service as supervisor
 from heinzel.modules.system.notify import NotifyService, NotifySettings
 from heinzel.modules.system.notify import _policy as policy
 from heinzel.modules.system.notify._native import Native
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -265,7 +266,7 @@ def test_delayed_chat_refresh_does_not_replace_calendar_policy(tmp_path, monkeyp
     def delayed_load(_cls, cwd=None):
         if threading.current_thread() is worker:
             started.set()
-            assert release.wait(5)
+            assert release.wait(scaled(5))
             return old
         return load(cwd)
 
@@ -273,16 +274,16 @@ def test_delayed_chat_refresh_does_not_replace_calendar_policy(tmp_path, monkeyp
     worker = threading.Thread(target=service._channel)
     worker.start()
     try:
-        assert started.wait(5)
+        assert started.wait(scaled(5))
         assert service.enabled(NoticeKind.CALENDAR)
         release.set()
-        worker.join(5)
+        worker.join(scaled(5))
         assert not worker.is_alive()
         assert service.settings.calendar is True
         assert (service.hours.start, service.hours.end, str(service.hours.zone)) == (7, 22, "Europe/Berlin")
     finally:
         release.set()
-        worker.join(5)
+        worker.join(scaled(5))
 
 
 @pytest.mark.parametrize("hour", [22, 23, 0, 6])
@@ -382,7 +383,7 @@ def test_non_regular_owned_definition_cannot_block_recovery(tmp_path):
         ],
         capture_output=True,
         text=True,
-        timeout=3,
+        timeout=scaled(3),
         check=False,
     )
     assert result.returncode == 0, result.stderr

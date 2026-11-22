@@ -21,6 +21,7 @@ from heinzel.modules.system.plugin import _receipts, _service, _sources
 from heinzel.modules.system.plugin._models import PluginCandidate, PluginInfo, PluginSettings
 from heinzel.modules.system.plugin._receipts import PluginReceipts
 from heinzel.modules.system.plugin._service import PluginService, distributions_in_spec
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -1181,7 +1182,7 @@ with PluginReceipts(directory).installing():
     try:
         deadline = time.monotonic() + 10
         while not acquired.exists() and process.is_alive() and time.monotonic() < deadline:
-            time.sleep(0.01)
+            time.sleep(scaled(0.01))
         assert acquired.exists()
         with (
             pytest.raises(HeinzelError, match="Another plugin installation is running"),
@@ -1190,10 +1191,10 @@ with PluginReceipts(directory).installing():
             pass
     finally:
         release.touch()
-        process.join(10)
+        process.join(scaled(10))
         if process.is_alive():
             process.terminate()
-            process.join(10)
+            process.join(scaled(10))
     assert process.exitcode == 0
 
 
@@ -2416,14 +2417,16 @@ def git_repository(root, files, tag=None):
         (root / name).write_text(text, encoding="utf-8")
     steps = [["init", "-q", "-b", "main"], ["add", "."], ["commit", "-q", "-m", "plugin"]]
     for step in [*steps, *([["tag", tag]] if tag else [])]:
-        subprocess.run(["git", "-C", str(root), *step], check=True, env=environment, capture_output=True, timeout=30)
+        subprocess.run(
+            ["git", "-C", str(root), *step], check=True, env=environment, capture_output=True, timeout=scaled(30)
+        )
     return subprocess.run(
         ["git", "-C", str(root), "rev-parse", "HEAD"],
         check=True,
         env=environment,
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=scaled(30),
     ).stdout.strip()
 
 
@@ -2503,7 +2506,9 @@ def test_a_local_ref_pins_that_commit_not_head(make_kernel, tool_env, monkeypatc
         "GIT_COMMITTER_EMAIL": "a@e.org",
     }
     for step in (["add", "."], ["commit", "-q", "-m", "more"]):
-        subprocess.run(["git", "-C", str(repository), *step], check=True, env=env, capture_output=True, timeout=30)
+        subprocess.run(
+            ["git", "-C", str(repository), *step], check=True, env=env, capture_output=True, timeout=scaled(30)
+        )
     service, _ = installing(make_kernel, tool_env, monkeypatch)
     candidate = service.candidate(f"git+{repository.resolve().as_uri()}@v0.1.0")
     assert candidate.revision == first

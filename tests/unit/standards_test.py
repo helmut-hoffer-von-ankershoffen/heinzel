@@ -18,6 +18,7 @@ from packaging.requirements import Requirement
 
 from heinzel import Kernel, Module, OperationLet
 from heinzel.kernel import env_prefix
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -97,7 +98,7 @@ def repository_files() -> list[str]:
         capture_output=True,
         text=True,
         check=True,
-        timeout=10,
+        timeout=scaled(10),
     ).stdout.splitlines()
     return [path for path in listed if not path.startswith("plugins/") and (REPO / path).is_file()]
 

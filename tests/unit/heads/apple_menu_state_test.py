@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 ROOT = Path(__file__).resolve().parents[3]
 pytestmark = pytest.mark.unit
 
@@ -26,6 +28,6 @@ def test_mac_menu_routes_and_availability(tmp_path: Path) -> None:
             str(probe),
         ],
         check=True,
-        timeout=55,
+        timeout=scaled(55),
     )
-    subprocess.run([str(probe)], check=True, timeout=10)
+    subprocess.run([str(probe)], check=True, timeout=scaled(10))

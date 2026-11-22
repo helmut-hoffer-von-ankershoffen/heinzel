@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 ACTION = ROOT / ".github/actions/setup-uv"
@@ -62,7 +64,7 @@ def test_manifest_output_is_a_complete_offline_data_url(tmp_path):
         ["bash", "-e", "-c", action["runs"]["steps"][0]["run"]],
         env={"PATH": "/usr/bin:/bin", "ACTION_PATH": str(ACTION), "GITHUB_OUTPUT": str(output)},
         check=True,
-        timeout=10,
+        timeout=scaled(10),
     )
     prefix = "url=data:application/json;base64,"
     assert output.read_text().startswith(prefix)
@@ -176,7 +178,7 @@ def test_node_identity_reads_static_header_without_executing_or_reading_node(tmp
         capture_output=True,
         text=True,
         check=True,
-        timeout=2,
+        timeout=scaled(2),
     )
     assert f"lexical={commands}/node" in result.stdout
     assert f"canonical={binary}" in result.stdout
@@ -194,7 +196,7 @@ def test_node_identity_reports_missing_node_without_changing_bootstrap_result(tm
         capture_output=True,
         text=True,
         check=True,
-        timeout=2,
+        timeout=scaled(2),
     )
     assert "state=missing" in result.stdout
 
@@ -215,7 +217,7 @@ def test_node_identity_escapes_newlines_and_bounds_static_header_reads(tmp_path)
         capture_output=True,
         text=True,
         check=True,
-        timeout=2,
+        timeout=scaled(2),
     )
     assert not any(line.startswith("::") for line in result.stdout.splitlines())
     assert "NODE_MAJOR_VERSION 22" in result.stdout

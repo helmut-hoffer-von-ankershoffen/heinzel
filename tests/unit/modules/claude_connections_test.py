@@ -32,6 +32,7 @@ from heinzel.modules.system.claude._connections import FoundConnections
 from heinzel.modules.system.claude._switch import SwitchStore
 from heinzel.modules.system.runner.chat._service import ChatService
 from heinzel.modules.system.runner.chat._store import ChatStore
+from heinzel.testing import scaled
 from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 
 pytestmark = pytest.mark.unit
@@ -339,7 +340,7 @@ class _Http(BaseHTTPRequestHandler):
                 for _ in range(20):  # a comment line every 0.3 s, never an answer
                     self.wfile.write(b": still here\n")
                     self.wfile.flush()
-                    time.sleep(0.3)
+                    time.sleep(scaled(0.3))
             return
         if method == "tools/list":
             result = {
@@ -407,7 +408,7 @@ def gone(pid: int, seconds: float = 5.0) -> bool:
             os.kill(pid, 0)
         except ProcessLookupError:
             return True
-        time.sleep(0.05)
+        time.sleep(scaled(0.05))
     return False
 
 
@@ -515,7 +516,7 @@ def test_a_flooding_server_is_stopped(tmp_path, store, log, monkeypatch):
         assert found.tools()
         deadline = time.monotonic() + 3
         while any(row.running for row in found.status()) and time.monotonic() < deadline:
-            time.sleep(0.05)
+            time.sleep(scaled(0.05))
         assert not any(row.running for row in found.status())  # stopped by hz, its output never read past the cap
         with pytest.raises(HeinzelError):
             found.call("code-user:flood", "lookup", {"word": "a"})

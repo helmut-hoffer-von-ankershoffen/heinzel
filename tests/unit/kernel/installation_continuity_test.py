@@ -11,6 +11,7 @@ import pytest
 from heinzel import HeinzelError, Progress
 from heinzel.kernel import Installation
 from heinzel.kernel.install import _installation, _installation_continuity
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -528,7 +529,7 @@ def test_retry_recovers_after_real_atomic_bytecode_temporary_file(tool, monkeypa
     def blocked_replace(source, destination):
         assert Path(source).name.startswith("fixture.pyc.")
         started.set()
-        assert release.wait(10)
+        assert release.wait(scaled(10))
         return original_replace(source, destination)
 
     def snapshot(prefix, **kwargs):
@@ -536,7 +537,7 @@ def test_retry_recovers_after_real_atomic_bytecode_temporary_file(tool, monkeypa
         calls.append(result)
         if len(calls) == 1:
             release.set()
-            worker.join(timeout=10)
+            worker.join(timeout=scaled(10))
             assert not worker.is_alive()
         return result
 
@@ -545,13 +546,13 @@ def test_retry_recovers_after_real_atomic_bytecode_temporary_file(tool, monkeypa
     worker = threading.Thread(target=bootstrap._write_atomic, args=(str(target), b"inert"))
     worker.start()
     try:
-        assert started.wait(10)
+        assert started.wait(scaled(10))
         result = tool.startup_fingerprint()
         assert len(calls) == 3
         assert calls[0] != calls[1] == calls[2] == result
     finally:
         release.set()
-        worker.join(timeout=10)
+        worker.join(timeout=scaled(10))
         assert not worker.is_alive()
 
 
@@ -685,7 +686,7 @@ def test_a_same_size_rewrite_that_restores_the_mtime_is_read_again(tool, monkeyp
     assert tool.startup_fingerprint() == first
     target = tool.prefix / "lib/site-packages/example/__init__.py"
     before = target.stat()
-    time.sleep(0.05)  # past the filesystem's timestamp granularity; ctime can't be set back
+    time.sleep(scaled(0.05))  # past the filesystem's timestamp granularity; ctime can't be set back
     target.write_text("INITIAL PACKAGE")
     os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
     assert tool.startup_fingerprint() != first

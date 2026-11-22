@@ -105,5 +105,5 @@ def test_git_timeout_stops_the_entire_process_group(monkeypatch):
     monkeypatch.setattr(_git.subprocess, "Popen", lambda *a, **k: Process())
     monkeypatch.setattr(_git.os, "killpg", lambda pid, sig: killed.append((pid, sig)))
     with pytest.raises(CommandFailed, match="took longer than 1 s"):
-        GitRunner(timeout=1)(["git", "fetch"], None)
+        GitRunner(timeout=1)(["git", "fetch"], None)  # unscaled: the runner's own limit, named in the error
     assert killed == [(123, signal.SIGTERM), (123, signal.SIGKILL)]

@@ -12,6 +12,7 @@ from starlette.websockets import WebSocketDisconnect
 from heinzel.heads import api, web
 from heinzel.heads.web import _browser_bridge
 from heinzel.kernel._browser import NEEDS_DESKTOP, BrowserBridge, BrowserCommand, BrowserError
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -177,7 +178,7 @@ def test_a_command_goes_to_the_desktop_and_its_answer_comes_back(client, bridge)
     socket.send_text(
         json.dumps({"id": frame["id"], "ok": True, "result": {"url": "https://a.example.com/", "content": "x"}})
     )
-    thread.join(5)
+    thread.join(scaled(5))
     assert outcome == {"result": {"url": "https://a.example.com/", "content": "x"}}
 
     thread, outcome = ask(bridge, BrowserCommand(actor="chat-1", kind="heinzel", action="tabs"))
@@ -188,7 +189,7 @@ def test_a_command_goes_to_the_desktop_and_its_answer_comes_back(client, bridge)
             {"id": frame["id"], "ok": False, "error": {"code": "paused", "message": "The person took over this tab."}}
         )
     )
-    thread.join(5)
+    thread.join(scaled(5))
     error = outcome["error"]
     assert isinstance(error, BrowserError)
     assert (error.code, str(error)) == ("paused", "The person took over this tab.")
@@ -196,14 +197,14 @@ def test_a_command_goes_to_the_desktop_and_its_answer_comes_back(client, bridge)
     thread, outcome = ask(bridge)
     frame = json.loads(socket.receive_text())
     socket.send_text(json.dumps({"id": frame["id"], "ok": False, "error": {"code": "made-up", "message": "a\x00b"}}))
-    thread.join(5)
+    thread.join(scaled(5))
     assert (outcome["error"].code, str(outcome["error"])) == ("failed", "a b")
 
     # The desktop leaves: a waiting command fails, and so does the next one.
     thread, outcome = ask(bridge)
     socket.receive_text()
     socket.close()
-    thread.join(5)
+    thread.join(scaled(5))
     assert (outcome["error"].code, str(outcome["error"])) == ("unavailable", NEEDS_DESKTOP)
     assert not bridge.available
     with pytest.raises(BrowserError, match="needs the desktop app"):
@@ -245,7 +246,7 @@ def test_a_newer_desktop_replaces_the_older_one(client, bridge):
     thread, outcome = ask(bridge)
     frame = json.loads(second.receive_text())
     second.send_text(json.dumps({"id": frame["id"], "ok": True, "result": {}}))
-    thread.join(5)
+    thread.join(scaled(5))
     assert outcome == {"result": {}}
     assert bridge.available
     second.close()
@@ -277,7 +278,7 @@ def test_a_commit_card_may_wait_for_the_person_and_a_silent_desktop_times_out(cl
     socket = desktop(client)
     thread, outcome = ask(bridge)
     socket.receive_text()
-    thread.join(5)
+    thread.join(scaled(5))
     assert outcome["error"].code == "timeout"
     confirm = BrowserCommand(
         actor="ci-bot",
@@ -288,9 +289,9 @@ def test_a_commit_card_may_wait_for_the_person_and_a_silent_desktop_times_out(cl
     )
     thread, outcome = ask(bridge, confirm)
     frame = json.loads(socket.receive_text())
-    thread.join(0.3)
+    thread.join(scaled(0.3))
     assert thread.is_alive()
     socket.send_text(json.dumps({"id": frame["id"], "ok": True, "result": {"approved": True}}))
-    thread.join(5)
+    thread.join(scaled(5))
     assert outcome == {"result": {"approved": True}}
     socket.close()
