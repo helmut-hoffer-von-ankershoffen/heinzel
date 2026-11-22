@@ -183,4 +183,3 @@ heads = [
 # Files of an `adapters_only` context that still touch the world directly, with how many places: subprocess, time.sleep,
 # time.monotonic, datetime.now, launchctl. Moving a call behind a port lowers the number; it never rises.
 [allow.adapters]
-"src/heinzel/modules/system/lifecycle/_service.py" = 5

@@ -348,7 +348,7 @@ def _managed(tmp_path, platform, *, returncode=0, loaded=True):
     web.platform = platform
     web.uid = 501
     web._manager = lambda _record: (loaded, 4242)  # type: ignore[method-assign]
-    web._command = lambda *arguments: ["mgr", *arguments]  # type: ignore[method-assign]
+    web.which = lambda _name: "mgr"
     commands: list[list[str]] = []
 
     def runner(command):
@@ -381,7 +381,7 @@ def test_restart_falls_back_when_the_control_socket_times_out(tmp_path):
 
     web._control = hung  # type: ignore[method-assign]
     assert web.restart().requested
-    assert commands == [["mgr", "restart", "hz-web.service"]]
+    assert commands == [["mgr", "--user", "restart", "hz-web.service"]]
 
 
 def test_restart_job_names_a_manager_refusal_in_a_sentence(tmp_path):
@@ -430,14 +430,12 @@ def test_install_refuses_a_port_outside_the_range(tmp_path):
 
 def test_an_unsupported_platform_has_no_service_manager(tmp_path):
     web, _ = _managed(tmp_path, "win32")
-    web.__dict__.pop("_command")
     with pytest.raises(HeinzelError, match="launchd or Linux systemd"):
-        web._command("print")
+        web._commands()
 
 
 def test_a_loaded_label_with_unknown_identity_is_refused(tmp_path):
     web, _ = _managed(tmp_path, "darwin")
-    web.__dict__.pop("_command")
     web.which = lambda _name: "/bin/launchctl"
 
     def runner(command):
