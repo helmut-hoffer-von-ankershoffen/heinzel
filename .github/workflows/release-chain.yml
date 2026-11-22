@@ -19,6 +19,15 @@ run-name: "Release ${{ inputs.version || 'next' }}${{ (inputs.dry_run || github.
 # merges and publishes nothing and gets no release token:
 #   gh workflow run release-chain.yml --ref main -f dry_run=true -f version=X.Y.Z -f cut_sha=SHA
 #
+# The token probe (dispatch from main with dry_run and probe) is the only job of a dry run that gets RELEASE_TOKEN,
+# never on a pull request: it pushes release-probe/<sha7> (one empty commit on main's tip, no release branch), opens a
+# draft PR as the owner, sees "Release freeze" posted, reads the required checks of main's rules, then closes the PR,
+# removes the branch and lifts the freeze checks. pypi.yml and compose have no dry-run input, so neither is dispatched.
+#
+# Main's tip is proven by its push run, or before that run finishes by the first-attempt green run of the merged PR
+# whose head has the same tree. The merge waits for the required checks of main's rules on the release head. Compose
+# is dispatched as soon as the tag's wheel asset answers, beside PyPI; the snapshot then waits for both.
+#
 # Acceptance is the sharded acceptance.yml (workflow_call); the verdict counts only its schema-2 reductions.
 #
 # The release PR is opened and merged as the owner identity (secret RELEASE_TOKEN, a fine-grained token of the owner:
@@ -44,6 +53,10 @@ on:
         description: "Dry run only: replan the cut of version from this main commit and print its candidate verdict"
         type: string
         default: ""
+      probe:
+        description: "Dry run from main only: probe RELEASE_TOKEN on a throwaway branch and draft PR, then remove both"
+        type: boolean
+        default: false
   schedule:
     - cron: "11,41 * * * *"
   pull_request:
@@ -294,7 +307,7 @@ jobs:
     needs: [plan, cut, candidate]
     if: ${{ !cancelled() && needs.candidate.result == 'success' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 45
     permissions:
       contents: read
       checks: write
@@ -317,7 +330,7 @@ jobs:
           VERSION: ${{ needs.plan.outputs.version }}
         run: |
           uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py merge \
-            --pr "$PR" --version "$VERSION"
+            --pr "$PR" --version "$VERSION" --wait 1800
       - name: Lift the freeze
         env:
           GH_TOKEN: ${{ github.token }}
@@ -382,6 +395,26 @@ jobs:
           fi
           published || { echo "error: v$VERSION has no published release with its producer manifest" >&2; exit 1; }
           echo "ok   v$VERSION is published (not Latest until its acceptance marker)"
+      - name: Compose the standard app as soon as the tag's wheel asset answers, beside PyPI
+        env:
+          RELEASE_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.RELEASE_TOKEN || '' }}
+        run: |
+          if gh release view "app-v$VERSION" -R helmut-hoffer-von-ankershoffen/heinzel-plugins > /dev/null 2>&1; then exit 0; fi
+          wheel="$(gh release view "v$VERSION" -R "$GITHUB_REPOSITORY" --json assets \
+            --jq ".assets[] | select(.name == \"heinzel-$VERSION-py3-none-any.whl\") | .url")"
+          # Compose reads the GitHub wheel, so it waits for that asset to answer, not for PyPI.
+          for _ in $(seq 1 30); do
+            [ -n "$wheel" ] && curl -fsSIL --max-time 30 -o /dev/null "$wheel" && break
+            sleep 10
+            wheel="$(gh release view "v$VERSION" -R "$GITHUB_REPOSITORY" --json assets \
+              --jq ".assets[] | select(.name == \"heinzel-$VERSION-py3-none-any.whl\") | .url")"
+          done
+          curl -fsSIL --max-time 30 -o /dev/null "$wheel" \
+            || { echo "error: the wheel asset of v$VERSION does not answer; compose not dispatched" >&2; exit 1; }
+          # Dispatching saves up to 15 minutes; without the grant the plugins' own schedule composes it from PyPI.
+          GH_TOKEN="$RELEASE_TOKEN" gh workflow run compose.yml -R helmut-hoffer-von-ankershoffen/heinzel-plugins --ref main \
+            -f version="$VERSION" -f core_wheel="$wheel" \
+            || echo "note: compose not dispatched; the plugins schedule composes v$VERSION"
       - name: Publish the exact GitHub release bytes to PyPI
         run: |
           if curl -fsS -o /dev/null "https://pypi.org/pypi/heinzel/$VERSION/json"; then echo "ok   PyPI has $VERSION"; exit 0; fi
@@ -395,17 +428,6 @@ jobs:
           done
           test -n "$run" || { echo "error: the PyPI dispatch created no new run" >&2; exit 1; }
           gh run watch "$run" -R "$GITHUB_REPOSITORY" --exit-status --interval 30 > /dev/null
-      - name: Compose the standard app for this version
-        env:
-          RELEASE_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.RELEASE_TOKEN || '' }}
-        run: |
-          if gh release view "app-v$VERSION" -R helmut-hoffer-von-ankershoffen/heinzel-plugins > /dev/null 2>&1; then exit 0; fi
-          wheel="$(gh release view "v$VERSION" -R "$GITHUB_REPOSITORY" --json assets \
-            --jq ".assets[] | select(.name == \"heinzel-$VERSION-py3-none-any.whl\") | .url")"
-          # Dispatching saves up to 15 minutes; without the grant the plugins' own schedule composes it from PyPI.
-          GH_TOKEN="$RELEASE_TOKEN" gh workflow run compose.yml -R helmut-hoffer-von-ankershoffen/heinzel-plugins --ref main \
-            -f version="$VERSION" -f core_wheel="$wheel" \
-            || echo "note: compose not dispatched; the plugins schedule composes v$VERSION"
       - id: snapshot
         name: Bind the bytes acceptance proves (GitHub wheel equal to PyPI, composed profile)
         run: |
@@ -458,6 +480,35 @@ jobs:
           uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py verdict \
             --version "$VERSION" --receipts receipts --run-id "$RUN_ID" --attempt "$ATTEMPT" \
             --wheel-sha256 "$WHEEL" --profile-sha256 "$PROFILE"
+
+  probe:
+    name: Token probe (dry run)
+    needs: plan
+    if: >-
+      ${{ needs.plan.outputs.dry == 'true' && inputs.probe && github.event_name == 'workflow_dispatch' &&
+          github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - name: Push a throwaway branch and draft PR as the owner, see the freeze, read the rules, remove both
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TOKEN: >-
+            ${{ github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.dry_run &&
+                inputs.probe && secrets.RELEASE_TOKEN || '' }}
+        run: uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py probe --repo .
 
   dry-candidate:
     name: Dry run of the candidate verdict

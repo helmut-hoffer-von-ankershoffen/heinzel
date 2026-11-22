@@ -9,19 +9,24 @@ release completes with no machine of ours awake.
 
 Order and rules (they are the rules the local driver kept):
 - plan: the version, and what is done already. A cut needs main's tip green on the FIRST attempt of its push run
-  (no known-flake exception: CI cannot read beads), no red macOS lane on that tip, the previous release terminal
-  (its `acceptance.json` exists), releasable commits since the last tag.
+  (no known-flake exception: CI cannot read beads), or while that run is not finished the first-attempt green run of
+  the merged PR whose head has the same tree; no red macOS lane on that tip, the previous release terminal (its
+  `acceptance.json` exists), releasable commits since the last tag. The intro, unless given, is drafted from the
+  same commits the notes list.
 - scope: the release commit is one commit on that tip and changes only the release files.
 - notes: the new CHANGELOG.md section names every commit since the last tag (a combine by all its members).
 - freeze: while a release PR is open, the check "Release freeze" fails on every other open PR.
 - candidate: the release PR's one CI run, first attempt, full job inventory (scripts/release_candidate.py).
-- merge: only when main has not moved since the candidate base; squash, pinned to the verified head.
+- merge: only when main has not moved since the candidate base and every check main's rules require has passed on
+  the head (the merge state is never read); squash, pinned to the verified head.
+- compose: dispatched once the tag's wheel asset answers, beside PyPI.
 - snapshot: after the GitHub release, PyPI and the composed app exist: the wheel and profile digests, with the
   GitHub and PyPI wheel equal.
 - verdict: both acceptance receipts of this run's first attempt prove those digests; then the marker; then Latest.
   Each receipt is the reduction of the sharded acceptance (acceptance.yml, every shard of its OS, same attempt).
 - dry run: plan (optionally pinned to a given cut SHA on main) and the candidate verdict of that version's release
   PR, read-only: nothing is pushed, merged or published (`plan --dry-run`, `candidate --dry-run`).
+- probe (dry run with probe, from main only): the owner's token on a throwaway branch and draft PR, removed again.
 
 Usage: uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py COMMAND ...
 """
@@ -71,6 +76,8 @@ USER_FACING = re.compile(r"^(feat|fix|perf|revert)(\([^)]*\))?!?:\s*")
 COMBINES = re.compile(r"^Combines #(?P<number>\d+) (?P<subject>\S.*)$")
 MEMBERS = re.compile(r"^(?:Combines #(\d+)\b.*|Merged via this PR:\s*(.*))$", re.MULTILINE)
 RED = ("failure", "timed_out", "startup_failure")
+PASSING = ("success", "neutral", "skipped")
+PROBE_BRANCH = "release-probe/"
 INTRO_ITEMS = 4
 INTRO_LIMIT = 600
 PAGE = 100
@@ -292,32 +299,72 @@ def ci_runs(read: Callable[[str], Any], sha: str) -> list[dict[str, Any]]:
     return data["workflow_runs"]
 
 
-def main_gate(read: Callable[[str], Any], tip: str) -> None:
-    """Main's tip may be cut: its push run is green on attempt 1 and no macOS lane run of it is red.
+def tree_of(read: Callable[[str], Any], sha: str) -> str:
+    """The git tree of commit `sha`, or empty when unreadable."""
+    data = read(f"commits/{sha}")
+    tree = (data or {}).get("commit", {}).get("tree", {}).get("sha", "") if isinstance(data, dict) else ""
+    return str(tree) if SHA.fullmatch(str(tree)) else ""
+
+
+def same_tree_proof(read: Callable[[str], Any], tip: str) -> str | None:
+    """The PR run that proves `tip` by tree identity, else None.
+
+    `tip` is the merge of exactly one PR into main whose head has the same git tree (a squash of an up-to-date head),
+    and every CI run of that head is complete and green on its first attempt: that run tested exactly main's tree.
+    """
+    prs = read(f"commits/{tip}/pulls")
+    merged = [
+        p
+        for p in (prs if isinstance(prs, list) else [])
+        if isinstance(p, dict) and p.get("merged_at") and p.get("base", {}).get("ref") == "main"
+    ]
+    if len(merged) != 1:
+        return None
+    head = str(merged[0].get("head", {}).get("sha", ""))
+    tree = tree_of(read, tip)
+    if not SHA.fullmatch(head) or not tree or tree_of(read, head) != tree:
+        return None
+    runs = [r for r in ci_runs(read, head) if r.get("event") == "pull_request" and r.get("head_sha") == head]
+    if not runs or any(
+        r.get("status") != "completed" or r.get("conclusion") != "success" or r.get("run_attempt") != 1 for r in runs
+    ):
+        return None
+    run_id = max(int(r.get("id", 0)) for r in runs)
+    return f"PR #{merged[0].get('number')} run {run_id} on {head[:9]}, the same tree as main tip {tip[:9]}"
+
+
+def main_gate(read: Callable[[str], Any], tip: str) -> str:
+    """Main's tip may be cut: it is proven green on a first attempt and no macOS lane run of it is red.
+
+    The proof is its push run, green on attempt 1; or, while that run is missing or running, the first-attempt green
+    run of the merged PR whose head has main's tree (main's own run then only confirms). A finished red push run
+    always refuses.
+
+    Returns:
+        Which run proves the tip.
 
     Raises:
-        Wait: The push run is not finished.
-        ChainError: It is red, green only on a rerun, missing or ambiguous; or a macOS lane run is red.
+        Wait: Neither proof exists yet.
+        ChainError: The push run is red, green only on a rerun or ambiguous; or a macOS lane run is red.
     """
     rows = ci_runs(read, tip)
     pushed = [r for r in rows if r.get("event") == "push"]
-    if not pushed:
-        msg = f"main tip {tip[:9]} has no CI push run yet"
-        raise Wait(msg)
-    if len(pushed) != 1:
+    if len(pushed) > 1:
         msg = f"main tip {tip[:9]} has {len(pushed)} CI push runs; refusing to pick one"
         raise ChainError(msg)
-    push = pushed[0]
-    where = f"main tip {tip[:9]} (run {push.get('id')})"
-    if push.get("status") != "completed":
-        msg = f"{where}: CI is {push.get('status')}"
+    push = pushed[0] if pushed else None
+    where = f"main tip {tip[:9]} (run {push.get('id')})" if push else f"main tip {tip[:9]}"
+    if push and push.get("status") == "completed":
+        if push.get("conclusion") != "success":
+            msg = f"{where}: CI ended {push.get('conclusion')}; fix main first"
+            raise ChainError(msg)
+        if push.get("run_attempt") != 1:
+            msg = f"{where}: green only on attempt {push.get('run_attempt')}; a release needs a first-attempt green run"
+            raise ChainError(msg)
+        proof = f"push run {push.get('id')} of main tip {tip[:9]}, first attempt"
+    elif not (proof := same_tree_proof(read, tip) or ""):
+        msg = f"{where}: CI is {push.get('status')}" if push else f"main tip {tip[:9]} has no CI push run yet"
         raise Wait(msg)
-    if push.get("conclusion") != "success":
-        msg = f"{where}: CI ended {push.get('conclusion')}; fix main first"
-        raise ChainError(msg)
-    if push.get("run_attempt") != 1:
-        msg = f"{where}: green only on attempt {push.get('run_attempt')}; a release needs a first-attempt green run"
-        raise ChainError(msg)
     for lane in rows:
         if (
             lane.get("event") == "workflow_dispatch"
@@ -326,6 +373,7 @@ def main_gate(read: Callable[[str], Any], tip: str) -> None:
         ):
             msg = f"main tip {tip[:9]}: the macOS lane run {lane.get('id')} is {lane.get('conclusion')}; fix main first"
             raise ChainError(msg)
+    return proof
 
 
 def compare_commits(read: Callable[[str], Any], base: str, head: str) -> list[dict[str, Any]]:
@@ -500,9 +548,8 @@ def plan(  # noqa: PLR0913 - the plan's inputs, all keyword-only beyond the vers
     releasable = [s for s in subjects if not NOT_RELEASABLE.match(s)]
     if not commits or (auto and not releasable):
         return step_plan("", "idle", f"nothing releasable on main since v{current} ({len(commits)} commits)")
-    if gate:
-        main_gate(read, tip)
-    reason = f"cut v{version} from {tip[:9]}: {len(releasable)} releasable of {len(commits)} commits"
+    proven = f"; proven by {main_gate(read, tip)}" if gate else ""
+    reason = f"cut v{version} from {tip[:9]}: {len(releasable)} releasable of {len(commits)} commits{proven}"
     return step_plan(version, "cut", reason, bump=bump, base=tip, intro=intro_from(releasable), previous=current)
 
 
@@ -518,8 +565,7 @@ def dry_plan(read: Callable[[str], Any], requested: str, *, tip: str, pinned: bo
     lines = []
     if result["phase"] == "cut":
         try:
-            main_gate(read, tip)
-            lines.append(f"gate: main commit {tip[:9]} is green on the first attempt")
+            lines.append(f"gate: main commit {tip[:9]} is proven by the {main_gate(read, tip)}")
         except Wait as exc:
             lines.append(f"gate: a release would wait: {exc}")
         except ChainError as exc:
@@ -851,6 +897,87 @@ def dry_candidate(read: Callable[[str], Any], version: str, cut: str) -> tuple[b
     return True, lines
 
 
+def required_checks(read: Callable[[str], Any]) -> list[str]:
+    """The status check names the rules of main require (read from GitHub, never a copy).
+
+    Raises:
+        ChainError: The rules are unreadable or require no check: a merge would be unguarded.
+    """
+    rules = read("rules/branches/main")
+    if not isinstance(rules, list):
+        msg = "cannot read the rules of main"
+        raise ChainError(msg)
+    names = sorted(
+        {
+            str(check.get("context"))
+            for rule in rules
+            if isinstance(rule, dict) and rule.get("type") == "required_status_checks"
+            for check in rule.get("parameters", {}).get("required_status_checks", [])
+            if isinstance(check, dict) and check.get("context")
+        }
+    )
+    if not names:
+        msg = "the rules of main require no status check; refusing an unguarded merge"
+        raise ChainError(msg)
+    return names
+
+
+def newest_check_runs(read: Callable[[str], Any], head: str) -> dict[str, dict[str, Any]]:
+    """The newest check run of each name on `head`.
+
+    Raises:
+        ChainError: The listing is unreadable.
+    """
+    runs: dict[str, dict[str, Any]] = {}
+    for page in range(1, 11):
+        data = read(f"commits/{head}/check-runs?per_page={PAGE}&page={page}")
+        rows = data.get("check_runs") if isinstance(data, dict) else None
+        if not isinstance(rows, list):
+            msg = f"cannot read the check runs of {head[:9]}"
+            raise ChainError(msg)
+        for row in rows:
+            name = str(row.get("name"))
+            if name not in runs or int(row.get("id", 0)) > int(runs[name].get("id", 0)):
+                runs[name] = row
+        if len(rows) < PAGE:
+            break
+    return runs
+
+
+def check_state(run: dict[str, Any] | None, status: dict[str, Any] | None) -> str:
+    """pass, wait or the failing conclusion of one required check, from its check run, else its commit status."""
+    if run:
+        if run.get("status") != "completed":
+            return "wait"
+        return "pass" if run.get("conclusion") in PASSING else str(run.get("conclusion"))
+    if status:
+        state = status.get("state")
+        return {"success": "pass", "pending": "wait"}.get(str(state), str(state))
+    return "wait"
+
+
+def checks_pass(read: Callable[[str], Any], head: str, required: list[str]) -> None:
+    """Every required check is reported on `head` and passed (success, neutral or skipped, as GitHub counts them).
+
+    The newest check run of a name counts, else the commit status of that context; the merge state is never read.
+
+    Raises:
+        Wait: A required check is missing or still running.
+        ChainError: A required check failed.
+    """
+    runs = newest_check_runs(read, head)
+    status = read(f"commits/{head}/status")
+    rows = status.get("statuses", []) if isinstance(status, dict) else []
+    contexts = {str(s.get("context")): s for s in rows if isinstance(s, dict)}
+    states = {name: check_state(runs.get(name), contexts.get(name)) for name in required}
+    if failed := [f"{name} ({state})" for name, state in states.items() if state not in {"pass", "wait"}]:
+        msg = f"required checks failed on {head[:9]}: {', '.join(failed)}; nothing was merged"
+        raise ChainError(msg)
+    if waiting := [name for name, state in states.items() if state == "wait"]:
+        msg = f"required checks not passed yet on {head[:9]}: {', '.join(waiting)}"
+        raise Wait(msg)
+
+
 def merge(read: Callable[[str], Any], number: int, version: str, token: str) -> str:
     """Squash-merge the verified release PR as the release identity, pinned to its head, if main has not moved.
 
@@ -858,7 +985,9 @@ def merge(read: Callable[[str], Any], number: int, version: str, token: str) -> 
         The release commit on main.
 
     Raises:
-        ChainError: Main moved, a review thread is open, or the merge did not land as the expected commit.
+        Wait: A required check of the rules of main has not passed on the head yet.
+        ChainError: Main moved, a required check failed, a review thread is open, or the merge did not land as the
+            expected commit.
     """
     pr = read(f"pulls/{number}")
     if isinstance(pr, dict) and pr.get("merged"):
@@ -868,6 +997,7 @@ def merge(read: Callable[[str], Any], number: int, version: str, token: str) -> 
     head = pr["head"]["sha"]
     if refusal := main_moved(read, head):
         raise ChainError(refusal)
+    checks_pass(read, head, required_checks(read))
     base = candidate_base(read, head)
     run(
         [
@@ -893,6 +1023,91 @@ def merge(read: Callable[[str], Any], number: int, version: str, token: str) -> 
         msg = f"release PR #{number} did not merge as one commit on {base[:9]}"
         raise ChainError(msg)
     return sha
+
+
+# ------------------------------------------------------------------------------------------------ the token probe
+
+
+def probe(read: Callable[[str], Any], sh: Callable[..., str], repo: Path, token: str) -> tuple[bool, list[str]]:
+    """Prove the owner's token on throwaway objects: push a branch, open a draft PR, freeze post and lift, rules.
+
+    The branch `release-probe/<sha7>` holds one empty commit on main's tip; it is no release branch, so neither the
+    freeze nor the release PR readers take it for a candidate. The PR and the branch are removed again, whatever
+    happened. Nothing is merged, published or dispatched.
+
+    Returns:
+        Whether every probed step worked, and one line per step.
+    """
+    tip = str((read("commits/main") or {}).get("sha", ""))
+    if not SHA.fullmatch(tip):
+        return False, ["FAIL cannot read main's tip"]
+    lines: list[str] = []
+    branch = f"{PROBE_BRANCH}{tip[:7]}"
+    made = {"token": token, "branch": branch, "remote": f"https://x-access-token:{token}@github.com/{REPOSITORY}.git"}
+    remote = made["remote"]
+    good = True
+    try:
+        login, uid = sh(["gh", "api", "user", "--jq", '"\\(.login) \\(.id)"'], env=gh_env(token)).split()
+        lines.append(f"ok   the token acts as {login}")
+        author = f"{uid}+{login}@users.noreply.github.com"
+        env = gh_env(token) | {
+            "GIT_AUTHOR_NAME": login,
+            "GIT_AUTHOR_EMAIL": author,
+            "GIT_COMMITTER_NAME": login,
+            "GIT_COMMITTER_EMAIL": author,
+        }
+        subject = f"chore(probe): release token probe {tip[:7]}"
+        sh(["git", "-C", str(repo), "checkout", "-q", "--detach", tip], env=env)
+        sh(["git", "-C", str(repo), "commit", "-q", "--allow-empty", "-m", subject], env=env)
+        head = sh(["git", "-C", str(repo), "rev-parse", "HEAD"], env=env).strip()
+        sh(["git", "-C", str(repo), "push", "--quiet", remote, f"HEAD:refs/heads/{branch}"], env=env)
+        made["pushed"] = "yes"
+        lines.append(f"ok   pushed {branch} ({head[:9]})")
+        body = "Opened and closed by the Release workflow's token probe (a dry run). Never merged."
+        create = ["gh", "pr", "create", "-R", REPOSITORY, "--draft", "--base", "main", "--head", branch]
+        url = sh([*create, "--title", subject, "--body", body], env=gh_env(token)).strip()
+        number = int(url.rsplit("/", 1)[-1])
+        made["pr"] = str(number)
+        lines.append(f"ok   opened the draft PR #{number} as {login}")
+        freeze_sync(read, post_check)
+        if FREEZE_CHECK in newest_check_runs(read, head):
+            lines.append(f"ok   {FREEZE_CHECK} posted on #{number}")
+        else:
+            good = False
+            lines.append(f"FAIL {FREEZE_CHECK} did not reach #{number}")
+        lines.append("ok   the merge waits for the required checks: " + ", ".join(required_checks(read)))
+        lines.append("not probed: pypi.yml and compose.yml have no dry-run input; nothing was dispatched")
+    except (ChainError, ValueError) as exc:
+        good = False
+        lines.append(f"FAIL {exc}")
+    finally:
+        good &= probe_cleanup(read, sh, made, lines)
+    return good, lines
+
+
+def probe_cleanup(read: Callable[[str], Any], sh: Callable[..., str], made: dict[str, str], lines: list[str]) -> bool:
+    """Close the probe PR and remove its branch (`made`: what the probe created), then lift the freeze checks again.
+
+    Returns:
+        Whether that worked.
+    """
+    token, branch, remote = made["token"], made["branch"], made["remote"]
+    number, pushed = made.get("pr", ""), bool(made.get("pushed"))
+    try:
+        if number:
+            sh(["gh", "pr", "close", number, "-R", REPOSITORY, "--delete-branch"], env=gh_env(token))
+        if pushed and read(f"git/ref/heads/{branch}") is not None:
+            sh(["git", "push", "--quiet", remote, "--delete", branch], env=gh_env(token))
+        if pushed and read(f"git/ref/heads/{branch}") is not None:
+            lines.append(f"FAIL {branch} is still there")
+            return False
+        freeze_sync(read, post_check)
+    except ChainError as exc:
+        lines.append(f"FAIL cleanup: {exc}")
+        return False
+    if pushed:
+        lines.append(f"ok   closed #{number or '-'} and removed {branch}; the freeze checks are lifted")
+    return True
 
 
 # ------------------------------------------------------------------------------------------------ the tail
@@ -1224,7 +1439,12 @@ def parser() -> argparse.ArgumentParser:
             ("--dry-run", {"action": "store_true"}),
             ("--cut-sha", {"default": ""}),
         ),
-        "merge": (("--pr", {"type": int, "required": True}), ("--version", {"required": True})),
+        "merge": (
+            ("--pr", {"type": int, "required": True}),
+            ("--version", {"required": True}),
+            ("--wait", {"type": float, "default": 1800}),
+        ),
+        "probe": (("--repo", {"type": Path, "default": Path()}),),
         "snapshot": (("--version", {"required": True}), ("--wait", {"type": float, "default": 3600})),
         "verdict": (
             ("--version", {"required": True}),
@@ -1312,10 +1532,22 @@ def cmd_merge(args: argparse.Namespace) -> int:
     if not token:
         say(f"error: {NO_RELEASE_IDENTITY}")
         return 1
-    sha = merge(get, args.pr, args.version, token)
+    sha = poll("required checks", lambda: merge(get, args.pr, args.version, token), args.wait)
     say(f"ok   merged release commit {sha[:9]}")
     output({"sha": sha})
     return 0
+
+
+def cmd_probe(args: argparse.Namespace) -> int:
+    """The token probe of a dry run (workflow job "Token probe")."""
+    token = os.environ.get("RELEASE_TOKEN", "")
+    if not token:
+        say(f"error: {NO_RELEASE_IDENTITY}")
+        return 1
+    good, lines = probe(get, run, args.repo.resolve(), token)
+    for line in lines:
+        say(line)
+    return 0 if good else 1
 
 
 def cmd_snapshot(args: argparse.Namespace) -> int:
@@ -1351,6 +1583,7 @@ COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "candidate": cmd_candidate,
     "merge": cmd_merge,
     "snapshot": cmd_snapshot,
+    "probe": cmd_probe,
     "verdict": cmd_verdict,
 }
 

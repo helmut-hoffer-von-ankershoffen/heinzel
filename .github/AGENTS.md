@@ -45,7 +45,10 @@ Constraints per workflow:
   before its marker. Dispatch again to resume; a rerun of failed jobs never counts as acceptance. Auto-cut and resume
   on a schedule only while `vars.AUTO_CUT` is `true`. A PR touching the chain runs it as a dry run. A dispatch with
   `dry_run`, `version` and `cut_sha` replans that cut from the given main commit and prints the plan, the gate and the
-  candidate verdict of the version's release PR, pushing, merging and publishing nothing.
+  candidate verdict of the version's release PR, pushing, merging and publishing nothing. With `probe` (from main
+  only) the one token-bearing dry-run job pushes `release-probe/<sha7>`, opens a draft PR, checks the freeze post and
+  main's required checks, then removes both. Main's tip is proven by its push run or, before that, by the merged PR's
+  first-attempt run on the same tree; the merge waits for main's required checks; compose starts at the wheel asset.
 - `release-freeze.yml` (core only): the check "Release freeze", red on every PR while another PR is the open release
   candidate; the chain posts it on all open PRs at the cut and after the merge. Not required by the ruleset yet: it is
   added after this workflow has been dispatched once, so every open PR carries the check first.

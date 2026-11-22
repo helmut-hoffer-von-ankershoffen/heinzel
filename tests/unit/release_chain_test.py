@@ -289,6 +289,57 @@ def test_merge_never_runs_gh_when_main_moved(monkeypatch):
     assert calls == []
 
 
+RULES = [
+    {"type": "pull_request", "parameters": {}},
+    {
+        "type": "required_status_checks",
+        "parameters": {"required_status_checks": [{"context": "CI OK"}, {"context": "SonarCloud"}]},
+    },
+]
+
+
+def check(name, status="completed", conclusion="success", run_id=1):
+    return {"name": name, "status": status, "conclusion": conclusion, "id": run_id}
+
+
+def checks_reader(runs, statuses=()):
+    return reader(
+        {
+            "rules/branches/main": RULES,
+            f"commits/{HEAD}/check-runs?per_page=100&page=1": {"check_runs": list(runs)},
+            f"commits/{HEAD}/status": {"statuses": list(statuses)},
+        }
+    )
+
+
+def test_the_merge_waits_for_exactly_the_required_checks_not_the_merge_state():
+    sonar = {"context": "SonarCloud", "state": "success"}
+    required = chain.required_checks(checks_reader([]))
+    assert required == ["CI OK", "SonarCloud"]
+    chain.checks_pass(checks_reader([check("CI OK"), check("other", conclusion="failure")], [sonar]), HEAD, required)
+    chain.checks_pass(checks_reader([check("CI OK", conclusion="neutral")], [sonar]), HEAD, required)
+    with pytest.raises(chain.Wait, match="SonarCloud"):
+        chain.checks_pass(checks_reader([check("CI OK")]), HEAD, required)
+    with pytest.raises(chain.Wait, match="CI OK"):
+        chain.checks_pass(
+            checks_reader([check("CI OK", status="in_progress", conclusion=None)], [sonar]), HEAD, required
+        )
+    newest_red = [check("CI OK"), check("CI OK", conclusion="failure", run_id=2)]
+    with pytest.raises(chain.ChainError, match="failed"):
+        chain.checks_pass(checks_reader(newest_red, [sonar]), HEAD, required)
+    with pytest.raises(chain.ChainError, match="failed"):
+        chain.checks_pass(
+            checks_reader([check("CI OK")], [{"context": "SonarCloud", "state": "error"}]), HEAD, required
+        )
+
+
+def test_rules_without_required_checks_refuse_the_merge():
+    with pytest.raises(chain.ChainError, match="unguarded"):
+        chain.required_checks(reader({"rules/branches/main": [{"type": "pull_request"}]}))
+    with pytest.raises(chain.ChainError, match="cannot read"):
+        chain.required_checks(reader({}))
+
+
 def test_merge_is_pinned_to_the_verified_head(monkeypatch):
     calls = []
     state = {"merged": False}
@@ -308,6 +359,9 @@ def test_merge_is_pinned_to_the_verified_head(monkeypatch):
             "commits/main": {"sha": BASE},
             f"commits/{TIP}": {"parents": [{"sha": BASE}]},
             f"compare/{BASE}...{HEAD}": content(),
+            "rules/branches/main": RULES,
+            f"commits/{HEAD}/check-runs?per_page=100&page=1": {"check_runs": [check("CI OK")]},
+            f"commits/{HEAD}/status": {"statuses": [{"context": "SonarCloud", "state": "success"}]},
         }.get(path)
 
     assert chain.merge(read, 9, "0.9.54", "token") == TIP
@@ -575,7 +629,7 @@ def test_a_real_plan_refuses_a_pinned_cut(capsys):
 @pytest.mark.parametrize(
     ("rows", "expected"),
     [
-        ([run_row()], "is green on the first attempt"),
+        ([run_row()], "proven by the push run 7"),
         ([run_row(status="queued", conclusion=None)], "would wait"),
         ([run_row(attempt=2)], "would refuse"),
     ],
@@ -662,3 +716,146 @@ def test_the_real_receipts_of_a_sharded_release_are_judged_by_the_same_rules():
     assert "reduce.py --release" in acceptance
     for artifact in chain.RECEIPTS.values():
         assert artifact.removesuffix(artifact.rsplit("-", 1)[1]) + "${{ matrix.runner_os }}" in acceptance
+
+
+# ------------------------------------------------------------------------------------------------ R3, R4, probe
+
+TREE, PRHEAD = "7" * 40, "8" * 40
+
+
+def tree_routes(*, pr_runs=None, pr_tree=TREE, merged=True, push=()):
+    found = routes(runs=list(push))
+    found[f"commits/{TIP}/pulls"] = [
+        {
+            "number": 5,
+            "merged_at": "2026-11-22T00:00:00Z" if merged else None,
+            "base": {"ref": "main"},
+            "head": {"sha": PRHEAD},
+        }
+    ]
+    found[f"commits/{TIP}"] = {"commit": {"tree": {"sha": TREE}}}
+    found[f"commits/{PRHEAD}"] = {"commit": {"tree": {"sha": pr_tree}}}
+    rows = pr_runs if pr_runs is not None else [run_row(event="pull_request") | {"head_sha": PRHEAD}]
+    found[f"actions/workflows/ci.yml/runs?head_sha={PRHEAD}&per_page=100"] = {"workflow_runs": rows}
+    return found
+
+
+def test_main_is_proven_by_the_merged_pr_run_on_the_same_tree():
+    running = run_row(status="in_progress", conclusion=None)
+    for push in ((), (running,)):
+        assert "PR #5 run 7" in chain.main_gate(reader(tree_routes(push=push)), TIP)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"pr_tree": OTHER},  # not an up-to-date squash: another tree
+        {"merged": False},
+        {"pr_runs": []},
+        {"pr_runs": [run_row(event="pull_request", attempt=2) | {"head_sha": PRHEAD}]},
+        {"pr_runs": [run_row(event="pull_request", conclusion="failure") | {"head_sha": PRHEAD}]},
+    ],
+    ids=["other-tree", "not-merged", "no-run", "rerun", "red"],
+)
+def test_no_tree_proof_means_waiting_for_mains_own_run(kwargs):
+    with pytest.raises(chain.Wait):
+        chain.main_gate(reader(tree_routes(**kwargs)), TIP)
+
+
+def test_a_red_push_run_refuses_even_with_a_green_pr_on_the_same_tree():
+    with pytest.raises(chain.ChainError, match="fix main first"):
+        chain.main_gate(reader(tree_routes(push=[run_row(conclusion="failure")])), TIP)
+
+
+def test_compose_starts_at_the_wheel_asset_beside_pypi_and_the_snapshot_waits_for_both():
+    workflow = (ROOT / ".github/workflows/release-chain.yml").read_text()
+    publish = workflow[workflow.index("  publish:") : workflow.index("  acceptance:")]
+    compose = publish.index("Compose the standard app")
+    assert compose < publish.index("Publish the exact GitHub release bytes to PyPI") < publish.index("id: snapshot")
+    assert "curl -fsSIL" in publish[compose : publish.index("gh workflow run compose.yml")]
+    assert "pypi_wheel_digest" in (ROOT / "scripts/release_chain.py").read_text().split("def snapshot(")[1]
+
+
+def test_the_token_reaches_the_probe_only_on_a_dispatched_dry_run_from_main():
+    workflow = (ROOT / ".github/workflows/release-chain.yml").read_text()
+    probe = workflow[workflow.index("  probe:") : workflow.index("  dry-candidate:")]
+    assert "github.event_name == 'workflow_dispatch'" in probe
+    assert "github.ref == 'refs/heads/main'" in probe
+    assert "inputs.probe" in probe
+    assert "inputs.dry_run" in probe
+
+
+class FakeShell:
+    def __init__(self, fail=None):
+        self.calls = []
+        self.fail = fail
+        self.branch = False
+
+    def __call__(self, argv, env=None):
+        self.calls.append(argv)
+        if self.fail and self.fail in argv:
+            msg = f"{self.fail} failed"
+            raise chain.ChainError(msg)
+        if argv[:3] == ["gh", "api", "user"]:
+            return "owner 42\n"
+        if "rev-parse" in argv:
+            return PRHEAD + "\n"
+        if "push" in argv:
+            self.branch = "--delete" not in argv
+        if argv[:3] == ["gh", "pr", "create"]:
+            return f"https://github.com/{chain.REPOSITORY}/pull/77\n"
+        if argv[:3] == ["gh", "pr", "close"]:
+            self.branch = False
+        return ""
+
+
+def probe_reader(shell, *, freeze=True):
+    base = {
+        "commits/main": {"sha": TIP},
+        "rules/branches/main": RULES,
+        "pulls": [],
+        f"commits/{PRHEAD}/check-runs?per_page=100&page=1": {
+            "check_runs": [check(chain.FREEZE_CHECK)] if freeze else []
+        },
+    }
+
+    def read(path):
+        if path.startswith("git/ref/heads/"):
+            return {"ref": path} if shell.branch else None
+        return reader(base)(path)
+
+    return read
+
+
+def test_the_probe_proves_the_token_and_removes_what_it_made(monkeypatch):
+    monkeypatch.setattr(chain, "post_check", lambda *_: None)
+    shell = FakeShell()
+    good, lines = chain.probe(probe_reader(shell), shell, Path(), "secret")
+    assert good is True, lines
+    pushed = [c for c in shell.calls if "push" in c and "--delete" not in c]
+    assert pushed[0][-1] == f"HEAD:refs/heads/{chain.PROBE_BRANCH}{TIP[:7]}"
+    assert any(c[:3] == ["gh", "pr", "create"] and "--draft" in c for c in shell.calls)
+    assert any(c[:3] == ["gh", "pr", "close"] and "--delete-branch" in c for c in shell.calls)
+    assert not any("merge" in c or "workflow" in c for c in shell.calls)  # nothing merged or dispatched
+    assert any("CI OK, SonarCloud" in line for line in lines)
+    assert any(line.startswith("not probed: pypi.yml") for line in lines)
+    assert not chain.PROBE_BRANCH.startswith("release/")  # never a release branch, so never a candidate
+
+
+def test_a_failed_probe_still_removes_its_branch(monkeypatch):
+    monkeypatch.setattr(chain, "post_check", lambda *_: None)
+    shell = FakeShell(fail="create")
+    good, lines = chain.probe(probe_reader(shell), shell, Path(), "secret")
+    assert good is False
+    assert any("--delete" in c for c in shell.calls)
+    assert shell.branch is False
+    shell = FakeShell()
+    good, lines = chain.probe(probe_reader(shell, freeze=False), shell, Path(), "secret")
+    assert good is False
+    assert any("did not reach" in line for line in lines)
+
+
+def test_the_probe_needs_the_token(monkeypatch, capsys):
+    monkeypatch.delenv("RELEASE_TOKEN", raising=False)
+    assert chain.main(["probe"]) == 1
+    assert "RELEASE_TOKEN" in capsys.readouterr().out
