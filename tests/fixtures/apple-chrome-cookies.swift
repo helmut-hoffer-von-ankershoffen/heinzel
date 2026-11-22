@@ -4,6 +4,8 @@ import Foundation
 import SQLite3
 
 // A fixture Chrome profile, encrypted with a made-up password: no Keychain, no real Chrome profile.
+// The cookie path of the fixture shop, under the site root.
+let cartPath = ["", "cart"].joined(separator: "/")
 let password = Data("fixture-safe-storage-password".utf8)
 let now = Date(timeIntervalSince1970: 1_795_000_000)
 
@@ -39,7 +41,7 @@ struct ChromeCookieProbe {
         let later = chromeTime(now.addingTimeInterval(86_400))
         let rows: [(String, String, String, String, Int64, Int32, Int32, Int32)] = [
             (".example.com", "sid", "alpha", "/", later, 1, 1, 1),
-            ("shop.example.com", "cart", "beta", "/cart", 0, 0, 0, -1),
+            ("shop.example.com", "cart", "beta", cartPath, 0, 0, 0, -1),
             (".paypal.com", "pp", "delta", "/", later, 1, 1, 0),
             ("mail.google.com", "GMAIL", "epsilon", "/", later, 1, 1, 1),
             (".old.example.net", "old", "zeta", "/", chromeTime(now.addingTimeInterval(-10)), 0, 0, -1),
@@ -84,7 +86,7 @@ struct ChromeCookieProbe {
         check(sid.domain == ".example.com" && sid.isSecure && sid.isHTTPOnly && sid.sameSitePolicy == .sameSiteLax &&
               !sid.isSessionOnly, "sid attributes")
         let cart = persistent.cookies[1].cookie
-        check(cart.domain == "shop.example.com" && cart.path == "/cart" && !cart.isSecure && cart.isSessionOnly, "cart attributes")
+        check(cart.domain == "shop.example.com" && cart.path == cartPath && !cart.isSecure && cart.isSessionOnly, "cart attributes")
         let session = ChromeCookies.decryptCookies(table, password: password, sites: ["example.com"], persistent: false, now: now)
         check(session.cookies.allSatisfy { $0.cookie.isSessionOnly }, "session-only")
         let wrong = ChromeCookies.decryptCookies(table, password: Data("wrong".utf8), sites: ["example.com"], persistent: true, now: now)
