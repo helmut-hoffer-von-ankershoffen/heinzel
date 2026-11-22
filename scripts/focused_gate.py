@@ -565,6 +565,96 @@ def selected_pr_registry(manifest: str, slots: tuple[str, ...], key: str) -> str
     return selected
 
 
+MAIN_ONLY_MACOS = ("make setup", "End-to-end", "Electron")
+SELECTOR_KEYS = frozenset(
+    {
+        "core",
+        "site_only",
+        "surface_only",
+        "macos_full",
+        "notifier",
+        "contracts",
+        "electron",
+        "plugins",
+        "release",
+    }
+)
+# What GitHub names a matrix job that was skipped: the unexpanded template of its `name:` in ci.yml.
+SKIPPED_TEMPLATES = {
+    "setup": "make setup (${{ matrix.os }})",
+    "test": (
+        "Test (${{ matrix.os }}, Python ${{ matrix.python }}"
+        "${{ matrix.levels && format(', {0}', matrix.levels) || '' }})"
+    ),
+    "e2e": "End-to-end ${{ matrix.suite }} (${{ matrix.os }})",
+    "electron": "Electron (${{ matrix.os }})",
+    "consumer": "Consumer (${{ matrix.name }})",
+}
+
+
+def selector_output(log: bytes) -> dict[str, bool]:
+    """Read the selection the `Changed paths` job printed, each key exactly once as true or false.
+
+    Raises:
+        CandidateError: The log is oversized or a key is missing, repeated, unknown or not a boolean.
+    """
+    require(len(log) <= 1024 * 1024, "oversized selector log")
+    found = re.findall(rb"(?m)^\d{4}-[^ \r\n]+ selector-output: ([a-z_]+)=(true|false)\r?$", log)
+    keys = [key.decode() for key, _ in found]
+    require(len(keys) == len(set(keys)) and set(keys) == SELECTOR_KEYS, "missing or ambiguous selector output")
+    return {key.decode(): value == b"true" for key, value in found}
+
+
+def selected_pr_inventory(selected: dict[str, bool]) -> dict[str, str]:
+    """Name every job of an ordinary pull request run: what the selector chose succeeds, the rest is skipped.
+
+    The rules mirror the `if:` of each job in ci.yml (and its `Require the complete direct CI workload` step), so a
+    selected job that was skipped, and a job that ran without being selected, both differ from the inventory.
+    A release candidate run (the release step's flag) keeps the complete inventory.
+    """
+    inventory = expected_jobs("pull_request")
+    inventory["Release candidate source"] = "skipped"  # ordinary full PRs are not release candidates
+    if selected["release"]:
+        return inventory
+    core, site, surface = selected["core"], selected["site_only"], selected["surface_only"]
+    tested = core and not site
+    for name in [n for n in inventory if n.endswith("(macos-latest)") and n.startswith(MAIN_ONLY_MACOS)]:
+        del inventory[name]  # a pull request that is not a release candidate runs these on Linux only
+
+    def rule(prefix: str, on: bool, template: str | None = None) -> None:
+        names = [name for name in inventory if name.startswith(prefix)]
+        for name in names:
+            del inventory[name]
+        if on:
+            inventory.update(dict.fromkeys(names, "success"))
+        elif template:
+            inventory[template] = "skipped"
+        else:
+            inventory.update(dict.fromkeys(names, "skipped"))
+
+    rule("make setup", core, SKIPPED_TEMPLATES["setup"])
+    rule("Test (", tested, SKIPPED_TEMPLATES["test"])
+    rule("End-to-end ", tested, SKIPPED_TEMPLATES["e2e"])
+    rule("Electron (", selected["electron"], SKIPPED_TEMPLATES["electron"])
+    rule("Consumer (heinzel-", selected["contracts"], SKIPPED_TEMPLATES["consumer"])
+    for name, on in {
+        "Lint, contracts and types": core or surface,
+        "Dependency audit": core,
+        "Coverage": tested,
+        "Performance tests": tested,
+        "Plugin template": not site,
+        "Heinzel Notifier (macOS app)": selected["notifier"],
+        "macOS-specific tests": (selected["macos_full"] or surface) and (core or surface) and not site,
+        "Build": core,
+        "Plugin SDK candidate": core,
+        "Optional source plugins": selected["plugins"] or selected["contracts"],
+        "Public contract consumers": selected["contracts"],
+        "Site tests": site,
+    }.items():
+        inventory[name] = "success" if on else "skipped"
+    return inventory
+
+
 def full_pr_jobs(
     gate: Gate,
     source: GateSource,
@@ -589,8 +679,10 @@ def full_pr_jobs(
         "full CI merge parents differ from the exact base and head",
     )
     jobs = quarantine_lane(jobs_for(gate, source), source.run["id"], source.source.head)
-    inventory = expected_jobs("pull_request")
-    inventory["Release candidate source"] = "skipped"  # ordinary full PRs are not release candidates
+    changed_jobs = [job for job in jobs if job["name"] == "Changed paths"]
+    require(len(changed_jobs) == 1 and changed_jobs[0]["conclusion"] == "success", "full PR selector job is missing")
+    log = read(f"actions/jobs/{changed_jobs[0]['id']}/logs")
+    inventory = selected_pr_inventory(selector_output(log))
     require(
         len(jobs) == len(inventory) and {job["name"] for job in jobs} == set(inventory), "full PR job inventory differs"
     )
@@ -598,8 +690,6 @@ def full_pr_jobs(
         require(job["conclusion"] == inventory[job["name"]], "full PR job did not meet its required conclusion")
         if job["conclusion"] == "success":
             _check(gate, source, job)
-    changed = next(job for job in jobs if job["name"] == "Changed paths")
-    log = read(f"actions/jobs/{changed['id']}/logs")
     require(full_checkout(log) == source.commit, "full CI tested another merge commit")
     return jobs
 

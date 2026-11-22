@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.15"
+# dependencies = []
+# ///
 """The coverage floor, judged inside the pull request's own CI run: `python3 -I scripts/coverage_floor.py`.
 
 The `Coverage floor` job of .github/workflows/ci.yml runs this after the Coverage job, and `CI OK` requires it. It

@@ -2445,7 +2445,7 @@ def test_an_ordinary_pull_request_selects_only_what_its_paths_need(tmp_path, ci_
 def _ci_ok_run(run: str, **env: str) -> tuple[int, str]:
     jobs = _ci_jobs()
     step = next(s for s in jobs["ci-ok"]["steps"] if s.get("name") == "Require the complete direct CI workload")
-    ran = run.split()
+    ran = [*run.split(), "coverage-floor", "sonar-ratings"]  # both judge every pull request, whatever it selected
     results = {name: {"result": "success" if name in ran else "skipped"} for name in jobs["ci-ok"]["needs"]}
     base = {
         "PATH": os.environ["PATH"],

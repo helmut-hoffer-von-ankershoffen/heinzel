@@ -256,6 +256,9 @@ jobs:
           else
             echo "electron=false" >> "$GITHUB_OUTPUT"
           fi
+          # The merge gate derives the jobs this run must have from this selection (focused_gate.py in scripts).
+          sed 's/^/selector-output: /' "$GITHUB_OUTPUT" | grep -E '^selector-output: (core|site_only|surface_only|macos_full|notifier|contracts|electron|plugins)=(true|false)$'
+          echo "selector-output: release=${FULL_RELEASE:-false}"
 
   macos-main: # main lanes
     permissions:

@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.15"
+# dependencies = []
+# ///
 """Sonar's overall-code ratings, judged inside CI: `python3 -I scripts/sonar_ratings.py`.
 
 The `Sonar ratings` job of .github/workflows/ci.yml runs this and `CI OK` requires it on pull requests. It reads the
