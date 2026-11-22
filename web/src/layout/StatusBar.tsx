@@ -24,6 +24,7 @@ import { DurableHeinzelStatus } from "./DurableHeinzelStatus";
 import { HealthStatus } from "./HealthStatus";
 import { NativeFooterSlot, useNativeFooter } from "./nativeFooter";
 import { PluginsPending } from "./PluginsPending";
+import { SignInProblem } from "./SignInProblem";
 
 type Meeting = AgendaData["current"] & object;
 type Agenda = AgendaData;
@@ -191,7 +192,7 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
       ) : agenda.data?.problem ? (
         <div className="space-y-2 p-3">
           <p className="text-[17px] font-semibold">Calendar</p>
-          <p>{agenda.data.problem}</p>
+          <SignInProblem problem={agenda.data.problem} />
         </div>
       ) : (
         <CalendarSummary
