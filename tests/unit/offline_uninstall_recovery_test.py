@@ -12,9 +12,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from heinzel.kernel import _uninstall_recovery as recovery
-from heinzel.kernel._tool_uninstall import owned_file
-from heinzel.kernel._uninstall_journal import RemovalJournal
+from heinzel.kernel.install import _uninstall_recovery as recovery
+from heinzel.kernel.install._tool_uninstall import owned_file
+from heinzel.kernel.install._uninstall_journal import RemovalJournal
 from tests.unit.kernel.installation_continuity_test import tool
 from tests.unit.offline_uninstall_test import removable
 

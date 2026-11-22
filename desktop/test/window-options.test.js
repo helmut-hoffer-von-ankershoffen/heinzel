@@ -3,8 +3,9 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import { TITLEBAR_HEIGHT, windowOptions } from "../src/window-options.js";
+import { mainSource } from "./main-source.js";
 
-const main = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
+const main = mainSource();
 const preload = await readFile(new URL("../src/preload.cjs", import.meta.url), "utf8");
 
 test("macOS hides the native title bar and insets the traffic lights into the 44 px row", () => {

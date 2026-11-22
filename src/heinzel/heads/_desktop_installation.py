@@ -36,6 +36,7 @@ from heinzel.heads._desktop_seal import (
     inspect_bundle,
     mark_quarantined,
 )
+from heinzel.kernel._desktop_app import EXECUTABLES, NATIVE_ID, DesktopApp, DesktopVariant, read_bundle
 
 _RECEIPT = "desktop-installation.json"
 _BINDING = "desktop-owned-cli.json"
@@ -69,6 +70,8 @@ _CPU_ARM64 = 0x0100000C
 _MACH_EXECUTE = 2
 _BUNDLE_ID = "org.heinzelmaennchen.desktop"
 _BUNDLE_EXECUTABLE = "Heinzelmaennchen"
+NEW_INSTALL_FLAVOR = DesktopFlavor.NATIVE
+"""What a Mac gets when no Heinzel app is there yet; an installed app keeps its flavor."""
 LOCK_WAIT = 120.0
 """Seconds to wait for another install, update or removal before giving up."""
 _LOCK_NOTE_AFTER = 1.0
@@ -97,7 +100,7 @@ class _Receipt(BaseModel):
 
     schema_version: Literal[1] = 1
     release: str
-    flavor: Literal["electron", "swift"] = "electron"
+    flavor: Literal["electron", "swift"] = "electron"  # "swift" is how a record names the native app
     device: int
     inode: int
     birth_time: int | None
@@ -406,22 +409,86 @@ def _clear_orphaned_record(home: Path, config: Path, *, forget: bool) -> list[st
     return [say.forgot_install(backups[0])]
 
 
-def _trash_unowned(home: Path, config: Path) -> list[str]:
+def not_genuine(bundle: Path, flavor: DesktopFlavor) -> str | None:
+    """Why `bundle` is not a genuine Heinzel app of `flavor` that may be replaced unasked; None when it is one.
+
+    Genuine means: the bundle itself (no symlink), the flavor's bundle id and executable, and a code seal that
+    `inspect_bundle` accepts. Only such a copy is moved to the Trash without `--replace`.
+    """
+    found = read_bundle(bundle)
+    if found is None:
+        return None
+    if (reason := _identity_problem(found, "native" if flavor == DesktopFlavor.NATIVE else "electron")) is not None:
+        return reason
+    try:
+        broken = inspect_bundle(bundle).problem is not None
+    except (OSError, subprocess.SubprocessError):  # no codesign to ask: never vouch for the copy
+        broken = True
+    return say.REASON_SIGNATURE if broken else None
+
+
+def _identity_problem(found: DesktopApp, variant: DesktopVariant) -> str | None:
+    if found.symlink:
+        return say.REASON_SYMLINK
+    if found.variant is None:
+        return say.reason_bundle_id(found.bundle_id, NATIVE_ID if variant == "native" else _BUNDLE_ID)
+    if found.variant != variant:
+        return say.reason_other_variant(found.variant)
+    if found.executable != EXECUTABLES[variant]:
+        return say.reason_executable(found.executable, EXECUTABLES[variant])
+    return None
+
+
+def _owns_any(home: Path, config: Path) -> bool:
+    for bundle in _bundles(home):
+        with suppress(DesktopInstallationError):
+            if os.path.lexists(bundle) and _owned_installation(bundle, config) is not None:
+                return True
+    return False
+
+
+def _chosen_flavor(flavor: DesktopFlavor | None, home: Path, config: Path) -> DesktopFlavor:
+    """The flavor to install: as asked, else the installed app's (owned or not), else the record's, else native.
+
+    An Electron app already on this Mac stays Electron: only `--flavor native` switches it.
+    """
+    if flavor is not None:
+        return flavor
+    for bundle in _bundles(home):
+        with suppress(DesktopInstallationError):
+            if os.path.lexists(bundle) and (record := _owned_installation(bundle, config)) is not None:
+                return DesktopFlavor(record.flavor)
+        if (found := read_bundle(bundle)) is not None and found.variant is not None:
+            return DesktopFlavor(found.variant)
+    with suppress(ValidationError, TypeError):
+        return DesktopFlavor(_Receipt.model_validate_json(_read_metadata(config / _RECEIPT) or b"").flavor)
+    return NEW_INSTALL_FLAVOR
+
+
+def _trash_unowned(home: Path, config: Path, genuine: DesktopFlavor | None = None) -> list[str]:
     """Move every Heinzelmaennchen.app this installer does not own to the Trash; never delete it.
+
+    With `genuine`, only when no copy is owned and only a genuine app of that flavor (`not_genuine`): one installed
+    from a download, by an older hz or replaced by its own updater. Anything else is refused with the reason.
 
     Returns:
         What was moved, in plain words.
 
     Raises:
-        DesktopInstallationError: If such an app is running or cannot be moved to the Trash.
+        DesktopInstallationError: If such an app is not genuine, is running or cannot be moved to the Trash.
     """
     notes: list[str] = []
+    if genuine is not None and _owns_any(home, config):
+        return notes
     for bundle in _bundles(home):
         if not os.path.lexists(bundle):
             continue
         with suppress(DesktopInstallationError):
             if _owned_installation(bundle, config) is not None:
                 continue
+        if genuine is not None and (reason := not_genuine(bundle, genuine)) is not None:
+            msg = f"{_CONFLICT} {bundle} is not a Heinzel app hz may replace: {reason}."
+            raise DesktopInstallationError(msg, say.not_genuine(bundle, reason, everyone=_everyone(bundle.parent)))
         if _in_use(bundle):
             msg = f"{bundle} is in use."
             raise DesktopInstallationError(msg, say.app_running(bundle.parent))
@@ -447,7 +514,10 @@ def _in_use(bundle: Path) -> bool:
 
 
 QUIT_SECONDS = 20.0
-"""How long `hz app install --restart` waits for an open app to quit (`heinzel.modules.system._update` mirrors it)."""
+"""How long `hz app install --restart` waits for an open app to quit.
+
+`heinzel.modules.system.updater._update_rules` mirrors it.
+"""
 _QUIT_POLL_SECONDS = 0.5
 _QUIT_SCRIPT = ("on run argv", "tell application (item 1 of argv) to quit", "end run")
 
@@ -489,7 +559,7 @@ def quit_app(  # noqa: PLR0913 - the seams a test replaces: the clock, the wait,
 
 def _verify_bundle(bundle: Path, version: str, flavor: DesktopFlavor = DesktopFlavor.ELECTRON) -> None:
     bundle_id, executable_name = (
-        ("team.heinzel.apple", "Heinzel") if flavor == DesktopFlavor.SWIFT else (_BUNDLE_ID, _BUNDLE_EXECUTABLE)
+        (NATIVE_ID, EXECUTABLES["native"]) if flavor == DesktopFlavor.NATIVE else (_BUNDLE_ID, _BUNDLE_EXECUTABLE)
     )
     contents = bundle / "Contents"
     metadata = contents / "Info.plist"
@@ -822,6 +892,18 @@ def desktop_installed(home: Path | None = None) -> tuple[Path, str] | None:
     return (bundle, record.release) if record is not None and bundle.is_dir() else None
 
 
+def desktop_to_update(home: Path | None = None) -> tuple[Path, str | None] | None:
+    """The owned app and its release, else a genuine copy hz would replace and its version; None otherwise."""
+    if (installed := desktop_installed(home)) is not None:
+        return installed
+    home = (home or Path.home()).resolve(strict=True)
+    for bundle in _bundles(home):
+        found = read_bundle(bundle)
+        if found is not None and found.variant and not_genuine(bundle, DesktopFlavor(found.variant)) is None:
+            return bundle, found.version
+    return None
+
+
 def desktop_location(home: Path | None = None) -> Path | None:
     """Where the owned desktop app is installed now, or None when it is not installed."""
     installed = desktop_installed(home)
@@ -893,14 +975,16 @@ def _install_steps(  # noqa: PLR0913, PLR0917 - the options of install_desktop, 
         result["outcome"] = "ok" if ready else "deferred"
     if not ready:
         return "deferred"
-    if replace and not update_only:
-        with step("install", "replace") as result:
-            moved = _trash_unowned(home, config)
+    chosen = _chosen_flavor(flavor, home, config)
+    moved: list[str] = []
+    if not update_only:
+        with step("install", "replace", asked=replace) as result:
+            moved = _trash_unowned(home, config, None if replace else chosen)
             result["moved"] = len(moved)
         notes += moved
-    if not update_only:
-        with step("install", "forget", forget=forget or replace) as result:
-            forgotten = _clear_orphaned_record(home, config, forget=forget or replace)
+        forget = forget or replace or bool(moved)
+        with step("install", "forget", forget=forget) as result:
+            forgotten = _clear_orphaned_record(home, config, forget=forget)
             result["set_aside"] = len(forgotten)
         notes += forgotten
     with step("install", "locate") as result:
@@ -915,7 +999,7 @@ def _install_steps(  # noqa: PLR0913, PLR0917 - the options of install_desktop, 
         with step("install", "migrate", path=str(bundle)) as result:
             bundle = _migrate(bundle, config)
             result["path"] = str(bundle)
-    selected = flavor or (DesktopFlavor(existing.flavor) if existing else DesktopFlavor.ELECTRON)
+    selected = flavor or (DesktopFlavor(existing.flavor) if existing else chosen)
     _applications_directory(bundle.parent, home)
     with step("install", "release", path=str(bundle), version=version) as result:
         state = _install_release(
@@ -958,13 +1042,13 @@ def _install_release(  # noqa: PLR0913, PLR0917 - the transaction needs each of 
         raise DesktopInstallationError(msg, say.needs_stable_hz())
     if (
         existing
-        and existing.flavor == flavor
+        and DesktopFlavor(existing.flavor) == flavor
         and existing.release == version
         and existing.executable == str(executable)
     ):
         return "current"
     # The old image needs safe retirement even when replacing Swift with Electron.
-    native_lifecycle = flavor == DesktopFlavor.SWIFT or (existing is not None and existing.flavor == "swift")
+    native_lifecycle = flavor == DesktopFlavor.NATIVE or (existing is not None and existing.flavor == "swift")
     in_use = widget.in_use if native_lifecycle else _in_use
     if (
         existing
@@ -975,7 +1059,7 @@ def _install_release(  # noqa: PLR0913, PLR0917 - the transaction needs each of 
     with _staging(bundle.parent, config) as (staging, files):
         archive = (
             fetch_archive(version, staging, reporter, flavor=flavor)
-            if flavor == DesktopFlavor.SWIFT
+            if flavor == DesktopFlavor.NATIVE
             else fetch_archive(version, staging, reporter)
         )
         expanded = staging / "expanded"
@@ -991,7 +1075,7 @@ def _install_release(  # noqa: PLR0913, PLR0917 - the transaction needs each of 
             info = (staging / BUNDLE_NAME).lstat()
             record = _Receipt(
                 release=version,
-                flavor=flavor.value,
+                flavor="swift" if flavor == DesktopFlavor.NATIVE else "electron",
                 device=info.st_dev,
                 inode=info.st_ino,
                 birth_time=getattr(info, "st_birthtime_ns", None),

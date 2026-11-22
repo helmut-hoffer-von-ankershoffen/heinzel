@@ -24,8 +24,8 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue, Val
 
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._identity import Principal
-from heinzel.kernel._session import SessionEvent, SessionRead
-from heinzel.kernel._session_store import SessionWriter
+from heinzel.kernel.session._session import SessionEvent, SessionRead
+from heinzel.kernel.session._session_store import SessionWriter
 
 _PROOF = re.compile(r"[A-Za-z0-9_-]{43,128}\Z", re.ASCII)
 _HASH = r"^[0-9a-f]{64}$"

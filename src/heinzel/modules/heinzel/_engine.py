@@ -302,7 +302,7 @@ def build_agent(
 ) -> Agent[TurnDeps, Outcome]:
     """Build a typed turn; only an explicitly supplied host dispatcher or host-built tools can execute a tool.
 
-    `tools` are the turn's direct tools (ADR 0162), each already bound to its policy (`kernel/_chat_tools.py`).
+    `tools` are the turn's direct tools (ADR 0162), each already bound to its policy (`kernel/session/_chat_tools.py`).
     """
     agent = Agent(model, output_type=Outcome, deps_type=TurnDeps, instructions=instructions, retries=2, tools=tools)
     if dispatch is not None:

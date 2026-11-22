@@ -52,6 +52,6 @@ then proves its own result without creating another installation policy.
 ### Confirmation
 
 `tests/integration/web_update_test.py` checks cached policy, pins, authentication and frontend descriptors.
-`web/src/updates/controller.test.ts` and `web/src/layout/UpdateStatus.test.tsx` check stage ordering, uncertain outcomes,
+`web/src/features/runtime/updates/controller.test.ts` and `web/src/features/runtime/UpdateStatus.test.tsx` check stage ordering, uncertain outcomes,
 reload verification and the explicit click. Composer draft tests check restoration and refusal on storage failure.
 An actual mounted rebuilt-server/browser proof and independent security review remain release gates.

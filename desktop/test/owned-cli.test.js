@@ -5,379 +5,127 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { acquireDesktopGate, createOwnedCli, installedCli } from "../src/owned-cli.js";
+import { ATTACH_ARGUMENTS, acquireDesktopGate, createOwnedCli, developmentCli, installedCli } from "../src/owned-cli.js";
 
 const url = "http://127.0.0.1:43817/#token=abcdefghijklmnopqrstuvwxyz0123456789";
 
 function makeChild() {
   const child = new EventEmitter();
   child.stdout = new PassThrough();
-  child.closed = false;
-  child.once("close", () => { child.closed = true; });
+  child.stdin = new PassThrough();
+  child.received = "";
+  child.stdin.on("data", (chunk) => { child.received += chunk.toString("utf8"); });
   child.exitCode = null;
   child.signalCode = null;
   child.kills = [];
-  child.kill = (signal) => {
-    child.kills.push(signal);
-    if (signal === "SIGINT") {
-      child.exitCode = 0;
-      child.emit("exit", 0, null);
-      child.emit("close", 0, null);
-    }
-    return true;
+  child.kill = (signal) => { child.kills.push(signal); return true; };
+  child.finish = (output, code = 0, signal = null) => {
+    if (output) child.stdout.write(output);
+    child.exitCode = code;
+    child.signalCode = signal;
+    setImmediate(() => child.emit("close", code, signal));
   };
   return child;
 }
 
-test("a secret for the service goes into the service's environment only", () => {
-  const child = makeChild();
-  let spawned;
-  const owned = createOwnedCli({ spawn: (...args) => { spawned = args; return child; }, env: { HEINZEL_UI_BROWSER_BRIDGE: "b".repeat(43) } });
-  void owned.start().catch(() => {});
-  assert.equal(spawned[2].env.HEINZEL_UI_BROWSER_BRIDGE, "b".repeat(43));
-  assert.equal(spawned[2].env.PATH, process.env.PATH);
-  assert.equal(process.env.HEINZEL_UI_BROWSER_BRIDGE, undefined);
-  assert(!spawned[1].join(" ").includes("b".repeat(43)));
-});
-
-test("launches the installed CLI with fixed arguments and returns its verified URL", async () => {
+test("attaches with the fixed attach arguments and never spawns `ui serve`", async () => {
   const child = makeChild();
   let spawned;
   const owned = createOwnedCli({ spawn: (...args) => { spawned = args; return child; } });
   const started = owned.start();
-  assert.deepEqual(spawned, ["hz", ["ui", "serve", "--port", "0", "--no-browser"], {
+  assert.deepEqual(spawned, ["hz", ["ui", "attach", "--bridge-token-stdin"], {
     shell: false,
     windowsHide: true,
-    stdio: ["ignore", "pipe", "ignore"],
+    stdio: ["pipe", "pipe", "ignore"],
   }]);
-  child.stdout.write(`${url}\n`);
+  assert.deepEqual([...ATTACH_ARGUMENTS], spawned[1]);
+  assert.equal(spawned[1].includes("serve"), false);
+  assert.equal(spawned[1].includes("--port"), false);
+  child.finish(`${url}\n`);
   const connection = await started;
   assert.equal(connection.origin, "http://127.0.0.1:43817");
   assert.equal(connection.token, "abcdefghijklmnopqrstuvwxyz0123456789");
   assert.equal(owned.currentConnection(), connection);
   assert.equal(JSON.stringify(connection).includes(url), false);
-  assert.equal(child.stdout.listenerCount("data"), 0);
-  assert.equal(child.listenerCount("error"), 1);
-  assert.equal(child.listenerCount("exit"), 1);
-});
-
-test("keeps process errors guarded after startup and reports unclean stop evidence", async () => {
-  const child = makeChild();
-  const owned = createOwnedCli({ spawn: () => child });
-  const started = owned.start();
-  child.stdout.write(`${url}\n`);
-  await started;
-  child.emit("error", new Error("private diagnostic must not escape"));
-  assert.equal(owned.isRunning(), false);
-  assert.deepEqual(await owned.exited(), { code: null, signal: null, processError: true });
-  assert.deepEqual(await owned.stop(), { outcome: "abnormal", code: 0, signal: null, processError: true });
-  assert.equal(child.listenerCount("error"), 0);
-});
-
-test("keeps a guarded listener after a rejected startup until the child closes", async () => {
-  const child = makeChild();
-  const owned = createOwnedCli({ spawn: () => child });
-  const started = owned.start();
-  child.stdout.write("invalid\n");
-  await assert.rejects(started);
-  child.emit("error", new Error("late process failure"));
-  assert.equal(child.listenerCount("error"), 1);
-  await owned.stop();
-  assert.equal(child.listenerCount("error"), 0);
-});
-
-test("reports service exit after startup and exposes process liveness", async () => {
-  const child = makeChild();
-  const owned = createOwnedCli({ spawn: () => child });
-  const exited = owned.exited();
-  const started = owned.start();
-  child.stdout.write(`${url}\n`);
-  await started;
   assert.equal(owned.isRunning(), true);
-
-  child.exitCode = 1;
-  child.emit("exit", 1, null);
-  assert.deepEqual(await exited, { code: 1, signal: null });
-  assert.equal(owned.isRunning(), false);
-  child.emit("close", 1, null);
 });
 
-test("rejects malformed stdout without exposing the received credential in its error", async () => {
+test("the bridge token goes to attach on stdin only, never in arguments or this process's environment", async () => {
   const child = makeChild();
-  const owned = createOwnedCli({ spawn: () => child });
+  let spawned;
+  const token = "b".repeat(43);
+  const owned = createOwnedCli({ spawn: (...args) => { spawned = args; return child; }, bridgeToken: token, env: { HZ_CALLER: "desktop-app" } });
   const started = owned.start();
-  child.stdout.write("http://attacker.invalid/#token=secret\n");
-  await assert.rejects(started, (error) => {
-    assert.match(error.message, /could not start/);
-    assert.equal(error.message.includes("secret"), false);
-    return true;
-  });
+  child.finish(`${url}\n`);
+  await started;
+  assert.equal(child.received, `${token}\n`);
+  assert.equal(spawned[1].join(" ").includes(token), false);
+  assert.equal(Object.values(spawned[2].env).includes(token), false);
+  assert.equal(spawned[2].env.HZ_CALLER, "desktop-app");
+  assert.equal(process.env.HZ_CALLER, undefined);
 });
 
-test("reports early process exit and startup timeout", async () => {
-  const exited = makeChild();
-  const onExit = createOwnedCli({ spawn: () => exited });
-  const exitPromise = onExit.start();
-  exited.emit("exit", 1, null);
-  await assert.rejects(exitPromise, /could not start/);
-
-  const timedOut = makeChild();
-  const onTimeout = createOwnedCli({ spawn: () => timedOut, startupTimeoutMs: 5 });
-  await assert.rejects(onTimeout.start(), /too long to start/);
-  assert.deepEqual(await onTimeout.exited(), { code: null, signal: null, failedToStart: true });
-  assert.deepEqual(await onTimeout.stop(), {
-    outcome: "graceful",
-    code: 0,
-    signal: null,
-    processError: false,
-  });
-  assert.deepEqual(timedOut.kills, ["SIGINT"]);
-});
-
-test("recognizes a child already closed after a spawn error", async () => {
+test("one attach per handle: a second start reuses it and spawns nothing", async () => {
   const child = makeChild();
-  const owned = createOwnedCli({ spawn: () => child });
-  const starting = owned.start();
-  child.emit("error", new Error("spawn failed"));
-  await assert.rejects(starting, /could not start/);
-  child.emit("close", null, null);
-  delete child.closed;
-
-  assert.deepEqual(await owned.stop(), {
-    outcome: "already-exited",
-    code: null,
-    signal: null,
-    processError: false,
-  });
-  assert.deepEqual(child.kills, []);
+  let spawns = 0;
+  const owned = createOwnedCli({ spawn: () => { spawns += 1; return child; } });
+  const first = owned.start();
+  child.finish(`${url}\n`);
+  assert.equal(await owned.start(), await first);
+  assert.equal(spawns, 1);
 });
 
-test("shutdown signals only the owned child and escalates after the grace period", async () => {
-  const child = makeChild();
-  const owned = createOwnedCli({ spawn: () => child, stopTimeoutMs: 5 });
-  const starting = owned.start();
-  child.stdout.write(`${url}\n`);
-  await starting;
-  assert.deepEqual(await owned.stop(), {
-    outcome: "graceful",
-    code: 0,
-    signal: null,
-    processError: false,
-  });
-  assert.deepEqual(child.kills, ["SIGINT"]);
-
-  const unresponsive = makeChild();
-  unresponsive.kill = (signal) => { unresponsive.kills.push(signal); return true; };
-  const stubborn = createOwnedCli({ spawn: () => unresponsive, stopTimeoutMs: 5, forceStopTimeoutMs: 5 });
-  const pending = stubborn.start();
-  unresponsive.stdout.write(`${url}\n`);
-  await pending;
-  await assert.rejects(stubborn.stop(), /did not stop/);
-  assert.equal(stubborn.isRunning(), true);
-  unresponsive.signalCode = "SIGKILL";
-  unresponsive.emit("exit", null, "SIGKILL");
-  unresponsive.emit("close", null, "SIGKILL");
-  assert.deepEqual(unresponsive.kills, ["SIGINT", "SIGKILL"]);
-
-  const noChild = createOwnedCli({ spawn: () => { throw new Error("must not spawn"); } });
-  assert.deepEqual(await noChild.stop(), {
-    outcome: "not-started",
-    code: null,
-    signal: null,
-    processError: false,
-  });
-});
-
-test("classifies shutdown from the observed exit when SIGKILL races with a clean exit", async () => {
-  const child = makeChild();
-  child.kill = (signal) => {
-    child.kills.push(signal);
-    if (signal === "SIGKILL") {
-      child.exitCode = 0;
-      child.emit("exit", 0, null);
-      child.emit("close", 0, null);
-      return false;
-    }
-    return true;
-  };
-  const owned = createOwnedCli({ spawn: () => child, stopTimeoutMs: 2, forceStopTimeoutMs: 50 });
-  const starting = owned.start();
-  child.stdout.write(`${url}\n`);
-  await starting;
-
-  assert.deepEqual(await owned.stop(), {
-    outcome: "graceful",
-    code: 0,
-    signal: null,
-    processError: false,
-  });
-  assert.deepEqual(child.kills, ["SIGINT", "SIGKILL"]);
-});
-
-test("classifies nonzero exit, signal exit and already-exited abnormal child", async (t) => {
-  for (const scenario of [
-    {
-      name: "nonzero exit after interrupt",
-      stop: (child) => {
-        child.exitCode = 2;
-        child.emit("exit", 2, null);
-        child.emit("close", 2, null);
-      },
-      expected: { outcome: "abnormal", code: 2, signal: null, processError: false },
-    },
-    {
-      name: "signal exit after interrupt",
-      stop: (child) => {
-        child.signalCode = "SIGTERM";
-        child.emit("exit", null, "SIGTERM");
-        child.emit("close", null, "SIGTERM");
-      },
-      expected: { outcome: "abnormal", code: null, signal: "SIGTERM", processError: false },
-    },
+test("a failed attach rejects with one reason, exposes no credential and never falls back to serving", async (t) => {
+  for (const [name, output, code] of [
+    ["nonzero exit", `${url}\n`, 1],
+    ["no line", "", 0],
+    ["two lines", `${url}\nmore\n`, 0],
+    ["unfinished line", url, 0],
+    ["oversized", "x".repeat(4097), 0],
+    ["not a link", "x\n", 0],
   ]) {
-    await t.test(scenario.name, async () => {
+    await t.test(name, async () => {
       const child = makeChild();
-      child.kill = (signal) => {
-        child.kills.push(signal);
-        if (signal === "SIGINT") scenario.stop(child);
-        return true;
-      };
-      const owned = createOwnedCli({ spawn: () => child });
+      const spawned = [];
+      const owned = createOwnedCli({ spawn: (_command, args) => { spawned.push(args); return child; } });
       const started = owned.start();
-      child.stdout.write(`${url}\n`);
-      await started;
-
-      assert.deepEqual(await owned.stop(), scenario.expected);
+      child.finish(output, code);
+      await assert.rejects(started, (error) => !error.message.includes("abcdefghijklmnopqrstuvwxyz"));
+      assert.deepEqual(spawned, [[...ATTACH_ARGUMENTS]]);
+      assert.equal(owned.isRunning(), false);
+      assert.deepEqual(await owned.exited(), { code: null, signal: null, failedToStart: true });
+      assert.deepEqual(await owned.stop(), { outcome: "not-started", code: null, signal: null, processError: false });
     });
   }
-
-  await t.test("already-exited abnormal child retains its exit evidence", async () => {
-    const child = makeChild();
-    const owned = createOwnedCli({ spawn: () => child });
-    const started = owned.start();
-    child.stdout.write(`${url}\n`);
-    await started;
-    child.exitCode = 3;
-    child.emit("exit", 3, null);
-    child.emit("close", 3, null);
-
-    assert.deepEqual(await owned.stop(), {
-      outcome: "already-exited",
-      code: 3,
-      signal: null,
-      processError: false,
-    });
-  });
 });
 
-test("a child error or synchronous signal error cannot be reported as graceful", async (t) => {
-  await t.test("asynchronous child error followed by SIGKILL", async () => {
-    const child = makeChild();
-    child.kill = (signal) => {
-      child.kills.push(signal);
-      if (signal === "SIGINT") process.nextTick(() => child.emit("error", new Error("signal failed")));
-      if (signal === "SIGKILL") {
-        child.signalCode = "SIGKILL";
-        child.emit("exit", null, "SIGKILL");
-        child.emit("close", null, "SIGKILL");
-      }
-      return false;
-    };
-    const owned = createOwnedCli({ spawn: () => child, stopTimeoutMs: 5, forceStopTimeoutMs: 50 });
-    const started = owned.start();
-    child.stdout.write(`${url}\n`);
-    await started;
-
-    assert.deepEqual(await owned.stop(), {
-      outcome: "forced",
-      code: null,
-      signal: "SIGKILL",
-      processError: true,
-    });
-    assert.deepEqual(child.kills, ["SIGINT", "SIGKILL"]);
-  });
-
-  await t.test("synchronous kill error followed by SIGKILL", async () => {
-    const child = makeChild();
-    child.kill = (signal) => {
-      child.kills.push(signal);
-      if (signal === "SIGINT") throw new Error("signal failed");
-      if (signal === "SIGKILL") {
-        child.signalCode = "SIGKILL";
-        child.emit("exit", null, "SIGKILL");
-        child.emit("close", null, "SIGKILL");
-      }
-      return true;
-    };
-    const owned = createOwnedCli({ spawn: () => child, stopTimeoutMs: 5, forceStopTimeoutMs: 50 });
-    const started = owned.start();
-    child.stdout.write(`${url}\n`);
-    await started;
-
-    assert.deepEqual(await owned.stop(), {
-      outcome: "forced",
-      code: null,
-      signal: "SIGKILL",
-      processError: true,
-    });
-    assert.deepEqual(child.kills, ["SIGINT", "SIGKILL"]);
-  });
-});
-
-test("handles asynchronously delivered child errors through close during shutdown escalation", async () => {
+test("a slow attach times out and only the attach command gets SIGINT", async () => {
   const child = makeChild();
-  child.kill = (signal) => {
-    child.kills.push(signal);
-    process.nextTick(() => child.emit("error", new Error(`signal failed: ${signal}`)));
-    if (signal === "SIGKILL") {
-      setTimeout(() => {
-        child.signalCode = signal;
-        child.emit("exit", null, signal);
-        child.emit("close", null, signal);
-      }, 0);
-    }
-    return false;
-  };
-  const owned = createOwnedCli({ spawn: () => child, stopTimeoutMs: 5, forceStopTimeoutMs: 50 });
-  const starting = owned.start();
-  child.stdout.write(`${url}\n`);
-  await starting;
-
-  assert.deepEqual(await owned.stop(), {
-    outcome: "forced",
-    code: null,
-    signal: "SIGKILL",
-    processError: true,
-  });
-  assert.deepEqual(child.kills, ["SIGINT", "SIGKILL"]);
-  assert.equal(child.listenerCount("error"), 0);
+  const owned = createOwnedCli({ spawn: () => child, startupTimeoutMs: 5 });
+  await assert.rejects(owned.start(), /took too long/);
+  assert.deepEqual(child.kills, ["SIGINT"]);
 });
 
-test("can retry shutdown after a child did not close following the forced signal", async () => {
+test("a spawn error rejects", async () => {
   const child = makeChild();
-  child.kill = (signal) => {
-    child.kills.push(signal);
-    if (signal === "SIGINT" && child.kills.filter((entry) => entry === "SIGINT").length > 1) {
-      child.signalCode = signal;
-      child.emit("exit", null, signal);
-      child.emit("close", null, signal);
-    }
-    return true;
-  };
-  const owned = createOwnedCli({ spawn: () => child, stopTimeoutMs: 2, forceStopTimeoutMs: 2 });
-  const starting = owned.start();
-  child.stdout.write(`${url}\n`);
-  await starting;
-  await assert.rejects(owned.stop(), /did not stop/);
-  assert.deepEqual(await owned.stop(), {
-    outcome: "abnormal",
-    code: null,
-    signal: "SIGINT",
-    processError: false,
-  });
-  assert.deepEqual(child.kills, ["SIGINT", "SIGKILL", "SIGINT"]);
+  const owned = createOwnedCli({ spawn: () => child });
+  const started = owned.start();
+  child.emit("error", new Error("spawn failed"));
+  await assert.rejects(started);
+  await assert.rejects(createOwnedCli({ spawn: () => { throw new Error("no"); } }).start());
 });
 
+test("quitting detaches and signals nothing: the owned service is not the app's to stop", async () => {
+  const child = makeChild();
+  const owned = createOwnedCli({ spawn: () => child });
+  assert.deepEqual(await owned.stop(), { outcome: "not-started", code: null, signal: null, processError: false });
+  const started = owned.start();
+  child.finish(`${url}\n`);
+  await started;
+  assert.deepEqual(await owned.stop(), { outcome: "detached", code: null, signal: null, processError: false });
+  assert.deepEqual(child.kills, []);
+  assert.equal(owned.isRunning(), false);
+});
 
 test("installed binding selects only a configured absolute executable", (t) => {
   const home = mkdtempSync(join(tmpdir(), "hz-binding-"));
@@ -418,17 +166,93 @@ test("installed binding selects only a configured absolute executable", (t) => {
   assert.throws(() => installedCli(home), /could not find/);
 });
 
+test("an older hz without `ui attach` gets a clear update message", async () => {
+  const child = makeChild();
+  const owned = createOwnedCli({ spawn: () => child });
+  const started = owned.start();
+  child.finish("", 2);
+  await assert.rejects(started, /hz system update/);
+});
+
+test("a service that stops answering (a crash restart: new token, bridge forgotten) settles exited for a re-attach", async () => {
+  const child = makeChild();
+  let tick;
+  let cleared = 0;
+  let answering = true;
+  const probed = [];
+  const owned = createOwnedCli({
+    spawn: () => child,
+    probe: async (connection) => { probed.push(connection.origin); if (!answering) throw Object.assign(new Error("401"), { status: 401 }); },
+    setInterval: (callback) => { tick = callback; return 7; },
+    clearInterval: (id) => { assert.equal(id, 7); cleared += 1; },
+  });
+  const started = owned.start();
+  child.finish(`${url}\n`);
+  await started;
+  await tick();
+  assert.equal(owned.isRunning(), true);
+  answering = false;
+  await tick();
+  await tick();
+  assert.equal(owned.isRunning(), true, "two failed probes are not yet a loss");
+  await tick();
+  assert.equal(owned.isRunning(), false, "the third consecutive failure is");
+  assert.deepEqual(await owned.exited(), { code: null, signal: null, serviceLost: true });
+  assert.equal(cleared, 1);
+  assert.equal(probed.length, 4);
+  // The next attach is a new handle, so it registers the bridge token again with the new server.
+  const next = makeChild();
+  const again = createOwnedCli({ spawn: () => next, bridgeToken: "c".repeat(43) });
+  const reattached = again.start();
+  next.finish(`${url}\n`);
+  await reattached;
+  assert.equal(next.received, `${"c".repeat(43)}\n`);
+});
+
+test("a probe that fails and then answers again resets the count: a restart blip is no loss", async () => {
+  const child = makeChild();
+  let tick;
+  const answers = [false, false, true, false, false, true];
+  const owned = createOwnedCli({
+    spawn: () => child,
+    probe: async () => { if (!answers.shift()) throw new Error("refused"); },
+    setInterval: (callback) => { tick = callback; return 1; },
+    clearInterval: () => assert.fail("never lost"),
+  });
+  const started = owned.start();
+  child.finish(`${url}\n`);
+  await started;
+  for (let i = 0; i < 6; i++) await tick();
+  assert.equal(owned.isRunning(), true);
+});
+
+test("a dev run takes only an absolute HZ_DESKTOP_DEV_CLI, else hz on PATH", () => {
+  assert.equal(developmentCli({}), "hz");
+  assert.equal(developmentCli({ HZ_DESKTOP_DEV_CLI: "/tmp/isolated/hz" }), "/tmp/isolated/hz");
+  assert.equal(developmentCli({ HZ_DESKTOP_DEV_CLI: "relative/hz" }), "hz");
+});
+
+test("quitting stops the probe", async () => {
+  const child = makeChild();
+  let cleared = 0;
+  const owned = createOwnedCli({ spawn: () => child, probe: async () => {}, setInterval: () => 9, clearInterval: () => { cleared += 1; } });
+  const started = owned.start();
+  child.finish(`${url}\n`);
+  await started;
+  await owned.stop();
+  assert.equal(cleared, 1);
+});
+
 test("uses the resolved executable without shell lookup", async () => {
   const child = makeChild();
   let command;
   const owned = createOwnedCli({ executable: () => "/owned/hz", spawn: (value) => { command = value; return child; } });
   const started = owned.start();
-  child.stdout.write(`${url}\n`);
+  child.finish(`${url}\n`);
   await started;
   assert.equal(command, "/owned/hz");
   await owned.stop();
 });
-
 
 test("desktop gate holds the installer lock and refuses a pending journal", { skip: process.platform !== "darwin" }, async (t) => {
   const home = mkdtempSync(join(tmpdir(), "hz-gate-"));

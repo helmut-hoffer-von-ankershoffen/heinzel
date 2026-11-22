@@ -8,7 +8,7 @@ The build also requires Node.js with `stripTypeScriptTypes` support (Node.js 22.
 - On macOS, install the matching `hz` CLI first. Quitting the Swift app stops the foreground process it launched.
   When testing a Debug build against a checkout, set `HZ_SPIKE_CLI` to the absolute path of that checkout's `hz` executable after running `make web-build`.
 - On iPhone and iPad, use the authenticated sign-in link for the host's private HTTPS origin. See [private web sharing](../docs/PRIVATE_WEB_SHARING.md). Once paired inside the workspace, use the server address to reconnect.
-- Run `apple/scripts/package-macos VERSION` to build a local arm64 archive. The managed install and update commands require the official version-matched, attested release assets.
+- Run `apple/scripts/package-macos` to build a local arm64 archive. Its version is Heinzel's version in `pyproject.toml`; a `VERSION` argument must equal it. The managed install and update commands require the official version-matched, attested release assets.
 
 Electron remains the release default during the spike. See [ADR 0147](../docs/adr/0147-use-a-swift-shell-for-apple-workspaces.md) for the acceptance criteria.
 
@@ -80,7 +80,13 @@ work the host may already have accepted. Prompt text is never saved in shared wi
 
 ### TestFlight upload
 
-Build the signed iOS archive with the intended build number and set
+Every Heinzel release ships the iOS app at the same version: Heinzel 0.9.54 is iOS 0.9.54. The release tooling
+archives the release tag with `MARKETING_VERSION` set to the version in `pyproject.toml`,
+`HEINZEL_SOURCE_REVISION` set to the tagged commit, and `CURRENT_PROJECT_VERSION` set to one above the highest build
+App Store Connect holds for the app. Because `ExportOptions-testflight.plist` sets
+`manageAppVersionAndBuildNumber` to false, the uploaded build keeps the numbers of the verified archive.
+
+To build by hand, build the signed iOS archive with the intended build number and set
 `HEINZEL_SOURCE_REVISION` to the full source commit. The app and widget extension
 must both contain those exact values. Use an App Store export options plist
 with `destination` set to `upload` and `manageAppVersionAndBuildNumber` set to
@@ -109,4 +115,8 @@ ASC_KEY_PATH from `~/.appstoreconnect/heinzel-mini.env`, override with `ASC_ENV_
 - That internal group has automatic distribution ON (set once in the web UI; Apple refuses it over the API,
   `hasAccessToAllBuilds` cannot be updated), so every processed build reaches the testers by itself.
 - `testflight assign [BUILD]` is therefore optional: it adds a processed build the group does not hold yet.
+- `testflight beta BUILD` prints the build's internal beta state (`IN_BETA_TESTING` once testers can install it).
+- `testflight notes BUILD FILE` sets the build's "What to Test" text (en-US) from FILE; the release tooling uses the
+  GitHub release notes of the tag.
+- Export compliance needs no step: both Info.plists declare `ITSAppUsesNonExemptEncryption` false.
 - `testflight setup` only reports the group's `hasAccessToAllBuilds` state.

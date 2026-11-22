@@ -2197,16 +2197,31 @@ struct ConnectionView: View {
         }
     }
 
-    private func startLocal(initialStartup: Bool = false) async {
-        guard !connecting else { return }
+    /// Attach again after the owned service was lost, with bounded backoff; only when every attempt failed does the
+    /// connection screen open, where Start Local Workspace tries again.
+    private func reattachLocal() async {
+        // The person choosing another workspace (or none) during the backoff ends it: that choice wins.
+        let back = await LocalService.retrying(cancelled: { endpoint?.origin.scheme != "http" }) {
+            await startLocal()
+        }
+        guard !back, endpoint?.origin.scheme == "http" else { return }
+        endpoint = nil
+        error = ConnectionError.stopped.errorDescription
+        showConnection = true
+    }
+
+    /// True when attached, false when attaching failed, nil when another connection attempt is running (busy).
+    @discardableResult
+    private func startLocal(initialStartup: Bool = false) async -> Bool? {
+        guard !connecting else { return nil }
         let menuRevision = initialStartup ? 0 : connectionMenuIntent.revision
         connecting = true
         error = nil
         defer { connecting = false }
-        service.onExit = {
+        service.onLost = {
+            // The owned service restarted with a new session: attach again rather than show a dead workspace.
             guard endpoint?.origin.scheme == "http" else { return }
-            endpoint = nil
-            error = ConnectionError.stopped.errorDescription
+            Task { await reattachLocal() }
         }
         do {
             let target = try await service.start()
@@ -2219,8 +2234,10 @@ struct ConnectionView: View {
             connectionIssue = nil
             loadingWorkspace = true
             endpoint = target
+            return true
         } catch {
             self.error = (error as? ConnectionError)?.errorDescription ?? ConnectionError.startup.errorDescription
+            return false
         }
     }
     #endif

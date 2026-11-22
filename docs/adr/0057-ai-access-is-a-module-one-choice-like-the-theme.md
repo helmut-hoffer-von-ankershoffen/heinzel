@@ -61,7 +61,7 @@ status, tests one on request, and keeps `agent-runner` as the runner an option n
    used for access options, because it means a model vendor. The capability is `ai-access`, the module `ai`, its
    submodule `ai.access`, the commands `hz ai access list|use|test`, the web label "AI access".
 2. **Kernel: a protocol and one seam.** `AiAccess` (`status() -> AccessStatus`, `test() -> AccessTest`, both mode
-   `read`) and its models are in `heinzel.kernel._ai`, public in `heinzel`. `status()` runs no model and spends
+   `read`) and its models are in `heinzel.kernel.ai._ai`, public in `heinzel`. `status()` runs no model and spends
    nothing: a CLI on PATH, a login the CLI reports offline, a credential present. `test()` is the one live call, as
    small as the option can make it, and reports what it cost. `Adapters[P]`, injected by type, is a read-only mapping
    from adapter name to a handle on every installed adapter of `P`'s capability, for the module that owns choosing

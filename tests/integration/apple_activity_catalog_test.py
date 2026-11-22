@@ -44,7 +44,10 @@ def test_refresh_keeps_old_requested_pin_in_bounded_artwork_and_all_eligible_cho
     node = shutil.which("node")
     if not node:
         pytest.skip("Node is required to exercise the workspace bridge")
-    source = (ROOT / "apple/App/WorkspaceView.swift").read_text(encoding="utf-8")
+    source = "\n".join(
+        (ROOT / "apple/App" / f"{n}.swift").read_text(encoding="utf-8")
+        for n in ["WorkspaceView", "NativePrompt", "TitleBarDragLayout", "Navigation"]
+    )
     selection = source.split("            const eligible =", 1)[1].split("            const roster =", 1)[0]
     script = (
         """
@@ -77,7 +80,10 @@ def test_foreground_waiting_count_matches_pending_nonretired_sessions() -> None:
     node = shutil.which("node")
     if not node:
         pytest.skip("Node is required to exercise the workspace bridge")
-    source = (ROOT / "apple/App/WorkspaceView.swift").read_text(encoding="utf-8")
+    source = "\n".join(
+        (ROOT / "apple/App" / f"{n}.swift").read_text(encoding="utf-8")
+        for n in ["WorkspaceView", "NativePrompt", "TitleBarDragLayout", "Navigation"]
+    )
     expression = source.split("                waiting: ", 1)[1].split(",\n", 1)[0]
     script = """
 const assert = require('node:assert/strict');

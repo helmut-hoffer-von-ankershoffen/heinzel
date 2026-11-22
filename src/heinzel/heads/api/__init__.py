@@ -41,10 +41,10 @@ from heinzel.heads._served_tools import bind_served_tools
 from heinzel.heads._stream import error_body, request_person, streamed
 from heinzel.heads.api._auth import ApiBearer
 from heinzel.kernel import CallIdentity, CurrentUser, HeinzelError, Kernel, boot
-from heinzel.kernel._agent_writes import calling
 from heinzel.kernel._errors import NotSupportedError as NotSupportedError
 from heinzel.kernel._errors import SubscriptionUsageLimitError as SubscriptionUsageLimitError
 from heinzel.kernel._identity import LOCAL_PERMISSIONS
+from heinzel.kernel.ai._agent_writes import calling
 
 HEAD = "api"
 UNAVAILABLE = 503

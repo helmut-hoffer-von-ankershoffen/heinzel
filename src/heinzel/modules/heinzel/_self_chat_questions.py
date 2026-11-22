@@ -48,7 +48,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from heinzel import Config, CurrentUser, HeinzelError, SelfAnswer, clean_text
 from heinzel.kernel._logging import get_logger, log_event
-from heinzel.kernel._self_chat import STATE, SelfChat, SelfChatLedger, process_alive
+from heinzel.kernel.session._self_chat import STATE, SelfChat, SelfChatLedger, process_alive
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import QUESTION_ASKED, MessageRequest
 from heinzel.modules.heinzel._user_chat import MAX_TURN_SECONDS

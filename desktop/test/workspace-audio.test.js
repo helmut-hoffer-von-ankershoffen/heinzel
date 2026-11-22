@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import { createWorkspaceAudio, systemAudioAvailable } from "../src/workspace-audio.js";
+import { mainSource } from "./main-source.js";
 
 function fixture({ system = false } = {}) {
   const origin = "http://127.0.0.1:8737";
@@ -281,15 +282,15 @@ test("each capture logs one start and one outcome with ADR 0138 fields and no se
   for (const e of [...f.events, ...g.events, ...h.events]) assert.doesNotMatch(JSON.stringify(e), /aaaa|127\.0\.0\.1|token/);
 });
 
-const mainSource = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
+const mainText = mainSource();
 const preloadSource = await readFile(new URL("../src/preload.cjs", import.meta.url), "utf8");
 
 test("main wires loopback capability from the OS release and routes both audio channels to the controller", () => {
-  assert.match(mainSource, /system: systemAudioAvailable\(process\.platform, release\(\)\)/);
-  assert.match(mainSource, /ipcMain\.handle\("hz:system-audio", \(\) => workspaceAudio\?\.available\(\) === true\)/);
-  assert.match(mainSource, /ipcMain\.handle\("hz:audio-source", \(event, source\) => workspaceAudio\?\.choose\(event, source\) === true\)/);
-  assert.match(mainSource, /setDisplayMediaRequestHandler\(audio\.display\)/);
-  assert.match(mainSource, /window\.on\("blur", audio\.revoke\)/);
+  assert.match(mainText, /system: systemAudioAvailable\(process\.platform, release\(\)\)/);
+  assert.match(mainText, /ipcMain\.handle\("hz:system-audio", \(\) => ctx\.workspaceAudio\?\.available\(\) === true\)/);
+  assert.match(mainText, /ipcMain\.handle\("hz:audio-source", \(event, source\) => ctx\.workspaceAudio\?\.choose\(event, source\) === true\)/);
+  assert.match(mainText, /setDisplayMediaRequestHandler\(audio\.display\)/);
+  assert.match(mainText, /window\.on\("blur", audio\.revoke\)/);
 });
 
 /** The real preload bridge, its IPC routed to fake `ipcMain` handlers shaped like main.js, and the real controller. */

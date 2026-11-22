@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from heinzel import CurrentUser, HeinzelError, SelfAnswer, SelfMessage
-from heinzel.kernel._self_chat import SelfChat
+from heinzel.kernel.session._self_chat import SelfChat
 from heinzel.modules.heinzel import _self_chat_helper as helper_module
 from heinzel.modules.heinzel import _self_chat_questions as relay_module
 from heinzel.modules.heinzel._self_chat_questions import (
@@ -448,7 +448,7 @@ def test_the_self_chat_identity_never_approves():
 
     allowed = {
         "kernel/_identity.py",
-        "kernel/_self_chat.py",
+        "kernel/session/_self_chat.py",
         "modules/heinzel/_session_models.py",
         "modules/heinzel/_user_chat.py",
         "modules/heinzel/_self_chat_questions.py",

@@ -3,7 +3,9 @@ import { runInNewContext } from "node:vm";
 import { expect, it, vi } from "vitest";
 
 it("coalesces trusted clicks until the native handoff finishes", async () => {
-  const source = readFileSync("../apple/App/WorkspaceView.swift", "utf8");
+  const source = ["WorkspaceView", "NativePrompt", "TitleBarDragLayout", "Navigation"]
+    .map((name) => readFileSync(`../apple/App/${name}.swift`, "utf8"))
+    .join("\n");
   const start = source.indexOf("    let guestOpenPending = false;");
   const end = source.indexOf('    addEventListener("pointerdown", activate, true);', start);
   expect(start).toBeGreaterThanOrEqual(0);

@@ -172,12 +172,16 @@ def transport(monkeypatch):
     return now
 
 
+# Five retries with growing delays (0.5 s, 1 s, ... 2.5 s at jitter 1.0): the clock each attempt starts at.
+BACKOFF_TIMEOUTS = [120, 119.5, 118.5, 117, 115, 112.5]
+
+
 @pytest.mark.parametrize(
     "interruption",
     [
         *[
             urllib.error.HTTPError("https://example.com/x", status, "gateway unavailable", {}, None)
-            for status in (502, 503, 504)
+            for status in (403, 429, 502, 503, 504)
         ],
         ssl.SSLEOFError(8, "unexpected EOF"),
         urllib.error.URLError(ssl.SSLEOFError(8, "unexpected EOF")),
@@ -217,11 +221,11 @@ def test_interrupted_download_restarts_and_caches_only_the_complete_verified_bod
         urllib.error.URLError(ssl.SSLEOFError(8, "unexpected EOF")),
         *[
             urllib.error.HTTPError("https://example.com/x", status, "gateway unavailable", {}, None)
-            for status in (502, 503, 504)
+            for status in (403, 429, 502, 503, 504)
         ],
     ],
 )
-def test_persistent_transport_or_gateway_failure_exhausts_three_attempts_without_caching(
+def test_persistent_transport_or_gateway_failure_exhausts_six_attempts_without_caching(
     tmp_path, monkeypatch, transport, error
 ):
     requests = []
@@ -233,8 +237,41 @@ def test_persistent_transport_or_gateway_failure_exhausts_three_attempts_without
     monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
     with pytest.raises(tools.ToolError, match="download failed"):
         tools.fetch(tools.Download("https://example.com/x", ZERO), tmp_path, tools.http_get)
-    assert requests == [120, 119.5, 118.5]
+    assert requests == BACKOFF_TIMEOUTS
     assert list(tmp_path.iterdir()) == []
+
+
+def test_pnpm_style_403_is_retried_five_times_then_falls_back_to_gh_with_a_token(tmp_path, monkeypatch, transport):
+    # The lint job failed with HTTP 403 after one attempt and skipped gh, which had no GH_TOKEN.
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GH_TOKEN", "fictional-token")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    requests, routes = [], []
+
+    def open_(*args, **kwargs):
+        requests.append(kwargs["timeout"])
+        raise urllib.error.HTTPError(RELEASE, 403, "forbidden", {}, None)
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    download = tools.Download(RELEASE, sha(BINARY))
+    data = tools.fetch(download, tmp_path, tools.http_get, fallback=lambda url: routes.append(url) or BINARY)
+    assert data == BINARY
+    assert requests == BACKOFF_TIMEOUTS
+    assert routes == [RELEASE]
+
+
+def test_403_that_recovers_on_a_retry_is_downloaded_without_the_fallback(tmp_path, monkeypatch, transport):
+    responses = [urllib.error.HTTPError(RELEASE, 403, "forbidden", {}, None), io.BytesIO(BINARY)]
+
+    def open_(*args, **kwargs):
+        response = responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    download = tools.Download(RELEASE, sha(BINARY))
+    assert tools.fetch(download, tmp_path, tools.http_get, fallback=lambda _: pytest.fail("no fallback")) == BINARY
 
 
 @pytest.mark.parametrize(
@@ -281,7 +318,7 @@ def test_backoff_delayed_past_the_timeout_budget_does_not_start_another_request(
         urllib.error.HTTPError("https://example.com/x", 404, "not found", {}, None),
         *[
             urllib.error.HTTPError("https://example.com/x", status, "permanent", {}, None)
-            for status in (400, 401, 403, 429, 500, 501, 505)
+            for status in (400, 401, 500, 501, 505)
         ],
     ],
 )
@@ -681,10 +718,10 @@ def test_persistent_gateway_failure_reports_attempts_and_sanitized_last_endpoint
         tools.download_bytes("https://example.com/pinned", tools.http_get)
     assert str(raised.value) == (
         "download failed (HTTP Error 504; "
-        "last HTTP endpoint=release-assets.githubusercontent.com/archive.tar.gz; attempts=3)"
+        "last HTTP endpoint=release-assets.githubusercontent.com/archive.tar.gz; attempts=6)"
     )
     assert raised.value.__cause__ is error
-    assert requests == [120, 119.5, 118.5]
+    assert requests == BACKOFF_TIMEOUTS
     for private in ("username", "password", "private", "sig=", "#token", "Set-Cookie"):
         assert private not in str(raised.value)
 

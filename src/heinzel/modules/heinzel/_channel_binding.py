@@ -17,7 +17,7 @@ from heinzel import (
     Settings,
 )
 from heinzel.kernel._approval import arguments_hash
-from heinzel.kernel._features import feature_enabled
+from heinzel.kernel.ai._features import feature_enabled
 
 if TYPE_CHECKING:
     from heinzel.kernel import ModuleRecord

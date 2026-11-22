@@ -85,7 +85,7 @@ def test_an_editable_plugin_can_supply_its_bundle_after_python_discovery(tmp_pat
     "kind", ["file-link", "directory-link", "oversize", "file-count", "total-size", "missing-entry"]
 )
 def test_broken_bundle_has_a_local_diagnostic_without_losing_python_operations(tmp_path, monkeypatch, kind):
-    from heinzel.kernel import _views
+    from heinzel.kernel.look import _views
 
     bundle = tmp_path / "bundle"
     bundle.mkdir()

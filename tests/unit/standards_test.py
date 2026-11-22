@@ -106,6 +106,9 @@ def repository_files() -> list[str]:
 
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
+    "scripts/contexts.py": "reads Core's contexts.toml and generates its import contracts; plugins have no context map",
+    "scripts/refactor_one_pr.py": "moves Core files into the target module map; deleted a week after the 0.9.54 merge",
+    "scripts/refactor_one_pr_map.toml": "the old and new path of every file that script moves; deleted with it",
     "scripts/acme_setup_e2e.py": "proves the core plugin catalog installs a company plugin with its required plugins",
     "scripts/check_apple_ci.py": "checks Core Apple fixture results; plugins have no Apple CI job",
     "scripts/ci_node.py": "selects Node for core's Python unit lanes; independent plugins own their CI runtime setup",
@@ -182,7 +185,10 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/focused_gate.py.lock": "pins the Core scoped coverage judge environment",
     "scripts/template_coverage.yml.tmpl": "Core-only input to the template workflow generator",
     ".github/workflows/acceptance-sharded.yml": "manual hosted-VM acceptance study, separate from release acceptance",
-    "scripts/acceptance/reduce.py": "fails closed on incomplete or mixed acceptance study shards",
+    "scripts/release_apps.py": "promotes the core's candidate-built macOS apps in Publish; plugins have none",
+    "scripts/acceptance/reduce.py": "fails closed on incomplete or mixed acceptance shards and writes the receipt",
+    ".github/workflows/acceptance-scenario.yml": "advisory end-to-end upgrade scenario of the published core",
+    "scripts/acceptance/scenario.py": "the core's end-to-end upgrade scenario on hosted runners; plugins have none",
     "scripts/acceptance/summary.py": "summarizes the acceptance harness's result.json for a job summary",
     "scripts/acceptance/vendor/artifact_provenance.py": "hash-pinned reviewed copy the acceptance harness loads",
     "scripts/acceptance/vendor/guardian.py": "hash-pinned reviewed copy the acceptance harness loads",

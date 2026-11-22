@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 import httpx
 import pytest
 
-from heinzel.modules.ui._profile import default_profile
+from heinzel.modules.system.lifecycle._profile import default_profile
 from tests.e2e._ui_service import RunningService, startup_diagnostics
 from tests.e2e.tool_install_test import sandbox, seed_uv_cache, wheel
 from tests.integration.ui_service_test import service, service_factory

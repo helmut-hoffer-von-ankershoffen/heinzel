@@ -6,7 +6,7 @@ from mcp import Client
 
 from heinzel import HeinzelError, Module, Skills
 from heinzel.heads import mcp
-from heinzel.heads._mcp_tokens import McpTokens
+from heinzel.modules.system.client._mcp_tokens import McpTokens
 from heinzel.modules.system.runner.chat._service import ChatService
 
 pytestmark = pytest.mark.unit

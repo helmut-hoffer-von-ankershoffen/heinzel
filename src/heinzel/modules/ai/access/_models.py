@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from heinzel import ModuleSettings
 from heinzel.kernel import Effort
-from heinzel.kernel._ai_models import MODEL_ID_PATTERN
+from heinzel.kernel.ai._ai_models import MODEL_ID_PATTERN
 
 ADAPTER_PATTERN = r"^[a-z][a-z0-9-]*$"
 

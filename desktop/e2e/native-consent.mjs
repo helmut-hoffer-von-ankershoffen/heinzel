@@ -28,7 +28,7 @@ const server = createServer((request, response) => {
 });
 await new Promise((ok) => server.listen(0, '127.0.0.1', ok));
 const cli = join(root,'bin','hz');
-await writeFile(cli, `#!${process.execPath}\nconst fs=require('node:fs');\nfs.writeFileSync(process.env.HZ_NATIVE_TEST_ROOT+'/owned-pid', String(process.pid));\nprocess.stdout.write(process.env.HZ_TEST_URL+'\\n');\nprocess.on('SIGINT',()=>{fs.writeFileSync(process.env.HZ_NATIVE_TEST_ROOT+'/owned-exit','clean');process.exit(0)});\nsetInterval(()=>{},1000);\n`, {mode:0o700});
+await writeFile(cli, `#!${process.execPath}\nconst fs=require('node:fs');\nif (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(["ui","attach","--bridge-token-stdin"])) process.exit(64);\nfs.writeFileSync(process.env.HZ_NATIVE_TEST_ROOT+'/owned-pid', String(process.pid));\nprocess.stdout.write(process.env.HZ_TEST_URL+'\\n',()=>{fs.writeFileSync(process.env.HZ_NATIVE_TEST_ROOT+'/owned-exit','clean');process.exit(0)});\n`, {mode:0o700});
 let instance, child, safe = true;
 try {
   instance = await electron.launch({ executablePath: executable, args:[fileURLToPath(new URL('./native-consent-bootstrap.mjs', import.meta.url))], cwd:root, timeout:30000,

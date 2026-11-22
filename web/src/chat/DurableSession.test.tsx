@@ -5,12 +5,12 @@ import { routes } from "@/App";
 import { daemonStatusKey } from "@/api/daemon";
 import { Providers, queryClient } from "@/app/providers";
 import { DurableSession, grownReply } from "@/chat/DurableSession";
+import { preserveUpdateWork } from "@/features/runtime/updates/work";
 import { HeinzelPage } from "@/heinzel/HeinzelPage";
 import { frame } from "@/test/chat";
 import { config, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi } from "@/test/render";
 import { renderAt } from "@/test/renderApp";
-import { preserveUpdateWork } from "@/updates/work";
 
 const sessionId = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
 

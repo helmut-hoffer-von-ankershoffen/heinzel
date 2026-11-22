@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from heinzel.kernel import private_write
-from heinzel.modules.ui import _service
+from heinzel.modules.system.lifecycle import _service
 
 pytestmark = pytest.mark.unit
 

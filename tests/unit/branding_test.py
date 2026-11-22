@@ -44,7 +44,9 @@ def test_descriptor_is_consistent_across_public_surfaces():
     assert DESCRIPTOR in read("docs/README.md")
     assert DESCRIPTOR in read("docs/BRANDING.md")
     first, _, second = DESCRIPTOR.partition(", ")
-    translations = read("web/src/i18n.ts")
+    translations = read("web/src/i18n.ts") + "".join(
+        p.read_text() for p in sorted((ROOT / "web/src/messages").glob("*.ts"))
+    )
     assert f'"status.tagline": "{first},"' in translations
     assert f'"status.origin": "{second}"' in translations
 
@@ -65,7 +67,8 @@ def test_heinzel_is_never_the_product_name_and_the_old_description_is_retired(na
 def test_acme_is_written_in_capitals_in_user_facing_docs():
     for path in [*(ROOT / "docs").glob("*.md"), *(ROOT / "docs/guides").glob("*.md")]:
         assert not re.search(r"\bAcme\b", path.read_text()), path.name
-    assert not re.search(r"\bAcme\b", read("web/src/i18n.ts"))
+    for path in (ROOT / "web/src/messages").glob("*.ts"):
+        assert not re.search(r"\bAcme\b", path.read_text()), path.name
 
 
 def test_the_ascii_name_never_loses_its_double_e():

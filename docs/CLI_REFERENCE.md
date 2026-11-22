@@ -252,7 +252,7 @@ $ hz app install [OPTIONS]
 * `--replace`: Move a Heinzelmaennchen.app that hz app install did not install to the Trash (nothing is deleted), then install a verified copy.
 * `-y, --yes`: Forget an earlier install whose app is gone, without asking.
 * `--details`: Also print the installer&#x27;s full diagnosis (paths and internal state) when something fails.
-* `--flavor <electron|swift>`: Desktop app flavor. Defaults to the installed flavor, or Electron for a new install.
+* `--flavor <native|electron>`: Which desktop app: native (the default for a new install on macOS) or electron (the only one on Linux). An installed app keeps its flavor unless you name the other one.
 * `--restart`: If the app is open and needs the update, quit it, install, and open it again. It waits up to 20 seconds for the quit and never forces it: an app still open then is left open and the command ends with exit code 75.
 * `--help`: Show this message and exit.
 
@@ -320,7 +320,7 @@ $ hz app update [OPTIONS]
 * `--replace`: Move a Heinzelmaennchen.app that hz app install did not install to the Trash (nothing is deleted), then install a verified copy.
 * `-y, --yes`: Forget an earlier install whose app is gone, without asking.
 * `--details`: Also print the installer&#x27;s full diagnosis (paths and internal state) when something fails.
-* `--flavor <electron|swift>`: Desktop app flavor. Defaults to the installed flavor, or Electron for a new install.
+* `--flavor <native|electron>`: Which desktop app: native (the default for a new install on macOS) or electron (the only one on Linux). An installed app keeps its flavor unless you name the other one.
 * `--restart`: If the app is open and needs the update, quit it, install, and open it again. It waits up to 20 seconds for the quit and never forces it: an app still open then is left open and the command ends with exit code 75.
 * `--help`: Show this message and exit.
 
@@ -5215,12 +5215,29 @@ $ hz ui [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
+* `attach`: Start the owned web service if needed and...
 * `install`: Install web availability after login,...
 * `open`: Open the owned web service, or run in the...
 * `restart`: Restart the owned web service with its...
 * `serve`: Run the web server in the foreground;...
 * `status`: Show exact OS ownership and the live web...
 * `uninstall`: Remove only the owned web login service,...
+
+### `hz ui attach`
+
+Start the owned web service if needed and print its session link; never serves.
+
+**Usage**:
+
+```console
+$ hz ui attach [OPTIONS]
+```
+
+**Options**:
+
+* `--json`: Print JSON.
+* `--bridge-token-stdin`: Read the desktop app&#x27;s browser-bridge token from standard input and register it.
+* `--help`: Show this message and exit.
 
 ### `hz ui install`
 

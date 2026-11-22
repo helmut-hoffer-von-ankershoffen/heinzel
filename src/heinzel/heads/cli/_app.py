@@ -16,13 +16,31 @@ from rich.console import Console
 from heinzel import HeinzelError, Settings, __version__
 from heinzel.heads import _desktop_messages as say
 from heinzel.heads._desktop_log import step
-from heinzel.heads._desktop_release import DesktopFlavor
+from heinzel.heads._desktop_release import DesktopFlavor, platform_flavor
 from heinzel.heads.cli._progress import StepReporter
 from heinzel.heads.cli._render import message
 from heinzel.kernel import KERNEL_SECTION, Installation, Kernel
 
 if TYPE_CHECKING:
     from heinzel.heads._desktop_seal import SealReport
+
+FLAVOR_HELP = (
+    "Which desktop app: native (the default for a new install on macOS) or electron (the only one on Linux). "
+    "An installed app keeps its flavor unless you name the other one."
+)
+
+
+def parse_flavor(value: str) -> DesktopFlavor:
+    """`native` or `electron`; `swift`, the earlier name of native, is still accepted and not listed.
+
+    Raises:
+        typer.BadParameter: For any other value.
+    """
+    try:
+        return DesktopFlavor(value.lower())
+    except ValueError as exc:
+        msg = f"{value!r} is not one of native, electron."
+        raise typer.BadParameter(msg) from exc
 
 
 def desktop_executable(kernel: Kernel) -> Path:
@@ -269,12 +287,12 @@ def _quit_for_update(error: Console) -> bool:
     """
     from heinzel.heads._desktop_installation import (  # noqa: PLC0415 - native install only
         QUIT_SECONDS,
-        desktop_installed,
+        desktop_to_update,
         is_open,
         quit_app,
     )
 
-    installed = desktop_installed()
+    installed = desktop_to_update()
     if installed is None or installed[1] == __version__ or not is_open(installed[0]):
         return False
     if not quit_app(installed[0]):
@@ -430,6 +448,19 @@ def _say(error: Console, problem: say.Problem) -> NoReturn:
     raise typer.Exit(1)
 
 
+def _flavor_here(flavor: DesktopFlavor | None, error: Console) -> DesktopFlavor | None:
+    """The flavor this platform installs (`platform_flavor`), or the one-line reason it can't.
+
+    Raises:
+        typer.Exit: If the native app is asked for anywhere but macOS.
+    """
+    try:
+        return platform_flavor(flavor)
+    except HeinzelError as exc:
+        error.print(str(exc), markup=False)
+        raise typer.Exit(1) from exc
+
+
 def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Typer:
     """Build the app command group without loading installer code during CLI discovery."""
     app = typer.Typer(help="Manage the native Heinzel desktop app.", no_args_is_help=True)
@@ -460,9 +491,7 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
         details: Annotated[bool, typer.Option("--details", help=_DETAILS_HELP)] = False,
         flavor: Annotated[
             DesktopFlavor | None,
-            typer.Option(
-                "--flavor", help="Desktop app flavor. Defaults to the installed flavor, or Electron for a new install."
-            ),
+            typer.Option("--flavor", parser=parse_flavor, metavar="<native|electron>", help=FLAVOR_HELP),
         ] = None,
         restart: Annotated[
             bool,
@@ -492,7 +521,7 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
             replace=replace,
             yes=yes,
             details=details,
-            flavor=flavor,
+            flavor=_flavor_here(flavor, error),
             restart=restart,
         )
 

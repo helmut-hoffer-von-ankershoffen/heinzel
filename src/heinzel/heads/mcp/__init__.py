@@ -45,18 +45,10 @@ from pydantic_core import to_jsonable_python
 if TYPE_CHECKING:
     from pydantic import JsonValue
 
-    from heinzel.kernel._agents import ChatToolSet
+    from heinzel.kernel.ai._agents import ChatToolSet
 
 from heinzel import __version__
 from heinzel.heads._exposure import MCP_HTTP, Exposed, exposed
-from heinzel.heads._mcp_tokens import (
-    READ,
-    SCOPES,
-    WRITE,
-    McpTokens,
-    require_reachable_only_as_asked,
-    tokens_for_user,
-)
 from heinzel.heads._presence import mark_authenticated_presence
 from heinzel.heads._served_tools import bind_served_tools
 from heinzel.heads.mcp._skills import add_skills
@@ -66,13 +58,21 @@ from heinzel.kernel import (
     Kernel,
     boot,
 )
-from heinzel.kernel._agent_writes import AgentWrites, Caller, calling
 from heinzel.kernel._approval import ApprovalIssuer
 from heinzel.kernel._browser import BROWSER_MODULE, BrowserBridge, BrowserCaller, PageImage, browser_caller
 from heinzel.kernel._browser_relay import relay
-from heinzel.kernel._chat_tools import ChatTool, ChatToolError, agent_item, agent_write, note_write
-from heinzel.kernel._chat_tools import chat_tools as chat_toolset
 from heinzel.kernel._logging import get_logger, log_event, step
+from heinzel.kernel.ai._agent_writes import AgentWrites, Caller, calling
+from heinzel.kernel.session._chat_tools import ChatTool, ChatToolError, agent_item, agent_write, note_write
+from heinzel.kernel.session._chat_tools import chat_tools as chat_toolset
+from heinzel.modules.system.client import (
+    READ,
+    SCOPES,
+    WRITE,
+    McpTokens,
+    require_reachable_only_as_asked,
+    tokens_for_user,
+)
 
 HEAD = "mcp"
 log = logging.getLogger(__name__)

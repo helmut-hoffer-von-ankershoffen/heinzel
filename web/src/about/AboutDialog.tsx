@@ -19,6 +19,24 @@ type Bridge = { about?: () => Promise<Desktop> };
 const desktopBridge = (): Bridge | undefined => (window as Window & { heinzelDesktop?: Bridge }).heinzelDesktop;
 
 type Info = NonNullable<ReturnType<typeof useInfo>["data"]>;
+export type Client = "native" | "electron" | "browser";
+
+/** Which client shows this page: the Electron app's bridge offers `about`, the native app's bridge does not. */
+export const clientHere = (bridge: Bridge | undefined = desktopBridge()): Client =>
+  bridge ? (bridge.about ? "electron" : "native") : "browser";
+
+const clientLabel = (client: Client) =>
+  t(client === "native" ? "about.nativeApp" : client === "electron" ? "about.electronApp" : "about.browser");
+
+/** The desktop app's row: its variant and version (`Native app 0.9.53`) and path, from the API, else the bridge. */
+export function desktopApp(info: Info, desktop: Desktop | null): { name: string; path: string } | null {
+  const app = info.desktop_app;
+  if (app) {
+    const variant = app.variant ? clientLabel(app.variant) : t("about.desktop");
+    return { name: app.version ? `${variant} ${app.version}` : variant, path: app.path };
+  }
+  return desktop ? { name: `${clientLabel("electron")} ${desktop.version}`, path: desktop.path } : null;
+}
 
 const isFirstParty = (repository: string | null) =>
   repository?.startsWith("https://github.com/helmut-hoffer-von-ankershoffen/") === true;
@@ -41,7 +59,9 @@ export function detailsText(
     `installation ${info.installation}${info.installed ? ` (installed ${info.installed})` : ""}`,
     `daemon running ${info.version}`,
   );
-  if (desktop) lines.push(`desktop ${desktop.version} ${desktop.path}`);
+  const app = desktopApp(info, desktop);
+  if (app) lines.push(`desktop ${app.name} ${app.path}`);
+  lines.push(`client ${clientLabel(clientHere())}`);
   if (frontend) lines.push(`loaded frontend entrypoint ${frontend}`);
   else if (desktop) lines.push("loaded frontend entrypoint unavailable");
   lines.push(...surfaces);
@@ -81,6 +101,7 @@ export function AboutDialog() {
   const desktop = useDesktop(true);
   const [copied, setCopied] = useState(false);
   const titleId = useId();
+  const app = info.data ? desktopApp(info.data, desktop.data ?? null) : null;
   const details = info.data ? detailsText(info.data, desktop.data ?? null, loadedAsset, surfaceDetails()) : null;
   const currentDetails = useCallback(
     () => (info.data ? detailsText(info.data, desktop.data ?? null, loadedAsset, surfaceDetails()) : null),
@@ -177,12 +198,13 @@ export function AboutDialog() {
                     </span>
                   )}
                 </Row>
-                {desktop.data && (
+                {app && (
                   <Row label={t("about.desktop")}>
-                    {desktop.data.version}
-                    <span className="block text-xs text-muted-foreground">{desktop.data.path}</span>
+                    {app.name}
+                    <span className="block text-xs text-muted-foreground">{app.path}</span>
                   </Row>
                 )}
+                <Row label={t("about.client")}>{clientLabel(clientHere())}</Row>
                 <Row label={t("about.daemon")}>{t("about.daemonRunning", { version: data.version })}</Row>
                 <Row label={t("about.python")}>{data.python_version}</Row>
                 <Row label={t("about.platform")}>{data.platform}</Row>

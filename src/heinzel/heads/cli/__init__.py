@@ -37,7 +37,7 @@ from heinzel.heads.cli._branding import footer as brand_footer
 from heinzel.heads.cli._command import command
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
-from heinzel.heads.cli._serve import UI_HELP, serve_group, ui_command
+from heinzel.heads.cli._serve import UI_HELP, attach_command, serve_group, ui_command
 from heinzel.heads.cli._update import print_changelog_header, print_notice, start_check
 from heinzel.kernel import (
     DaemonLifecycleWait,
@@ -49,6 +49,7 @@ from heinzel.kernel import (
     Progress,
     boot,
 )
+from heinzel.kernel._desktop_app import desktop_app_here
 
 console = Console()
 err_console = Console(stderr=True)
@@ -193,11 +194,9 @@ def _root(kernel: Kernel, *, plain: bool) -> tuple[typer.Typer, "_Mount"]:
             ),
         ] = False,
     ) -> None:
-        logging.basicConfig(
-            level=kernel.settings.log_level,
-            format="%(message)s",
-            handlers=[RichHandler(console=err_console, show_path=False)],
-        )
+        terminal = RichHandler(console=err_console, show_path=False)
+        terminal.addFilter(people_only(kernel.settings.log_level))
+        logging.basicConfig(level=kernel.settings.log_level, format="%(message)s", handlers=[terminal])
 
     progress = ConsoleProgress(err_console, playful=_playful.allowed(kernel.settings, err_console))
     kernel.bind(Progress, progress)
@@ -236,6 +235,9 @@ def _mount_ui(app: typer.Typer, groups: dict[str, typer.Typer], kernel: Kernel, 
     ui.command("serve", help="Run the web server in the foreground; Ctrl-C stops it.")(ui_command(kernel, error))
     ui.command("open", help="Open the owned web service, or run in the foreground when none is installed.")(
         ui_command(kernel, error, open_existing=True)
+    )
+    ui.command("attach", help="Start the owned web service if needed and print its session link; never serves.")(
+        attach_command(kernel, error)
     )
     if "ui" not in groups:
         app.add_typer(ui, name="ui", cls=SortedGroup, rich_help_panel=CORE_PANEL)
@@ -546,6 +548,17 @@ def _banner(kernel: Kernel) -> None:
         console.print(_playful.banner(lines, width=console.width), end="")
 
 
+def people_only(level: str) -> Callable[[logging.LogRecord], bool]:
+    """The terminal's filter: a structured event (`log_event`) is for the log, not the person, unless asked for.
+
+    A command tells its outcome in its own words (a checklist row, an error); its events go to the log file. At the
+    default level no event reaches the terminal, so `operation.step.outcome` never shows beside the row that says
+    the same. With `log_level` INFO or DEBUG every event shows, as asked.
+    """
+    verbose = logging.getLevelNamesMapping().get(level, logging.WARNING) < logging.WARNING
+    return lambda record: verbose or not hasattr(record, "event")
+
+
 def _print_version(kernel: Kernel, value: bool) -> None:
     if not value:
         return
@@ -560,6 +573,8 @@ def _print_version(kernel: Kernel, value: bool) -> None:
         f"platform {platform.platform()}",
         f"installation {'uv tool' if (Path(sys.prefix) / 'uv-receipt.toml').is_file() else 'environment'} {sys.prefix}",
     ]
+    if (app := desktop_app_here()) is not None:
+        lines.append(f"desktop {app.label} {app.path}")
     lines += [
         f"plugin {distribution} {version}" + (f" {url}" if url else "")
         for distribution, version, url, builtin in sorted(origins, key=lambda origin: origin[0])

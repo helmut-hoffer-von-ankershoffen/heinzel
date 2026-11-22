@@ -106,6 +106,7 @@ jobs:
       core: ${{ steps.paths.outputs.core }}
       plugins: ${{ steps.paths.outputs.plugins }}
       site_only: ${{ steps.paths.outputs.site_only }}
+      surface_only: ${{ steps.paths.outputs.surface_only }}
       macos_full: ${{ steps.paths.outputs.macos_full }}
       scheduled_maintenance: ${{ steps.maintenance.outputs.selected }}
       full_release: ${{ steps.release.outputs.full_release }}
@@ -165,6 +166,8 @@ jobs:
           FULL_RELEASE: ${{ steps.full.outputs.selected }}
           BASE: ${{ needs.admission.outputs.base || github.event.pull_request.base.sha || github.event.before }}
           BATCH_BASE: ${{ needs.admission.outputs.base }}
+          RELEASE_FULL: ${{ steps.release.outputs.full_release }}
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           changed="$(git diff --name-only "$BASE...HEAD")" || changed=""
           full_release="${FULL_RELEASE:-false}"
@@ -191,7 +194,7 @@ jobs:
           # Non-PR runs always retain the complete macOS matrix.
           macos_full=true
           if [ "$EVENT" = pull_request ] && [ "$full_release" != true ] && [ -n "$changed" ] \
-            && ! grep -qvE '^(src/heinzel/(kernel/_(contributions|exposure)\.py$|modules/team/_(models|render)\.py$)|web/(src/|e2e/|openapi\.json$)|tests/(unit/|integration/|e2e/)|scripts/(main_batch|sync_template|ci_logs|scoped_checks|merge_gate|source_review|review_tier)\.py$|docs/|\.github/(workflows/ci\.yml$|[^/]*\.md$)|template/\.github/workflows/ci\.yml\.jinja$|[^/]*\.md$)' <<< "$changed" \
+            && ! grep -qvE '^(src/heinzel/(kernel/(look/_contributions|_exposure)\.py$|modules/team/_(models|render)\.py$)|web/(src/|e2e/|openapi\.json$)|tests/(unit/|integration/|e2e/)|scripts/(main_batch|sync_template|ci_logs|scoped_checks|merge_gate|source_review|review_tier)\.py$|docs/|\.github/(workflows/ci\.yml$|[^/]*\.md$)|template/\.github/workflows/ci\.yml\.jinja$|[^/]*\.md$)' <<< "$changed" \
             && ! grep -qE '^(tests/(e2e/.*(install|daemon|update|ui_service)|.*(macos|notifier|supervision|tool_install|session_io|reveal|acceptance))|web/e2e/.*(install|daemon|update|native|electron|desktop|macos|notifier)|docs/.*\.sh$)' <<< "$changed"; then
             macos_full=false
           fi
@@ -199,7 +202,19 @@ jobs:
           if [ "$full_release" = true ] || [ -n "${BATCH_BASE:-}" ]; then
             prose_push=false
           fi
-          if [ "$prose_push" = true ]; then
+          # Level L0 of the test selection (contexts.toml): a pull request that changes only the Apple apps and prose
+          # skips the Python jobs. The release run, a batch, a push to main and the nightly stay complete.
+          surface_only=false
+          # RELEASE_FULL is the real release-candidate flag (FULL_RELEASE above is always true until this selector is the
+          # rule). Fail closed: a release branch, a candidate, a batch, a push, a refactor-sized change, a path no context
+          # owns or a selector that does not answer keep the complete run.
+          if [ "$EVENT" = pull_request ] && [ "${RELEASE_FULL:-false}" != true ] && [ -z "${BATCH_BASE:-}" ] \
+            && [[ "${HEAD_REF:-}" != release/* ]] && [ -n "$changed" ] && [ "$(printf '%s\n' "$changed" | wc -l)" -lt 200 ] \
+            && [ "$(printf '%s\n' "$changed" | python3 -I scripts/contexts.py select 2>/dev/null)" = python=false ]; then
+            surface_only=true
+          fi
+          echo "surface_only=$surface_only" >> "$GITHUB_OUTPUT"
+          if [ "$prose_push" = true ] || [ "$surface_only" = true ]; then
             echo "core=false" >> "$GITHUB_OUTPUT"
             core_work=false
           elif [ "$full_release" = true ] || [ -n "${BATCH_BASE:-}" ] || [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ] \
@@ -292,7 +307,7 @@ jobs:
       contents: read
     name: Lint, contracts and types
     needs: changes
-    if: (needs.changes.outputs.core == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '') && needs.changes.outputs.lane != 'macos' # Core focused structural
+    if: (needs.changes.outputs.core == 'true' || needs.changes.outputs.surface_only == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '') && needs.changes.outputs.lane != 'macos' # Core focused structural
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -637,7 +652,7 @@ jobs:
       contents: read
     name: macOS-specific tests
     needs: changes
-    if: needs.changes.outputs.full_ci == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_ci == 'true') && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') && needs.changes.outputs.lane != 'linux' # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_ci == 'true') && (needs.changes.outputs.core == 'true' || needs.changes.outputs.surface_only == 'true') && needs.changes.outputs.site_only != 'true') && needs.changes.outputs.lane != 'linux' # Core candidate-only
     runs-on: macos-latest
     timeout-minutes: 10
     env:
@@ -718,7 +733,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.electron == 'true') # Core candidate-only
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 25 # a release candidate also builds the Swift app for Publish
     strategy:
       fail-fast: false
       matrix:
@@ -742,6 +757,24 @@ jobs:
         run: make desktop-electron-test
       - name: Build and verify unsigned native package
         run: make desktop-electron-package
+      # Build once: a release candidate's macOS apps are built here, before any smoke test runs the bundle, and Publish
+      # promotes them by sha256 when the tag's tree is this run's (scripts/release_apps.py); else it builds them again.
+      - name: Archive the release candidate's desktop apps and bind their manifests
+        if: runner.os == 'macOS' && needs.changes.outputs.full_release == 'true'
+        env:
+          APPLE_APPLICATION_IDENTIFIER_PREFIX: ${{ vars.APPLE_APPLICATION_IDENTIFIER_PREFIX }}
+        run: |
+          version="$(sed -n 's/^version = "\([0-9][0-9.]*\)"$/\1/p' pyproject.toml | head -n 1)"
+          export TAG="v$version"
+          node desktop/ci/release-macos.mjs "$TAG" "$GITHUB_SHA" desktop-release
+          make desktop-swift-package
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: runner.os == 'macOS' && needs.changes.outputs.full_release == 'true'
+        with:
+          name: release-desktop-macos-arm64
+          path: desktop-release/
+          if-no-files-found: error
+          compression-level: 0
       - name: Configure Linux Electron sandbox helper
         if: runner.os == 'Linux'
         run: make desktop-electron-sandbox
@@ -1275,6 +1308,7 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
           EVENT: ${{ github.event_name }}
+          SURFACE_ONLY: ${{ needs.changes.outputs.surface_only }}
           PLUGINS: ${{ needs.local-plugin-plan.outputs.selected }}
           LANE: ${{ needs.changes.outputs.lane }} # main lanes
         run: |
@@ -1285,6 +1319,8 @@ jobs:
           esac # main lanes
           if [ "$EVENT" = pull_request ]; then required+=(commits dependency-review); fi
           if [ "${PLUGINS:-False}" = True ]; then required+=(local-plugin-check); fi
+          # An Apple-only or prose-only pull request (contexts.toml, level L0) skips the Python jobs.
+          if [ "${SURFACE_ONLY:-false}" = true ]; then required=(admission changes lint secrets commits dependency-review quarantine-registry macos-specific); fi
           for job in "${required[@]}"; do
             jq -e --arg job "$job" '.[$job].result == "success"' <<< "$RESULTS" >/dev/null \
               || { echo "::error::Required full CI job did not pass: $job"; exit 1; }

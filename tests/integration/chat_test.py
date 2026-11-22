@@ -41,7 +41,7 @@ from heinzel.heads import api, mcp, web
 from heinzel.heads._exposure import exposed
 from heinzel.heads.cli import build
 from heinzel.kernel import ChatTool, Config, Kernel, boot
-from heinzel.kernel._chat_tools import agent_item
+from heinzel.kernel.session._chat_tools import agent_item
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import MessageRequest
 from heinzel.modules.heinzel._session_operations import _crud

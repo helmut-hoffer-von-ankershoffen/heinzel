@@ -13,9 +13,10 @@ import { FooterLayout, FooterMore, FooterPart } from "@/components/FooterLayout"
 import { HeinzelSwarm } from "@/components/HeinzelSwarm";
 import { PaneAction } from "@/components/PaneActions";
 import { Prose } from "@/components/Prose";
+import { AutoUpdate } from "@/features/runtime/updates/AutoUpdate";
 import { t } from "@/i18n";
 import { zoneTime } from "@/lib/zoneTime";
-import { AutoUpdate } from "@/updates/AutoUpdate";
+import { UpdateStatus } from "../features/runtime/UpdateStatus";
 import { CalendarGlyph } from "./CalendarGlyph";
 import { CalendarSummary, calendarActions } from "./CalendarSummary";
 import { type AgendaData, glyphModel } from "./calendarModel";
@@ -23,7 +24,6 @@ import { DurableHeinzelStatus } from "./DurableHeinzelStatus";
 import { HealthStatus } from "./HealthStatus";
 import { NativeFooterSlot, useNativeFooter } from "./nativeFooter";
 import { PluginsPending } from "./PluginsPending";
-import { UpdateStatus } from "./UpdateStatus";
 
 type Meeting = AgendaData["current"] & object;
 type Agenda = AgendaData;

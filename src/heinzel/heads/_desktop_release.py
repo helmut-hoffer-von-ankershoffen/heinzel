@@ -4,6 +4,7 @@ import hashlib
 import re
 import shutil
 import subprocess
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -25,10 +26,33 @@ from heinzel.heads._desktop_report import SILENT, Advance, Reporter
 
 
 class DesktopFlavor(StrEnum):
-    """The native client packaged for a Heinzel release."""
+    """The desktop client packaged for a Heinzel release: the native app or the Electron app.
+
+    `swift`, the earlier name of `native`, still reads as native, so old install records and scripts keep working.
+    """
 
     ELECTRON = "electron"
-    SWIFT = "swift"
+    NATIVE = "native"
+
+    @classmethod
+    def _missing_(cls, value: object) -> "DesktopFlavor | None":
+        return cls.NATIVE if value == "swift" else None
+
+
+NATIVE_MACOS_ONLY = "The native app is macOS only: use --flavor electron here."
+
+
+def platform_flavor(asked: DesktopFlavor | None, system: str | None = None) -> DesktopFlavor | None:
+    """The flavor for this platform: on macOS as asked (none: the installed app's, else native), elsewhere Electron.
+
+    Raises:
+        HeinzelError: If the native app is asked for anywhere but macOS.
+    """
+    if (system or sys.platform) == "darwin":
+        return asked
+    if asked == DesktopFlavor.NATIVE:
+        raise HeinzelError(NATIVE_MACOS_ONLY)
+    return DesktopFlavor.ELECTRON
 
 
 REPOSITORY = "helmut-hoffer-von-ankershoffen/heinzel"
@@ -372,7 +396,7 @@ def fetch_archive(
             "Install GitHub CLI (https://cli.github.com) to verify the desktop release, then run hz app install again."
         )
         raise HeinzelError(msg)
-    swift = flavor == DesktopFlavor.SWIFT
+    swift = flavor == DesktopFlavor.NATIVE
     manifest_path = directory / ("desktop-swift-artifact-manifest.json" if swift else MANIFEST_NAME)
     core_path = directory / CORE_MANIFEST_NAME
     proof = directory / PROOF_NAME

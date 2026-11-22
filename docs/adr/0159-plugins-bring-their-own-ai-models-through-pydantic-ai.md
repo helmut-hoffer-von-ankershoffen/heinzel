@@ -56,7 +56,7 @@ Checkable statements:
    - `model(model_id) -> pydantic_ai.models.Model` returns a ready model built however the plugin likes, without
      calling it; for an id it doesn't know or can't serve it raises `ModelUnavailableError`.
    - Optional: `test(model_id) -> AccessTest`, its own live check. Optional plain `title` and `summary` name its
-     option. The docstrings in `heinzel/kernel/_ai_models.py` are the reference; the author guide quotes them.
+     option. The docstrings in `heinzel/kernel/ai/_ai_models.py` are the reference; the author guide quotes them.
 2. **`ModelOffer` needs only an id.** It is a frozen Pydantic model that ignores fields it doesn't know. The id
    matches `^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$`. Optional: `title`, `description`, `aliases`,
    `context_window`, `efforts`, `tools` (default true), `thinking` (`adaptive`, `budget` or none), `available`
@@ -225,7 +225,7 @@ Checkable statements:
 | `kernel/_api_access.py` `ConfiguredApiAccess` | built-in only, one OpenAI model | Head C |
 | `heinzel/_model_admission.py`, `run_connected`, `run_granted` | require `pydantic-ai` | Head C |
 | `system.claude` | MCP server discovery is private | made public, Head B |
-| `kernel/_ai.py` `UsageCause` | a closed set | namespaced plugin causes (13) |
+| `kernel/ai/_ai.py` `UsageCause` | a closed set | namespaced plugin causes (13) |
 | `heinzel/_service.py` `RUNNER_TOOLS` | read-only tools for `claude-code` and `command` only | `engine` runner (11), Head C |
 | `org/_models.py` `CodingAgent` | `claude-code`, `command` or `none` in onboarding | unchanged: an onboarding hint, not a gate |
 | `heads/web/_agent_titles.py` | recognises `claude` executables for titles | unchanged: cosmetic |

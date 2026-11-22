@@ -24,7 +24,7 @@ from typing import Any, Never, SupportsIndex
 
 from heinzel import ConfiguredApiAccess, ConfiguredApiLease, ConfiguredApiSnapshot, CurrentUser, HeinzelError, Kernel
 from heinzel.kernel import AiModelsSource, ModelOffer
-from heinzel.kernel._ai_models import build_model, choose, list_offers
+from heinzel.kernel.ai._ai_models import build_model, choose, list_offers
 from heinzel.modules.ai.access._models import AccessSettings
 from heinzel.modules.ai.access._pydantic import PydanticAiAccess, build_reserved_openai, selected_access
 

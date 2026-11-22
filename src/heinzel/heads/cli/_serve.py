@@ -28,8 +28,7 @@ from heinzel.kernel import (
 )
 
 if TYPE_CHECKING:
-    from heinzel.heads._mcp_tokens import McpToken, McpTokens
-    from heinzel.heads.web._devices import Devices
+    from heinzel.modules.system.client import Devices, McpToken, McpTokens
 
 
 class Transport(StrEnum):
@@ -226,6 +225,7 @@ def ui_command(kernel: Kernel, err_console: Console, *, open_existing: bool = Fa
             from heinzel.heads.web._supervision import redirect_supervised_stderr  # noqa: PLC0415 - service only
 
             redirect_supervised_stderr(kernel.settings.log_dir)
+            _retire_strays_in_background(kernel)
 
         try:
             if (
@@ -261,6 +261,82 @@ def ui_command(kernel: Kernel, err_console: Console, *, open_existing: bool = Fa
         err_console.print(UI_STOPPED, highlight=False, markup=False)
 
     return ui
+
+
+_BRIDGE_TOKEN_LIMIT = 256
+
+
+def attach_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
+    """`hz ui attach`: what the desktop apps run at launch instead of starting a server of their own."""
+
+    def attach(
+        json_output: JsonOption = False,
+        bridge_token_stdin: Annotated[
+            bool,
+            typer.Option(
+                "--bridge-token-stdin",
+                help="Read the desktop app's browser-bridge token from standard input and register it.",
+            ),
+        ] = False,
+    ) -> None:
+        """Print a session link to this computer's one web service, installing or starting it first if needed.
+
+        It never serves itself: no second server, no fallback. It also stops web servers older desktop apps left
+        behind. On failure it prints one reason and exits non-zero.
+
+        \f
+
+        Raises:
+            typer.Exit: With 1 when the service can't be installed, started or reached.
+        """  # noqa: D301 - Typer ends the help at a real form feed
+        bridge: str | None = None
+        if bridge_token_stdin:
+            bridge = sys.stdin.readline(_BRIDGE_TOKEN_LIMIT + 2).rstrip("\r\n") or None
+        if not kernel.provides(PersistentWeb):
+            err_console.print(message("Can't attach:", "the ui module is not loaded."))
+            raise typer.Exit(1)
+        web = kernel.resolve(PersistentWeb)
+        if web.attach is None:
+            err_console.print(message("Can't attach:", "this installation has no owned web service."))
+            raise typer.Exit(1)
+        _report_strays(*web.retire_strays(), lambda text: err_console.print(text, highlight=False, markup=False))
+        try:
+            url = web.attach(kernel.settings.ui_port, bridge)
+        except (HeinzelError, OSError) as exc:
+            err_console.print(message("Can't attach:", str(exc)))
+            raise typer.Exit(1) from None
+        if json_output:
+            typer.echo(json.dumps({"url": url}))
+        else:
+            typer.echo(url)
+
+    return attach
+
+
+def _retire_strays_in_background(kernel: Kernel) -> None:
+    """At supervised start: stop the servers older desktop apps left (one backend per machine); never delays serving."""
+    if not kernel.provides(PersistentWeb):
+        return
+    import logging  # noqa: PLC0415 - only the supervised service
+    import threading  # noqa: PLC0415 - only the supervised service
+
+    def retire() -> None:
+        try:
+            stopped, survivors = kernel.resolve(PersistentWeb).retire_strays()
+        except Exception:  # noqa: BLE001 - a failed cleanup must never stop the service
+            logging.getLogger(__name__).warning("Leftover web servers could not be inspected.")
+            return
+        _report_strays(stopped, survivors, logging.getLogger(__name__).warning)
+
+    threading.Thread(target=retire, name="hz-retire-strays", daemon=True).start()
+
+
+def _report_strays(stopped: list[int], survivors: list[int], say: Callable[[str], object]) -> None:
+    if stopped:
+        say(f"Stopped {len(stopped)} leftover web server{'s' if len(stopped) != 1 else ''} an older app started.")
+    if survivors:
+        pids = ", ".join(str(pid) for pid in survivors)
+        say(f"A leftover web server did not stop (pid {pids}); `hz system doctor` shows it until it is gone.")
 
 
 def _ui_announcement(err_console: Console, *, browser: bool) -> Callable[[str], None]:
@@ -600,7 +676,7 @@ def _print_revoked(gone: "list[McpToken]", *, json_output: bool) -> None:
 
 
 def _tokens() -> "McpTokens":
-    from heinzel.heads._mcp_tokens import tokens_for_user  # noqa: PLC0415 - only when managing tokens
+    from heinzel.modules.system.client import tokens_for_user  # noqa: PLC0415 - only when managing tokens
 
     return tokens_for_user()
 
