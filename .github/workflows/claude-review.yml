@@ -18,9 +18,10 @@ name: Gate review
 # through git objects. Nothing of the head is ever executed, and no job that holds a secret checks the head out.
 # Authentication: the secret CLAUDE_CODE_OAUTH_TOKEN (a Claude subscription, from `claude setup-token`), else
 # ANTHROPIC_API_KEY (billed per token). Both exist in this repository. Forks get no review.
-# Gate paths: workflows and actions, CODEOWNERS and the CI configs, the release, merge-gate, CI and acceptance scripts,
-# the bootstrap modules, contexts.toml, the [tool.importlinter] contracts in pyproject.toml, the tests of the gates, and
-# the reviewer's own instructions (root CLAUDE.md, AGENTS.md, .claude/). Renames count on both sides.
+# Gate paths: workflows and actions, CODEOWNERS and the CI configs, the release, merge-gate, coverage-floor, Sonar
+# ratings, CI and acceptance scripts, the Makefile, contexts.toml, the [tool.importlinter], [tool.coverage*] and
+# [tool.pytest*] sections of pyproject.toml, the bootstrap modules, the tests of the gates, and the reviewer's own
+# instructions (root CLAUDE.md, AGENTS.md, .claude/). Renames count on both sides.
 
 on:
   pull_request_target: # zizmor: ignore[dangerous-triggers] the head is read as data and never executed
@@ -57,16 +58,19 @@ jobs:
           ENABLED: ${{ vars.CLAUDE_REVIEW }}
           CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
         run: |
-          gate_paths='^(\.github/(workflows/|actions/|CODEOWNERS$|dependabot\.yml$|zizmor\.yml$)|\.claude/|(CLAUDE|AGENTS)\.md$|\.pre-commit-config\.yaml$|\.sonarcloud\.properties$|contexts\.toml$|scripts/(release_|release\.sh|merge_gate|focused_|ci_|pypi_release|prepare_release|check_|review_|acceptance/)|tools/release_|src/heinzel/bootstrap_|tests/.*(acceptance|merge_gate|focused_gate|release_policy|ci)_test\.py$)'
+          gate_paths='^(\.github/(workflows/|actions/|CODEOWNERS$|dependabot\.yml$|zizmor\.yml$)|\.claude/|(CLAUDE|AGENTS)\.md$|\.pre-commit-config\.yaml$|\.sonarcloud\.properties$|contexts\.toml$|Makefile$|scripts/(release_|release\.sh|merge_gate|coverage_floor|sonar_ratings|focused_|ci_|pypi_release|prepare_release|check_|review_|acceptance/)|tools/release_|src/heinzel/bootstrap_|tests/.*(acceptance|merge_gate|coverage_floor|sonar_ratings|focused_gate|release_policy|ci)_test\.py$)'
           # both sides of a rename: the API lists filename and previous_filename
           files="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR}/files" --jq '.[] | .filename, (.previous_filename // empty)')"
           hits="$(grep -E "$gate_paths" <<<"$files" || true)"
-          # the import contracts live in pyproject.toml: compare the [tool.importlinter] sections of base and head
-          contracts() { awk '/^\[/{on = ($0 ~ /^\[+tool\.importlinter/)} on' ; }
+          # the import contracts and the coverage and test policy live in pyproject.toml: compare those sections of
+          # base and head, so a PR that weakens [tool.coverage*] or [tool.pytest*] gets the review too
           raw() { gh api -H "Accept: application/vnd.github.raw" "repos/$1/contents/pyproject.toml?ref=$2"; }
-          if ! diff -q <(raw "$GITHUB_REPOSITORY" "$BASE_SHA" | contracts) <(raw "$HEAD_REPO" "$HEAD_SHA" | contracts) >/dev/null; then
-            hits+=$'\n'"pyproject.toml ([tool.importlinter])"
-          fi
+          for section in importlinter coverage pytest; do
+            part() { awk -v s="$section" '/^\[/{on = ($0 ~ ("^\\[+tool\\." s))} on' ; }
+            if ! diff -q <(raw "$GITHUB_REPOSITORY" "$BASE_SHA" | part) <(raw "$HEAD_REPO" "$HEAD_SHA" | part) >/dev/null; then
+              hits+=$'\n'"pyproject.toml ([tool.$section])"
+            fi
+          done
           hits="$(sed '/^$/d' <<<"$hits")"
           if (( CHANGED_FILES > 3000 )); then
             mode=refuse # the files API stops at 3000: a gate path could hide beyond it

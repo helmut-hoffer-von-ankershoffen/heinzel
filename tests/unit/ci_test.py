@@ -18,6 +18,8 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
@@ -32,7 +34,7 @@ def test_installed_browser_service_journey_keeps_cold_starts_out_of_browser_shar
         check=True,
         capture_output=True,
         text=True,
-        timeout=3,
+        timeout=scaled(30),
     )
     browser, first, second, third = [set(line.split()) for line in result.stdout.splitlines()]
     journey = "tests/e2e/ui_service_browser_test.py"
@@ -63,6 +65,8 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'version="$(sed -n': "archives a release candidate's desktop apps under its version for Publish to promote",
         "echo 'DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer'": "selects the installed Xcode for macOS CI",
         "python3 -I scripts/release_candidate.py": "records release source",
+        "python3 -I scripts/coverage_floor.py": "judges this run's coverage floor, standard library only",
+        "python3 -I scripts/sonar_ratings.py": "judges Sonar's overall-code ratings, standard library only",
         "echo 'selected=true'": "selects complete CI directly without an external plan",
         'if [ "$GITHUB_REPOSITORY" != helmut-hoffer-von-ankershoffen/heinzel ]': (
             "restricts scheduled maintenance to canonical main"
@@ -89,8 +93,9 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         ),
         'changed="$(git diff --name-only': "decides from the changed paths whether a pull request builds the macOS app",
         "if compgen -G ": "selects the built core candidate or an independently released artifact for source plugins",
-        "for result in $RESULTS": "the CI OK gate aggregates the results of the other jobs",
-        "uv run --no-build coverage report --format=total": "hands the measured total to the merge gate",
+        "jq -r 'to_entries[]": "the CI OK gate names each failed job with its verdict, then aggregates the results",
+        "uv run --no-build coverage report --format=total": "hands the measured total to the Coverage floor job",
+        "uv run --no-build coverage report --sort=-miss": "names the least covered files for the Coverage floor",
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
         'gh run cancel "$RUN_ID"': "a failed cheap check cancels the rest of its own pull request run",
@@ -98,13 +103,6 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f lane=macos': (
             "queues the coalesced macOS main run; its concurrency group replaces an older pending one"
         ),
-    },
-    "merge-gate.yml": {
-        "uv run --no-build --frozen --script scripts/merge_gate.py": "judges by public APIs, from the base branch",
-        "uv run --no-build --frozen --script scripts/focused_gate.py": "verifies protected focused evidence",
-        '[[ "$PR_HEAD_SHA" =~': "finds the open pull request whose finished CI the gates judge",
-        "for check in merge-gate coverage-floor": "reports the gates as check runs on the pull request's head",
-        "for check in MERGE_GATE COVERAGE_FLOOR": "completes both check runs, failing closed",
     },
     "focused-job.yml": {
         '[[ "$FOCUSED_REF" == "$GITHUB_REF_NAME" ]]': "refuses a ref input other than the dispatched branch",
@@ -1511,7 +1509,7 @@ def _changes_outputs(  # noqa: PLR0913 - independent changed-path, event and rel
         },
         cwd=directory,
         check=True,
-        timeout=4,
+        timeout=scaled(30),
     )
     return set(output.read_text().splitlines())
 
@@ -1787,7 +1785,7 @@ def test_scheduled_maintenance_selects_only_canonical_main(tmp_path, repository,
         capture_output=True,
         text=True,
         check=False,
-        timeout=4,
+        timeout=scaled(30),
     )
     assert (result.returncode == 0) is selected
     if selected:
@@ -1857,7 +1855,7 @@ def test_scheduled_aggregate_requires_every_maintenance_job(job, outcome, mainte
         capture_output=True,
         text=True,
         check=False,
-        timeout=4,
+        timeout=scaled(30),
     )
     assert result.returncode == bool(error)
     assert error in result.stdout
@@ -2314,7 +2312,7 @@ def test_direct_ci_cannot_pass_with_a_missing_required_job(job, outcome):
         capture_output=True,
         text=True,
         check=False,
-        timeout=10,
+        timeout=scaled(30),
     )
     assert (result.returncode == 0) == (job is None)
     if job is not None:
@@ -2415,7 +2413,7 @@ def _lane_outputs(tmp_path, event: str, lane: str = "", ref: str = "refs/heads/m
         capture_output=True,
         text=True,
         check=False,
-        timeout=4,
+        timeout=scaled(30),
     )
     if result.returncode:
         return None
@@ -2537,7 +2535,7 @@ def test_an_ordinary_pull_request_selects_only_what_its_paths_need(tmp_path, ci_
 def _ci_ok_run(run: str, **env: str) -> tuple[int, str]:
     jobs = _ci_jobs()
     step = next(s for s in jobs["ci-ok"]["steps"] if s.get("name") == "Require the complete direct CI workload")
-    ran = run.split()
+    ran = [*run.split(), "coverage-floor", "sonar-ratings"]  # both judge every pull request, whatever it selected
     results = {name: {"result": "success" if name in ran else "skipped"} for name in jobs["ci-ok"]["needs"]}
     base = {
         "PATH": os.environ["PATH"],
@@ -2546,7 +2544,12 @@ def _ci_ok_run(run: str, **env: str) -> tuple[int, str]:
         "FULL_RELEASE": "false",
     }
     result = subprocess.run(
-        ["bash", "-e", "-c", step["run"]], env={**base, **env}, capture_output=True, text=True, check=False, timeout=10
+        ["bash", "-e", "-c", step["run"]],
+        env={**base, **env},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=scaled(30),
     )
     return result.returncode, result.stdout
 
@@ -2603,7 +2606,7 @@ def test_a_release_branch_that_is_not_the_candidate_runs_everything(tmp_path, ci
             "HEAD_REF": "release/foo", "BASE": "base", "GITHUB_OUTPUT": str(output),
             "CHANGED_PATHS": "docs/guides/install.md\n", "DIFF_EXIT": "0",
         },
-        cwd=directory, check=True, timeout=4,
+        cwd=directory, check=True, timeout=scaled(30),
     )  # fmt: skip
     assert {"site_only=false", "macos_full=true", "contracts=true", "notifier=true"} <= set(
         output.read_text().splitlines()

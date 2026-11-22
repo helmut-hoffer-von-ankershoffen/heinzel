@@ -50,7 +50,7 @@ NOT_SMALL = "Not a small change: "
 MAX_FILES, MAX_LINES = 8, 80
 MAX_FAILURES = 2
 BUDGET = 100  # seconds one call may take: a model's shell tool gives up at 120
-GATE_CHECKS = ("merge-gate", "coverage-floor")  # .github/workflows/merge-gate.yml
+GATE_CHECKS = ("merge-gate", "coverage-floor")  # legacy checks of repositories that still post them
 FLAKY = ("End-to-end (macos)",)  # failed jobs worth one `gh run rerun --failed`, without investigation
 MODEL = os.environ.get("SHIP_MODEL", "Claude Haiku 4.5")
 ORCHESTRATOR = os.environ.get("SHIP_ORCHESTRATOR") == "1"

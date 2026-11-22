@@ -5,6 +5,7 @@ import gzip
 import hashlib
 import io
 import json
+import re
 import zipfile
 from pathlib import Path
 from subprocess import CalledProcessError
@@ -707,7 +708,7 @@ def test_full_slots_cannot_evict_or_split_an_admission_pair(registry):
 
 def test_legacy_focused_jobs_and_gate_keep_optional_slots(registry):
     root = Path(__file__).resolve().parents[2]
-    for file, readers in (("ci.yml", 1), ("merge-gate.yml", 1)):
+    for file, readers in (("ci.yml", 1),):
         text = (root / ".github/workflows" / file).read_text()
         assert text.count("FOCUSED_CI_PLANS: ${{ vars.FOCUSED_CI_PLANS }}") == readers
         for name in registry.SLOT_VARIABLES:
@@ -862,16 +863,93 @@ def test_full_checkout_requires_one_actual_checkout_identity(focused_gate):
             focused_gate.full_checkout(invalid)
 
 
+SELECTED = {
+    "core": True,
+    "site_only": False,
+    "surface_only": False,
+    "macos_full": True,
+    "notifier": False,
+    "contracts": True,
+    "electron": True,
+    "plugins": False,
+    "upgrade": True,
+    "release": False,
+}
+
+
+def selector_log(selected):
+    return "".join(f"2026-11-16T11:36:17Z selector-output: {k}={str(v).lower()}\n" for k, v in selected.items())
+
+
+def test_selector_output_is_read_strictly(focused_gate):
+    assert focused_gate.selector_output(selector_log(SELECTED).encode()) == SELECTED
+    lines = selector_log(SELECTED).splitlines(keepends=True)
+    for invalid in (
+        b"",
+        "".join(lines[1:]).encode(),  # a key is missing
+        (selector_log(SELECTED) + lines[0]).encode(),  # a key is repeated
+        selector_log({**SELECTED, "extra": True}).encode(),
+        selector_log(SELECTED).replace("core=true", "core=maybe").encode(),
+    ):
+        with pytest.raises(focused_gate.CandidateError, match="selector output"):
+            focused_gate.selector_output(invalid)
+
+
+def test_selected_inventory_matches_a_real_path_selected_run(focused_gate):
+    """Run 45035570556 (a Core pull request with notifier off): its skipped jobs, its 17 `Consumer`-free successes."""
+    inventory = focused_gate.selected_pr_inventory(SELECTED)
+    skipped = {name for name, conclusion in inventory.items() if conclusion == "skipped"}
+    assert {
+        "Heinzel Notifier (macOS app)",
+        "Release candidate source",
+        "Site tests",
+        "macOS smoke",
+        "Source plugin (${{ matrix.name }})",
+        "Focused tests (${{ matrix.lane }})",
+    } <= skipped
+    assert "Heinzel Notifier (macOS app)" in skipped
+    assert {n for n in inventory if n.startswith(("Electron", "End-to-end", "make setup"))} == {
+        "Electron (ubuntu-24.04)",
+        "make setup (ubuntu-24.04)",
+        "make setup (ubuntu-24.04-arm)",
+        *(f"End-to-end {s} (ubuntu-24.04)" for s in ("supervised", "cli", "web-1", "web-2", "web-3")),
+    }
+    assert sum(1 for n in inventory if n.startswith("Test (macos")) == 2
+    assert inventory["Coverage floor"] == inventory["Sonar ratings"] == "success"
+
+
+def test_selected_inventory_follows_each_selector(focused_gate):
+    site = focused_gate.selected_pr_inventory({**SELECTED, "site_only": True, "notifier": False, "contracts": False})
+    assert site["Site tests"] == "success"
+    assert {site[n] for n in ("Coverage", "Performance tests", "Plugin template", "macOS-specific tests")} == {
+        "skipped"
+    }
+    assert site[focused_gate.SKIPPED_TEMPLATES["test"]] == "skipped"
+    assert site["Consumer (${{ matrix.name }})"] == "skipped"
+    assert site["Build"] == "success"
+    surface = focused_gate.selected_pr_inventory(
+        {**SELECTED, "core": False, "surface_only": True, "macos_full": False, "contracts": False, "electron": False}
+    )
+    assert surface["Lint, contracts and types"] == surface["macOS-specific tests"] == "success"
+    assert {surface[n] for n in ("Build", "Coverage", "Dependency audit", "Plugin SDK candidate")} == {"skipped"}
+    quiet = focused_gate.selected_pr_inventory({**SELECTED, "upgrade": False})
+    assert quiet["Upgrade in place (published to candidate, Linux)"] == "skipped"
+    assert not [n for n in quiet if n.startswith("Test (macos")]
+    assert focused_gate.selected_pr_inventory(SELECTED)["Upgrade in place (published to candidate, Linux)"] == "success"
+    release = focused_gate.selected_pr_inventory({**SELECTED, "release": True})
+    assert release == {**focused_gate.expected_jobs("pull_request"), "Release candidate source": "skipped"}
+
+
 @pytest.mark.parametrize(
-    "defect", [None, "missing", "failed", "stale-base", "workflow", "checkout", "dispatch", "parents"]
+    "defect",
+    [None, "missing", "failed", "stale-base", "workflow", "checkout", "dispatch", "parents", "skipped", "unselected"],
 )
 @pytest.mark.parametrize("reviewed", [False, True])
 def test_full_pr_inventory_binds_existing_checkout_without_a_focused_plan(focused_gate, monkeypatch, defect, reviewed):
     from types import SimpleNamespace
 
     base, head, merge = (letter * 40 for letter in "abc")
-    inventory = focused_gate.expected_jobs("pull_request")
-    inventory["Release candidate source"] = "skipped"
+    inventory = focused_gate.selected_pr_inventory(SELECTED)
     jobs = [
         {"id": number, "name": name, "conclusion": conclusion}
         for number, (name, conclusion) in enumerate(inventory.items(), 1)
@@ -880,6 +958,10 @@ def test_full_pr_inventory_binds_existing_checkout_without_a_focused_plan(focuse
         jobs.pop()
     if defect == "failed":
         jobs[0]["conclusion"] = "failure"
+    if defect == "skipped":  # a job the selector chose that did not run
+        next(job for job in jobs if job["name"] == "Coverage")["conclusion"] = "skipped"
+    if defect == "unselected":  # a job the selector skipped that ran
+        next(job for job in jobs if job["name"] == "Heinzel Notifier (macOS app)")["conclusion"] = "success"
     run = {
         "id": 123,
         "event": "workflow_dispatch" if defect == "dispatch" else "pull_request",
@@ -924,7 +1006,10 @@ def test_full_pr_inventory_binds_existing_checkout_without_a_focused_plan(focuse
 
     monkeypatch.setattr(focused_gate, "git", git)
     checkout = head if defect == "checkout" else merge
-    log = f"2026-11-16T11:36:16Z [command]/usr/bin/git log -1 --format=%H\n2026-11-16T11:36:16Z {checkout}\n".encode()
+    log = (
+        f"2026-11-16T11:36:16Z [command]/usr/bin/git log -1 --format=%H\n2026-11-16T11:36:16Z {checkout}\n"
+        + selector_log(SELECTED)
+    ).encode()
     judge = SimpleNamespace(token="fictional")
     if defect:
         with pytest.raises(focused_gate.CandidateError):
@@ -1020,3 +1105,100 @@ def test_full_pr_refuses_changes_to_each_protected_execution_input(focused_gate,
         )
         with pytest.raises(focused_gate.CandidateError, match="execution inputs differ"):
             focused_gate.full_pr_jobs(SimpleNamespace(), source, base, lambda _: b"")
+
+
+def test_coverage_notes_name_measured_required_and_the_least_covered_files(focused_gate):
+    recorded = {
+        "coverage": {
+            "covered": 30,
+            "total": 40,
+            "files": {
+                "heinzel/a.py": {"statements": [10, 10], "branches": [0, 0]},
+                "heinzel/b.py": {"statements": [14, 20], "branches": [6, 10]},
+            },
+        }
+    }
+    raw = json.dumps({"files": {"heinzel/b.py": {"missing_lines": [3, 4, 5, 9]}, "heinzel/a.py": {}}}).encode()
+    notes = focused_gate.coverage_notes("python", recorded, raw)
+    assert "measured 75.00% (30/40" in notes[0]
+    assert "required 80% floor and 90% report threshold" in notes[0]
+    assert len(notes) == 2
+    assert "heinzel/b.py: 20/30 (66.7%), 10 uncovered; missing lines 3-5, 9" in notes[1]
+    assert focused_gate.coverage_notes("macos", {}, b"") == []
+
+
+def test_coverage_notes_survive_an_unreadable_measurement(focused_gate):
+    recorded = {"coverage": {"covered": 1, "total": 2, "files": {"heinzel/a.py": {"statements": [1, 2]}}}}
+    notes = focused_gate.coverage_notes("python", recorded, b"not json")
+    assert any("unavailable" in note for note in notes)
+    assert any("heinzel/a.py" in note for note in notes)
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        ("candidate", "coverage-floor FAILED (not met): full PR evidence has a stale tested base"),
+        ("tool", "coverage-floor TOOL ERROR (the gate itself broke, coverage was not judged): KeyError: 'x'"),
+    ],
+)
+def test_main_publishes_why_it_failed_and_still_fails(  # noqa: PLR0913, PLR0917 - env, output and cases
+    focused_gate, monkeypatch, tmp_path, capsys, error, expected
+):
+    output = tmp_path / "out"
+    for name, value in {
+        "PR_HEAD_SHA": "a" * 40,
+        "GITHUB_TOKEN": "t",
+        "CI_RUN_ID": "7",
+        "GITHUB_OUTPUT": str(output),
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv("FOCUSED_MAIN_BASE", raising=False)
+
+    def verify(*_args, notes, **_kwargs):
+        notes.append("Scope: 1 changed file(s), 1 production: heinzel/a.py")
+        key, message = "x", "full PR evidence has a stale tested base"
+        if error == "tool":
+            raise KeyError(key)
+        raise focused_gate.CandidateError(message)
+
+    monkeypatch.setattr(focused_gate, "verify", verify)
+    with pytest.raises(KeyError if error == "tool" else focused_gate.CandidateError):
+        focused_gate.main()
+    written = output.read_text()
+    assert written.startswith("verdict<<GATE_EOF\n" + expected)
+    assert "Scope: 1 changed file(s)" in written
+    assert expected in capsys.readouterr().out
+
+
+def test_main_publishes_the_passing_verdict_with_its_scope(focused_gate, monkeypatch, tmp_path):
+    output = tmp_path / "out"
+    for name, value in {
+        "PR_HEAD_SHA": "a" * 40,
+        "GITHUB_TOKEN": "t",
+        "CI_RUN_ID": "7",
+        "GITHUB_OUTPUT": str(output),
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv("FOCUSED_MAIN_BASE", raising=False)
+
+    def verify(*_args, notes, **_kwargs):
+        notes.append("Scope: 2 changed file(s)")
+        return "PR scoped coverage passed"
+
+    monkeypatch.setattr(focused_gate, "verify", verify)
+    focused_gate.main()
+    assert output.read_text() == "verdict<<GATE_EOF\nPR scoped coverage passed\nScope: 2 changed file(s)\nGATE_EOF\n"
+
+
+def test_the_selector_prints_every_key_the_merge_gate_derives_its_inventory_from(focused_gate):
+    keys = focused_gate.SELECTOR_KEYS
+    import yaml
+
+    jobs = yaml.safe_load((Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml").read_text())["jobs"]
+    step = next(s for s in jobs["changes"]["steps"] if s.get("id") == "paths")
+    printed = re.search(r"selector-output: \((?P<keys>[a-z_|]+)\)=", step["run"])
+    assert printed
+    assert {*printed["keys"].split("|"), "release"} == keys
+    assert 'echo "selector-output: release=${FULL_RELEASE:-false}"' in step["run"]
+    for key in printed["keys"].split("|"):  # each is a real output of the same step
+        assert f'echo "{key}=' in step["run"]

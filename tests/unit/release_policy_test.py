@@ -98,8 +98,6 @@ def test_manifest_has_exactly_the_keys_the_release_tooling_parses(manifest):
         "aggregate",
         "expected_jobs",
         "focused_job",
-        "gate_checks",
-        "judge_workflow",
         "lanes",
         "not_ci",
         "policy",
@@ -126,14 +124,14 @@ def test_expected_jobs_split_the_recorders_inventory_without_overlap(release_pol
 
 
 def test_aggregate_and_required_contexts_follow_the_workflows(release_policy, manifest):
-    from scripts.focused_gate import API_CHECKS
-
     jobs = yaml.safe_load((ROOT / release_policy.WORKFLOW).read_text(encoding="utf-8"))["jobs"]
     assert manifest["aggregate"] == jobs[release_policy.AGGREGATE_JOB]["name"]
-    assert set(manifest["required_contexts"]) == {manifest["aggregate"], *API_CHECKS}
-    assert manifest["required_contexts"] == sorted(set(manifest["required_contexts"]))
-    gate = (ROOT / ".github/workflows/merge-gate.yml").read_text(encoding="utf-8")
-    assert all(context in gate for context in release_policy.GATE_CONTEXTS)
+    # The coverage floor is a job the aggregate needs, not a separate context; no merge-gate workflow is left.
+    assert manifest["required_contexts"] == [manifest["aggregate"]]
+    assert "coverage-floor" in jobs[release_policy.AGGREGATE_JOB]["needs"]
+    assert not (ROOT / ".github/workflows/merge-gate.yml").exists()
+    assert "gate_checks" not in manifest
+    assert "judge_workflow" not in manifest
 
 
 def test_aggregate_refuses_a_workflow_without_the_aggregate_job(release_policy):
@@ -338,48 +336,3 @@ def test_every_matched_file_that_configures_pytest_is_an_exception(manifest, tmp
         (tmp_path / "tests/unit/kernel/a_test.py").write_text(body, encoding="utf-8")
         listed = ci_paths.exceptions(tmp_path, ["tests/unit/kernel/a_test.py"])
         assert listed == (["tests/unit/kernel/a_test.py"] if "pytest_" in body else []), body
-
-
-def test_judge_workflow_is_the_one_workflow_that_runs_the_merge_gate_judge(release_policy, manifest):
-    assert manifest["judge_workflow"] == ".github/workflows/merge-gate.yml"
-    assert manifest["judge_workflow"] != manifest["workflow"]
-    assert release_policy.JUDGE in (ROOT / manifest["judge_workflow"]).read_text(encoding="utf-8")
-    assert all(
-        context in (ROOT / manifest["judge_workflow"]).read_text(encoding="utf-8")
-        for context in release_policy.GATE_CONTEXTS
-    )
-    tracked = _tracked()
-    with pytest.raises(release_policy.PolicyError, match="expected one workflow"):
-        release_policy.judge_workflow(ROOT, [path for path in tracked if path != manifest["judge_workflow"]])
-
-
-def test_judge_workflow_refuses_two_judges_or_the_ci_workflow(release_policy, tmp_path):
-    workflows = tmp_path / ".github/workflows"
-    workflows.mkdir(parents=True)
-    run = "jobs:\n  gate:\n    steps:\n      - run: python3 -I scripts/merge_gate.py\n"
-    for name in ("merge-gate.yml", "second.yml", "ci.yml"):
-        (workflows / name).write_text(run, encoding="utf-8")
-    paths = [f".github/workflows/{name}" for name in ("merge-gate.yml", "second.yml")]
-    with pytest.raises(release_policy.PolicyError, match="expected one workflow"):
-        release_policy.judge_workflow(tmp_path, paths)
-    with pytest.raises(release_policy.PolicyError, match="expected one workflow"):
-        release_policy.judge_workflow(tmp_path, [release_policy.WORKFLOW])
-    assert release_policy.judge_workflow(tmp_path, [paths[1], "README.md"]) == paths[1]
-
-
-def test_gate_checks_name_the_sonar_and_coverage_checks_the_judge_reports(release_policy, manifest):
-    assert manifest["gate_checks"] == {"coverage": "coverage-floor", "sonar": "merge-gate"}
-    assert set(manifest["gate_checks"].values()) == set(manifest["required_contexts"]) - {manifest["aggregate"]}
-    assert len(set(manifest["gate_checks"].values())) == len(manifest["gate_checks"])
-    judge = (ROOT / manifest["judge_workflow"]).read_text(encoding="utf-8")
-    swapped = judge.replace("steps.sonar.outcome", "steps.SWAP.outcome").replace(
-        "steps.coverage.outcome", "steps.sonar.outcome"
-    )
-    assert release_policy.gate_checks(swapped.replace("steps.SWAP.outcome", "steps.coverage.outcome")) == {
-        "coverage": "merge-gate",
-        "sonar": "coverage-floor",
-    }
-    with pytest.raises(release_policy.PolicyError, match="0 step outcomes"):
-        release_policy.gate_checks(judge.replace("MERGE_GATE_OUTCOME", "OTHER_OUTCOME"))
-    with pytest.raises(release_policy.PolicyError, match="not coverage and sonar"):
-        release_policy.gate_checks(judge.replace("steps.sonar.outcome", "steps.quality.outcome"))
