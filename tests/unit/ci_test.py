@@ -1025,7 +1025,7 @@ def test_gate_review_fetches_the_head_with_basic_auth():
     assert "bearer" not in fetch.replace("not a bearer header", "")
     assert "::add-mask::" in fetch
     assert "+refs/pull/${PR}/head:refs/review/head" in fetch
-    assert "git rev-parse --verify refs/review/head" in fetch  # the head must have arrived
+    assert 'git rev-parse --verify "refs/review/head^{commit}"' in fetch  # the head must have arrived
     assert "checkout" not in fetch
 
 
