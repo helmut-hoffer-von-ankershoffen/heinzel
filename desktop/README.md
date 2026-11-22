@@ -120,7 +120,7 @@ user must launch the app while it is on `PATH`.
 
 ## Workspace connections
 
-Choose **Connection…** in the application menu (Shift-Command-comma on Mac) to switch between **This Mac** and a
+Choose **Switch Workspace…** in the application menu (Shift-Command-comma on Mac) to switch between **This Mac** and a
 private HTTPS workspace. Paste the host's private sign-in link. Recent hosts appear in the same paper-style picker
 as the Swift app, with a sign-in prompt when their saved access is unavailable. **Try Again** retries a failed
 connection; **Back to Workspace** returns to the current workspace without switching.
