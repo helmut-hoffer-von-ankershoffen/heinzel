@@ -78,7 +78,7 @@ def test_unsupported_platform_never_loads_native_libraries(monkeypatch):
 def test_missing_runtime_symbol_fails_closed(monkeypatch):
     monkeypatch.setattr(native.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(native.platform, "mac_ver", lambda: ("15.0", (), ""))
-    monkeypatch.setattr(native.c, "CDLL", lambda *_: object())
+    monkeypatch.setattr(native.c, "CDLL", lambda *_, **_options: object())
     with pytest.raises(native.NativeUnavailableError):
         native.Native()
 
@@ -155,7 +155,7 @@ def test_adapter_resolves_exact_native_functions(monkeypatch):
 
     monkeypatch.setattr(native.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(native.platform, "mac_ver", lambda: ("15.0", (), ""))
-    monkeypatch.setattr(native.c, "CDLL", lambda _: Library())
+    monkeypatch.setattr(native.c, "CDLL", lambda _, **_options: Library())
     native.Native()
     assert functions["proc_signal_with_audittoken"].argtypes == (ctypes.c_void_p, ctypes.c_int)
     assert "kill" not in functions
