@@ -423,12 +423,11 @@ jobs:
           RESULTS: ${{ join(needs.*.result, ' ') }}
           NEEDS: ${{ toJSON(needs) }}
         run: |
+          jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped")
+            | "::error::Required job \(.key) ended with \(.value.result)\(if .value.outputs.verdict then ": " + .value.outputs.verdict else "" end)"' <<< "$NEEDS"
           for result in $RESULTS; do
             case "$result" in
               success | skipped) ;;
-              *)
-                jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped")
-                  | "::error::Required job \(.key) ended with \(.value.result)\(if .value.outputs.verdict then ": " + .value.outputs.verdict else "" end)"' <<< "$NEEDS"
-                exit 1 ;;
+              *) echo "A required job ended with: $result"; exit 1 ;;
             esac
           done
