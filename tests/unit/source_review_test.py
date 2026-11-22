@@ -11,6 +11,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
@@ -156,7 +158,7 @@ def test_a_dispatched_tier_may_not_be_below_the_needed_one(tmp_path):
 def git_in(directory, *args):
     env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
     return subprocess.run(
-        ["git", "-C", str(directory), *args], check=True, capture_output=True, text=True, env=env, timeout=60
+        ["git", "-C", str(directory), *args], check=True, capture_output=True, text=True, env=env, timeout=scaled(60)
     ).stdout.strip()
 
 
@@ -344,12 +346,14 @@ def test_a_denied_or_failed_run_is_not_a_verdict(change):
 
 def test_bounded_children_stop_on_overflow_and_deadline(tmp_path):
     env = {"PATH": os.environ["PATH"]}
-    code, out = source_review.run_bounded([sys.executable, "-c", "print('ok')"], limit=100, timeout=20, env=env)
+    code, out = source_review.run_bounded([sys.executable, "-c", "print('ok')"], limit=100, timeout=scaled(20), env=env)
     assert (code, out) == (0, b"ok\n")
     with pytest.raises(source_review.ReviewError, match="exceeds"):
-        source_review.run_bounded([sys.executable, "-c", "print('x'*1000)"], limit=100, timeout=20, env=env)
+        source_review.run_bounded([sys.executable, "-c", "print('x'*1000)"], limit=100, timeout=scaled(20), env=env)
     with pytest.raises(source_review.ReviewError, match="deadline"):
-        source_review.run_bounded([sys.executable, "-c", "import time; time.sleep(30)"], limit=100, timeout=1, env=env)
+        source_review.run_bounded(
+            [sys.executable, "-c", "import time; time.sleep(30)"], limit=100, timeout=scaled(1), env=env
+        )
 
 
 # The workflow and the dispatch command
@@ -439,7 +443,7 @@ def run_review(tmp_path, bin_dir, *, trusted=TRUSTED, pr="7"):
         env=env,
         cwd=tmp_path,
         check=False,
-        timeout=120,
+        timeout=scaled(120),
     )
 
 

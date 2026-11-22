@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 _RUNNER = Path(__file__).resolve().parents[2] / "scripts" / "steps.py"
@@ -20,7 +22,7 @@ def _run(keep_going: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         env=env,
-        timeout=30,
+        timeout=scaled(30),
         check=False,
     )
 

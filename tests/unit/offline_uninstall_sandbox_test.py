@@ -11,6 +11,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 SOURCE = Path(__file__).parents[1] / "e2e/offline_uninstall_test.py"
 DENIAL = next(
@@ -180,7 +182,7 @@ print('bind, Unix roundtrip and inherited IP denial verified')
         capture_output=True,
         text=True,
         check=False,
-        timeout=10,
+        timeout=scaled(10),
     )
     assert result.returncode == 0, result.stderr
     assert "Offline network denial active: Landlock ABI" in result.stderr

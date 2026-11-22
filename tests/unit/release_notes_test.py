@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "release_notes.py"
@@ -85,7 +87,7 @@ def test_every_commit_between_the_previous_tag_and_the_tag_is_listed(tmp_path, m
             cwd=tmp_path,
             check=True,
             capture_output=True,
-            timeout=60,
+            timeout=scaled(60),
         )
 
     git("init", "-q")

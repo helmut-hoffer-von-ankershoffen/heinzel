@@ -34,6 +34,7 @@ from heinzel.kernel.session._self_chat import (
     self_options,
     self_text,
 )
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -131,18 +132,18 @@ def test_notify_cleans_and_bounds_what_goes_out_and_what_comes_back():
     assert "\x07" not in str(call["text"])
     assert str(call["context"]).startswith("my schedule y")
     with pytest.raises(NotSupportedError):
-        channel.ask("Why?", timeout=5)
+        channel.ask("Why?", timeout=scaled(5))
 
 
 def test_ask_checks_bounds_and_passes_cancel():
     channel = SelfChat(adapter="acmechat", notifies=False, asks=True, build=SelfOnly)
     cancel = threading.Event()
-    answer = channel.ask("Which?", options=["Yes", "No"], timeout=30, cancel=cancel)
+    answer = channel.ask("Which?", options=["Yes", "No"], timeout=scaled(30), cancel=cancel)
     assert (answer.option, answer.text, answer.answered_by_option) == ("Yes", "Yes", True)
     assert SelfOnly.sent[-1]["cancel"] is cancel
-    assert channel.ask("Why?", timeout=30).text == "fine"
+    assert channel.ask("Why?", timeout=scaled(30)).text == "fine"
     with pytest.raises(HeinzelError, match="between 1 and"):
-        channel.ask("Why?", timeout=0)
+        channel.ask("Why?", timeout=scaled(0))
     with pytest.raises(NotSupportedError):
         channel.notify("hello")
 
@@ -196,7 +197,7 @@ def test_an_adapter_answering_the_wrong_type_is_refused():
     with pytest.raises(HeinzelError, match="SelfMessage"):
         channel.notify("hello")
     with pytest.raises(HeinzelError, match="SelfAnswer"):
-        channel.ask("Why?", timeout=3)
+        channel.ask("Why?", timeout=scaled(3))
 
 
 def test_a_self_only_adapter_builds_without_channel_methods(make_kernel):
@@ -221,7 +222,7 @@ def test_no_operation_can_reach_the_self_methods_through_its_handle(make_kernel)
     def nag(chat: Chat) -> str:
         """Ask the owner to approve something."""
         for call in (
-            lambda: chat.ask_self("Approve the write?", options=("Approve", "Reject"), timeout=5),
+            lambda: chat.ask_self("Approve the write?", options=("Approve", "Reject"), timeout=scaled(5)),
             lambda: chat.notify_self("Approved."),
         ):
             with pytest.raises(HeinzelError, match="Only hz itself calls chat"):
@@ -283,7 +284,7 @@ def test_notify_and_ask_neutralise_mentions_in_text_context_and_options():
     channel.notify("Build done <!channel>", context="@here run")
     assert SelfOnly.sent[-1]["text"] == inert("Build done ~channel")
     assert SelfOnly.sent[-1]["context"] == inert("~here run")
-    answer = channel.ask("Ping <@U1>?", options=["@everyone", "No"], timeout=5, context="<!here>")
+    answer = channel.ask("Ping <@U1>?", options=["@everyone", "No"], timeout=scaled(5), context="<!here>")
     assert SelfOnly.sent[-1]["question"] == inert("Ping ~U1?")
     assert SelfOnly.sent[-1]["options"] == (inert("~everyone"), "No")
     assert answer.option == inert("~everyone"), "the answer names the option as offered"
@@ -297,7 +298,7 @@ def test_a_hung_adapter_holds_one_thread_and_callers_return_promptly(monkeypatch
     class Hung(SelfOnly):
         def notify_self(self, text: str, *, thread: str | None = None, context: str | None = None) -> SelfMessage:
             calls.append(text)
-            release.wait(10)
+            release.wait(scaled(10))
             return SelfMessage(id="late", thread="t")
 
     channel = SelfChat(adapter="hung", notifies=True, asks=False, build=Hung)
@@ -314,7 +315,7 @@ def test_a_hung_adapter_holds_one_thread_and_callers_return_promptly(monkeypatch
     release.set()
     deadline = time.monotonic() + 5
     while "hung" in self_chat._BUSY and time.monotonic() < deadline:
-        time.sleep(0.01)
+        time.sleep(scaled(0.01))
     assert channel.notify("after").id == "late", "once the hung call ends the next one goes out"
 
 

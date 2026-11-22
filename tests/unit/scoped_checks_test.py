@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = [pytest.mark.unit, pytest.mark.timeout(60)]  # the import graph parses the tree: ~1 s idle, more loaded
 
 REPO = Path(__file__).resolve().parents[2]
@@ -121,7 +123,7 @@ def test_a_caller_cannot_skip_the_gate_or_raise_its_queue_deadline(monkeypatch, 
     monkeypatch.setenv("HZ_GATE_HELD", "4242")
     monkeypatch.setenv("HZ_GATE_MAX_WAIT", requested)
 
-    scoped.run_check(["make", "check-fast"], timeout=300)
+    scoped.run_check(["make", "check-fast"], timeout=300)  # unscaled: the limit passed through, asserted
 
     [(command, kwargs)] = calls
     assert command == [gate, "--timeout", "300", "make", "check-fast"]
@@ -135,7 +137,7 @@ def test_checks_run_directly_with_the_same_runtime_limit_without_an_absolute_gat
     _, calls = gate_calls
     monkeypatch.setattr(scoped.shutil, "which", lambda _: gate_path)
 
-    scoped.run_check(["make", "check-fast"], timeout=300)
+    scoped.run_check(["make", "check-fast"], timeout=300)  # unscaled: the limit passed through
 
     [(command, kwargs)] = calls
     assert command == ["make", "check-fast"]
@@ -496,7 +498,7 @@ def test_direct_make_stops_before_web_preparation_or_full_checks_when_early_guar
         capture_output=True,
         text=True,
         check=False,
-        timeout=10,
+        timeout=scaled(10),
     )
     assert result.returncode != 0
     commands = record.read_text().splitlines()

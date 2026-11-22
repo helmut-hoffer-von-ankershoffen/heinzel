@@ -50,7 +50,11 @@ def config(markers: list[str], *, timeout_plugin: bool = True) -> pytest.Config:
 
 
 def test_orders_tests_by_level_and_gives_each_its_timeout_unless_set():
-    items = [item("e", "e2e"), item("i", "integration", timeout=60), item("u", "unit")]
+    items = [
+        item("e", "e2e"),
+        item("i", "integration", timeout=60),
+        item("u", "unit"),
+    ]  # unscaled: the marker under test
     pytest_collection_modifyitems(config(MARKERS), items)  # type: ignore[arg-type]
     assert [i.nodeid for i in items] == ["u", "i", "e"]
     assert [i.markers["timeout"].args[0] for i in items] == [
@@ -98,7 +102,7 @@ def test_timeout_scale_reads_the_variable_and_ignores_unusable_values(monkeypatc
 
 def test_scale_multiplies_level_and_explicit_timeouts(monkeypatch):
     monkeypatch.setenv("HZ_TEST_TIMEOUT_SCALE", "3")
-    items = [item("u", "unit"), item("i", "integration", timeout=60)]
+    items = [item("u", "unit"), item("i", "integration", timeout=60)]  # unscaled: the marker under test
     pytest_collection_modifyitems(config(MARKERS), items)  # type: ignore[arg-type]
     assert [i.markers["timeout"].args[0] for i in items] == [15, 180]
 

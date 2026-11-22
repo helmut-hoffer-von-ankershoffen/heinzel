@@ -12,6 +12,8 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -335,7 +337,7 @@ def test_isolated_reducer_cli_uses_exact_artifact_inventory_and_never_overwrites
         "event": "GITHUB_EVENT_NAME",
     }
     env = dict(os.environ) | {ci_names[key]: value for key, value in CI.items()}
-    result = subprocess.run(command, env=env, capture_output=True, text=True, check=False, timeout=3)
+    result = subprocess.run(command, env=env, capture_output=True, text=True, check=False, timeout=scaled(3))
     if defect != "none":
         assert result.returncode != 0
         assert not output.exists()
@@ -343,7 +345,7 @@ def test_isolated_reducer_cli_uses_exact_artifact_inventory_and_never_overwrites
     assert result.returncode == 0, result.stderr
     original = output.read_bytes()
     assert json.loads(original)["verdict"] == "STUDY_COMPLETE"
-    second = subprocess.run(command, env=env, capture_output=True, text=True, check=False, timeout=3)
+    second = subprocess.run(command, env=env, capture_output=True, text=True, check=False, timeout=scaled(3))
     assert second.returncode != 0
     assert output.read_bytes() == original
 
@@ -459,7 +461,7 @@ def run_release_reducer(tmp_path, values, *, drop=None):
     command += ["--artifact-prefix", "acceptance-shard", "--runner-os", "macOS", "--supplied", "true"]
     command += ["--wheel-sha256", WHEEL, "--profile-sha256", PROFILE]
     command += ["--output", str(output)]
-    return subprocess.run(command, env=env, capture_output=True, text=True, check=False, timeout=10), output
+    return subprocess.run(command, env=env, capture_output=True, text=True, check=False, timeout=scaled(10)), output
 
 
 def test_release_reducer_prints_exactly_one_verdict_line_and_writes_the_receipt(tmp_path):

@@ -34,6 +34,7 @@ from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import Disposition, Wake, unit_dir
 from heinzel.modules.system.daemon._runtime import Outcome, lock, within
 from heinzel.modules.system.daemon._units import LABEL, launchd_plist
+from heinzel.testing import scaled
 from tests.fixtures.daemon_manager import RecordedManager as Runner
 from tests.fixtures.daemon_manager import record_tool as _record_quiescent_tool
 
@@ -805,7 +806,7 @@ def test_a_job_that_times_out_keeps_lifecycle_locked_while_it_still_runs(make, c
             [sys.executable, "-c", script, str(service.state_dir / "lifecycle.lock")],
             capture_output=True,
             check=False,
-            timeout=5,
+            timeout=scaled(5),
         )
         assert child.returncode != 0
         assert b"BlockingIOError" in child.stderr
@@ -817,13 +818,13 @@ def test_a_job_that_times_out_keeps_lifecycle_locked_while_it_still_runs(make, c
         assert seen == [900.0]
     finally:
         still_running.set()
-        thread.join(timeout=5)
+        thread.join(timeout=scaled(5))
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
         with lock(service.state_dir / "lifecycle.lock") as acquired:
             if acquired:
                 break
-        time.sleep(0.01)
+        time.sleep(scaled(0.01))
     else:
         pytest.fail("lifecycle lock remained held after abandoned work ended")
     clock.set(12, 1)
@@ -1688,12 +1689,12 @@ def test_admission_guard_blocks_another_process_lifecycle_writer(make, bin_dir):
     script = "import fcntl,sys; f=open(sys.argv[1], 'a'); fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)"
     with service.admission_guard():
         blocked = subprocess.run(
-            [sys.executable, "-c", script, str(lock_path)], capture_output=True, check=False, timeout=5
+            [sys.executable, "-c", script, str(lock_path)], capture_output=True, check=False, timeout=scaled(5)
         )
         assert blocked.returncode != 0
         assert b"BlockingIOError" in blocked.stderr
     available = subprocess.run(
-        [sys.executable, "-c", script, str(lock_path)], capture_output=True, check=False, timeout=5
+        [sys.executable, "-c", script, str(lock_path)], capture_output=True, check=False, timeout=scaled(5)
     )
     assert available.returncode == 0
 
@@ -1721,7 +1722,7 @@ def test_external_mutation_lock_prevents_tick_jobs(make, jobs, calls, bin_dir):
     finally:
         if child.stdin is not None:
             child.stdin.close()
-        child.wait(timeout=5)
+        child.wait(timeout=scaled(5))
         if child.stdout is not None:
             child.stdout.close()
 
@@ -1735,14 +1736,14 @@ def test_tick_blocks_mutation_and_pause_remains_available(make, jobs, bin_dir, m
 
     def running(*_args):
         entered.set()
-        assert release.wait(timeout=5)
+        assert release.wait(timeout=scaled(5))
         return []
 
     monkeypatch.setattr(service, "_run", running)
     thread = threading.Thread(target=lambda: reports.append(service.tick()))
     thread.start()
     try:
-        assert entered.wait(timeout=5)
+        assert entered.wait(timeout=scaled(5))
         invoked = []
         with (
             pytest.raises(HeinzelError, match="lifecycle is changing"),
@@ -1759,7 +1760,7 @@ def test_tick_blocks_mutation_and_pause_remains_available(make, jobs, bin_dir, m
             [sys.executable, "-c", script, str(service.state_dir / "lifecycle.lock"), str(sentinel)],
             capture_output=True,
             check=False,
-            timeout=5,
+            timeout=scaled(5),
         )
         assert child.returncode != 0
         assert b"BlockingIOError" in child.stderr
@@ -1767,7 +1768,7 @@ def test_tick_blocks_mutation_and_pause_remains_available(make, jobs, bin_dir, m
         assert service.pause().paused
     finally:
         release.set()
-        thread.join(timeout=5)
+        thread.join(timeout=scaled(5))
     assert not thread.is_alive()
     assert reports
     assert service.paused
@@ -1949,11 +1950,11 @@ with service.mutation_guard(lambda: True, lambda: "b" * 64) as scope:
         with pytest.raises(HeinzelError, match="changing or requires recovery"), service.admission_guard():
             pytest.fail("an active mutation must hold the cross-process lifecycle lock")
         child.kill()
-        assert child.wait(timeout=2) < 0
+        assert child.wait(timeout=scaled(2)) < 0
     finally:
         if child.poll() is None:
             child.kill()
-            child.wait(timeout=2)
+            child.wait(timeout=scaled(2))
         if child.stdout is not None:
             child.stdout.close()
     assert fake_uv_output.read_text() == "fake mutation completed"

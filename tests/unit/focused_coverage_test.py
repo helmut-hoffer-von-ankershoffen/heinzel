@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 PRODUCTION = "src/heinzel/new.py"
 ALREADY_USED = "src/heinzel/existing.py"
@@ -111,7 +113,7 @@ def test_producer_reports_unimported_module_from_real_branch_data(coverage, scop
             env={**env, "PYTHONPATH": str(root / "src"), "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
             check=True,
             capture_output=True,
-            timeout=15,
+            timeout=scaled(15),
         )
 
     monkeypatch.setattr(coverage, "git", git)

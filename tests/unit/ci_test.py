@@ -18,6 +18,8 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
@@ -32,7 +34,7 @@ def test_installed_browser_service_journey_keeps_cold_starts_out_of_browser_shar
         check=True,
         capture_output=True,
         text=True,
-        timeout=3,
+        timeout=scaled(3),
     )
     browser, first, second, third = [set(line.split()) for line in result.stdout.splitlines()]
     journey = "tests/e2e/ui_service_browser_test.py"
@@ -315,7 +317,13 @@ def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(
 
     def git(*args):
         return subprocess.run(
-            ["git", *args], cwd=tmp_path, env=environment, capture_output=True, text=True, check=True, timeout=30
+            ["git", *args],
+            cwd=tmp_path,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=scaled(30),
         )
 
     git("init", "--quiet")
@@ -341,7 +349,7 @@ def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(
             "GITHUB_OUTPUT": str(output),
         },
         check=True,
-        timeout=30,
+        timeout=scaled(30),
     )
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert not foreign_index.exists()
@@ -1311,7 +1319,7 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
         env=env,
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=scaled(20),
         check=False,
     )
     lines = trace.read_text().splitlines()
@@ -1377,7 +1385,7 @@ def test_e2e_sequence_stops_after_readme_failure(tmp_path, first_fails):
         env=env,
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=scaled(20),
         check=False,
     )
     commands = trace.read_text().splitlines()
@@ -1424,7 +1432,7 @@ def _changes_outputs(  # noqa: PLR0913 - independent changed-path, event and rel
         },
         cwd=directory,
         check=True,
-        timeout=4,
+        timeout=scaled(4),
     )
     return set(output.read_text().splitlines())
 
@@ -1700,7 +1708,7 @@ def test_scheduled_maintenance_selects_only_canonical_main(tmp_path, repository,
         capture_output=True,
         text=True,
         check=False,
-        timeout=4,
+        timeout=scaled(4),
     )
     assert (result.returncode == 0) is selected
     if selected:
@@ -1770,7 +1778,7 @@ def test_scheduled_aggregate_requires_every_maintenance_job(job, outcome, mainte
         capture_output=True,
         text=True,
         check=False,
-        timeout=4,
+        timeout=scaled(4),
     )
     assert result.returncode == bool(error)
     assert error in result.stdout
@@ -2226,7 +2234,7 @@ def test_direct_ci_cannot_pass_with_a_missing_required_job(job, outcome):
         capture_output=True,
         text=True,
         check=False,
-        timeout=10,
+        timeout=scaled(10),
     )
     assert (result.returncode == 0) == (job is None)
     if job is not None:
@@ -2327,7 +2335,7 @@ def _lane_outputs(tmp_path, event: str, lane: str = "", ref: str = "refs/heads/m
         capture_output=True,
         text=True,
         check=False,
-        timeout=4,
+        timeout=scaled(4),
     )
     if result.returncode:
         return None

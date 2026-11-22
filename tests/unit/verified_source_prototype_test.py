@@ -22,6 +22,7 @@ from heinzel.kernel._source_loading import (
     SourceSnapshot,
     open_source_lease,
 )
+from heinzel.testing import scaled
 from tests._source_distribution_fixture import installed_entry
 
 pytestmark = pytest.mark.unit
@@ -162,7 +163,7 @@ assert plugin.media_type == 'text/plain'
 capture.finder.runtime.verify()
 """
     result = subprocess.run(
-        [sys.executable, "-I", "-c", script, str(root)], capture_output=True, text=True, check=False, timeout=20
+        [sys.executable, "-I", "-c", script, str(root)], capture_output=True, text=True, check=False, timeout=scaled(20)
     )
     assert result.returncode == 0, result.stdout + result.stderr
 

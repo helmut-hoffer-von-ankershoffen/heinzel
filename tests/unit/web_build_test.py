@@ -12,6 +12,8 @@ from types import ModuleType
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
@@ -181,7 +183,7 @@ def test_make_prepares_before_starting_parallel_checks(tmp_path, prepare_exit, t
         cwd=REPO,
         env=env,
         capture_output=True,
-        timeout=10,
+        timeout=scaled(10),
         check=False,
     )
     assert (result.returncode == 0) is (early_exit == 0 and prepare_exit == 0)

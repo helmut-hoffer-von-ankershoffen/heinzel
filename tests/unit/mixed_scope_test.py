@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "scripts"))
@@ -103,7 +105,7 @@ def inherited_git_selection(tmp_path, monkeypatch):
             check=True,
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=scaled(10),
         ).stdout.strip()
 
     git("init", "--initial-branch=caller")
@@ -652,7 +654,7 @@ def test_real_pytest_reports_require_executed_bodies_in_each_file(tmp_path, caps
         check=False,
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=scaled(20),
     )
     assert result.returncode == 0  # A passing sibling makes the empty/skipped owning file invisible to exit status.
     expected = ["tests/unit/owned_test.py", "tests/unit/other_test.py"]
@@ -786,7 +788,7 @@ def test_preserved_push_input_is_bound_to_real_git_head_and_branch(tmp_path, mon
             check=True,
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=scaled(10),
         ).stdout.strip()
 
     git("init", "--initial-branch=topic")
@@ -1040,7 +1042,7 @@ def test_actual_make_invokes_real_nested_selector_with_the_bound_guard_plan(
             check=True,
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=scaled(10),
         ).stdout.strip()
 
     git("init", "--initial-branch=topic")
@@ -1126,7 +1128,7 @@ def test_actual_make_invokes_real_nested_selector_with_the_bound_guard_plan(
         check=True,
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=scaled(20),
     )
     plan = json.loads(plan_path.read_text())
     commands = [json.loads(line) for line in record.read_text().splitlines()]
@@ -1192,7 +1194,7 @@ def test_real_partition_runner_rejects_incomplete_successful_pytest_runs(tmp_pat
         check=False,
         capture_output=True,
         text=True,
-        timeout=25,
+        timeout=scaled(25),
     )
     if mode == "complete":
         assert result.returncode == 0, result.stderr
@@ -1235,7 +1237,7 @@ def test_mixed_children_drop_git_redirection_without_changing_parent_binding(sco
     monkeypatch.setattr(scoped.shutil, "which", lambda _: str(tmp_path / "hz-gate") if gated else None)
     monkeypatch.setattr(scoped.subprocess, "run", lambda command, **kwargs: calls.append((command, kwargs)))
     with scoped.mixed_guard_context(plan):
-        scoped.run_check(["uv", "run", "pytest", "tests/unit/ci_test.py"], timeout=180)
+        scoped.run_check(["uv", "run", "pytest", "tests/unit/ci_test.py"], timeout=scaled(180))
         assert os.environ["GIT_DIR"] == "synthetic-parent-value"
         assert os.environ["GIT_INDEX_FILE"] == "synthetic-parent-value"
         assert scoped.mixed_guard_binding(

@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -73,7 +75,7 @@ def test_shared_bootstrap_checks_actual_macos_architecture(tmp_path, runner_os, 
         capture_output=True,
         text=True,
         check=False,
-        timeout=10,
+        timeout=scaled(10),
     )
     assert (result.returncode == 0) is succeeds
     assert output.exists() is succeeds
@@ -101,6 +103,6 @@ def test_native_architecture_target_refuses_intel(tmp_path, architecture, succee
         capture_output=True,
         text=True,
         check=False,
-        timeout=10,
+        timeout=scaled(10),
     )
     assert (result.returncode == 0) is succeeds

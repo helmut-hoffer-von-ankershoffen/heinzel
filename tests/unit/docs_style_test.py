@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
@@ -154,7 +156,7 @@ def test_the_repository_passes():
         capture_output=True,
         text=True,
         check=False,
-        timeout=120,
+        timeout=scaled(120),
     )
     assert result.returncode == 0, result.stdout
     assert "stale" not in result.stdout

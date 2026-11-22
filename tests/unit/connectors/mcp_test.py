@@ -18,6 +18,7 @@ from heinzel.connectors.mcp import (
     UntrustedMarker,
     unmark,
 )
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -60,7 +61,7 @@ def server() -> MCPServer:
     @mcp.tool()
     def slow() -> str:
         """Waits for the test."""
-        release.wait(2)
+        release.wait(scaled(2))
         return "late"
 
     @mcp.tool()
@@ -82,7 +83,7 @@ TOOLS = [
 
 @pytest.fixture
 def connector():
-    with McpConnector.in_process(server(), tools=TOOLS, markers=MARKERS, timeout=2) as running:
+    with McpConnector.in_process(server(), tools=TOOLS, markers=MARKERS, timeout=scaled(2)) as running:
         yield running
 
 

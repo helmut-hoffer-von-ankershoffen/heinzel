@@ -16,6 +16,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 HARNESS = Path(__file__).resolve().parents[2] / "scripts" / "acceptance"
@@ -451,7 +453,7 @@ def test_a_row_check_reads_only_the_installed_version_in_its_own_header():
         "console.log(JSON.stringify(cases.map(({case: id, source}) => "
         "({case: id, shown: vm.runInNewContext(source, {}, {timeout: 5000})}))));"
     )
-    out = subprocess.run([node, "-e", script], capture_output=True, text=True, check=True, timeout=5)
+    out = subprocess.run([node, "-e", script], capture_output=True, text=True, check=True, timeout=scaled(5))
     for result, (case, *_inputs, shown) in zip(json.loads(out.stdout), cases, strict=True):
         assert result["case"] == case
         assert result["shown"] is shown, case

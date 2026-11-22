@@ -17,6 +17,7 @@ import pytest
 from heinzel import HeinzelError, Progress
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon._runtime import lock
+from heinzel.testing import scaled
 from tests.fixtures.daemon_manager import RecordedManager as Runner
 from tests.fixtures.daemon_manager import record_tool
 
@@ -86,12 +87,12 @@ def running_tick(service: DaemonService, *, seconds: float | None = None):
 
     thread = threading.Thread(target=hold)
     thread.start()
-    holding.wait(5)
+    holding.wait(scaled(5))
     try:
         yield
     finally:
         release.set()
-        thread.join(5)
+        thread.join(scaled(5))
 
 
 def _attempt_update(service: DaemonService) -> None:
@@ -201,17 +202,17 @@ def test_another_update_holding_only_the_lifecycle_lock_is_named_as_a_change(ser
         with lock(service.state_dir / "lifecycle.lock") as acquired:
             assert acquired
             holding.set()
-            release.wait(30)
+            release.wait(scaled(30))
 
     thread = threading.Thread(target=hold)
     thread.start()
-    holding.wait(5)
+    holding.wait(scaled(5))
     try:
         with pytest.raises(HeinzelError, match="an update or another Heinzel change is still running"):
             _attempt_update(service)
     finally:
         release.set()
-        thread.join(5)
+        thread.join(scaled(5))
     assert [record.holder for record in _waits(caplog)] == ["other", "other"]
 
 

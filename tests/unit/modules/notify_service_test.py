@@ -19,6 +19,7 @@ from heinzel.modules.system.notify._macos import NotifierApp
 from heinzel.modules.system.notify._native import ALLOW, DENIED, HEINZEL, Native
 from heinzel.modules.system.notify._render import render_installed
 from heinzel.modules.system.notify._store import MAX_NOTICES
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -710,7 +711,7 @@ with (path.parent / "notices.lock").open("a") as lock:
         os.close(directory)
 """
     subprocess.run(
-        [sys.executable, "-c", legacy_writer, str(path)], check=True, capture_output=True, text=True, timeout=10
+        [sys.executable, "-c", legacy_writer, str(path)], check=True, capture_output=True, text=True, timeout=scaled(10)
     )
 
     assert not service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")

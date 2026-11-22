@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = [pytest.mark.unit, pytest.mark.timeout(30)]  # subprocess-heavy: past 5 s in a loaded hook
 
 REPO = Path(__file__).resolve().parents[2]
@@ -70,7 +72,7 @@ def test_the_wrapper_preserves_every_ref_and_replays_input_to_prek(tmp_path, exi
         },
         capture_output=True,
         check=False,
-        timeout=30,
+        timeout=scaled(30),
     )
     assert done.returncode == exit_code, done.stderr
     assert observed.with_suffix(".saved").read_bytes() == refs
@@ -104,7 +106,7 @@ def test_scanner_failure_stops_before_prek_and_cleans_preserved_input(tmp_path):
         | {"OBSERVED": str(observed), "TMPDIR": str(tmp_path), "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
         capture_output=True,
         check=False,
-        timeout=30,
+        timeout=scaled(30),
     )
     assert done.returncode == 9, done.stderr
     assert not Path(observed.read_text().strip()).exists()

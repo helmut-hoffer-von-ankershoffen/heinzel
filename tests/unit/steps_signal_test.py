@@ -12,6 +12,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.integration
 
 _RUNNER = Path(__file__).resolve().parents[2] / "scripts" / "steps.py"
@@ -19,7 +21,7 @@ _RUNNER = Path(__file__).resolve().parents[2] / "scripts" / "steps.py"
 
 def _alive(pid: int) -> bool:
     result = subprocess.run(
-        ["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, timeout=2, check=False
+        ["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, timeout=scaled(2), check=False
     )
     status = result.stdout.strip()
     return bool(status) and not status.startswith("Z")
@@ -30,7 +32,7 @@ def _wait_for(predicate, seconds=5):
     while time.monotonic() < deadline:
         if predicate():
             return
-        time.sleep(0.05)
+        time.sleep(scaled(0.05))
     pytest.fail("Timed out waiting for isolated helper processes")
 
 
@@ -88,9 +90,9 @@ def test_interrupt_stops_only_owned_children_and_grandchildren(tmp_path, sent, v
         assert all(_alive(pid) for pid in pids)
         os.kill(runner.pid, sent)
         if sent == signal.SIGTERM:
-            time.sleep(0.05)
+            time.sleep(scaled(0.05))
             os.kill(runner.pid, signal.SIGINT)
-        runner.communicate(timeout=8)
+        runner.communicate(timeout=scaled(8))
         assert runner.returncode == 128 + sent
         # Whether a TERM handler gets to run inside STOP_GRACE depends on the scheduler of a loaded runner (bead 3qj:
         # term-exit missing once on 4 vCPU); the order, TERM to every group before the grace and KILL after it, is
@@ -100,7 +102,7 @@ def test_interrupt_stops_only_owned_children_and_grandchildren(tmp_path, sent, v
     finally:
         if runner.poll() is None:
             os.killpg(runner.pid, signal.SIGKILL)
-            runner.wait(timeout=2)
+            runner.wait(timeout=scaled(2))
         for directory in directories:
             for name in ("child", "grandchild"):
                 path = directory / name
@@ -110,7 +112,7 @@ def test_interrupt_stops_only_owned_children_and_grandchildren(tmp_path, sent, v
                         os.kill(pid, signal.SIGKILL)
         if unrelated.poll() is None:
             os.killpg(unrelated.pid, signal.SIGKILL)
-            unrelated.wait(timeout=2)
+            unrelated.wait(timeout=scaled(2))
 
 
 def test_failed_step_cancels_concurrent_group_and_never_starts_later_step(tmp_path):
@@ -125,7 +127,7 @@ def test_failed_step_cancels_concurrent_group_and_never_starts_later_step(tmp_pa
         env=dict(os.environ, VERBOSE="0"),
         capture_output=True,
         text=True,
-        timeout=8,
+        timeout=scaled(8),
         check=False,
     )
     assert result.returncode == 7
@@ -142,7 +144,7 @@ def test_timeout_has_standard_exit_code_in_both_modes(verbose):
         env=dict(os.environ, VERBOSE=verbose, STEP_TIMEOUT="0.1"),
         capture_output=True,
         text=True,
-        timeout=8,
+        timeout=scaled(8),
         check=False,
     )
     assert result.returncode == 124
