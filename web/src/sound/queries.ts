@@ -27,7 +27,7 @@ export const isProgramme = (soundscape: SchemaSoundscapeView | null | undefined)
 export function admittedFor(list: SchemaSoundList | undefined): string {
   const current = effective(list);
   const media = new Set((current?.tracks ?? []).map((track) => new URL(track.url).origin));
-  return [current?.stream?.frame_origin ?? "", ...[...media].sort()].join(" ");
+  return [current?.stream?.frame_origin ?? "", ...[...media].sort((a, b) => a.localeCompare(b))].join(" ");
 }
 
 let pageAdmits: string | undefined;

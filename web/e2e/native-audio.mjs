@@ -155,7 +155,7 @@ export async function exerciseNativeAudio({ browser, url, shots, cases, assertCo
           audio.load();
           const deadline = Date.now() + 5000;
           while (violated.length < 2 && Date.now() < deadline) await new Promise((done) => setTimeout(done, 50));
-          return violated.sort();
+          return violated.sort((a, b) => a.localeCompare(b));
         },
         [HOST, ELSEWHERE],
       );

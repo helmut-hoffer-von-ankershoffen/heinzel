@@ -128,7 +128,7 @@ export function SoundEngine() {
 }
 
 /** Its own tracks where it has some; YouTube only where it has none, or once the person picks it. */
-function Programme({ soundscape, level }: { soundscape: SchemaSoundscapeView; level: Level }) {
+function Programme({ soundscape, level }: Readonly<{ soundscape: SchemaSoundscapeView; level: Level }>) {
   const [youTube, setYouTube] = useState(false);
   const { stream, tracks } = soundscape;
   if (tracks?.length && !youTube) {

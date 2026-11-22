@@ -31,7 +31,7 @@ export function clock(seconds: number): string {
     : `${Math.floor(minutes / 60)}:${two(minutes % 60)}:${two(seconds % 60)}`;
 }
 
-export function NativePlayer({ soundscape, tracks, level, pickYouTube }: Props) {
+export function NativePlayer({ soundscape, tracks, level, pickYouTube }: Readonly<Props>) {
   const audio = useRef<HTMLAudioElement>(null);
   const playlist = useRef<Playlist | null>(null);
   const [status, setStatus] = useState<Status>({ index: 0, problem: null });
@@ -59,6 +59,24 @@ export function NativePlayer({ soundscape, tracks, level, pickYouTube }: Props) 
 
   const track = tracks[status.index];
   if (!track) return null;
+  // What the card leads with: the way out of a problem, else Play or Pause.
+  let lead = (
+    <PaneAction key="toggle" icon={level.playing ? Pause : Play} onClick={level.playing ? pause : () => resume(name)}>
+      {t(level.playing ? "sound.pauseTrack" : "sound.playTrack")}
+    </PaneAction>
+  );
+  if (status.problem === "blocked")
+    lead = (
+      <PaneAction key="reload" icon={RotateCw} onClick={() => page.reload()}>
+        {t("sound.reload")}
+      </PaneAction>
+    );
+  else if (status.problem)
+    lead = (
+      <PaneAction key="retry" icon={RotateCw} onClick={() => playlist.current?.retry()}>
+        {t("sound.retryTrack")}
+      </PaneAction>
+    );
   return (
     <PlayerCard
       title={title}
@@ -83,23 +101,7 @@ export function NativePlayer({ soundscape, tracks, level, pickYouTube }: Props) 
         )}
       </div>
       <PaneActions>
-        {status.problem === "blocked" ? (
-          <PaneAction key="reload" icon={RotateCw} onClick={() => page.reload()}>
-            {t("sound.reload")}
-          </PaneAction>
-        ) : status.problem ? (
-          <PaneAction key="retry" icon={RotateCw} onClick={() => playlist.current?.retry()}>
-            {t("sound.retryTrack")}
-          </PaneAction>
-        ) : (
-          <PaneAction
-            key="toggle"
-            icon={level.playing ? Pause : Play}
-            onClick={level.playing ? pause : () => resume(name)}
-          >
-            {t(level.playing ? "sound.pauseTrack" : "sound.playTrack")}
-          </PaneAction>
-        )}
+        {lead}
         <PaneAction key="previous" icon={SkipBack} onClick={() => playlist.current?.previous()}>
           {t("sound.previousTrack")}
         </PaneAction>

@@ -12,38 +12,38 @@ export function fakeMedia() {
   const prototype = HTMLMediaElement.prototype;
   // jsdom has only some of these properties, so each is defined rather than spied on, and put back after.
   const originals = new Map<string, PropertyDescriptor | undefined>();
-  const fake = (name: string, descriptor: PropertyDescriptor & ThisType<HTMLMediaElement>) => {
+  const fake = (name: string, descriptor: PropertyDescriptor) => {
     originals.set(name, Object.getOwnPropertyDescriptor(prototype, name));
     Object.defineProperty(prototype, name, { configurable: true, ...descriptor });
   };
   fake("paused", {
-    get() {
+    get(this: HTMLMediaElement) {
       return of(this).paused;
     },
   });
   fake("ended", {
-    get() {
+    get(this: HTMLMediaElement) {
       return of(this).ended;
     },
   });
   fake("error", {
-    get() {
+    get(this: HTMLMediaElement) {
       return of(this).error;
     },
   });
   fake("currentTime", {
-    get() {
+    get(this: HTMLMediaElement) {
       return of(this).at;
     },
-    set(at: number) {
+    set(this: HTMLMediaElement, at: number) {
       of(this).at = at;
     },
   });
   fake("src", {
-    get() {
+    get(this: HTMLMediaElement) {
       return this.getAttribute("src") ?? "";
     },
-    set(url: string) {
+    set(this: HTMLMediaElement, url: string) {
       // A new source starts the load algorithm: paused, not ended, no error, at the start.
       states.set(this, { paused: true, ended: false, error: null, at: 0 });
       this.setAttribute("src", url);
