@@ -998,7 +998,9 @@ class Schedule:
         except Exception as exc:  # noqa: BLE001 - every failure leaves the old version running and is reported once
             log.warning("automatic update failed: %s", exc)
             self._error = _reason(exc)
-            self._fail(f"{failure_message(self._version)} Reason: {self._error}")
+            self._fail(
+                failure_message(self._version)
+            )  # the stored words stay as 0.9.21 wrote them: recovery reads them
             return
         after = getattr(result, "after", None)
         message = getattr(result, "message", None) or failure_message(self._version)
@@ -1060,6 +1062,12 @@ class Schedule:
                 log, "update.auto.reload", level=logging.WARNING, outcome="error", installed=installed, error=str(exc)
             )
         return True
+
+    def _with_reason(self, message: str | None) -> str | None:
+        """The plan's failure message with why it failed, when this process saw the failure; the stored words stay."""
+        if message is not None and self._error and message == failure_message(self._version):
+            return f"{message} Reason: {self._error}"
+        return message
 
     def _fail(self, message: str) -> None:
         with self._editing() as plan:
@@ -1157,7 +1165,7 @@ class Schedule:
                 apply_at=plan.apply_at if phase == "countdown" else None,
                 next_window_at=plan.window_at if phase == "waiting" else None,
                 postponements=plan.postponements,
-                message=None if self.development is not None else plan.message,
+                message=None if self.development is not None else self._with_reason(plan.message),
                 development=self.development,
                 held=self.development or (reason if reason == CHECKS_OFF else None),
                 error=None if self.development is not None else self._error,
