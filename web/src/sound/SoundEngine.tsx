@@ -1,6 +1,7 @@
 // Plays the soundscape in effect once the person pressed Play (ADR 0058): a stream in its host's own player, shown in a
-// small card, or layered files mixed live. Before the first Play it renders nothing, so nothing of a stream's host is
-// in the page: no frame, no request, no cookie. Mounted once, beside the theme's tokens.
+// small card, its own tracks in the page's audio element (ADR 0166), or layered files mixed live. Before the first Play
+// it renders nothing, so nothing of another host is in the page: no frame, no audio element, no request, no cookie.
+// Mounted once, beside the theme's tokens.
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -11,13 +12,15 @@ import { t } from "@/i18n";
 import { isIOS } from "@/lib/browser";
 import { type Inputs, rampSeconds, type Signals, targetGain, type Why, why } from "./machine";
 import { type EarconView, type LayerView, Mixer } from "./mixer";
+import { NativePlayer } from "./NativePlayer";
 import {
   effective,
+  isProgramme,
   listSignals,
   needsReload,
   page,
   readSoundList,
-  rememberPageFrame,
+  rememberPagePolicy,
   SOUND_KEY,
   takeResume,
   useMeeting,
@@ -44,13 +47,13 @@ export function SoundEngine() {
   const list = useSoundscapes();
   const sound = useSound();
   const current = effective(list.data);
-  const deviceStream = Boolean(current?.stream && isIOS());
+  const deviceStream = isProgramme(current) && isIOS();
   const meeting = useMeeting(Boolean(list.data?.mute_in_meetings && sound.started));
   useEffect(() => {
-    if (list.data) rememberPageFrame(list.data);
+    if (list.data) rememberPagePolicy(list.data);
   }, [list.data]);
   // A theme picked in this tab may bring its own soundscape (follow my theme): read the sound again, and load the page
-  // again when its CSP must admit another frame origin.
+  // again when its CSP must admit other origins.
   const client = useQueryClient();
   const theme = useThemes().data?.selected;
   const shownTheme = useRef(theme);
@@ -64,7 +67,7 @@ export function SoundEngine() {
       .then((fresh) => needsReload(fresh) && page.reload())
       .catch(() => undefined);
   }, [theme, client]);
-  // The page reloaded for a pick (a stream's frame origin changed): play the pick, as the click before asked.
+  // The page reloaded for a pick (its CSP origins changed): play the pick, as the click before asked.
   const listed = Boolean(list.data);
   const resumedFor = useRef(false);
   useEffect(() => {
@@ -76,11 +79,17 @@ export function SoundEngine() {
   // Another soundscape in effect (picked elsewhere, or the theme changed): what played stops. A pick that plays is
   // the one thing Play was pressed for, so it stays.
   const name = current?.name ?? null;
-  const previous = useRef(name);
+  // The same soundscape with other tracks (a plugin's update, the feature switched) stops too: carrying on would
+  // contact another host, perhaps YouTube, that nobody pressed Play or picked for (ADR 0166).
+  const tracks = current?.tracks?.map((track) => track.url).join(" ") ?? "";
+  const previous = useRef({ name, tracks });
+  const renamed = previous.current.name !== name && sound.soundscape !== name;
+  const retracked = previous.current.name === name && previous.current.tracks !== tracks;
   useEffect(() => {
-    if (previous.current !== name && soundState().soundscape !== name) stop();
-    previous.current = name;
-  }, [name]);
+    const was = previous.current;
+    if (was.name !== name ? soundState().soundscape !== name : was.tracks !== tracks) stop();
+    previous.current = { name, tracks };
+  }, [name, tracks]);
   const level = useLevel(
     {
       playing: sound.playing,
@@ -93,27 +102,50 @@ export function SoundEngine() {
     },
     current?.fade_seconds ?? 4,
   );
-  const streaming = Boolean(current?.stream && sound.started && level.playing);
+  const streaming = isProgramme(current) && sound.started && level.playing;
   const streamTitle = current?.title ?? "";
-  // A stream plays in its host's cross-origin frame: no in-page API can tap it, so the visualizer must capture it.
+  // A stream plays in a cross-origin frame and tracks in an element we keep out of Web Audio (ADR 0166): neither can
+  // be tapped here, so the visualizer must capture it.
   useEffect(() => {
     if (!streaming) return;
     publishOwnAudio({ mode: "frame", label: streamTitle });
     return () => publishOwnAudio({ mode: "none" });
   }, [streaming, streamTitle]);
   if (!current || !sound.started) return null;
-  if (current.stream)
+  // Stopping takes an effect, and tracks would play (and ask their host) in the layout effect before it.
+  if (retracked || (renamed && tracks)) return null;
+  if (isProgramme(current))
     return (
-      <StreamPlayer
+      <Programme
         key={current.name}
         soundscape={current}
-        stream={current.stream}
         level={deviceStream && sound.voice ? { ...level, gain: 0 } : level}
       />
     );
   return (
     <LayeredPlayer key={current.name} soundscape={current} signals={listSignals(list.data).signals()} level={level} />
   );
+}
+
+/** Its own tracks where it has some; YouTube only where it has none, or once the person picks it. */
+function Programme({ soundscape, level }: { soundscape: SchemaSoundscapeView; level: Level }) {
+  const [youTube, setYouTube] = useState(false);
+  const { stream, tracks } = soundscape;
+  if (tracks?.length && !youTube) {
+    const pickYouTube = () => {
+      setYouTube(true);
+      resume(soundscape.name);
+    };
+    return (
+      <NativePlayer
+        soundscape={soundscape}
+        tracks={tracks}
+        level={level}
+        pickYouTube={stream ? pickYouTube : undefined}
+      />
+    );
+  }
+  return stream ? <StreamPlayer soundscape={soundscape} stream={stream} level={level} /> : null;
 }
 
 function LayeredPlayer({

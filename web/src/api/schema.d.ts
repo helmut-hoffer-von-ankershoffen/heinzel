@@ -15277,6 +15277,32 @@ export interface components {
             watch_url: string;
         };
         /**
+         * SoundTrackView
+         * @description One track the web app plays in its own audio element.
+         */
+        SoundTrackView: {
+            /**
+             * Duration Seconds
+             * @description How long it is, in seconds.
+             */
+            duration_seconds: number;
+            /**
+             * Title
+             * @description What the player shows, e.g. `Morning tide`.
+             */
+            title: string;
+            /**
+             * Type
+             * @description Its media type, `audio/mpeg` or `audio/mp4`.
+             */
+            type: string;
+            /**
+             * Url
+             * @description The https URL to play after Play, on a media host of the core's list.
+             */
+            url: string;
+        };
+        /**
          * SoundscapeView
          * @description One available soundscape, ready for the web app to play.
          */
@@ -15338,13 +15364,18 @@ export interface components {
              * @description Modules that offer a soundscape of the same name, hidden by this one (layer order decides).
              */
             shadows?: string[];
-            /** @description The stream; none unless the kind is `stream`. */
+            /** @description The stream; none for another kind or tracks only. */
             stream?: components["schemas"]["SoundStreamView"] | null;
             /**
              * Title
              * @description What people pick it by, e.g. `Claude FM`.
              */
             title: string;
+            /**
+             * Tracks
+             * @description Tracks to play in order, before the stream; empty while the feature `native_audio` is off.
+             */
+            tracks?: components["schemas"]["SoundTrackView"][];
         };
         /**
          * SourceFailure
@@ -19025,6 +19056,7 @@ export type SchemaSoundEarconView = components['schemas']['SoundEarconView'];
 export type SchemaSoundLayerView = components['schemas']['SoundLayerView'];
 export type SchemaSoundList = components['schemas']['SoundList'];
 export type SchemaSoundStreamView = components['schemas']['SoundStreamView'];
+export type SchemaSoundTrackView = components['schemas']['SoundTrackView'];
 export type SchemaSoundscapeView = components['schemas']['SoundscapeView'];
 export type SchemaSourceFailure = components['schemas']['SourceFailure'];
 export type SchemaSourceSetItem = components['schemas']['SourceSetItem'];

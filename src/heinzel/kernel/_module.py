@@ -734,8 +734,9 @@ class Module:
 
         Data only, read and checked now, at import: `hz system sound list` lists them and `hz system sound use <name>`
         picks one. A layered soundscape's audio files are relative to its file's directory and checked now (path,
-        size, licence, signature); a stream names a provider of `STREAM_PROVIDERS` and a video, never a URL. Two
-        modules offering one name: the more specific layer wins, as with themes (ADR 0044).
+        size, licence, signature); a stream names a provider of `STREAM_PROVIDERS` and a video, never a URL; a track's
+        https URL is on a host of `MEDIA_ORIGINS` (ADR 0166). Two modules offering one name: the more specific layer
+        wins, as with themes (ADR 0044).
 
         Example:
             ```python

@@ -16,8 +16,9 @@ const footerContentWidth = (element: HTMLElement) => (element.childElementCount 
 export function renderAt(path: string) {
   sessionStorage.setItem("hz.token", "test-token");
   const router = createMemoryRouter(routes, { initialEntries: [path] });
+  const client = queryClient();
   const view = render(
-    <Providers client={queryClient()}>
+    <Providers client={client}>
       <RouterProvider router={router} />
     </Providers>,
   );
@@ -36,5 +37,5 @@ export function renderAt(path: string) {
     observer.observe(view.container, { childList: true, subtree: true });
     footerObservers.add(observer);
   }
-  return view;
+  return { ...view, client };
 }

@@ -1,7 +1,8 @@
 // Focused mobile/touch viewport proof for the app served by `hz ui` (tests/e2e/web_ui_test.py).
 // These are Chromium/WebKit emulations, not physical iPhone Safari.
 // Usage: node e2e/mobile-responsive.mjs URL SCREENSHOT_DIR [SECTION]. SECTION is one viewport name or "phone" (the
-// scroll, sound and notification flows), "updates-actions", or "share-chromium" / "share-webkit".
+// scroll, sound and notification flows), "updates-actions", "share-chromium" / "share-webkit", or
+// "native-audio-chromium" / "native-audio-webkit" (which need a server with the feature on and the album picked).
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -11,6 +12,7 @@ import { openDetails } from "./chat-ready.mjs";
 import { contributePanel } from "./contributed-panel.mjs";
 import { fetchOnce, ONE_CONNECTION } from "./fetch-once.mjs";
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
+import { exerciseNativeAudio } from "./native-audio.mjs";
 import { contributeGallery, exercisePluginGallery } from "./plugin-gallery.mjs";
 import { scrollSettled } from "./settle.mjs";
 
@@ -23,8 +25,11 @@ stage("launch");
 const [url, shots] = process.argv.slice(2);
 mkdirSync(shots, { recursive: true });
 const section = process.argv[4] ?? "all";
+const nativeAudio = section === "native-audio-chromium" || section === "native-audio-webkit";
 const useWebKit =
-  section === "share-webkit" || (section !== "share-chromium" && process.env.PLAYWRIGHT_BROWSER === "webkit");
+  section === "share-webkit" ||
+  section === "native-audio-webkit" ||
+  (section !== "share-chromium" && !nativeAudio && process.env.PLAYWRIGHT_BROWSER === "webkit");
 const browser = useWebKit
   ? await webkit.launch()
   : await chromium.launch().catch(() => chromium.launch({ channel: "chrome" }));
@@ -37,9 +42,11 @@ const cases = [
   { name: "wide-landscape", width: 932, height: 430 },
   { name: "short-landscape", width: 844, height: 320 },
 ];
+const phones = [...cases];
 assert.ok(
   section === "all" ||
     section === "phone" ||
+    nativeAudio ||
     ["updates-actions", "share-chromium", "share-webkit", "native-layout"].includes(section) ||
     cases.some((spec) => spec.name === section),
   `Unknown mobile section "${section}"`,
@@ -458,6 +465,17 @@ try {
   if (section === "all" || section === "updates-actions") {
     stage("updates-actions");
     result.updateActions = await updateActionTargets();
+  }
+  if (nativeAudio) {
+    stage("native-audio");
+    result.nativeAudio = await exerciseNativeAudio({
+      browser,
+      url,
+      shots,
+      cases: phones,
+      assertContained,
+      assertTouchTarget,
+    });
   }
   if (section === "share-chromium" || section === "share-webkit") {
     stage("phone-share");
