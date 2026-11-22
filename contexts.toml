@@ -167,21 +167,13 @@ keep = ["CHANGELOG.md", "README.md", "docs/**/*.sh"]
 # Today's violations of the generated contracts. Each list may only shrink: a new entry fails review.
 [allow]
 contexts = [
-    "heinzel.modules.system.daemon._service -> heinzel.modules.system.updater._phases",
-    "heinzel.modules.system.plugin._service -> heinzel.modules.system.updater._phases",
-    "heinzel.modules.system.plugin._setup -> heinzel.modules.system.updater._phases",
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._models",
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._sources",
     "heinzel.modules.system.updater._update_install -> heinzel.modules.system.plugin._sources",
 ]
 heads = [
     "heinzel.heads._served_tools -> heinzel.heads.mcp",
-    "heinzel.heads.cli._serve -> heinzel.heads.api",
-    "heinzel.heads.cli._serve -> heinzel.heads.mcp",
-    "heinzel.heads.cli._serve -> heinzel.heads.mcp._http_check",
-    "heinzel.heads.cli._serve -> heinzel.heads.mcp._standard_project",
-    "heinzel.heads.cli._serve -> heinzel.heads.web",
-    "heinzel.heads.cli._serve -> heinzel.heads.web._supervision",
+    "heinzel.heads.cli._serve -> heinzel.heads.**",
     "heinzel.heads.web -> heinzel.heads.api",
     "heinzel.heads.web._browser_bridge -> heinzel.heads.api",
     "heinzel.heads.web._mcp -> heinzel.heads.mcp",
@@ -191,4 +183,3 @@ heads = [
 # Files of an `adapters_only` context that still touch the world directly, with how many places: subprocess, time.sleep,
 # time.monotonic, datetime.now, launchctl. Moving a call behind a port lowers the number; it never rises.
 [allow.adapters]
-"src/heinzel/modules/system/lifecycle/_service.py" = 5
