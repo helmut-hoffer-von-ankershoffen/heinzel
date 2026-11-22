@@ -6,8 +6,9 @@ import { extractFile, getRawHeader, listPackage, statFile, uncacheAll } from "@e
 
 // Adding a runtime file is an explicit packaging decision, not an automatic inclusion of arbitrary source files.
 export const RUNTIME_FILES = Object.freeze([
-  "app-menu.js", "browser-agent.js", "browser-bridge.js", "connection.js", "identity.js", "instance-lifecycle.js",
-  "lifecycle-ipc.js", "main-controller.js", "main-ipc.js", "main-menu.js", "main-picker.js", "main-quit.js",
+  "app-menu.js", "browser-agent.js", "browser-bridge.js", "chrome-cookies.js", "connection.js", "cookie-import-page.js",
+  "cookie-import-preload.cjs", "cookie-import.css", "cookie-import.html", "cookie-import.js", "identity.js", "instance-lifecycle.js",
+  "lifecycle-ipc.js", "main-controller.js", "main-cookies.js", "main-ipc.js", "main-menu.js", "main-picker.js", "main-quit.js",
   "main-service-watch.js", "main-services.js", "main-startup.js", "main-state.js", "main-window.js", "main.js", "media-player.js", "mini-browser-network.js", "mini-browser-policy.js",
   "mini-browser.js", "native-permissions.js", "owned-cli.js", "preload.cjs", "public-media.js", "reattach.js",
   "settings-store.js",

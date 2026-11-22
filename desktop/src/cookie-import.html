@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>Import Cookies · Heinzelmännchen</title>
+  <link rel="stylesheet" href="cookie-import.css">
+  <script src="cookie-import-page.js" defer></script>
+</head>
+<body>
+  <main>
+    <section id="start">
+      <h2>Import cookies from your browser</h2>
+      <label for="profile">From</label>
+      <select id="profile"></select>
+      <label class="toggle"><input id="persistent" type="checkbox" checked><span>Keep me signed in between sessions</span></label>
+      <p>Nothing leaves this computer. macOS may ask for your Mac login password to unlock Google Chrome's cookies.</p>
+      <output id="start-status" aria-live="polite"></output>
+      <div class="actions">
+        <button id="manage-link" class="link" type="button">Manage imported cookies</button>
+        <span class="spacer"></span>
+        <button id="cancel" type="button">Cancel</button>
+        <button id="next" class="primary" type="button">Import</button>
+      </div>
+    </section>
+    <section id="choose" hidden>
+      <h2>Choose sites to import</h2>
+      <input id="filter" type="search" placeholder="Filter sites" aria-label="Filter sites" autocomplete="off" spellcheck="false">
+      <label class="toggle"><input id="all" type="checkbox"><span>Select all</span><small id="selected"></small></label>
+      <ul id="sites"></ul>
+      <output id="choose-status" aria-live="polite"></output>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button id="back" type="button">Back</button>
+        <button id="import" class="primary" type="button">Import</button>
+      </div>
+    </section>
+    <section id="manage" hidden>
+      <h2>Manage imported cookies</h2>
+      <ul id="imported"></ul>
+      <output id="manage-status" aria-live="polite"></output>
+      <div class="actions">
+        <button id="remove-all" class="danger" type="button">Remove all</button>
+        <span class="spacer"></span>
+        <button id="done" class="primary" type="button">Done</button>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

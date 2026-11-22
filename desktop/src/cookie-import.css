@@ -1,0 +1,28 @@
+:root { color-scheme: light; font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #263b32; background: #faf8f3; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { padding: 22px 24px 18px; }
+h2 { font-family: Georgia, "Times New Roman", serif; font-weight: 600; font-size: 21px; margin: 0 0 14px; }
+p { color: #4d5c52; line-height: 1.5; margin: 12px 0; }
+label { display: block; margin: 12px 0 6px; font-size: 12px; color: #4d5c52; }
+select, input[type="search"] { width: 100%; min-height: 40px; border: 1px solid #263b3233; border-radius: 8px; padding: 8px 10px; font: inherit; color: #263b32; background: #fff; }
+.toggle { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #263b32; }
+.toggle small { margin-left: auto; color: #4d5c52; }
+button { font: inherit; min-height: 36px; padding: 7px 14px; border: 1px solid #263b3233; border-radius: 8px; background: transparent; color: #30483a; cursor: pointer; }
+button:hover { background: #263b320c; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid #30483a; outline-offset: 2px; }
+button:disabled { opacity: .55; cursor: default; }
+.primary { background: #30483a; color: #fff; }
+.primary:hover { background: #263b32; }
+.link { border: 0; padding: 7px 0; text-decoration: underline; }
+.danger { color: #80402b; }
+.actions { display: flex; align-items: center; gap: 8px; border-top: 1px solid #263b3224; padding-top: 14px; margin-top: 14px; }
+.spacer { flex: 1; }
+ul { list-style: none; margin: 8px 0 0; padding: 0; max-height: 330px; overflow: auto; border: 1px solid #263b3224; border-radius: 8px; background: #fff9; }
+li { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-top: 1px solid #263b3214; }
+li:first-child { border-top: 0; }
+li .site { flex: 1; overflow-wrap: anywhere; }
+li .count { color: #4d5c52; font-size: 12px; }
+.badge { font-size: 11px; padding: 2px 7px; border-radius: 999px; background: #80402b1a; color: #80402b; white-space: nowrap; }
+output { display: block; min-height: 1.4em; color: #30483a; margin-top: 8px; overflow-wrap: anywhere; }
+output.problem { color: #80402b; }

@@ -19,6 +19,7 @@ export const ctx = {
   settingsStore: undefined,
   instance: undefined,
   miniBrowser: undefined,
+  cookieImport: undefined,
   mediaPlayer: undefined,
   browserBridge: undefined,
   signalQuit: undefined,

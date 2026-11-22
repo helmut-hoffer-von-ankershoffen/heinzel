@@ -2,6 +2,7 @@
 import { app, dialog } from "electron";
 import { initializeDesktopIdentity } from "./identity.js";
 import { installSignalQuit } from "./signal-quit.js";
+import { registerCookieImport } from "./main-cookies.js";
 import { registerIpc } from "./main-ipc.js";
 import { registerQuitHandler } from "./main-quit.js";
 import { watchLocalService } from "./main-service-watch.js";
@@ -20,6 +21,7 @@ ctx.instance = createWindowLifecycle();
 createServices();
 if (identityReady && ctx.instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   registerIpc();
+  registerCookieImport();
   watchLocalService();
   registerQuitHandler();
   startWhenReady();
