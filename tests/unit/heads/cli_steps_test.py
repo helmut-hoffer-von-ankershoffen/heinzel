@@ -131,7 +131,11 @@ def _checklist_board(mode: str, console: Console) -> StepBoard:
 def test_a_terminal_checklist_has_an_overall_bar_with_steps_done_and_the_current_step():
     console = Console(record=True, width=100, force_terminal=True)
     text = Console(record=True, width=100)
-    text.print(StepBoard.checklist(list(_checklist_board("live", console)._steps.values())))
+    board = _checklist_board("live", console)
+    try:
+        text.print(StepBoard.checklist(list(board._steps.values())))
+    finally:
+        board.close()  # the live display takes over sys.stdout and stderr until it stops; later tests must not see it
     last = text.export_text().splitlines()[-1]
     assert "1/3" in last
     assert "Installing the update" in last
