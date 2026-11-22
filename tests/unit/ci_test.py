@@ -344,10 +344,11 @@ def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert not foreign_index.exists()
     plugin_only = path.startswith("plugins/")
-    assert values["core"] == str(batch_base or not plugin_only).lower()
+    complete = batch_base or event != "pull_request" or not plugin_only  # CI OK demands every job outside a PR
+    assert values["core"] == str(complete).lower()
     assert values["plugins"] == str(plugin_only).lower()
-    assert values["contracts"] == str(batch_base or not plugin_only).lower()
-    if plugin_only and not batch_base:
+    assert values["contracts"] == str(complete).lower()
+    if plugin_only and not complete:
         assert values["notifier"] == values["electron"] == "false"
     for name in ("lint", "setup", "audit", "test", "coverage", "perf", "e2e", "build", "core-wheel"):
         assert "needs.changes.outputs.core == 'true'" in jobs[name]["if"]
@@ -1512,7 +1513,8 @@ def test_failed_diff_with_partial_output_still_runs_full_macos(tmp_path, ci_path
 @pytest.mark.parametrize(
     ("event", "changed", "electron"),
     [
-        ("push", "src/heinzel/__init__.py\n", "false"),
+        ("push", "src/heinzel/__init__.py\n", "true"),
+        ("push", "web/src/components/Footer.tsx\n", "true"),
         ("push", "desktop/src/main.js\n", "true"),
         ("push", "Makefile\n", "true"),
         ("push", "scripts/sync_template.py\n", "true"),
@@ -1524,10 +1526,27 @@ def test_failed_diff_with_partial_output_still_runs_full_macos(tmp_path, ci_path
         ("workflow_dispatch", "src/heinzel/__init__.py\n", "true"),
     ],
 )
-def test_electron_runs_for_its_paths_on_a_push_and_always_on_schedule_and_dispatch(
+def test_electron_runs_on_every_event_but_a_pull_request_and_for_its_paths_there(
     tmp_path, ci_paths, event, changed, electron
 ):
     assert f"electron={electron}" in _changes_outputs(tmp_path, ci_paths, event, changed)
+
+
+@pytest.mark.parametrize("event", ["push", "schedule", "workflow_dispatch"])
+@pytest.mark.parametrize(
+    "changed", ["web/src/components/Footer.tsx\n", "plugins/heinzel-x/src/plugin.py\n", "tests/unit/a_test.py\n"]
+)
+def test_every_selector_key_stays_on_outside_a_pull_request(tmp_path, ci_paths, event, changed):
+    """CI OK requires these jobs on push, schedule and dispatch; a skipped one fails the run (main run 45072787338)."""
+    outputs = _changes_outputs(tmp_path, ci_paths, event, changed)
+    assert {
+        "core=true",
+        "notifier=true",
+        "contracts=true",
+        "electron=true",
+        "macos_full=true",
+        "site_only=false",
+    } <= outputs
 
 
 def test_the_test_matrix_keeps_the_whole_output_of_a_failure():
