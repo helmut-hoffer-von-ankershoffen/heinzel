@@ -6,7 +6,13 @@ run-name: "Release ${{ inputs.version || 'next' }}${{ (inputs.dry_run || github.
 # Mini only follows an accepted release (its own updater, `sm mini update`, the iOS upload).
 #
 # Every step reads GitHub state first (scripts/release_chain.py), so dispatching the workflow again continues the
-# release in flight: an open release PR resumes at its candidate, a published release without its marker at its tail.
+# release in flight: an open release PR resumes at its candidate, a published release without its marker and without
+# a running tail run at its tail.
+#
+# Pipelined: this workflow ends at the tag; the tail (compose, PyPI, acceptance, marker, Latest) is its own run of
+# release-tail.yml in a per-version concurrency group. The freeze lifts at the merge, before the tag, so while release
+# N is in its tail main is open and N+1 is cut and runs its candidate; at most two releases are in flight, and N+1's
+# verdict waits only for N to be terminal (accepted, or not accepted and so absorbed).
 # A rerun of failed jobs is no resume: acceptance counts only on a run's first attempt.
 #
 # Triggers: a manual dispatch (`sm release VERSION` dispatches it and watches); a schedule that cuts and resumes only
@@ -63,6 +69,7 @@ on:
     paths:
       - ".github/workflows/release-chain.yml"
       - ".github/workflows/release-freeze.yml"
+      - ".github/workflows/release-tail.yml"
       - "scripts/release_chain.*"
       - "tests/unit/release_chain_test.py"
 
@@ -337,19 +344,18 @@ jobs:
         run: uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py freeze-sync
 
   publish:
-    name: Tag, publish, PyPI and compose v${{ needs.plan.outputs.version }}
+    name: Tag v${{ needs.plan.outputs.version }} and start its tail
     needs: [plan, merge]
     if: >-
       ${{ !cancelled() && needs.plan.outputs.dry != 'true' &&
           (needs.plan.outputs.phase == 'tail' || needs.merge.result == 'success') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 90
     permissions:
       contents: read
       actions: write
     outputs:
-      wheel: ${{ steps.snapshot.outputs.wheel_sha256 }}
-      profile: ${{ steps.snapshot.outputs.profile_sha256 }}
+      tail: ${{ steps.tail.outputs.run }}
     env:
       GH_TOKEN: ${{ github.token }}
       VERSION: ${{ needs.plan.outputs.version }}
@@ -395,91 +401,23 @@ jobs:
           fi
           published || { echo "error: v$VERSION has no published release with its producer manifest" >&2; exit 1; }
           echo "ok   v$VERSION is published (not Latest until its acceptance marker)"
-      - name: Compose the standard app as soon as the tag's wheel asset answers, beside PyPI
-        env:
-          RELEASE_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.RELEASE_TOKEN || '' }}
+      - id: tail
+        name: Start the tail run of this version (PyPI, compose, acceptance, verdict, Latest); main is open again
         run: |
-          if gh release view "app-v$VERSION" -R helmut-hoffer-von-ankershoffen/heinzel-plugins > /dev/null 2>&1; then exit 0; fi
-          wheel="$(gh release view "v$VERSION" -R "$GITHUB_REPOSITORY" --json assets \
-            --jq ".assets[] | select(.name == \"heinzel-$VERSION-py3-none-any.whl\") | .url")"
-          # Compose reads the GitHub wheel, so it waits for that asset to answer, not for PyPI.
-          for _ in $(seq 1 30); do
-            [ -n "$wheel" ] && curl -fsSIL --max-time 30 -o /dev/null "$wheel" && break
-            sleep 10
-            wheel="$(gh release view "v$VERSION" -R "$GITHUB_REPOSITORY" --json assets \
-              --jq ".assets[] | select(.name == \"heinzel-$VERSION-py3-none-any.whl\") | .url")"
-          done
-          curl -fsSIL --max-time 30 -o /dev/null "$wheel" \
-            || { echo "error: the wheel asset of v$VERSION does not answer; compose not dispatched" >&2; exit 1; }
-          # Dispatching saves up to 15 minutes; without the grant the plugins' own schedule composes it from PyPI.
-          GH_TOKEN="$RELEASE_TOKEN" gh workflow run compose.yml -R helmut-hoffer-von-ankershoffen/heinzel-plugins --ref main \
-            -f version="$VERSION" -f core_wheel="$wheel" \
-            || echo "note: compose not dispatched; the plugins schedule composes v$VERSION"
-      - name: Publish the exact GitHub release bytes to PyPI
-        run: |
-          if curl -fsS -o /dev/null "https://pypi.org/pypi/heinzel/$VERSION/json"; then echo "ok   PyPI has $VERSION"; exit 0; fi
-          before="$(gh run list -R "$GITHUB_REPOSITORY" -w pypi.yml -b "v$VERSION" -L 1 --json databaseId --jq '.[0].databaseId // 0')"
-          gh workflow run pypi.yml -R "$GITHUB_REPOSITORY" --ref "v$VERSION"
-          run=""
+          newest() { gh run list -R "$GITHUB_REPOSITORY" -w release-tail.yml -e workflow_dispatch -L 1 --json databaseId --jq '.[0].databaseId // 0'; }
+          before="$(newest)"
+          gh workflow run release-tail.yml -R "$GITHUB_REPOSITORY" --ref main -f version="$VERSION"
           for _ in $(seq 1 18); do
-            id="$(gh run list -R "$GITHUB_REPOSITORY" -w pypi.yml -b "v$VERSION" -L 1 --json databaseId --jq '.[0].databaseId // 0')"
-            if [ "$id" -gt "$before" ]; then run="$id"; break; fi
+            id="$(newest)"
+            if [ "$id" -gt "$before" ]; then
+              echo "run=$id" >> "$GITHUB_OUTPUT"
+              echo "ok   tail of v$VERSION: run $id"
+              exit 0
+            fi
             sleep 10
           done
-          test -n "$run" || { echo "error: the PyPI dispatch created no new run" >&2; exit 1; }
-          gh run watch "$run" -R "$GITHUB_REPOSITORY" --exit-status --interval 30 > /dev/null
-      - id: snapshot
-        name: Bind the bytes acceptance proves (GitHub wheel equal to PyPI, composed profile)
-        run: |
-          uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py snapshot \
-            --version "$VERSION" --wait 3600
-
-  acceptance:
-    name: Published-build acceptance
-    needs: [plan, publish]
-    if: ${{ !cancelled() && needs.publish.result == 'success' }}
-    permissions:
-      contents: read
-    uses: ./.github/workflows/acceptance.yml
-    with:
-      expected_version: ${{ needs.plan.outputs.version }}
-      expected_app_version: ${{ needs.plan.outputs.version }}
-      expected_wheel_sha256: ${{ needs.publish.outputs.wheel }}
-      expected_profile_sha256: ${{ needs.publish.outputs.profile }}
-      release_attempt: release-chain-${{ github.run_id }}
-
-  verdict:
-    name: Verdict, marker, Latest
-    needs: [plan, publish, acceptance]
-    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.acceptance.result != 'skipped' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: write
-      actions: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-uv
-        with:
-          enable-cache: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: acceptance-result-*
-          path: receipts
-      - name: Judge both receipts, write the marker, then mark the release Latest
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.plan.outputs.version }}
-          WHEEL: ${{ needs.publish.outputs.wheel }}
-          PROFILE: ${{ needs.publish.outputs.profile }}
-          RUN_ID: ${{ github.run_id }}
-          ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py verdict \
-            --version "$VERSION" --receipts receipts --run-id "$RUN_ID" --attempt "$ATTEMPT" \
-            --wheel-sha256 "$WHEEL" --profile-sha256 "$PROFILE"
+          echo "error: the dispatch of the v$VERSION tail created no new run; dispatch Release again to resume it" >&2
+          exit 1
 
   probe:
     name: Token probe (dry run)

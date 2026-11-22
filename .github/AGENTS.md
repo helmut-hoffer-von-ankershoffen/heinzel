@@ -49,6 +49,10 @@ Constraints per workflow:
   only) the one token-bearing dry-run job pushes `release-probe/<sha7>`, opens a draft PR, checks the freeze post and
   main's required checks, then removes both. Main's tip is proven by its push run or, before that, by the merged PR's
   first-attempt run on the same tree; the merge waits for main's required checks; compose starts at the wheel asset.
+- `release-tail.yml` ("Release tail", core only): one release's tail after its tag, started by the chain: compose at
+  the wheel asset, PyPI, the sharded acceptance, the verdict, the marker, Latest. One concurrency group per version,
+  apart from the chain, so releases pipeline: N's tail runs while N+1 is cut and runs its candidate (at most two in
+  flight); N+1's marker and Latest wait until N is terminal (accepted, or not accepted and so absorbed).
 - `release-freeze.yml` (core only): the check "Release freeze", red on every PR while another PR is the open release
   candidate; the chain posts it on all open PRs at the cut and after the merge. Not required by the ruleset yet: it is
   added after this workflow has been dispatched once, so every open PR carries the check first.

@@ -135,6 +135,7 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/site_privacy.py": "lists the hosts the core product website may contact for its check (ADR 0098)",
     ".github/workflows/pypi.yml": "publishes only the registered core project with its trusted publisher (ADR 0079)",
     ".github/workflows/release-chain.yml": "runs the Core release end to end; plugins release through release.yml",
+    ".github/workflows/release-tail.yml": "the tail run of one Core release (release-chain.yml); plugins have none",
     ".github/workflows/release-freeze.yml": "freezes Core's main for its release candidate; plugins have no candidate",
     "scripts/release_chain.py": "the steps of Core's release chain (release-chain.yml), which plugins don't get",
     ".github/workflows/edge.yml": "releases the core's edge channel from its green main (ADR 0114)",

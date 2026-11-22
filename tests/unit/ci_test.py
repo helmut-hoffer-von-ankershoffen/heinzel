@@ -146,9 +146,15 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
             "one step of the release chain, reading GitHub first"
         ),
         "newest() {": "waits for Release tag and Publish, dispatching the tag only if the merge did not",
+        'tag="$(gh api': "reads the newest accepted release for the dry run's tail checks",
+    },
+    "release-tail.yml": {
+        '[[ "$VERSION" =~': "refuses a tail off main, of no X.Y.Z, or of a release that is not published",
         'if curl -fsS -o /dev/null "https://pypi.org': "dispatches PyPI on the tag unless the version is there",
         'if gh release view "app-v': "dispatches the standard app composition unless it exists",
-        'tag="$(gh api': "reads the newest accepted release for the dry run's tail checks",
+        "uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py": (
+            "one tail step of the release chain, reading GitHub first"
+        ),
     },
     "release-freeze.yml": {
         "uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py": (

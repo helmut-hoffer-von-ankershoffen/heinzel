@@ -76,6 +76,8 @@ USER_FACING = re.compile(r"^(feat|fix|perf|revert)(\([^)]*\))?!?:\s*")
 COMBINES = re.compile(r"^Combines #(?P<number>\d+) (?P<subject>\S.*)$")
 MEMBERS = re.compile(r"^(?:Combines #(\d+)\b.*|Merged via this PR:\s*(.*))$", re.MULTILINE)
 RED = ("failure", "timed_out", "startup_failure")
+TAIL = "release-tail.yml"
+MAX_IN_FLIGHT = 2  # releases at once: one in its tail, one at its front (cut, candidate, merge, tag)
 PASSING = ("success", "neutral", "skipped")
 PROBE_BRANCH = "release-probe/"
 INTRO_ITEMS = 4
@@ -466,8 +468,48 @@ def on_main(read: Callable[[str], Any], sha: str) -> None:
         raise ChainError(msg)
 
 
+def in_tail(read: Callable[[str], Any]) -> list[str]:
+    """Published final releases without their acceptance marker, newer than the newest terminal one, oldest first.
+
+    These are in their tail (PyPI, compose, acceptance, verdict, Latest), or their tail run stopped.
+    """
+    finals = [
+        r
+        for r in releases(read)
+        if r.get("draft") is False
+        and r.get("prerelease") is False
+        and isinstance(r.get("tag_name"), str)
+        and r["tag_name"].startswith("v")
+        and VERSION.fullmatch(r["tag_name"][1:])
+    ]
+    terminal = [vkey(r["tag_name"][1:]) for r in finals if has_marker(r)]
+    floor = max(terminal) if terminal else (-1, -1, -1)
+    return sorted(
+        (r["tag_name"][1:] for r in finals if not has_marker(r) and vkey(r["tag_name"][1:]) > floor), key=vkey
+    )
+
+
+def tail_running(read: Callable[[str], Any], version: str) -> bool:
+    """Whether a run of the tail workflow for `version` is queued or running (its run-name names the version).
+
+    Raises:
+        ChainError: The listing is unreadable.
+    """
+    data = read(f"actions/workflows/{TAIL}/runs?per_page={PAGE}")
+    if not isinstance(data, dict) or not isinstance(data.get("workflow_runs"), list):
+        msg = "cannot read the release tail runs"
+        raise ChainError(msg)
+    return any(
+        r.get("status") != "completed" and str(r.get("display_title", "")).startswith(f"Release tail v{version}")
+        for r in data["workflow_runs"]
+    )
+
+
 def in_flight(read: Callable[[str], Any], requested: str, current: str) -> dict[str, str] | None:
-    """The release already under way (an open release PR, or a published release without its marker), else None.
+    """The release whose front is under way (an open release PR), or one in its tail with no tail run, else None.
+
+    A release whose tail is running is not in the way: the next release may be cut and run its candidate meanwhile
+    (pipelining, at most two in flight); it waits only at its own verdict for the older one to be terminal.
 
     Raises:
         ChainError: More than one release PR is open, or `requested` is another version than the one in flight.
@@ -482,16 +524,9 @@ def in_flight(read: Callable[[str], Any], requested: str, current: str) -> dict[
         version = prs[0]["head"]["ref"].removeprefix("release/v")
         found = step_plan(version, "candidate", f"resume: release PR #{number} is open", pr=number)
     else:
-        for release in releases(read):
-            tag = release.get("tag_name", "")
-            version = tag[1:] if isinstance(tag, str) and tag.startswith("v") else ""
-            if (
-                VERSION.fullmatch(version)
-                and release.get("draft") is False
-                and not has_marker(release)
-                and vkey(version) >= vkey(current)
-            ):
-                found = step_plan(version, "tail", f"resume: v{version} is published, its acceptance is open")
+        for version in in_tail(read):
+            if vkey(version) <= vkey(current) and not tail_running(read, version):
+                found = step_plan(version, "tail", f"resume: v{version} is published and no tail run of it is running")
                 break
     if found and requested and requested != found["version"]:
         msg = f"v{found['version']} is in flight ({found['reason']}); finish it before {requested}"
@@ -537,8 +572,9 @@ def plan(  # noqa: PLR0913 - the plan's inputs, all keyword-only beyond the vers
             return step_plan(requested, "done", f"v{requested} is published and has its acceptance marker")
         msg = f"{requested} is not newer than the latest release {current}"
         raise ChainError(msg)
-    if not has_marker(release_of(read, current)):
-        msg = f"the previous release v{current} has no acceptance marker yet; it is not terminal"
+    tails = [v for v in in_tail(read) if vkey(v) < vkey(requested or "999999.0.0")]
+    if len(tails) >= MAX_IN_FLIGHT:
+        msg = f"{len(tails)} releases are in their tail ({', '.join(tails)}); at most {MAX_IN_FLIGHT} in flight"
         raise ChainError(msg)
     major, minor, patch = vkey(current)
     version = requested or f"{major}.{minor}.{patch + 1}"
@@ -549,7 +585,8 @@ def plan(  # noqa: PLR0913 - the plan's inputs, all keyword-only beyond the vers
     if not commits or (auto and not releasable):
         return step_plan("", "idle", f"nothing releasable on main since v{current} ({len(commits)} commits)")
     proven = f"; proven by {main_gate(read, tip)}" if gate else ""
-    reason = f"cut v{version} from {tip[:9]}: {len(releasable)} releasable of {len(commits)} commits{proven}"
+    behind = f"; pipelined behind v{tails[0]} in its tail" if tails else ""
+    reason = f"cut v{version} from {tip[:9]}: {len(releasable)} releasable of {len(commits)} commits{proven}{behind}"
     return step_plan(version, "cut", reason, bump=bump, base=tip, intro=intro_from(releasable), previous=current)
 
 
@@ -1306,6 +1343,17 @@ def judge(folder: Path, snap: dict[str, str], run_id: str, attempt: str) -> tupl
     return good, lines
 
 
+def older_open(read: Callable[[str], Any], version: str) -> None:
+    """Before a release's marker and Latest, every older release is terminal: ACCEPTED, or not and so absorbed.
+
+    Raises:
+        Wait: An older release is still in its tail.
+    """
+    if older := [v for v in in_tail(read) if vkey(v) < vkey(version)]:
+        msg = f"the older v{', v'.join(older)} is still in its tail; v{version} goes after it"
+        raise Wait(msg)
+
+
 def marker(version: str, run_id: str, good: bool) -> dict[str, Any]:
     """The acceptance.json the updater reads."""
     return {
@@ -1454,6 +1502,7 @@ def parser() -> argparse.ArgumentParser:
             ("--wheel-sha256", {"required": True}),
             ("--profile-sha256", {"required": True}),
             ("--dry-run", {"action": "store_true"}),
+            ("--wait", {"type": float, "default": 4 * 3600}),
         ),
     }
     for name, flags in options.items():
@@ -1564,8 +1613,13 @@ def cmd_verdict(args: argparse.Namespace) -> int:
         say("  " + line)
     say(f"{'ACCEPTED' if good else 'NOT ACCEPTED'} {args.version} (run {args.run_id})")
     if args.dry_run:
+        try:
+            older_open(get, args.version)
+        except Wait as exc:
+            say(f"dry  would wait: {exc}")
         promote(get, args.version, snap, dry=True)
         return 0 if good else 1
+    poll("older release", lambda: older_open(get, args.version), args.wait)
     publish_marker(get, args.version, marker(args.version, args.run_id, good))
     say(f"ok   acceptance marker on v{args.version}: {'accepted' if good else 'not accepted'}")
     if not good:

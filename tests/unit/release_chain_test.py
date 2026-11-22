@@ -54,10 +54,15 @@ def run_row(event="push", status="completed", conclusion="success", attempt=1, r
     return {"id": run_id, "event": event, "status": status, "conclusion": conclusion, "run_attempt": attempt}
 
 
-def routes(*, prs=(), rels=None, runs=None, commits=None):
+def tail_run(version, status="in_progress"):
+    return {"id": 3, "status": status, "display_title": f"Release tail v{version}"}
+
+
+def routes(*, prs=(), rels=None, runs=None, commits=None, tails=()):
     rels = rels if rels is not None else [release("0.9.53"), release("0.9.52")]
     found = {
         "pulls": list(prs),
+        "actions/workflows/release-tail.yml/runs?per_page=100": {"workflow_runs": list(tails)},
         "releases": rels,
         f"actions/workflows/ci.yml/runs?head_sha={TIP}&per_page=100": {
             "workflow_runs": runs if runs is not None else [run_row()]
@@ -135,14 +140,47 @@ def test_plan_resumes_a_published_release_without_marker_at_its_tail():
     rels = [release("0.9.54", marker=False), release("0.9.53")]
     result = chain.plan(reader(routes(rels=rels)), "", auto=False, tip=TIP)
     assert (result["phase"], result["version"]) == ("tail", "0.9.54")
+    done = [tail_run("0.9.54", status="completed")]  # a stopped tail is resumed, not cut past
+    assert chain.plan(reader(routes(rels=rels, tails=done)), "", auto=False, tip=TIP)["phase"] == "tail"
 
 
-def test_no_cut_while_the_previous_release_is_not_terminal():
-    # A Latest-less release is still final; without its marker it is the tail in flight, never cut past.
+def test_no_cut_past_a_tail_that_is_not_running():
+    # A Latest-less release is still final; without its marker and a tail run it is resumed first.
     rels = [release("0.9.53", marker=False)]
     assert chain.plan(reader(routes(rels=rels)), "", auto=False, tip=TIP)["phase"] == "tail"
     with pytest.raises(chain.ChainError, match="in flight"):
         chain.plan(reader(routes(rels=rels)), "0.9.54", auto=False, tip=TIP)
+
+
+def test_the_next_release_is_cut_while_the_previous_tail_runs():
+    """Pipelining: N in its tail (tag published, tail run going) leaves main open; N+1 is cut from the tip."""
+    rels = [release("0.9.53", marker=False), release("0.9.52")]
+    read = reader(routes(rels=rels, tails=[tail_run("0.9.53")]))
+    result = chain.plan(read, "", auto=False, tip=TIP)
+    assert (result["phase"], result["version"], result["previous"]) == ("cut", "0.9.54", "0.9.53")
+    assert "pipelined behind v0.9.53" in result["reason"]
+    # the freeze is only for an open release PR: N's tail freezes nothing
+    assert chain.freeze_targets(reader(routes(rels=rels, prs=[pr(10, "fix/x", title="fix: x")])))[1] is None
+
+
+def test_never_more_than_two_releases_in_flight():
+    rels = [release("0.9.54", marker=False), release("0.9.53", marker=False), release("0.9.52")]
+    tails = [tail_run("0.9.54"), tail_run("0.9.53")]
+    with pytest.raises(chain.ChainError, match="at most 2 in flight"):
+        chain.plan(reader(routes(rels=rels, tails=tails)), "", auto=False, tip=TIP)
+    # an open N+1 release PR while N is in its tail resumes N+1's candidate, it never cuts a third
+    read = reader(routes(rels=rels[1:], tails=tails[1:], prs=[pr(9, "release/v0.9.54")]))
+    assert chain.plan(read, "", auto=False, tip=TIP)["phase"] == "candidate"
+
+
+def test_a_newer_verdict_waits_for_the_older_tail_and_absorbs_a_rejected_one():
+    rels = [release("0.9.54", marker=False), release("0.9.53", marker=False), release("0.9.52")]
+    with pytest.raises(chain.Wait, match=r"v0\.9\.53 is still in its tail"):
+        chain.older_open(reader(routes(rels=rels)), "0.9.54")
+    chain.older_open(reader(routes(rels=rels)), "0.9.53")  # the older one never waits for the newer
+    # the older one is terminal (its marker says accepted or not): the newer one goes ahead and absorbs it
+    terminal = [release("0.9.54", marker=False), release("0.9.53"), release("0.9.52")]
+    chain.older_open(reader(routes(rels=terminal)), "0.9.54")
 
 
 def test_auto_cut_skips_when_nothing_releasable():
@@ -642,10 +680,10 @@ def test_a_dry_plan_reports_the_gate_and_never_waits(rows, expected):
 
 
 def test_a_dry_plan_turns_a_refusal_into_its_phase():
-    rels = [release("0.9.53", marker=False), release("0.9.52")]
+    rels = [release("0.9.53", marker=False), release("0.9.52", marker=False), release("0.9.51")]
     result, _ = chain.dry_plan(reader(pinned_routes(rels=rels)), "0.9.54", tip=TIP, pinned=True)
     assert result["phase"] == "refused"
-    assert "no acceptance marker" in result["reason"]
+    assert "at most 2 in flight" in result["reason"]
 
 
 def test_the_release_pr_of_a_version_is_the_newest_same_repo_one():
@@ -709,7 +747,7 @@ def test_the_dry_candidate_never_merges_or_writes(monkeypatch):
 
 def test_the_real_receipts_of_a_sharded_release_are_judged_by_the_same_rules():
     """The workflow pins the sharded acceptance by workflow_call; the verdict reads its result artifacts."""
-    workflow = (ROOT / ".github/workflows/release-chain.yml").read_text()
+    workflow = (ROOT / ".github/workflows/release-tail.yml").read_text()
     assert "uses: ./.github/workflows/acceptance.yml" in workflow
     acceptance = (ROOT / ".github/workflows/acceptance.yml").read_text()
     assert "workflow_call:" in acceptance
@@ -768,8 +806,8 @@ def test_a_red_push_run_refuses_even_with_a_green_pr_on_the_same_tree():
 
 
 def test_compose_starts_at_the_wheel_asset_beside_pypi_and_the_snapshot_waits_for_both():
-    workflow = (ROOT / ".github/workflows/release-chain.yml").read_text()
-    publish = workflow[workflow.index("  publish:") : workflow.index("  acceptance:")]
+    workflow = (ROOT / ".github/workflows/release-tail.yml").read_text()
+    publish = workflow[workflow.index("\n  publish:") : workflow.index("\n  acceptance:")]
     compose = publish.index("Compose the standard app")
     assert compose < publish.index("Publish the exact GitHub release bytes to PyPI") < publish.index("id: snapshot")
     assert "curl -fsSIL" in publish[compose : publish.index("gh workflow run compose.yml")]
@@ -778,7 +816,7 @@ def test_compose_starts_at_the_wheel_asset_beside_pypi_and_the_snapshot_waits_fo
 
 def test_the_token_reaches_the_probe_only_on_a_dispatched_dry_run_from_main():
     workflow = (ROOT / ".github/workflows/release-chain.yml").read_text()
-    probe = workflow[workflow.index("  probe:") : workflow.index("  dry-candidate:")]
+    probe = workflow[workflow.index("\n  probe:") : workflow.index("\n  dry-candidate:")]
     assert "github.event_name == 'workflow_dispatch'" in probe
     assert "github.ref == 'refs/heads/main'" in probe
     assert "inputs.probe" in probe
@@ -859,3 +897,22 @@ def test_the_probe_needs_the_token(monkeypatch, capsys):
     monkeypatch.delenv("RELEASE_TOKEN", raising=False)
     assert chain.main(["probe"]) == 1
     assert "RELEASE_TOKEN" in capsys.readouterr().out
+
+
+def test_the_tail_runs_apart_from_the_chain_so_two_releases_overlap():
+    """N's tail and N+1's front never share a concurrency group; the chain ends at the tag and starts the tail."""
+    import yaml
+
+    chain_wf = yaml.safe_load((ROOT / ".github/workflows/release-chain.yml").read_text())
+    tail_wf = yaml.safe_load((ROOT / ".github/workflows/release-tail.yml").read_text())
+    assert tail_wf["concurrency"]["group"] == "release-tail-${{ inputs.version }}"
+    assert tail_wf["concurrency"]["cancel-in-progress"] is False
+    assert "release-tail" not in chain_wf["concurrency"]["group"]
+    assert not {"acceptance", "verdict"} & set(chain_wf["jobs"])
+    assert {"publish", "acceptance", "verdict"} <= set(tail_wf["jobs"])
+    steps = chain_wf["jobs"]["publish"]["steps"]
+    assert "gh workflow run release-tail.yml" in steps[-1]["run"]
+    assert not any("pypi.yml" in str(step.get("run", "")) for step in steps)
+    # the freeze lifts at the merge, before the tag and its tail
+    merge_steps = chain_wf["jobs"]["merge"]["steps"]
+    assert "freeze-sync" in merge_steps[-1]["run"]
