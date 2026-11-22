@@ -16,6 +16,7 @@ export const ctx = {
   pickerLoading: false,
   workspaceController: undefined,
   localConnection: undefined,
+  localBackendVersion: undefined,
   settingsStore: undefined,
   instance: undefined,
   miniBrowser: undefined,

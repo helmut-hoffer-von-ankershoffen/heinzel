@@ -8,6 +8,7 @@ from pydantic import Field
 from heinzel import Check, Config, Kernel, Module, Settings, Status, __version__
 from heinzel import HeinzelError as HeinzelError
 from heinzel.kernel import HeadRefresh, Installation, PersistentWeb, WebHeadRefresh, WebOverview
+from heinzel.modules.system.client import ConnectedClient, ConnectedClients
 from heinzel.modules.system.lifecycle._runtime import runtime_checks
 from heinzel.modules.system.lifecycle._service import WebChange, WebRestart, WebService, WebStatus
 from heinzel.modules.system.lifecycle._strays import retire_strays
@@ -107,10 +108,21 @@ def install(
     return service.install(port, dry_run=dry_run)
 
 
+class WebStatusWithClients(WebStatus):
+    """The web service status and the desktop apps that connected to it."""
+
+    clients: list[ConnectedClient] = Field(
+        default_factory=list,
+        description="Desktop apps that connected: flavor, app and backend version, machine, last seen; newest first.",
+    )
+
+
 @module.operation(heads={"cli"}, audience="everyday")
-def status(service: WebService) -> WebStatus:
-    """Show exact OS ownership and the live web server's readiness and version."""
-    return service.status()
+def status(service: WebService) -> WebStatusWithClients:
+    """Show exact OS ownership, the live web server's readiness and version, and the desktop apps that connected."""
+    settings = Config.load(Path.home()).settings(Settings, "hz")
+    clients = ConnectedClients(settings.state_dir / "web").recorded()
+    return WebStatusWithClients(**service.status().model_dump(), clients=clients)
 
 
 @module.operation(read_only=False, heads={"cli"}, audience="everyday")

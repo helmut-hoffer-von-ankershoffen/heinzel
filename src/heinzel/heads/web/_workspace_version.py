@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from fastapi import FastAPI, Response
 
 from heinzel.kernel import Kernel
-from heinzel.modules.system.client import WorkspaceVersion, observe_workspace_version
+from heinzel.modules.system.client import ConnectedClient, ConnectedClients, WorkspaceVersion, observe_workspace_version
 
 
 def add_workspace_version(app: FastAPI, kernel: Kernel) -> None:
@@ -16,3 +16,12 @@ def add_workspace_version(app: FastAPI, kernel: Kernel) -> None:
     def workspace_version(response: Response) -> WorkspaceVersion:
         response.headers["Cache-Control"] = "no-store"
         return observe_workspace_version(kernel, initialized)
+
+
+def add_connected_clients(app: FastAPI, clients: ConnectedClients) -> None:
+    """List which desktop apps connected, newest first, behind the API's authentication."""
+
+    @app.get("/connected-clients", tags=["web"])
+    def connected_clients(response: Response) -> list[ConnectedClient]:
+        response.headers["Cache-Control"] = "no-store"
+        return clients.recorded()

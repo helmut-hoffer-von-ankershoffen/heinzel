@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Copy, ExternalLink, FileText, X } from "lucide-react";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { api, unwrap } from "@/api/client";
 import { useInfo } from "@/api/queries";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
@@ -82,6 +83,16 @@ function useDesktop(enabled: boolean) {
   });
 }
 
+/** The desktop apps that connected to this workspace, as the workspace recorded them; read while About is open. */
+function useConnectedClients(enabled: boolean) {
+  return useQuery({
+    queryKey: ["connected-clients"],
+    queryFn: () => unwrap(api.GET("/connected-clients")),
+    enabled,
+    retry: false,
+  });
+}
+
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex gap-3 py-0.5">
@@ -99,6 +110,7 @@ export function AboutDialog() {
   const returnFocus = useRef<HTMLElement | null>(null);
   const info = useInfo();
   const desktop = useDesktop(true);
+  const clients = useConnectedClients(open);
   const [copied, setCopied] = useState(false);
   const titleId = useId();
   const app = info.data ? desktopApp(info.data, desktop.data ?? null) : null;
@@ -213,6 +225,24 @@ export function AboutDialog() {
                   <Row label={t("about.latest")}>{data.latest_release}</Row>
                 )}
               </dl>
+              {clients.data && clients.data.length > 0 && (
+                <>
+                  <h3 className="mt-4 mb-1 font-medium">{t("about.clients")}</h3>
+                  <ul className="text-xs" data-testid="connected-clients">
+                    {clients.data.map((client) => (
+                      <li key={`${client.flavor}-${client.machine}`} className="border-b border-border py-1">
+                        <span className="font-medium">{client.machine}</span>{" "}
+                        {t("about.clientDetails", {
+                          flavor: client.flavor,
+                          app: client.app_version,
+                          backend: client.backend_version,
+                          seen: format.date(client.last_seen),
+                        })}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
               <h3 className="mt-4 mb-1 font-medium">{t("about.plugins")}</h3>
               {pluginsOf(data).length === 0 ? (
                 <p className="text-muted-foreground">{t("about.noPlugins")}</p>

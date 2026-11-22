@@ -4,6 +4,7 @@ import { release } from "node:os";
 import { fileURLToPath } from "node:url";
 import { BrowserWindow, app, dialog, session, shell, webContents } from "electron";
 import { menuScript } from "./app-menu.js";
+import { attachClientHeader, machineName } from "./client-identity.js";
 import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createNativePermissions } from "./native-permissions.js";
@@ -29,6 +30,13 @@ export function createWindowLifecycle() {
       createWindow: async () => {
         const workspaceSession = session.fromPartition(`workspace-${randomUUID()}`);
         if (!connection.remote) await workspaceSession.setProxy({ mode: "direct" });
+        attachClientHeader(workspaceSession, connection.origin, () => ({
+          appVersion: app.getVersion(), backendVersion: ctx.localBackendVersion, machine: machineName(),
+        }));
+        if (ctx.localBackendVersion === undefined && ctx.localConnection) {
+          // The backend this app runs, for the workspace's client list; unknown until the local service answers.
+          void lifecycle(ctx.localConnection).then((state) => { ctx.localBackendVersion = state.version; }, () => {});
+        }
         return new BrowserWindow({
         ...windowOptions(process.platform),
         webPreferences: {

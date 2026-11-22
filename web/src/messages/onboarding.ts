@@ -114,6 +114,8 @@ export const onboarding = {
   "about.platform": "Platform",
   "about.installation": "Installation",
   "about.latest": "Latest release",
+  "about.clients": "Connected clients",
+  "about.clientDetails": "{flavor} app {app}, backend {backend}, last seen {seen}",
   "about.plugins": "Plugins",
   "about.noPlugins": "No plugins installed.",
   "about.pluginName": "Plugin",

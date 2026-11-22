@@ -4,6 +4,14 @@ The public entry of the `client` context (`contexts.toml`). The heads import the
 file; the modules here import no web toolkit, so the CLI stays fast.
 """
 
+from heinzel.modules.system.client._clients import (
+    CLIENT_HEADER,
+    ConnectedClient,
+    ConnectedClients,
+    client_header,
+    now_utc,
+    parse_client,
+)
 from heinzel.modules.system.client._devices import Devices
 from heinzel.modules.system.client._mcp_tokens import (
     READ,
@@ -21,17 +29,23 @@ from heinzel.modules.system.client._workspace_version import WorkspaceVersion
 from heinzel.modules.system.client._workspace_version import observe as observe_workspace_version
 
 __all__ = [
+    "CLIENT_HEADER",
     "READ",
     "SCOPES",
     "WRITE",
+    "ConnectedClient",
+    "ConnectedClients",
     "Devices",
     "FenceConflictError",
     "FenceRequest",
     "McpToken",
     "McpTokens",
     "WorkspaceVersion",
+    "client_header",
+    "now_utc",
     "observe_workspace_version",
     "open_updater_file",
+    "parse_client",
     "private_directory",
     "require_reachable_only_as_asked",
     "tokens_for_user",
