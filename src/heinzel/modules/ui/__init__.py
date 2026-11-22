@@ -119,7 +119,7 @@ class WebStatusWithClients(WebStatus):
 
 @module.operation(heads={"cli"}, audience="everyday")
 def status(service: WebService) -> WebStatusWithClients:
-    """Show exact OS ownership, the live web server's readiness and version, and the desktop apps that connected."""
+    """Show OS ownership, the live web server's readiness and version, and the connected desktop apps."""
     settings = Config.load(Path.home()).settings(Settings, "hz")
     clients = ConnectedClients(settings.state_dir / "web").recorded()
     return WebStatusWithClients(**service.status().model_dump(), clients=clients)
