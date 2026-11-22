@@ -60,3 +60,5 @@ iCloud sign-in synchronization remains a Swift feature. No new dependency or pub
 Verify link rejection, redirect refusal, ciphertext storage, main-frame authorization, failed-switch retention,
 session teardown and local service ownership with focused tests. Capture the bundled screen with fictional hosts.
 Signed desktop acceptance and a real authenticated remote host remain separate from mock or browser evidence.
+
+The application menu names the entry **Switch Workspace…** (Shift-Command-comma), the same words as the native app.
