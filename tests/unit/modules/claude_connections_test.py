@@ -340,7 +340,7 @@ class _Http(BaseHTTPRequestHandler):
                 for _ in range(20):  # a comment line every 0.3 s, never an answer
                     self.wfile.write(b": still here\n")
                     self.wfile.flush()
-                    time.sleep(scaled(0.3))
+                    time.sleep(0.3)  # unscaled: the keep-alive interval must stay under the read timeout
             return
         if method == "tools/list":
             result = {
