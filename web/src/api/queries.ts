@@ -79,6 +79,12 @@ export function usePlayful(): boolean {
   const value = config.data?.settings.find((s) => s.section === "hz" && s.key === "playful")?.value;
   return config.data !== undefined && value !== false;
 }
+/** Settings > Browser: the page the built-in browser loads when it opens and in a new tab. */
+export function useBrowserStartPage(): string {
+  const config = useConfig();
+  const value = config.data?.settings.find((s) => s.section === "hz" && s.key === "browser_start_page")?.value;
+  return typeof value === "string" && value ? value : "https://heinzel.team";
+}
 export const useProfile = () => useQuery({ queryKey: keys.profile, queryFn: () => unwrap(api.GET("/org/show")) });
 export const useTeam = () => useQuery({ queryKey: keys.team, queryFn: () => unwrap(api.GET("/team/show")) });
 /** `hz heinzel list`: your Heinzelmännchen, one per contract; the sidebar and search read the same list. */

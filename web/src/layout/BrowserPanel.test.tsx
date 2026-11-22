@@ -94,7 +94,7 @@ it("hides the native surface while a product popover is open and restores it whe
   }
 });
 
-it("Open in browser is available only once a page is open", async () => {
+it("Open in browser is an icon next to the address, enabled only once a page is open", async () => {
   let url = "";
   const browser = vi.fn(async ({ action }: Record<string, unknown>) => {
     if (action === "navigate") url = "https://example.com/page";
@@ -102,9 +102,7 @@ it("Open in browser is available only once a page is open", async () => {
   });
   Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
   render(<BrowserPanel active={false} onClose={vi.fn()} />);
-  const tools = screen.getByRole("button", { name: "More browser actions" });
-  expect(screen.queryByRole("button", { name: "Open in browser" })).toBeNull();
-  fireEvent.click(tools);
+  expect(screen.queryByRole("button", { name: "More browser actions" })).toBeNull();
   const open = screen.getByRole("button", { name: "Open in browser" });
   expect(open).toHaveAttribute("data-heinzel-browser-external");
   expect(open).toBeDisabled();
@@ -116,10 +114,6 @@ it("Open in browser is available only once a page is open", async () => {
   await waitFor(() => expect(open).toBeEnabled());
   fireEvent.click(open);
   expect(browser).toHaveBeenCalledWith({ action: "external" });
-  fireEvent.keyDown(open, { key: "Escape" });
-  expect(screen.queryByRole("button", { name: "Open in browser" })).toBeNull();
-  expect(tools).toHaveFocus();
-  expect(screen.queryByText(/Sign-ins stay until you clear browsing data/)).toBeNull();
 });
 
 it("the address shows the active page after navigation without duplicating it below the toolbar", async () => {
@@ -146,7 +140,7 @@ it("a completed navigation does not replace a newer address edit", async () => {
     action === "navigate" ? navigation : { status: "empty" },
   );
   Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
-  render(<BrowserPanel active onClose={vi.fn()} />);
+  render(<BrowserPanel active={false} onClose={vi.fn()} />);
   const address = screen.getByRole("textbox", { name: "Website address" });
   fireEvent.change(address, { target: { value: "example.com" } });
   fireEvent.click(screen.getByRole("button", { name: "Open this address" }));
@@ -173,17 +167,53 @@ it("web mode has no native browser controls", () => {
   expect(screen.queryByRole("button", { name: "Clear browsing data" })).toBeNull();
 });
 
-it("opens Browser settings and places the address action next to its field", () => {
+it("the tab lane ends with New tab, Browser settings and Close icons, and the old more menu is gone", () => {
   const browser = vi.fn(async () => ({ status: "empty" }));
   const settings = vi.fn();
+  const close = vi.fn();
   Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
-  render(<BrowserPanel active={false} onClose={vi.fn()} onSettings={settings} />);
+  render(<BrowserPanel active={false} onClose={close} onSettings={settings} />);
+  const lane = [
+    screen.getByRole("button", { name: "New tab" }),
+    screen.getByRole("button", { name: "Browser settings" }),
+    screen.getByRole("button", { name: "Close the browser" }),
+  ];
+  for (const button of lane) {
+    expect(button).toHaveAttribute("title");
+    expect(button.textContent).toBe("");
+  }
+  expect(lane[0]?.compareDocumentPosition(lane[1] as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  expect(lane[1]?.compareDocumentPosition(lane[2] as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  expect(screen.queryByRole("button", { name: "More browser actions" })).toBeNull();
+  fireEvent.click(lane[1] as HTMLElement);
+  expect(settings).toHaveBeenCalledOnce();
+  fireEvent.click(lane[2] as HTMLElement);
+  expect(close).toHaveBeenCalledOnce();
   expect(screen.getByRole("textbox", { name: "Website address" }).nextElementSibling).toBe(
     screen.getByRole("button", { name: "Open this address" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "More browser actions" }));
-  fireEvent.click(screen.getByRole("button", { name: "Browser settings" }));
-  expect(settings).toHaveBeenCalledOnce();
+});
+
+it("loads the start page when the browser first opens with no page, and in a new tab", async () => {
+  const browser = vi.fn(async ({ action }: Record<string, unknown>) =>
+    action === "tabs" ? { status: "empty", tabs: [] } : { status: "loading", url: "https://start.example/" },
+  );
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active onClose={vi.fn()} startPage="https://start.example/" />);
+  await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "navigate", url: "https://start.example/" }));
+  fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+  await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "new-tab", url: "https://start.example/" }));
+});
+
+it("does not reload the start page over a page that is already open", async () => {
+  const browser = vi.fn(async () => ({
+    status: "ready",
+    tabs: [{ id: "a", owner: "person", selected: true, status: "ready", url: "https://open.example/", title: "" }],
+  }));
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "tabs" }));
+  expect(browser).not.toHaveBeenCalledWith(expect.objectContaining({ action: "navigate" }));
 });
 
 it("shows a refused native handoff until a new attempt, without exposing details", async () => {

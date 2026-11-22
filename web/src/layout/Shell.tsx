@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router";
 import { AboutDialog } from "@/about/AboutDialog";
 import { type MenuAction, onMenuAction } from "@/about/menu";
-import { useConfig } from "@/api/queries";
+import { useBrowserStartPage, useConfig } from "@/api/queries";
 import { AudioVisualizer } from "@/audio/AudioVisualizer";
 import { AvatarThemeProvider } from "@/components/AvatarTheme";
 import { FOOTER_RELOCATED } from "@/components/FooterLayout";
@@ -112,6 +112,7 @@ function CloseNavigationOnOperation({ close }: { close: () => void }) {
 function Layout() {
   const nativeFooter = useNativeFooter();
   const config = useConfig();
+  const startPage = useBrowserStartPage();
   const audioVisualizer = config.data?.settings.find(
     (setting) => setting.section === "system.ui" && setting.key === "audio_visualizer",
   );
@@ -784,6 +785,7 @@ function Layout() {
                           content: (
                             <BrowserPanel
                               bookmarks
+                              startPage={startPage}
                               active={selectedPanel === "browser"}
                               onClose={() => setBrowserOpen(false)}
                               onSettings={() => setSettings("browser")}
