@@ -121,6 +121,8 @@ final class LocalService: NSObject, NSApplicationDelegate {
                         throw ConnectionError.startup
                     }
                     try await endpoint.verify()
+                    // The workspaces this app connects to list it with this backend version.
+                    ClientIdentity.backendVersion = try? await endpoint.readLifecycle().version
                     return endpoint
                 }
                 defer { group.cancelAll() }

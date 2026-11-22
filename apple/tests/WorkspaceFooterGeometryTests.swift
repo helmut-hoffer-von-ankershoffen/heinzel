@@ -53,6 +53,8 @@ import Foundation
         precondition(token == "HeinzelClient(flavor=native;app=0.9.54;backend=unknown;machine=Helmut%27s%20Air%20%282%29)")
         precondition(ClientIdentity.userAgentToken(appVersion: nil, backendVersion: "", machine: nil)
                      == "HeinzelClient(flavor=native;app=unknown;backend=unknown;machine=unknown)")
+        ClientIdentity.backendVersion = "0.9.54"
+        precondition(ClientIdentity.backendVersion == "0.9.54")
         print("PASS: native client identity is quoted and unknown when missing")
         await verifyVersionRefresh(now: now)
         print("PASS: native footer slot is bounded to the current viewport")

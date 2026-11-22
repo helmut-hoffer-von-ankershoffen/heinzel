@@ -112,7 +112,7 @@ class WebStatusWithClients(WebStatus):
     """The web service status and the desktop apps that connected to it."""
 
     clients: list[ConnectedClient] = Field(
-        default_factory=list,
+        default=[],
         description="Desktop apps that connected: flavor, app and backend version, machine, last seen; newest first.",
     )
 

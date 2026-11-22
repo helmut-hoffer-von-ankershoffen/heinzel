@@ -52,7 +52,7 @@ struct WorkspaceView: WebRepresentable {
         #endif
         configuration.applicationNameForUserAgent = ClientIdentity.userAgentToken(
             appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
-            backendVersion: nil, machine: machine)
+            backendVersion: ClientIdentity.backendVersion, machine: machine)
         configuration.allowsInlineMediaPlaybackIfSupported()
         configuration.userContentController.addScriptMessageHandler(
             context.coordinator, contentWorld: .defaultClient, name: "heinzelExternalLink"
