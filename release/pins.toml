@@ -1,0 +1,7 @@
+# Digests that release tooling (sm) reads at the release tag, never a copy of its own.
+# tests/unit/release_pins_test.py keeps every entry equal to the sha256 of its file, so a PR that changes a pinned
+# file fails until it updates the digest here: the review of that file and of its pin happen in the same PR.
+# Update: sha256sum .github/workflows/acceptance.yml
+
+[sha256]
+".github/workflows/acceptance.yml" = "cfd716d8934d6204dbe5da62f756f9c76e88b7a493871b33ab96a0822f41fefe"

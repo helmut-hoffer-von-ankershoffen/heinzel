@@ -24,6 +24,7 @@ from heinzel.modules.system.updater._adapter_state import FileInstallationState
 from heinzel.modules.system.updater._plugin_releases import PinnedPlugins, PyPIPluginReleases
 from heinzel.modules.system.updater._plugin_standing import standing
 from heinzel.modules.system.updater._update import UpdateService
+from heinzel.testing import scaled
 from tests.unit.runtime.updater.system_update_test import (
     REPO,
     FakeReleases,
@@ -841,21 +842,21 @@ def test_a_second_update_while_one_installs_is_refused_and_cannot_touch_its_agre
 
     def slow(command, environment=None):
         installing.set()
-        assert proceed.wait(10)
+        assert proceed.wait(scaled(10))
         return uv(command, environment)
 
     target._runner = slow
     first = threading.Thread(target=lambda: seen.update(result=service.update(current="0.2.0", agreed=plan)))
     first.start()
     try:
-        assert installing.wait(10)
+        assert installing.wait(scaled(10))
         # Another request, in its own thread, sees no agreement and may not start a second update.
         assert _update_rules.AGREED.get().moves == {}
         with pytest.raises(HeinzelError, match="An update is already running here"):
             service.update(current="0.2.0")
     finally:
         proceed.set()
-        first.join(10)
+        first.join(scaled(10))
     assert uv.commands[-1][-1] == "heinzel-acme>=1.2.0"  # the first update installed what it agreed to
     assert seen["result"].plugins[0].after == "1.2.0"  # type: ignore[attr-defined]
     assert service._updating.acquire(blocking=False)  # and the lock is free again
@@ -913,9 +914,9 @@ def test_an_automatic_update_waits_for_a_cli_update_on_the_same_state_folder(tmp
     with FileInstallationState(tmp_path / "s").lock("update"):  # `hz system update` runs in another process
         worker = threading.Thread(target=lambda: service.apply_announced(object(), trial=lambda _v: True))
         worker.start()
-        assert not ran.wait(0.3)
-    assert ran.wait(10)
-    worker.join(10)
+        assert not ran.wait(scaled(0.3))
+    assert ran.wait(scaled(10))
+    worker.join(scaled(10))
 
 
 def test_an_update_waits_for_one_another_process_holds_on_the_same_state_folder(tmp_path):
@@ -933,11 +934,11 @@ def test_an_update_waits_for_one_another_process_holds_on_the_same_state_folder(
     with other.lock("update"):
         worker = threading.Thread(target=update)
         worker.start()
-        assert started.wait(10)
-        assert not done.wait(0.3)  # held off while the other process updates
+        assert started.wait(scaled(10))
+        assert not done.wait(scaled(0.3))  # held off while the other process updates
         assert uv.commands == []
-    assert done.wait(10)
-    worker.join(10)
+    assert done.wait(scaled(10))
+    worker.join(scaled(10))
     assert uv.commands  # once the other one let go, this update ran
 
 

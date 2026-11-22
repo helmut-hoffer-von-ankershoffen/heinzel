@@ -19,6 +19,7 @@ from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, Field
 
 from heinzel import __version__
+from heinzel._adapter_system import SYSTEM_CLOCK
 from heinzel.kernel import HeinzelError, Installation, Kernel, ReleaseCache, subprocess_environment
 from heinzel.kernel._desktop_app import DesktopVariant, desktop_app_here
 from heinzel.kernel._logging import log_event
@@ -159,7 +160,7 @@ def _frontend(static: Path | None) -> Frontend | None:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return SYSTEM_CLOCK.now()
 
 
 def _installed_at(installation: Installation) -> datetime | None:
