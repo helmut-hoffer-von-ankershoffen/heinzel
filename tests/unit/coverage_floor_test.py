@@ -158,10 +158,16 @@ def test_the_floor_is_a_ci_job_that_ci_ok_requires_and_no_merge_gate_workflow_is
     assert job["permissions"] == {"contents": "read"}
     assert [step["run"] for step in job["steps"] if "run" in step] == ["python3 -I scripts/coverage_floor.py"]
     assert "coverage-floor" in jobs["ci-ok"]["needs"]
+    assert "sonar-ratings" in jobs["ci-ok"]["needs"]
+    assert jobs["sonar-ratings"]["if"].startswith("github.event_name == 'pull_request'")
+    assert [step["run"] for step in jobs["sonar-ratings"]["steps"] if "run" in step] == [
+        "python3 -I scripts/sonar_ratings.py"
+    ]
     full = next(
         step["run"] for step in jobs["ci-ok"]["steps"] if step["name"] == "Require the complete direct CI workload"
     )
     assert "required+=(coverage-floor)" in full.split("SURFACE_ONLY:-false", 1)[1]  # after the surface-only reset
+    assert "required+=(sonar-ratings)" in full.split("SURFACE_ONLY:-false", 1)[1]
     assert not (ROOT / ".github/workflows/merge-gate.yml").exists()
     assert jobs["coverage"]["outputs"]["uncovered"] == "${{ steps.uncovered.outputs.files }}"
 
@@ -171,3 +177,23 @@ def test_ci_ok_names_each_failed_job_and_the_floor_verdict():
     assert step["env"]["NEEDS"] == "${{ toJSON(needs) }}"
     assert ".value.outputs.verdict" in step["run"]
     assert "::error::Required job" in step["run"]
+
+
+def test_gate_review_covers_what_could_weaken_the_floor():
+    """The judges run from the PR's own bytes, so Gate review must see every input that sets their bar."""
+    import re
+
+    review = (ROOT / ".github/workflows/claude-review.yml").read_text(encoding="utf-8")
+    pattern = re.search(r"gate_paths='([^']+)'", review)
+    assert pattern
+    gate = re.compile(pattern[1])
+    for path in (
+        "Makefile",
+        ".github/workflows/ci.yml",
+        "scripts/coverage_floor.py",
+        "scripts/sonar_ratings.py",
+        "tests/unit/coverage_floor_test.py",
+        "tests/unit/sonar_ratings_test.py",
+    ):
+        assert gate.search(path), path
+    assert "for section in importlinter coverage pytest; do" in review

@@ -64,6 +64,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "echo 'DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer'": "selects the installed Xcode for macOS CI",
         "python3 -I scripts/release_candidate.py": "records release source",
         "python3 -I scripts/coverage_floor.py": "judges this run's coverage floor, standard library only",
+        "python3 -I scripts/sonar_ratings.py": "judges Sonar's overall-code ratings, standard library only",
         "echo 'selected=true'": "selects complete CI directly without an external plan",
         'if [ "$GITHUB_REPOSITORY" != helmut-hoffer-von-ankershoffen/heinzel ]': (
             "restricts scheduled maintenance to canonical main"

@@ -278,10 +278,10 @@ def _without_focused_admission(text: str) -> str:
 
 
 def _without_core_coverage_floor(text: str) -> str:
-    """Keep Core's in-run coverage floor job (scripts/coverage_floor.py) out of the plugin workflow."""
+    """Keep Core's in-run coverage floor and Sonar ratings jobs out of the plugin workflow."""
     text = re.sub(r"\n  # The coverage floor, judged inside.*?(?=\n  ci-ok:)", "", text, flags=re.DOTALL)
     text = re.sub(r"(?m)^[^\n]*# Core coverage floor\n", "", text)
-    return text.replace(", coverage-floor, macos-main]", ", macos-main]")
+    return text.replace(", coverage-floor, sonar-ratings, macos-main]", ", macos-main]")
 
 
 def _plugin_coverage(text: str) -> str:

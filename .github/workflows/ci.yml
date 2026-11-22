@@ -1308,12 +1308,32 @@ jobs:
           FOCUSED_MODE: ${{ needs.changes.outputs.focused_mode }}
         run: python3 -I scripts/coverage_floor.py
 
+  # Sonar's overall-code ratings (scripts/sonar_ratings.py): the SonarCloud check judges new code; this keeps
+  # reliability, security and maintainability of the whole project at A. CI OK requires it on pull requests.
+  sonar-ratings:
+    permissions:
+      contents: read
+    name: Sonar ratings
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.result == 'success' # Core coverage floor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      verdict: ${{ steps.judge.outputs.verdict }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: judge
+        name: Overall reliability, security and maintainability are rated A
+        run: python3 -I scripts/sonar_ratings.py
+
   ci-ok:
     permissions:
       contents: read
     name: CI OK
     if: always() && (github.event_name != 'push' || needs.admission.outputs.full != 'false')
-    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check, release-candidate-source, quarantine-registry, focused-tests, coverage-floor, macos-main]
+    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check, release-candidate-source, quarantine-registry, focused-tests, coverage-floor, sonar-ratings, macos-main]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -1370,6 +1390,7 @@ jobs:
           if [ "${SURFACE_ONLY:-false}" = true ]; then required=(admission changes lint secrets commits dependency-review quarantine-registry macos-specific); fi
           # The coverage floor: on every pull request, and on a dispatched run outside the macOS main lane.
           if [ "$EVENT" = pull_request ] || { [ "$EVENT" = workflow_dispatch ] && [ "${LANE:-all}" != macos ]; }; then required+=(coverage-floor); fi # Core coverage floor
+          if [ "$EVENT" = pull_request ]; then required+=(sonar-ratings); fi # Core coverage floor
           for job in "${required[@]}"; do
             jq -e --arg job "$job" '.[$job].result == "success"' <<< "$RESULTS" >/dev/null \
               || { echo "::error::Required full CI job did not pass: $job"; exit 1; }
