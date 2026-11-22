@@ -14,8 +14,16 @@ struct ChromeProfile: Identifiable, Hashable {
 }
 
 struct ChromeCookieRow {
-    let host: String, name: String, value: String, encrypted: Data, path: String
-    let expiresUTC: Int64, secure: Bool, httpOnly: Bool, sameSite: Int, persistent: Bool
+    let host: String
+    let name: String
+    let value: String
+    let encrypted: Data
+    let path: String
+    let expiresUTC: Int64
+    let secure: Bool
+    let httpOnly: Bool
+    let sameSite: Int
+    let persistent: Bool
 }
 
 struct ChromeCookieTable {
@@ -57,6 +65,8 @@ enum ChromeCookieError: LocalizedError {
 enum ChromeCookies {
     /// Chrome's cookie database schema 24 (Chrome 130) puts SHA-256 of the host before each value, then encrypts.
     static let domainHashVersion = 24
+    /// The path of a cookie for the whole site.
+    private static let cookieRoot = "/"
     private static let windowsEpochOffset: Double = 11_644_473_600
     private static let maxRows = 50_000
 
@@ -168,21 +178,35 @@ enum ChromeCookies {
 
     /// Chrome's macOS key: PBKDF2-SHA1 of the Keychain password, salt "saltysalt", 1003 rounds, 16 bytes.
     static func deriveKey(_ password: Data) -> Data {
-        var key = Data(count: kCCKeySizeAES128)
-        let salt = Data("saltysalt".utf8)
-        let status = key.withUnsafeMutableBytes { keyBytes in
-            password.withUnsafeBytes { passwordBytes in
-                salt.withUnsafeBytes { saltBytes in
-                    CCKeyDerivationPBKDF(
-                        CCPBKDFAlgorithm(kCCPBKDF2), passwordBytes.baseAddress?.assumingMemoryBound(to: CChar.self),
-                        password.count, saltBytes.baseAddress?.assumingMemoryBound(to: UInt8.self), salt.count,
-                        CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA1), 1003,
-                        keyBytes.baseAddress?.assumingMemoryBound(to: UInt8.self), kCCKeySizeAES128
-                    )
-                }
-            }
+        var secret = password.map { CChar(bitPattern: $0) }
+        defer { secret.withUnsafeMutableBufferPointer { $0.update(repeating: 0) } }
+        let salt = Array("saltysalt".utf8)
+        var key = [UInt8](repeating: 0, count: kCCKeySizeAES128)
+        defer { key.withUnsafeMutableBufferPointer { $0.update(repeating: 0) } }
+        let status = CCKeyDerivationPBKDF(
+            CCPBKDFAlgorithm(kCCPBKDF2), secret, secret.count, salt, salt.count,
+            CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA1), 1003, &key, key.count
+        )
+        return status == kCCSuccess ? Data(key) : Data()
+    }
+
+    /// AES-128-CBC with PKCS#7 padding and Chrome's fixed IV of 16 spaces: the format Chrome writes, which is
+    /// only ever read here (and written by the test fixture). The caller wipes the result.
+    static func chromeAES(_ operation: Int, _ input: [UInt8], key: Data) -> [UInt8]? {
+        var keyBytes = [UInt8](key)
+        defer { keyBytes.withUnsafeMutableBufferPointer { $0.update(repeating: 0) } }
+        let iv = [UInt8](repeating: 0x20, count: kCCBlockSizeAES128)
+        var output = [UInt8](repeating: 0, count: input.count + kCCBlockSizeAES128)
+        let capacity = output.count
+        var written = 0
+        let status = CCCrypt(CCOperation(operation), CCAlgorithm(kCCAlgorithmAES), CCOptions(kCCOptionPKCS7Padding),
+                             keyBytes, keyBytes.count, iv, input, input.count, &output, capacity, &written)
+        guard status == kCCSuccess else {
+            output.withUnsafeMutableBufferPointer { $0.update(repeating: 0) }
+            return nil
         }
-        return status == kCCSuccess ? key : Data()
+        output.removeSubrange(written...)
+        return output
     }
 
     /// v10 (macOS) and v11 are AES-128-CBC with an IV of 16 spaces. From schema 24 the plaintext starts with
@@ -191,30 +215,14 @@ enum ChromeCookies {
         guard key.count == kCCKeySizeAES128, encrypted.count >= 3 + kCCBlockSizeAES128 else { return nil }
         let prefix = String(decoding: encrypted.prefix(3), as: UTF8.self)
         guard prefix == "v10" || prefix == "v11" else { return nil }
-        let body = encrypted.dropFirst(3)
-        let iv = Data(repeating: 0x20, count: kCCBlockSizeAES128)
-        var plain = Data(count: body.count + kCCBlockSizeAES128)
-        var written = 0
-        let capacity = plain.count
-        let status = plain.withUnsafeMutableBytes { out in
-            body.withUnsafeBytes { input in
-                key.withUnsafeBytes { keyBytes in
-                    iv.withUnsafeBytes { ivBytes in
-                        CCCrypt(CCOperation(kCCDecrypt), CCAlgorithm(kCCAlgorithmAES), CCOptions(kCCOptionPKCS7Padding),
-                                keyBytes.baseAddress, key.count, ivBytes.baseAddress, input.baseAddress, body.count,
-                                out.baseAddress, capacity, &written)
-                    }
-                }
-            }
-        }
-        defer { plain.resetBytes(in: 0..<plain.count) }
-        guard status == kCCSuccess else { return nil }
-        var value = plain.prefix(written)
+        guard var plain = chromeAES(kCCDecrypt, [UInt8](encrypted.dropFirst(3)), key: key) else { return nil }
+        defer { plain.withUnsafeMutableBufferPointer { $0.update(repeating: 0) } }
+        var start = 0
         if version >= domainHashVersion {
-            guard value.count >= 32, Data(SHA256.hash(data: Data(host.utf8))) == value.prefix(32) else { return nil }
-            value = value.dropFirst(32)
+            guard plain.count >= 32, Array(SHA256.hash(data: Data(host.utf8))) == Array(plain[0..<32]) else { return nil }
+            start = 32
         }
-        return String(data: Data(value), encoding: .utf8)
+        return String(bytes: plain[start...], encoding: .utf8)
     }
 
     private static let secondLevel: Set<String> = [
@@ -301,8 +309,8 @@ enum ChromeCookies {
         let host = row.host.lowercased()
         guard !host.isEmpty, !row.name.isEmpty, !expired(row, now: now) else { return nil }
         let hostOnly = !host.hasPrefix(".")
-        let path = row.path.hasPrefix("/") ? row.path : "/"
-        if row.name.hasPrefix("__Host-") && (!row.secure || !hostOnly || path != "/") { return nil }
+        let path = row.path.hasPrefix(cookieRoot) ? row.path : cookieRoot
+        if row.name.hasPrefix("__Host-") && (!row.secure || !hostOnly || path != cookieRoot) { return nil }
         if row.name.hasPrefix("__Secure-") && !row.secure { return nil }
         if row.sameSite == 0 && !row.secure { return nil }
         var properties: [HTTPCookiePropertyKey: Any] = [

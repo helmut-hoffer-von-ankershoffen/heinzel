@@ -36,7 +36,11 @@
       box.type = "checkbox";
       box.checked = chosen.has(entry.site);
       box.setAttribute("aria-label", entry.site);
-      box.addEventListener("change", () => { if (box.checked) chosen.add(entry.site); else chosen.delete(entry.site); count(); });
+      box.addEventListener("change", () => {
+        if (box.checked) chosen.add(entry.site);
+        else chosen.delete(entry.site);
+        count();
+      });
       const name = document.createElement("span");
       name.className = "site";
       name.textContent = entry.site;

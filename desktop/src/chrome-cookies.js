@@ -8,6 +8,8 @@ import path from "node:path";
 
 /** Chrome's own data folder on macOS; each profile is a folder in it, named by `Local State`. */
 export const chromeRoot = (home = os.homedir()) => path.join(home, "Library", "Application Support", "Google", "Chrome");
+// UTF-16 code-unit order, spelled out so it never depends on the locale.
+const byCodeUnit = (a, b) => (a < b ? -1 : Number(a > b));
 const PROFILE_DIR = /^(Default|Profile \d{1,4}|Guest Profile|System Profile)$/;
 // Chrome's cookie database schema 24 (Chrome 130) puts SHA-256 of the cookie's host before the value, then encrypts.
 const DOMAIN_HASH_VERSION = 24;
@@ -22,15 +24,14 @@ export async function chromeProfiles(root = chromeRoot()) {
   try { state = JSON.parse(await readFile(path.join(root, "Local State"), "utf8")); } catch { return []; }
   const cache = state?.profile?.info_cache;
   if (!cache || typeof cache !== "object") return [];
-  const profiles = [];
-  for (const [dir, info] of Object.entries(cache)) {
-    if (!PROFILE_DIR.test(dir) || dir === "System Profile" || dir === "Guest Profile") continue;
-    const database = await cookieDatabase(path.join(root, dir));
-    if (!database) continue;
+  const candidates = Object.entries(cache).filter(([dir]) => isProfileId(dir));
+  const found = await Promise.all(candidates.map(async ([dir, info]) => {
+    if (!(await cookieDatabase(path.join(root, dir)))) return null;
     const name = typeof info?.name === "string" && info.name.trim() ? info.name.trim().slice(0, 80) : dir;
-    profiles.push({ id: dir, name, label: `Google Chrome — ${name}` });
-  }
-  return profiles.sort((a, b) => (a.id === "Default" ? -1 : b.id === "Default" ? 1 : a.id.localeCompare(b.id)));
+    return { id: dir, name, label: `Google Chrome \u2014 ${name}` };
+  }));
+  const rank = (profile) => (profile.id === "Default" ? 0 : 1);
+  return found.filter(Boolean).sort((a, b) => rank(a) - rank(b) || byCodeUnit(a.id, b.id));
 }
 
 /** Chrome 96 and later keep cookies in `Network/Cookies`; older profiles in `Cookies`. */
@@ -59,9 +60,8 @@ export async function readCookieRows(database, { sqlite = "/usr/bin/sqlite3", ex
   try {
     const copy = path.join(dir, "Cookies");
     await copyFile(database, copy);
-    for (const suffix of ["-wal", "-journal"]) {
-      try { await copyFile(database + suffix, copy + suffix); } catch { /* no log beside it */ }
-    }
+    // The log beside it, when there is one.
+    await Promise.allSettled(["-wal", "-journal"].map((suffix) => copyFile(database + suffix, copy + suffix)));
     const query = (sql) => exec(sqlite, ["-json", copy, sql]).then((out) => (out.trim() ? JSON.parse(out) : []));
     const meta = await query("SELECT value FROM meta WHERE key = 'version'");
     const version = Number.parseInt(meta[0]?.value ?? "0", 10) || 0;
@@ -172,7 +172,7 @@ export function siteList(rows, { now = Date.now() } = {}) {
   return [...sites.values()].map(({ site, count, hosts }) => {
     const category = classifySite(site, [...hosts]);
     return { site, count, category, checked: !SENSITIVE.includes(category) };
-  }).sort((a, b) => a.site.localeCompare(b.site));
+  }).sort((a, b) => byCodeUnit(a.site, b.site));
 }
 
 const expiresAt = (row) => asNumber(row.expires_utc) / 1e6 - WINDOWS_EPOCH_OFFSET;
@@ -229,5 +229,5 @@ export function decryptCookies({ version, rows }, password, { sites, persistent,
 /** The one audit line of an import: counts and site names, never a cookie name or value. */
 export function importLogLine({ profile, persistent, imported, skipped, failed, sites }) {
   return JSON.stringify({ event: "desktop.cookies.import", profile, persistent, imported, skipped, failed,
-    sites: [...sites].sort() });
+    sites: [...sites].sort(byCodeUnit) });
 }

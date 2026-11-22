@@ -15,15 +15,7 @@ func encrypt(_ value: String, host: String, version: Int) -> Data {
     let key = ChromeCookies.deriveKey(password)
     var plain = Data(value.utf8)
     if version >= 24 { plain = Data(SHA256.hash(data: Data(host.utf8))) + plain }
-    var out = Data(count: plain.count + kCCBlockSizeAES128)
-    let capacity = out.count
-    var written = 0
-    let iv = Data(repeating: 0x20, count: kCCBlockSizeAES128)
-    _ = out.withUnsafeMutableBytes { o in plain.withUnsafeBytes { p in key.withUnsafeBytes { k in iv.withUnsafeBytes { i in
-        CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmAES), CCOptions(kCCOptionPKCS7Padding), k.baseAddress,
-                key.count, i.baseAddress, p.baseAddress, plain.count, o.baseAddress, capacity, &written)
-    } } } }
-    return Data("v10".utf8) + out.prefix(written)
+    return Data("v10".utf8) + (ChromeCookies.chromeAES(kCCEncrypt, [UInt8](plain), key: key) ?? [])
 }
 
 func chromeTime(_ date: Date) -> Int64 { Int64((date.timeIntervalSince1970 + 11_644_473_600) * 1_000_000) }

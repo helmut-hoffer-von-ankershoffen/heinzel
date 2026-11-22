@@ -9,7 +9,10 @@ import WebKit
 final class CookieImportModel: ObservableObject {
     enum Step { case start, choose, manage }
     struct Imported: Hashable {
-        let site: String, name: String, domain: String, path: String
+        let site: String
+        let name: String
+        let domain: String
+        let path: String
     }
 
     static let shared = CookieImportModel()
@@ -75,7 +78,8 @@ final class CookieImportModel: ObservableObject {
         busy = true
         defer { busy = false }
         report("Importing… macOS may ask for your Mac login password.")
-        let profile = profile, sites = chosen
+        let profile = profile
+        let sites = chosen
         do {
             // The Keychain prompt and the decryption run off the main thread; the password and key end with it.
             let result = try await Task.detached {

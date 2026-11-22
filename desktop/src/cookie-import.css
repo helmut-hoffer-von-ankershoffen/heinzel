@@ -23,6 +23,6 @@ li { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-to
 li:first-child { border-top: 0; }
 li .site { flex: 1; overflow-wrap: anywhere; }
 li .count { color: #4d5c52; font-size: 12px; }
-.badge { font-size: 11px; padding: 2px 7px; border-radius: 999px; background: #80402b1a; color: #80402b; white-space: nowrap; }
+.badge { font-size: 11px; padding: 2px 7px; border-radius: 999px; background: #f3e4de; color: #6b3322; white-space: nowrap; }
 output { display: block; min-height: 1.4em; color: #30483a; margin-top: 8px; overflow-wrap: anywhere; }
 output.problem { color: #80402b; }

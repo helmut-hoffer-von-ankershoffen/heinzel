@@ -5,6 +5,7 @@ import path from "node:path";
 import { chromeProfiles, chromeRoot, chromeSafeStoragePassword, cookieDatabase, decryptCookies, importLogLine,
   isProfileId, readCookieRows, siteList } from "./chrome-cookies.js";
 
+const byCodeUnit = (a, b) => (a < b ? -1 : Number(a > b));
 const SITE = /^[a-z0-9.-]{1,253}$/;
 const MAX_SITES = 5000;
 // The requests of the dialog, each with exactly these keys.
@@ -62,16 +63,12 @@ export function createCookieImport({ session, ledgerFile, root = chromeRoot(), r
     let decrypted;
     try { decrypted = decryptCookies(table, secret, { sites, persistent, now: now() }); } finally { secret = null; }
     const { cookies, skipped } = decrypted;
-    const added = [];
-    let failed = 0;
-    for (const { site, cookie } of cookies) {
-      try {
-        await session().cookies.set(cookie);
-        added.push({ site, name: cookie.name, domain: cookie.domain ?? new URL(cookie.url).hostname, path: cookie.path,
-          url: cookie.url, session: cookie.expirationDate === undefined });
-      } catch { failed += 1; }
-      cookie.value = "";
-    }
+    const results = await Promise.allSettled(cookies.map(({ cookie }) => session().cookies.set(cookie)));
+    const added = cookies.filter((_, index) => results[index].status === "fulfilled").map(({ site, cookie }) => ({
+      site, name: cookie.name, domain: cookie.domain ?? new URL(cookie.url).hostname, path: cookie.path, url: cookie.url,
+      session: cookie.expirationDate === undefined }));
+    const failed = cookies.length - added.length;
+    for (const { cookie } of cookies) cookie.value = "";
     const ledger = await readLedger();
     await writeLedger([...ledger.filter((old) => !added.some((entry) => sameCookie(old, entry))), ...added]);
     const imported = new Set(added.map((entry) => entry.site));
@@ -84,7 +81,8 @@ export function createCookieImport({ session, ledgerFile, root = chromeRoot(), r
     const chosen = ledger.filter((entry) => site === null || entry.site === site);
     const failed = await removeEntries(chosen);
     await writeLedger(ledger.filter((entry) => !chosen.includes(entry)));
-    log(JSON.stringify({ event: "desktop.cookies.remove", sites: [...new Set(chosen.map((entry) => entry.site))].sort(),
+    const sites = [...new Set(chosen.map((entry) => entry.site))].sort(byCodeUnit);
+    log(JSON.stringify({ event: "desktop.cookies.remove", sites,
       removed: chosen.length - failed, failed }));
     return { removed: chosen.length - failed, failed };
   };
@@ -99,7 +97,7 @@ export function createCookieImport({ session, ledgerFile, root = chromeRoot(), r
     if (action === "imported") {
       const counts = new Map();
       for (const entry of await present()) counts.set(entry.site, (counts.get(entry.site) ?? 0) + 1);
-      return [...counts].map(([site, count]) => ({ site, count })).sort((a, b) => a.site.localeCompare(b.site));
+      return [...counts].map(([site, count]) => ({ site, count })).sort((a, b) => byCodeUnit(a.site, b.site));
     }
     if (action === "remove") {
       if (typeof request.site !== "string" || !SITE.test(request.site)) throw new Error("Unknown site.");
