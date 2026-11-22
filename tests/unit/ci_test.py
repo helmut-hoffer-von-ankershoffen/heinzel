@@ -1203,8 +1203,7 @@ def _macos_include(matrix: dict, event: str, full: bool, *, release: bool = Fals
         "github.event_name": event,
         "needs.changes.outputs.lane": lane or ("linux" if event == "push" else "all"),
         "needs.changes.outputs.macos_full": str(full).lower(),
-        "needs.changes.outputs.full_ci": "true",
-        "needs.changes.outputs.full_release": str(release).lower(),
+        "needs.changes.outputs.full_ci": str(release).lower(),
     }
     for branch in expression[1].split(" || "):
         value = None
@@ -2006,7 +2005,7 @@ def test_release_candidate_source_and_selector_never_reach_plugin_templates():
     assert "release-candidate-source" not in generated
     assert "full_release" not in generated
     assert (
-        "github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true'"
+        "github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true'"
         in (_ci_jobs()["test"]["strategy"]["matrix"]["include"])
     )
 
@@ -2431,6 +2430,15 @@ _NATIVE_OFF = {"notifier=false", "contracts=false", "electron=false", "macos_ful
         ("docs/guides/install.md\n", {"site_only=true", "core=true"} | _NATIVE_OFF),  # prose: site-tests only
         ("web/src/components/Footer.tsx\n", {"site_only=false", "macos_full=false", "contracts=false"}),
         ("src/heinzel/kernel/_exposure_x.py\n", {"macos_full=true", "contracts=true"}),
+        ("src/heinzel/testing.py\n", {"contracts=true"}),
+        ("src/heinzel/conformance.py\n", {"contracts=true"}),
+        ("src/heinzel/modules/team/_x.py\n", {"contracts=true"}),
+        ("pyproject.toml\n", {"contracts=true", "notifier=true"}),
+        ("uv.lock\n", {"contracts=true"}),
+        ("weird/unknown.bin\n", {"contracts=true"}),
+        ("docs/a.md\nweird/unknown.bin\n", {"contracts=true"}),
+        ("web/src/plugins/x.tsx\n", {"contracts=true"}),
+        ("", {"contracts=true", "notifier=true", "core=true"}),
         ("plugins/example/file.py\n", {"core=false", "plugins=true", "notifier=false", "contracts=false"}),
     ],
 )
@@ -2490,3 +2498,33 @@ def test_the_macos_jobs_wait_for_a_native_path_on_ordinary_pull_requests():
     assert _evaluate_if(condition, "pull_request", {**base, "macos_full": "true", "full_release": "false"})
     assert _evaluate_if(condition, "pull_request", {**base, "macos_full": "false", "full_release": "true"})
     assert _evaluate_if(condition, "push", {**base, "macos_full": "false", "full_release": "false"})
+
+
+def test_a_failed_diff_keeps_the_consumers_and_the_notifier_on(tmp_path, ci_paths):
+    outputs = _changes_outputs(tmp_path, ci_paths, "pull_request", "", git_exit=1)
+    assert {"contracts=true", "notifier=true", "core=true"} <= outputs
+
+
+def test_a_release_branch_that_is_not_the_candidate_runs_everything(tmp_path, ci_paths, monkeypatch):
+    script, directory = ci_paths
+    output = tmp_path / "release-output"
+    subprocess.run(
+        ["bash", "-c", script],
+        env={
+            "PATH": f"{directory / 'bin'}:/usr/bin:/bin", "EVENT": "pull_request", "FULL_RELEASE": "false",
+            "HEAD_REF": "release/foo", "BASE": "base", "GITHUB_OUTPUT": str(output),
+            "CHANGED_PATHS": "docs/guides/install.md\n", "DIFF_EXIT": "0",
+        },
+        cwd=directory, check=True, timeout=4,
+    )  # fmt: skip
+    assert {"site_only=false", "macos_full=true", "contracts=true", "notifier=true"} <= set(
+        output.read_text().splitlines()
+    )
+
+
+def test_ci_ok_requires_everything_on_a_release_branch_and_keeps_the_plugin_check():
+    assert _ci_ok_run(PROSE_RUN, **_PROSE, HEAD_REF="release/foo")[0] != 0
+    run = "admission changes secrets quarantine-registry commits dependency-review local-plugin-plan"
+    env = {**_OFF, "SITE_ONLY": "false", "CORE": "false", "PLUGIN_PATHS": "true", "PLUGINS": "True"}
+    assert _ci_ok_run(run + " local-plugin-check", **env)[0] == 0
+    assert _ci_ok_run(run, **env)[0] != 0

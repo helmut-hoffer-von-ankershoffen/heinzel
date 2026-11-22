@@ -171,6 +171,8 @@ jobs:
         run: |
           changed="$(git diff --name-only "$BASE...HEAD")" || changed=""
           full_release="${FULL_RELEASE:-false}"
+          # Any release/* branch gets the complete run, the canonical candidate or not.
+          [[ "${HEAD_REF:-}" != release/* ]] || full_release=true
           # A push to main of prose alone: the pull request already ran everything on the same content. docs/ also
           # holds the install scripts, and release commits change CHANGELOG.md, so neither counts.
           prose_push=false
@@ -229,14 +231,18 @@ jobs:
           else
             echo "plugins=false" >> "$GITHUB_OUTPUT"
           fi
-          if [ "$core_work" = true ] && { [ "$full_release" = true ] || [ "$EVENT" != pull_request ] \
+          if [ "$core_work" = true ] && { [ "$full_release" = true ] || [ "$EVENT" != pull_request ] || [ -z "$changed" ] \
             || grep -qE '^(src/heinzel/modules/system/notify/macos/|scripts/notifier\.py$|scripts/tools\.toml$|Makefile$|pyproject\.toml$|\.github/workflows/ci\.yml$)' <<< "$changed"; }; then
             echo "notifier=true" >> "$GITHUB_OUTPUT"
           else
             echo "notifier=false" >> "$GITHUB_OUTPUT"
           fi
-          if [ "$core_work" = true ] && { [ "$full_release" = true ] || [ "$EVENT" != pull_request ] \
-            || grep -qE '^(src/heinzel/kernel/|src/heinzel/__init__\.py$|src/heinzel/heads/|src/heinzel/modules/system/ui/|web/src/plugins/)' <<< "$changed"; }; then
+          # Contract consumers fail closed: only a change whose every path is in the known-safe list (prose, the web UI
+          # outside web/src/plugins/, desktop, the Apple apps, tests) leaves them off. An empty or failed diff, an unknown
+          # path, src/heinzel/ code, pyproject.toml and uv.lock keep them on.
+          if [ "$core_work" = true ] && { [ "$full_release" = true ] || [ "$EVENT" != pull_request ] || [ -z "$changed" ] \
+            || grep -qE '^web/src/plugins/' <<< "$changed" \
+            || grep -qvE '^(docs/.*|[^/]*\.md|mkdocs\.yml|web/(src|e2e)/.*|desktop/.*|apple/.*|tests/.*)$' <<< "$changed"; }; then
             echo "contracts=true" >> "$GITHUB_OUTPUT"
           else
             echo "contracts=false" >> "$GITHUB_OUTPUT"
@@ -431,7 +437,7 @@ jobs:
         # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
         # under that same cap. PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.
         include:
-          ${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
+          ${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
     env:
       HZ_TEST_TIMEOUT_SCALE: "${{ contains(matrix.os, 'macos') && '3' || '1' }}" # hosted macOS runners are slower; Linux stays at 1
       # Unit-bearing cells need locked Node; integration-only dependency groups stay unchanged.
@@ -1310,6 +1316,7 @@ jobs:
           SURFACE_ONLY: ${{ needs.changes.outputs.surface_only }}
           PLUGINS: ${{ needs.local-plugin-plan.outputs.selected }}
           FULL_RELEASE: ${{ needs.changes.outputs.full_release }}
+          HEAD_REF: ${{ github.head_ref }}
           SITE_ONLY: ${{ needs.changes.outputs.site_only }}
           CORE: ${{ needs.changes.outputs.core }}
           NOTIFIER: ${{ needs.changes.outputs.notifier }}
@@ -1329,7 +1336,8 @@ jobs:
           # An Apple-only or prose-only pull request (contexts.toml, level L0) skips the Python jobs.
           # An ordinary pull request (not a release candidate) requires what its changed paths select, no more: the jobs
           # the selector skipped are not required. Main, the nightly, a release and a missing selector stay complete.
-          if [ "$EVENT" = pull_request ] && [ "${FULL_RELEASE:-true}" != true ] && [ "${LANE:-all}" = all ]; then
+          if [ "$EVENT" = pull_request ] && [ "${FULL_RELEASE:-true}" != true ] \
+            && [[ "${HEAD_REF:-}" != release/* ]] && [ "${LANE:-all}" = all ]; then
             drop() { local keep=() job x; for job in "${required[@]}"; do for x in "$@"; do [ "$job" = "$x" ] && continue 2; done; keep+=("$job"); done; required=("${keep[@]}"); }
             if [ "${SITE_ONLY:-false}" = true ]; then drop test coverage perf e2e template; required+=(site-tests); fi
             [ "${NOTIFIER:-true}" = true ] || drop notifier
@@ -1340,6 +1348,7 @@ jobs:
             if [ "${CORE:-true}" != true ]; then
               required=(admission changes secrets quarantine-registry commits dependency-review)
               [ "${PLUGIN_PATHS:-false}" != true ] || required+=(local-plugin-plan)
+              [ "${PLUGINS:-False}" != True ] || required+=(local-plugin-check)
             fi
           fi
           if [ "${SURFACE_ONLY:-false}" = true ]; then required=(admission changes lint secrets commits dependency-review quarantine-registry macos-specific); fi
