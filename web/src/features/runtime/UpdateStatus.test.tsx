@@ -4,7 +4,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { requestMenuAction } from "@/about/menu";
 import { Providers, queryClient } from "@/app/providers";
 import { KEY } from "@/features/runtime/updates/autoUpdateApi";
-import { readUpdatePlan, startUpdate } from "@/features/runtime/updates/controller";
+import { readUpdatePlan, startUpdate, updateDesktopApp } from "@/features/runtime/updates/controller";
 import { type Phase, type PhaseState, resetOperationRun } from "@/lib/operationRun";
 import { shell } from "@/test/fixtures";
 import { expectPane } from "@/test/pane";
@@ -16,6 +16,7 @@ vi.mock("@/features/runtime/updates/controller", async (load) => ({
   ...(await load<typeof import("@/features/runtime/updates/controller")>()),
   startUpdate: vi.fn(async () => "Verified"),
   readUpdatePlan: vi.fn(),
+  updateDesktopApp: vi.fn(async () => undefined),
 }));
 /** A plan with nothing but Heinzel in it, for the tests that only pass through the confirmation. */
 const barePlan = {
@@ -556,4 +557,37 @@ it("says that the plan changed when the server installs nothing because a releas
     expect(screen.getAllByRole("alert").some((alert) => alert.textContent?.includes("The plan changed"))).toBe(true),
   );
   expect(startUpdate).toHaveBeenCalledTimes(1);
+});
+
+it("says when the desktop app is older than Heinzel and updates it with one button", async () => {
+  vi.mocked(updateDesktopApp).mockClear();
+  const current = { ...status, latest: status.current, available: false };
+  mockApi({
+    ...shell,
+    "/api/update-status": { ...current, desktop: { version: "0.0.9", variant: "native", behind: true } },
+  });
+  const user = userEvent.setup();
+  renderAt("/");
+  const icon = await screen.findByRole("button", { name: /Updates available/ });
+  expect(icon).toHaveClass("animate-pulse", "text-bad");
+  await user.click(icon);
+  expect(await screen.findByText("Desktop app 0.0.9 is older than Heinzel 0.1.0")).toBeInTheDocument();
+  expect(updateDesktopApp).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Update desktop app" }));
+  expect(updateDesktopApp).toHaveBeenCalledTimes(1);
+  expect(await screen.findByText(/Updating the desktop app/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Update desktop app" })).not.toBeInTheDocument();
+  expect(startUpdate).not.toHaveBeenCalled();
+});
+
+it("offers no desktop update when the desktop app is current", async () => {
+  const current = { ...status, latest: status.current, available: false };
+  mockApi({
+    ...shell,
+    "/api/update-status": { ...current, desktop: { version: "0.1.0", variant: "electron", behind: false } },
+  });
+  renderAt("/");
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Updates, off" }));
+  expect(screen.queryByRole("button", { name: "Update desktop app" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/is older than Heinzel/)).not.toBeInTheDocument();
 });
