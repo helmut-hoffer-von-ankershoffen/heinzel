@@ -26,7 +26,7 @@ import pytest
 from tests.e2e._mobile_server_output import MobileServerOutput, check_driver, redact, sanitize_timeout
 from tests.e2e._reopen_server import receipt_tail
 
-pytestmark = pytest.mark.e2e
+pytestmark = [pytest.mark.e2e, pytest.mark.real_system]
 
 REPO = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("web_build", REPO / "scripts" / "web_build.py")

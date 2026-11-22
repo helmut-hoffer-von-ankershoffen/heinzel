@@ -23,8 +23,8 @@ OWNERS = contexts.owners(CONFIG, FILES)
 WORLD = re.compile(
     r"\bsubprocess\.(?:run|Popen|check_output|check_call|call)\b|\btime\.(?:sleep|monotonic)\b|\blaunchctl\b|\bdatetime\.now\("
 )
-MAX_CONTEXT_EDGES = 8
-MAX_HEAD_EDGES = 12
+MAX_CONTEXT_EDGES = 3
+MAX_HEAD_EDGES = 4
 
 
 def test_every_mapped_file_has_exactly_one_owner():

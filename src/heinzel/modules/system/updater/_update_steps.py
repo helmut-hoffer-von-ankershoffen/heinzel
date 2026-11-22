@@ -3,12 +3,12 @@
 from collections.abc import Sequence
 
 from heinzel import Progress
+from heinzel._phases import Phases, State
 from heinzel.kernel import (
     HeadRefresh,
 )
 from heinzel.kernel._desktop_app import app_hint
 from heinzel.modules.system._models import UpdatePlan, UpdateResult
-from heinzel.modules.system.updater._phases import Phases, State
 from heinzel.modules.system.updater._update_rules import SETTLED, plugin_step
 
 
