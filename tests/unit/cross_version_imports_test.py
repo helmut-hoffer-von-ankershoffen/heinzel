@@ -307,7 +307,10 @@ def test_the_kernel_entry_keeps_every_name_the_published_updater_holds(version: 
 def test_a_resident_lazy_hook_serves_only_the_names_the_current_package_has() -> None:
     """0.9.54's updater package answers `Activity` through its PEP 562 hook; a name the hook lost is a problem."""
     tree, old, updater = Tree(SOURCE), published("0.9.54"), "heinzel.modules.system.updater"
-    needs = f"heinzel.heads.web._auto_update needs {updater}.Activity"
+    # The web head now asks `updater.api`, a file 0.9.54 never held; pin the model with a file that asks the package.
+    asker = "heinzel.heads.web._auto_update"
+    tree.modules[asker] = (ast.parse(f"from {updater} import Activity"), False)
+    needs = f"{asker} needs {updater}.Activity"
     assert needs not in swap_problems(old, tree).get("heinzel.heads", [])
     source = ast.unparse(tree.modules[updater][0]).replace("Activity, ", "").replace("'Activity', ", "")
     tree.modules[updater] = (ast.parse(source), True)
