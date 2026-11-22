@@ -139,12 +139,14 @@ it("a completed navigation does not replace a newer address edit", async () => {
   const navigation = new Promise<{ status: string; url: string }>((resolve) => {
     finishNavigation = resolve;
   });
-  const browser = vi.fn(async ({ action }: Record<string, unknown>) =>
-    action === "navigate" ? navigation : { status: "empty" },
+  // Only the typed address waits; the start page the active panel loads on its own answers at once.
+  const browser = vi.fn(async ({ action, url }: Record<string, unknown>) =>
+    action === "navigate" && String(url).includes("example.com") ? navigation : { status: "empty" },
   );
   Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
-  render(<BrowserPanel active={false} onClose={vi.fn()} />);
+  render(<BrowserPanel active onClose={vi.fn()} />);
   const address = screen.getByRole("textbox", { name: "Website address" });
+  await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "navigate", url: "https://heinzel.team" }));
   fireEvent.change(address, { target: { value: "example.com" } });
   fireEvent.click(screen.getByRole("button", { name: "Open this address" }));
   fireEvent.change(address, { target: { value: "next.example.com" } });
