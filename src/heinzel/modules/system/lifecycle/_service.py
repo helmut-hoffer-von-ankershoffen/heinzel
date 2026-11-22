@@ -11,7 +11,6 @@ import socket
 import stat
 import subprocess
 import sys
-import time
 from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -22,6 +21,7 @@ from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 from heinzel import Config, HeinzelError, Kernel, Settings
 from heinzel._adapter_service import Job, LaunchdServiceManager, SystemdServiceManager
+from heinzel._adapter_system import SYSTEM_CLOCK, SYSTEM_RUNNER
 from heinzel.kernel import (
     HeadRefresh,
     HostServiceManager,
@@ -69,7 +69,7 @@ Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
 def _run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
     # The manager executable is resolved and its argument vector is fixed by the operation.
-    return subprocess.run(command, capture_output=True, text=True, check=False, timeout=10)  # noqa: S603
+    return SYSTEM_RUNNER.run(command, timeout=10)
 
 
 class WebStatus(BaseModel):
@@ -142,8 +142,8 @@ class WebService:
         uv: Path | None = None,
         profile: dict[str, str] | None = None,
         unsupported: tuple[str, ...] = (),
-        clock: Callable[[], float] = time.monotonic,
-        sleep: Callable[[float], None] = time.sleep,
+        clock: Callable[[], float] = SYSTEM_CLOCK.monotonic,
+        sleep: Callable[[float], None] = SYSTEM_CLOCK.sleep,
         repair: Callable[[], bool] | None = None,
     ) -> None:
         """Keep the stable shim path unresolved, because uv replaces its destination during updates.

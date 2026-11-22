@@ -5,9 +5,11 @@ Two kinds of code run across a version boundary:
 - `hz system update` replaces the installed files while the published process keeps its booted modules in
   memory. Each import that process makes later, inside a function, loads a file of the new tree, and that file
   takes names from the old modules in memory. The manifests in `tests/fixtures/published_resident/` record, per
-  published version (the legacy fixture's 0.9.14 and 0.9.15, and the 0.9.52 and 0.9.53 users update from), the
-  modules in memory after boot with their runtime names, and the imports made inside functions (`record.py` says
-  how to record one).
+  published version (the legacy fixture's 0.9.14 and 0.9.15, and the 0.9.52 to 0.9.54 users update from), the
+  modules in memory after boot with their runtime names, the classes each of them defines (from 0.9.52 on), and
+  the imports made inside functions (`record.py` says how to record one).
+- A class that moved keeps one identity: a published process that holds it from the old file must never load a
+  second definition from the new one, and in the current tree the old path re-exports the very same object.
 - `tests/fixtures/legacy_recovery_manager.py` is installed next to published wheels and imported by their
   interpreters (0.9.14, then 0.9.15, then the candidate).
 """
@@ -22,18 +24,24 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.unit
+# Each test parses the whole source tree, which takes seconds on a loaded runner: the integration limit, scaled by CI.
+pytestmark = [pytest.mark.unit, pytest.mark.timeout(15)]
 
 REPO = Path(__file__).resolve().parents[2]
 SOURCE = REPO / "src"
 MANIFESTS = REPO / "tests/fixtures/published_resident"
 FIXTURE = REPO / "tests/fixtures/legacy_recovery_manager.py"
-VERSIONS = ("0.9.14", "0.9.15", "0.9.52", "0.9.53")  # the legacy fixture's versions and what users update from
+# The legacy fixture's versions and what users update from.
+VERSIONS = ("0.9.14", "0.9.15", "0.9.52", "0.9.53", "0.9.54")
 FIXTURE_VERSIONS = ("0.9.14", "0.9.15")
+DEFINING = ("0.9.52", "0.9.53", "0.9.54")  # recorded with their `define` lines
+# Packages the kernel move (KERNEL-HARNESS-056) fills: only facades import them, so a published process never
+# loads them after a swap, until the facades go with the oldest supported version.
+FACADE_ONLY = ("heinzel.spec", "heinzel.services")
 
 # Imports inside functions of a published version that already failed after a swap to a newer tree before the
 # check existed (version skew of those heads and renderers, not of the update path). This list may only shrink.
-KNOWN_BROKEN = {
+KNOWN_BROKEN: dict[str, set[str]] = {
     "0.9.14": {"heinzel.heads"},
     "0.9.15": {
         "heinzel.heads",
@@ -46,13 +54,29 @@ KNOWN_BROKEN = {
     },
     "0.9.52": set(),
     "0.9.53": set(),
+    "0.9.54": set(),
 }
+
+# Files #895 (published in 0.9.54) moved into kernel subpackages without a file at the old path: after a swap, a
+# 0.9.52 or 0.9.53 process holds their classes from the old file and loads a second copy from the new one. This
+# list may only shrink; nothing may be added to it.
+_MOVED_BY_895 = {
+    "heinzel.kernel.ai._agent_writes",
+    "heinzel.kernel.ai._agents",
+    "heinzel.kernel.ai._ai_models",
+    "heinzel.kernel.session._chat",
+    "heinzel.kernel.session._chat_services",
+    "heinzel.kernel.session._chat_tools",
+    "heinzel.kernel.session._presence",
+}
+KNOWN_SPLIT: dict[str, set[str]] = {"0.9.52": _MOVED_BY_895, "0.9.53": _MOVED_BY_895, "0.9.54": set()}
 
 
 @dataclass
 class Published:
-    resident: dict[str, set[str]] = field(default_factory=dict)
-    lazy: list[tuple[str, str, list[str]]] = field(default_factory=list)
+    resident: dict[str, set[str]] = field(default_factory=dict[str, set[str]])
+    defines: dict[str, set[str]] = field(default_factory=dict[str, set[str]])
+    lazy: list[tuple[str, str, list[str]]] = field(default_factory=list[tuple[str, str, list[str]]])
 
     def has(self, module: str, name: str) -> bool:
         return name in self.resident.get(module, set()) or f"{module}.{name}" in self.resident
@@ -64,6 +88,8 @@ def published(version: str) -> Published:
         kind, *rest = line.split(" ")
         if kind == "resident":
             record.resident[rest[0]] = set(rest[1:])
+        elif kind == "define":
+            record.defines[rest[0]] = set(rest[1:])
         elif kind == "lazy":
             record.lazy.append((rest[0], rest[1], rest[2].split(",") if len(rest) > 2 else []))
     return record
@@ -88,6 +114,22 @@ class Tree:
             *(n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))),
             *(a.asname or a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) for a in n.names),
         }
+
+    def hook_imports(self, module: str) -> Iterator[tuple[str, list[str]]]:
+        """What the module's PEP 562 `__getattr__` imports when it serves a name on first use."""
+        tree, package = self.modules[module]
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef) and node.name == "__getattr__":
+                for child in ast.walk(node):
+                    if isinstance(child, ast.ImportFrom):
+                        target = child.module if child.level == 0 else _relative(module, package, child)
+                        if target:
+                            yield target, [alias.name for alias in child.names]
+
+    def classes(self, module: str) -> set[str]:
+        """The classes the module defines itself, at the top level."""
+        tree, _ = self.modules[module]
+        return {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
 
     def top_level_imports(self, module: str) -> Iterator[tuple[str, list[str]]]:
         """What executing the module imports at once (outside functions and TYPE_CHECKING)."""
@@ -137,7 +179,17 @@ def _loads(tree: Tree, target: str, names: list[str]) -> list[str]:
 
 def swap_problems(old: Published, tree: Tree) -> dict[str, list[str]]:
     """Per import a published process makes after a swap: what the new files ask of its modules in memory."""
+    return _swap(old, tree)[0]
+
+
+def swap_fresh_loads(old: Published, tree: Tree) -> dict[str, set[str]]:
+    """Per import a published process makes after a swap: the files of the new tree it loads fresh."""
+    return _swap(old, tree)[1]
+
+
+def _swap(old: Published, tree: Tree) -> tuple[dict[str, list[str]], dict[str, set[str]]]:
     problems: dict[str, list[str]] = {}
+    loaded: dict[str, set[str]] = {}
     for _importer, target, names in old.lazy:
         found = problems.setdefault(target, [])
         if target in old.resident:  # loaded already; only its submodules not yet in memory come from the new tree
@@ -152,7 +204,7 @@ def swap_problems(old: Published, tree: Tree) -> dict[str, list[str]]:
         else:
             found += [f"{target}.{name} is gone" for name in names if not tree.defines(target, name)]
             todo = _loads(tree, target, names)
-        seen: set[str] = set()
+        seen = loaded.setdefault(target, set())
         while todo:
             module = todo.pop()
             if module in seen or module in old.resident:
@@ -160,14 +212,56 @@ def swap_problems(old: Published, tree: Tree) -> dict[str, list[str]]:
             seen.add(module)
             for imported, wanted in tree.top_level_imports(module):
                 if imported in old.resident:
-                    found += [
-                        f"{module} needs {imported}.{n}"
-                        for n in wanted
-                        if not old.has(imported, n) and f"{imported}.{n}" not in tree.modules  # a new file loads fresh
-                    ]
+                    missing = [n for n in wanted if not old.has(imported, n) and f"{imported}.{n}" not in tree.modules]
+                    if missing and "__getattr__" in old.resident[imported] and imported in tree.modules:
+                        # the resident hook serves them on first use and loads its files from the new tree
+                        for hooked, served in tree.hook_imports(imported):
+                            todo += _loads(tree, hooked, served)
+                        missing = [n for n in missing if not tree.defines(imported, n)]
+                    found += [f"{module} needs {imported}.{n}" for n in missing]  # a new file loads fresh
                     todo += [f"{imported}.{n}" for n in wanted if f"{imported}.{n}" in tree.modules]
                 todo += _loads(tree, imported, wanted)
-    return {target: sorted(set(found)) for target, found in problems.items() if found}
+    found_problems = {target: sorted(set(found)) for target, found in problems.items() if found}
+    return found_problems, {target: fresh for target, fresh in loaded.items() if fresh}
+
+
+def moved_classes(old: Published, tree: Tree) -> dict[str, str]:
+    """`module.Class` a published process defines in a file that no longer defines it itself (moved or gone)."""
+    return {
+        f"{module}.{name}": module
+        for module, names in old.defines.items()
+        for name in names
+        if module not in tree.modules or name not in tree.classes(module)
+    }
+
+
+def _moved_to(old_module: str, name: str, new_module: str, tree: Tree) -> bool:
+    """A move keeps the file name, or the old file re-exports the class from its new file."""
+    if old_module.rpartition(".")[2] == new_module.rpartition(".")[2]:
+        return True
+    return old_module in tree.modules and any(
+        target == new_module and name in names for target, names in tree.top_level_imports(old_module)
+    )
+
+
+def swap_identity_problems(old: Published, tree: Tree) -> dict[str, list[str]]:
+    """Per import after a swap: fresh files that define again a class the process holds, or that only facades load."""
+    moved: dict[str, set[str]] = {}
+    for qualified, module in moved_classes(old, tree).items():
+        moved.setdefault(qualified.rpartition(".")[2], set()).add(module)
+    problems: dict[str, list[str]] = {}
+    for target, fresh in swap_fresh_loads(old, tree).items():
+        found = [f"{module} is facade-only and loads fresh" for module in fresh if module.startswith(FACADE_ONLY)]
+        found += [
+            f"{module} defines {name} again; the process holds it from {held}"
+            for module in fresh
+            for name in tree.classes(module)
+            for held in moved.get(name, set())
+            if _moved_to(held, name, module, tree)
+        ]
+        if found:
+            problems[target] = sorted(set(found))
+    return problems
 
 
 @pytest.mark.parametrize("version", VERSIONS)
@@ -176,6 +270,70 @@ def test_a_published_process_can_finish_its_update_on_the_current_tree(version: 
     new = {target: found for target, found in broken.items() if target not in KNOWN_BROKEN[version]}
     assert new == {}, "keep these imports light or keep the names; see heinzel.modules.system.updater"
     assert KNOWN_BROKEN[version] <= set(broken), "remove the entries that work now from KNOWN_BROKEN"
+
+
+@pytest.mark.parametrize("version", DEFINING)
+def test_a_published_process_never_loads_a_second_definition_of_a_class_it_holds(version: str) -> None:
+    found = {line for lines in swap_identity_problems(published(version), Tree(SOURCE)).values() for line in lines}
+    known = {line for line in found if line.split(" ")[0] in KNOWN_SPLIT[version]}
+    assert sorted(found - known) == [], "keep the old file as a re-export and import the class from there"
+    assert {line.split(" ")[0] for line in known} == KNOWN_SPLIT[version], "remove what is fixed from KNOWN_SPLIT"
+
+
+@pytest.mark.parametrize("version", DEFINING)
+def test_a_moved_class_is_the_same_object_at_its_old_path(version: str) -> None:
+    """The current tree: every class a published version defined is, where its old file still exists, one object."""
+    tree = Tree(SOURCE)
+    split: list[str] = []
+    for qualified, module in moved_classes(published(version), tree).items():
+        name = qualified.rpartition(".")[2]
+        if module not in tree.modules or not tree.defines(module, name):
+            continue  # gone from the old path: the swap test above decides whether a published process needs it
+        held = getattr(importlib.import_module(module), name)
+        home = importlib.import_module(held.__module__)
+        if getattr(home, held.__qualname__, None) is not held:
+            split.append(f"{qualified} is not {held.__module__}.{held.__qualname__}")
+    assert split == []
+
+
+@pytest.mark.parametrize("version", ["0.9.54"])
+def test_the_kernel_entry_keeps_every_name_the_published_updater_holds(version: str) -> None:
+    """`heinzel.kernel` stays a re-export of all its published names while the code behind it moves."""
+    import heinzel.kernel
+
+    names = published(version).resident["heinzel.kernel"] - set(dir(heinzel.kernel))
+    assert sorted(n for n in names if importlib.util.find_spec(f"heinzel.kernel.{n}") is None) == []
+
+
+def test_a_resident_lazy_hook_serves_only_the_names_the_current_package_has() -> None:
+    """0.9.54's updater package answers `Activity` through its PEP 562 hook; a name the hook lost is a problem."""
+    tree, old, updater = Tree(SOURCE), published("0.9.54"), "heinzel.modules.system.updater"
+    needs = f"heinzel.heads.web._auto_update needs {updater}.Activity"
+    assert needs not in swap_problems(old, tree).get("heinzel.heads", [])
+    source = ast.unparse(tree.modules[updater][0]).replace("Activity, ", "").replace("'Activity', ", "")
+    tree.modules[updater] = (ast.parse(source), True)
+    assert needs in swap_problems(old, tree)["heinzel.heads"]
+
+
+def test_every_published_version_since_052_records_its_classes() -> None:
+    for version in DEFINING:
+        assert published(version).defines, f"record {version} again with record.py"
+
+
+def test_the_identity_check_catches_a_second_definition() -> None:
+    """Pin the model: a class moved to a fresh file that a published process loads after the swap is a split."""
+    tree = Tree(SOURCE)
+    old = published("0.9.54")
+    module, names = next((m, n) for m, n in sorted(old.defines.items()) if m in tree.modules and m in old.resident)
+    name = min(names)
+    renderer = "heinzel.modules.system._render"
+    copy = "heinzel.spec._moved"
+    tree.modules[module] = (ast.parse(f"from {copy} import {name}"), tree.modules[module][1])
+    tree.modules[copy] = (ast.parse(f"class {name}: ..."), False)
+    tree.modules[renderer] = (ast.parse(f"from {copy} import {name}"), False)
+    found = swap_identity_problems(old, tree)[renderer]
+    assert f"{copy} defines {name} again; the process holds it from {module}" in found
+    assert f"{copy} is facade-only and loads fresh" in found
 
 
 def test_the_update_result_renders_after_the_published_015_updater_swapped_the_files() -> None:
@@ -240,7 +398,19 @@ def test_the_legacy_fixture_names_only_what_each_interpreter_it_runs_in_has() ->
     assert sorted(f"{m}.{n}" for m, n in shared | candidate if not _current_has(m, n)) == []
 
 
-@pytest.mark.parametrize("name", ["heinzel.__main__", "heinzel._lifecycle_control", "_heinzel_launcher"])
+ENTRIES = [
+    "heinzel.__main__",
+    "heinzel._lifecycle_control",
+    "_heinzel_launcher",
+    "heinzel.kernel",  # the kernel entry: its names are re-exports, its path stays (KERNEL-HARNESS-056)
+    "heinzel.kernel._kernel",
+    "heinzel.kernel._boot",
+    "heinzel.heads.cli",
+    "heinzel.testing",
+]
+
+
+@pytest.mark.parametrize("name", ENTRIES)
 def test_cross_version_product_entries_keep_their_module_names(name: str) -> None:
     """Older installed tools and desktop apps start the newer one by these module names."""
     assert importlib.util.find_spec(name) is not None, name
