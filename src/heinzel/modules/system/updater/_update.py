@@ -31,6 +31,7 @@ from heinzel.kernel import (
     HeadRefresh,
     ToolConstraintPolicy,
 )
+from heinzel.kernel._desktop_app import label
 from heinzel.kernel._logging import step
 from heinzel.modules.system._models import AnnouncedUpdate, UpdatePlan, UpdateResult
 from heinzel.modules.system._service import RELEASE_TIMEOUT
@@ -45,6 +46,7 @@ from heinzel.modules.system.updater._announced import (
 )
 from heinzel.modules.system.updater._plugin_releases import PinnedPlugins
 from heinzel.modules.system.updater._update_channels import UpdateChannels
+from heinzel.modules.system.updater._update_heads import recorded_flavor
 from heinzel.modules.system.updater._update_rules import (
     AGREED,
     Agreed,
@@ -424,7 +426,11 @@ class UpdateService(UpdateChannels):
         app = self._desktop_state()
         ran = self._daemon_version()
         steps = self._steps = Steps(
-            self._progress, own_rows(names, shown), len(names), desktop=app is not None, daemon=ran is not None
+            self._progress,
+            own_rows(names, shown),
+            len(names),
+            desktop=None if app is None else label(app.variant),
+            daemon=ran is not None,
         )
         try:
             steps.start("check")
@@ -478,6 +484,7 @@ class UpdateService(UpdateChannels):
             plugins=plans,
             desktop=self._desktop_installed(),
             desktop_running=self._desktop_installed() and self._running(),
+            desktop_variant=self._variant(self._found(), recorded_flavor(self._receipt())),
             daemon=self._daemon_version() is not None,
             token=plan_token(latest, plans),
         )

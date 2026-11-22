@@ -14,6 +14,7 @@ import pytest
 
 from heinzel import HeinzelError, Progress
 from heinzel.kernel import PluginRelease
+from heinzel.kernel._desktop_app import DesktopApp
 from heinzel.kernel._head_refresh import HeadRefresh
 from heinzel.modules import system
 from heinzel.modules.system._models import PluginPlan, PluginUpdate, UpdatePlan, UpdateResult
@@ -1038,3 +1039,80 @@ def test_nothing_is_recovered_where_no_automatic_update_stopped_half_way(tmp_pat
     kernel = SimpleNamespace(settings=SimpleNamespace(state_dir=tmp_path))
     assert system.recover_announced(SimpleNamespace(is_tool=True), kernel) is False  # type: ignore[arg-type]
     assert system.recover_announced(SimpleNamespace(is_tool=False), kernel) is False  # type: ignore[arg-type]
+
+
+# Which desktop app is there: a genuine copy hz did not record is brought along; a native one updates itself.
+
+
+def found_app(variant, version="0.1.0"):
+    bundle_id = {"native": "team.heinzel.apple", "electron": "org.heinzelmaennchen.desktop"}.get(variant, "com.x")
+    return DesktopApp(path="/Applications/Heinzelmaennchen.app", variant=variant, bundle_id=bundle_id, version=version)
+
+
+def with_found(tmp_path, home, app, found, *, running=False):
+    uv = FakeUv("0.2.0")
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    return UpdateService(
+        target, FakeReleases("0.4.0"), home=home, desktop=app, running=lambda: running, found=lambda: found
+    )
+
+
+def test_an_electron_app_hz_did_not_record_is_brought_along_and_reopened(tmp_path, monkeypatch):
+    monkeypatch.setattr(_update_heads.platform, "system", lambda: "Darwin")
+    home = tmp_path / "home"
+    home.mkdir()  # no install record at all: installed from a download or by an older hz
+    app = App()
+    service = with_found(tmp_path, home, app, found_app("electron"), running=True)
+    result = service.update(current="0.2.0", desktop=True, restart=True)
+    assert app.calls == [True]  # `hz app install --restart`: it replaces the genuine copy, quits and reopens it
+    [head] = result.heads
+    assert (head.status, head.before, head.version, head.variant, head.reopened) == (
+        "verified",
+        "0.1.0",
+        "0.4.0",
+        "electron",
+        True,
+    )
+
+
+def test_an_app_whose_record_does_not_match_is_updated_and_the_row_names_electron(tmp_path, desktop_home):
+    (desktop_home / _update_rules.DESKTOP_RECEIPT).write_text('{"release": "0.3.0"}', encoding="utf-8")
+    app = App()
+    service = with_found(tmp_path, desktop_home, app, found_app("electron", "0.3.5"), running=True)
+    result = service.update(current="0.2.0", desktop=True, restart=True)
+    assert app.calls == [True]
+    lines = render_update(result).plain.splitlines()
+    row = next(line for line in lines if "Electron app" in line)
+    assert "0.3.0 → 0.4.0, quit and reopened; `hz app install --flavor native` switches to the Native app" in row
+
+
+def test_a_native_app_hz_did_not_record_updates_itself_and_is_never_replaced(tmp_path, desktop_home):
+    app = App()  # the record names an Electron install; the native app took its place
+    service = with_found(tmp_path, desktop_home, app, found_app("native", "0.3.0"), running=True)
+    result = service.update(current="0.2.0", desktop=True, restart=True)
+    assert app.calls == []
+    [head] = result.heads
+    assert (head.status, head.variant) == ("pending", "native")
+    assert head.detail == "it updates itself; hz app install leaves it."
+    assert render_update(result).plain.splitlines()[-2].startswith(" ! Native app 0.3.0")
+
+
+def test_a_native_app_hz_installed_is_updated_by_hz_app_install(tmp_path, desktop_home):
+    (desktop_home / _update_rules.DESKTOP_RECEIPT).write_text(
+        '{"release": "0.3.0", "flavor": "swift"}', encoding="utf-8"
+    )
+    app = App()
+    service = with_found(tmp_path, desktop_home, app, found_app("native", "0.3.0"))
+    result = service.update(current="0.2.0", desktop=True)
+    assert app.calls == [False]
+    assert (result.heads[0].variant, result.heads[0].status) == ("native", "verified")
+    assert service.plan(current="0.2.0").desktop_variant == "native"
+
+
+def test_the_summary_names_both_marks_a_row_can_carry():
+    result = result_of(
+        heads=[HeadRefresh(head="desktop", status="failed", detail="`hz app install` didn't update it.")]
+    )
+    lines = render_update(result).plain.splitlines()
+    assert lines[-2].startswith(" ✗ Desktop app")
+    assert lines[-1] == "Finished with warnings: the lines marked ! or ✗ say what finishes the job."

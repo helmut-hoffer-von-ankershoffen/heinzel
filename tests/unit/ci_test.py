@@ -114,6 +114,11 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv python install 3.15": "the isolated acceptance study interpreter",
         '"$(uv python find 3.15)" -I scripts/acceptance/': "runs or reduces the isolated acceptance study",
     },
+    "acceptance-scenario.yml": {
+        "uv python install 3.15": "the interpreter the scenario runs on",
+        '"$(uv python find 3.15)" -I scripts/acceptance/': "runs the advisory upgrade scenario on a hosted runner",
+        'echo "::warning title=Advisory scenario failed::': "reports an advisory failure without a red check",
+    },
     "acceptance.yml": {
         "uv python install 3.15": "the interpreter the harness runs on",
         '"$(uv python find 3.15)" -I scripts/acceptance/': (
@@ -199,12 +204,10 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     },
     "release-tag.yml": {'tag="v$(uv version --short)"': "tags a merged release commit"},
     "claude-review.yml": {
-        'files="$(git diff': "picks the review tier from the changed files",
-        "uv run --no-project --frozen --no-build --python 3.15 python scripts/review_outcome.py": (
-            "judges the review attempt; the job has no project environment"
-        ),
-        'gh api "repos/${GITHUB_REPOSITORY}/check-runs"': "reports a review that could not run as a neutral check",
-        'if [[ "$VERDICT" == reviewed ]]': "the review check passes only on a review",
+        "gate_paths='^(": "finds the gate paths the pull request touches; no tokens when there are none",
+        'git -c "http.extraheader': "fetches the head as git objects only, never checks it out",
+        'if [[ "$OUTCOME" != success': "collects the model result; a review that did not run fails",
+        'if [[ "$MODE" == pass ]]': "no model call without gate paths; a gate change nobody reviewed fails",
     },
     "update-prs.yml": {
         "gh pr list": "updates auto-merging pull requests with main",
@@ -969,18 +972,98 @@ def test_the_template_audit_runs_in_template_test_ci_and_full_preflight():
     assert "make template-test AUDIT=1" in ci
 
 
-def test_claude_review_skips_events_sent_by_bots():
-    """The action refuses bot-triggered runs (update-prs merges, release pull requests), so the job must not start."""
-    spec = yaml.safe_load((REPO / ".github" / "workflows" / "claude-review.yml").read_text(encoding="utf-8"))
-    condition = spec["jobs"]["attempt"]["if"]
-    assert spec["jobs"]["review"]["needs"] == "attempt"
-    for clause in (
-        "vars.CLAUDE_REVIEW == 'true'",
-        "github.event.sender.type != 'Bot'",
-        "!github.event.pull_request.draft",
-        "github.event.pull_request.head.repo.full_name == github.repository",
+def _gate_review():
+    return yaml.safe_load((REPO / ".github" / "workflows" / "claude-review.yml").read_text(encoding="utf-8"))
+
+
+def _gate_scope_script():
+    return next(step["run"] for step in _gate_review()["jobs"]["scope"]["steps"] if step.get("id") == "scope")
+
+
+def test_gate_review_always_reports_one_check_and_fails_closed():
+    spec = _gate_review()
+    job = spec["jobs"]["gate-review"]
+    assert spec["name"] == job["name"] == "Gate review"
+    assert job["needs"] == ["scope", "model"]
+    assert job["if"] == "${{ !cancelled() }}"  # runs whatever the model job did, so nothing hangs pending
+    script = job["steps"][0]["run"]
+    assert 'if [[ "$MODE" == pass ]]' in script
+    assert "needs a human or agent review" in script  # a bot, fork or draft gate change
+    assert '"$MODEL" != success' in script  # a failed or skipped model run never passes
+    scope = _gate_scope_script()
+    assert 'SENDER_TYPE" == Bot' in scope
+    assert "mode=pass" in scope
+    assert spec["jobs"]["model"]["if"] == "needs.scope.outputs.mode == 'review'"
+
+
+def test_gate_review_runs_the_base_workflow_and_never_executes_the_head():
+    spec = _gate_review()
+    assert set(spec[True]) == {"pull_request_target"}
+    model = spec["jobs"]["model"]
+    checkout = next(step for step in model["steps"] if "actions/checkout" in step.get("uses", ""))
+    assert "ref" not in checkout["with"]  # the base branch
+    assert checkout["with"]["persist-credentials"] is False
+    fetch = next(step["run"] for step in model["steps"] if step.get("name", "").startswith("Fetch the head"))
+    assert "refs/pull/${PR}/head:refs/review/head" in fetch
+    for job in ("scope", "gate-review"):
+        assert not any("actions/checkout" in step.get("uses", "") for step in spec["jobs"][job]["steps"])
+    assert "github.event.pull_request.head.sha" not in str(checkout)
+
+
+def test_gate_review_fails_closed_beyond_the_files_api_limit():
+    scope = _gate_scope_script()
+    assert "CHANGED_FILES > 3000" in scope
+    assert scope.index("CHANGED_FILES > 3000") < scope.index("mode=pass")  # checked before it can pass
+
+
+def test_gate_review_lists_both_sides_of_a_rename():
+    assert "previous_filename" in _gate_scope_script()
+
+
+def test_gate_review_guards_the_reviewers_own_instructions():
+    gate_paths = next(line for line in _gate_scope_script().splitlines() if line.startswith("gate_paths="))
+    for needle in (
+        r"\.claude/",
+        r"(CLAUDE|AGENTS)\.md$",
+        r"\.github/(workflows/",
+        "CODEOWNERS",
+        "release_",
+        "bootstrap_",
     ):
-        assert clause in condition
+        assert needle in gate_paths
+    claude_args = next(
+        step["with"]["claude_args"] for step in _gate_review()["jobs"]["model"]["steps"] if step.get("id") == "review"
+    )
+    assert "--setting-sources user" in claude_args
+    assert """--settings '{"disableAllHooks":true}'""" in claude_args
+    assert "--disallowedTools" in claude_args
+    for tool in ("git diff", "git log", "git show"):
+        assert f"Bash({tool}*--output*)" in claude_args  # no file written by a git option
+    assert "--model opus" in claude_args
+
+
+def test_gate_review_passes_only_on_the_exact_last_line():
+    script = _gate_review()["jobs"]["gate-review"]["steps"][0]["run"]
+    assert '[[ "$VERDICT_LINE" == "VERDICT: APPROVE" ]]' in script
+    collect = next(step["run"] for step in _gate_review()["jobs"]["model"]["steps"] if step.get("id") == "result")
+    assert "grep -v '^[[:space:]]*$' <<<\"$result\" | tail -n 1" in collect  # the last non-empty line
+
+
+def test_gate_review_holds_least_privilege():
+    spec = _gate_review()
+    for name, job in spec["jobs"].items():
+        assert "id-token" not in job["permissions"], name
+    assert spec["jobs"]["model"]["permissions"] == {"contents": "read"}  # holds the secrets: no write
+    assert spec["jobs"]["gate-review"]["permissions"] == {"pull-requests": "write"}
+    assert spec["permissions"] == {}
+
+
+def test_gate_review_reruns_on_reopened_pull_requests():
+    assert "reopened" in _gate_review()[True]["pull_request_target"]["types"]
+
+
+def test_workflows_are_code_owned():
+    assert "/.github/workflows/ @helmut-hoffer-von-ankershoffen" in (REPO / ".github/CODEOWNERS").read_text()
 
 
 def test_core_keeps_tested_pull_request_heads_while_plugins_keep_branch_updates():
@@ -1030,10 +1113,10 @@ def test_template_installed_cli_uses_its_own_daemon_unit_directory(tmp_path, tmp
 
 
 def test_claude_review_prefers_the_api_key():
-    """Each review step authenticates with ANTHROPIC_API_KEY and uses the subscription token only without one."""
+    """The review step authenticates with ANTHROPIC_API_KEY and uses the subscription token only without one."""
     spec = yaml.safe_load((REPO / ".github" / "workflows" / "claude-review.yml").read_text(encoding="utf-8"))
-    actions = [step for step in spec["jobs"]["attempt"]["steps"] if "claude-code-action" in step.get("uses", "")]
-    assert actions
+    actions = [step for step in spec["jobs"]["model"]["steps"] if "claude-code-action" in step.get("uses", "")]
+    assert len(actions) == 1
     for step in actions:
         assert step["with"]["anthropic_api_key"] == "${{ secrets.ANTHROPIC_API_KEY }}"
         assert step["with"]["claude_code_oauth_token"].startswith("${{ secrets.ANTHROPIC_API_KEY == '' && ")

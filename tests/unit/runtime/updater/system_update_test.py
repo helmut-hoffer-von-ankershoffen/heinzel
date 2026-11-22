@@ -1638,6 +1638,7 @@ def _channels(pin, releases):
     service._clock, service._home = time.monotonic, None
     service._daemon = service._lifecycle = service._web = service._state = None
     service._running = lambda: False
+    service._found = lambda: None
     service._automatic_generation = lambda _current: None
     service._with_plugins = lambda result, *_a: result
     service.installs = []

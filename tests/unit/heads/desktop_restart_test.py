@@ -73,7 +73,7 @@ def test_a_quit_is_asked_for_exactly_the_wait_the_update_expects():
 
 def patched(monkeypatch, *, installed, open_now, quit_ok=True):
     quits = []
-    monkeypatch.setattr(installer, "desktop_installed", lambda: installed)
+    monkeypatch.setattr(installer, "desktop_to_update", lambda: installed)
     monkeypatch.setattr(installer, "is_open", lambda bundle: open_now)
     monkeypatch.setattr(installer, "quit_app", lambda bundle: quits.append(bundle) or quit_ok)
     return quits
@@ -88,6 +88,13 @@ def test_only_an_open_app_that_needs_the_update_is_quit(monkeypatch):
         assert quits == []  # not installed, already current, or not open: nothing is quit
     quits = patched(monkeypatch, installed=old, open_now=True)
     assert _app._quit_for_update(error) is True
+    assert quits == [BUNDLE]
+
+
+def test_an_open_genuine_app_hz_did_not_record_is_quit_and_reopened(monkeypatch):
+    # From a download, an older hz or the app's own updater: no release on record, so it needs the update.
+    quits = patched(monkeypatch, installed=(BUNDLE, None), open_now=True)
+    assert _app._quit_for_update(Console(record=True, width=120)) is True
     assert quits == [BUNDLE]
 
 

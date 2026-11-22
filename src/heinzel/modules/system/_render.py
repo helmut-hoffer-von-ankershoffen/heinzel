@@ -9,6 +9,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from heinzel.kernel._desktop_app import app_hint, label
 from heinzel.modules.system._models import ChannelReport, ModuleInfo, ReleaseCheck, SystemInfo, UpdateResult
 from heinzel.modules.system.updater._plugin_standing import standing
 
@@ -178,25 +179,26 @@ def _services_row(services: "list[HeadRefresh]", after: str) -> tuple[str, str, 
 
 
 def _app_row(head: "HeadRefresh", after: str) -> tuple[str, str, str]:
-    """The desktop app's row: its versions and whether it was quit and reopened, or the warning that finishes it."""
+    """The desktop app's row: its variant and versions, whether it was quit and reopened, or what finishes it."""
     detail = head.detail.removesuffix(".")
     before, running = getattr(head, "before", None), getattr(head, "was_running", None)
+    name, hint = label(getattr(head, "variant", None)), app_hint(head)
     if head.status == "failed":
-        return CROSS, "Desktop app", detail
+        return CROSS, name, detail
     if head.status != "verified":
-        return WARN, "Desktop app" + (f" {before}" if before else ""), detail
+        return WARN, name + (f" {before}" if before else ""), detail
     if not detail.startswith("Updated") and (before is None or before == after):
-        return CHECK, f"Desktop app {after}", "newest, running" if running else "newest"
+        return CHECK, f"{name} {after}", ("newest, running" if running else "newest") + hint
     words = (f"{before} → {after}" if before else f"updated to {after}") + (
         ", quit and reopened" if getattr(head, "reopened", None) else ""
     )
-    return CHECK, "Desktop app", words
+    return CHECK, name, words + hint
 
 
 def _summary(result: UpdateResult, *, warned: bool) -> str:
     """The one line under the checklist."""
     if warned:
-        return "Finished with warnings: the lines marked ! say what finishes the job."
+        return f"Finished with warnings: the lines marked {WARN} or {CROSS} say what finishes the job."
     if not result.updated:
         return "Everything is up to date."
     seconds = getattr(result, "seconds", None)
@@ -220,7 +222,7 @@ def plan_text(plan: "UpdatePlan") -> str:
         lines.append(f"  {plugin.distribution}: {head}{f'. {plugin.detail}' if plugin.detail else ''}")
     if plan.desktop:
         lines.append(
-            "Desktop app: updated with `hz app install`"
+            f"{label(getattr(plan, 'desktop_variant', None))}: updated with `hz app install`"
             + (", quit and reopened because it is open." if getattr(plan, "desktop_running", False) else ".")
         )
     if getattr(plan, "daemon", False):

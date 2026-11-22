@@ -5,12 +5,15 @@ import logging
 import platform
 import subprocess
 from contextlib import suppress
+from dataclasses import dataclass
+from typing import Literal, cast
 
 from heinzel import HeinzelError
 from heinzel.kernel import (
     DaemonInstallationLifecycle,
     HeadRefresh,
 )
+from heinzel.kernel._desktop_app import DesktopApp
 from heinzel.kernel._logging import log_event, step
 from heinzel.modules.system._models import UpdateResult
 from heinzel.modules.system.updater._update_core import UpdateCore
@@ -25,28 +28,72 @@ from heinzel.modules.system.updater._update_rules import (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class App:
+    """The desktop app before the update: its release, whether it is open, its variant, whether it updates itself."""
+
+    release: str | None
+    running: bool
+    variant: Literal["native", "electron"] | None = None
+    self_updating: bool = False
+
+
+def recorded_flavor(receipt: dict[str, object]) -> Literal["native", "electron"] | None:
+    """The variant hz's install record names (`swift` is the native app's earlier name); none without a record."""
+    if not receipt:
+        return None
+    return "native" if receipt.get("flavor") in {"swift", "native"} else "electron"
+
+
 class UpdateHeads(UpdateCore):
     """Refreshes the daemon, the web server and the desktop app after an install."""
 
-    def _desktop_state(self) -> tuple[str | None, bool] | None:
-        """The installed desktop app's release and whether it is open; none if there is no managed app here."""
+    def _receipt(self) -> dict[str, object]:
+        with suppress(OSError, ValueError, RuntimeError):
+            text = self._home_file(DESKTOP_RECEIPT)
+            found: object = json.loads(text) if text is not None else {}
+            return cast("dict[str, object]", found) if isinstance(found, dict) else {}
+        return {}
+
+    @staticmethod
+    def _variant(found: DesktopApp | None, recorded: str | None) -> Literal["native", "electron"] | None:
+        if found is not None:
+            return found.variant
+        return "native" if recorded == "native" else "electron" if recorded == "electron" else None
+
+    def _desktop_state(self) -> "App | None":
+        """The desktop app: its release, whether it is open, which variant and who updates it; none if none here."""
         if not self._desktop_installed():
             return None
-        release = None
-        with suppress(OSError, ValueError, AttributeError, RuntimeError):
-            text = self._home_file(DESKTOP_RECEIPT)
-            found: dict[str, object] = json.loads(text) if text is not None else {}
-            release = found.get("release")
-        return release if isinstance(release, str) else None, self._running()
+        receipt, found = self._receipt(), self._found()
+        recorded = recorded_flavor(receipt)
+        release = receipt.get("release")
+        if not isinstance(release, str):
+            release = found.version if found is not None else None
+        variant = self._variant(found, recorded)
+        # A native app hz did not record updates itself: hz app install never swaps it for Electron.
+        own = found is not None and found.variant == "native" and recorded != "native"
+        return App(release, self._running(), variant, self_updating=own)
 
-    def _app_head(
-        self, result: UpdateResult, app: tuple[str | None, bool], asked: tuple[bool, bool, bool]
-    ) -> HeadRefresh:
+    def _app_head(self, result: UpdateResult, app: "App", asked: tuple[bool, bool, bool]) -> HeadRefresh:
         """The desktop app's outcome: left alone, already newest, deferred until it is quit, or updated."""
+        head = self._app_outcome(result, app, asked)
+        return head.model_copy(update={"variant": app.variant})
+
+    def _app_outcome(self, result: UpdateResult, app: "App", asked: tuple[bool, bool, bool]) -> HeadRefresh:
         desktop, restart, from_app = asked
-        release, running = app
+        release, running = app.release, app.running
         target = result.after
         known = (release, running)
+        if app.self_updating:
+            return HeadRefresh(
+                head="desktop",
+                status="verified" if release == target else "pending",
+                version=release,
+                detail="Already the newest." if release == target else "it updates itself; hz app install leaves it.",
+                before=release,
+                was_running=running,
+            )
         if not desktop:
             return HeadRefresh(
                 head="desktop",
@@ -221,8 +268,11 @@ class UpdateHeads(UpdateCore):
         return None
 
     def _desktop_installed(self) -> bool:
+        """Whether a desktop app is here: one hz recorded, or one in Applications that hz did not install."""
         try:
-            return platform.system() == "Darwin" and self._home_file(DESKTOP_RECEIPT) is not None
+            if platform.system() != "Darwin":
+                return False
+            return self._home_file(DESKTOP_RECEIPT) is not None or self._found() is not None
         except (OSError, RuntimeError):  # no home to look in: nothing is claimed about a desktop app
             return False
 

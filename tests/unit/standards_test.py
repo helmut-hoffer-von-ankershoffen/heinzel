@@ -184,6 +184,8 @@ CORE_ONLY = {  # path: why plugins don't get it
     ".github/workflows/acceptance-sharded.yml": "manual hosted-VM acceptance study, separate from release acceptance",
     "scripts/release_apps.py": "promotes the core's candidate-built macOS apps in Publish; plugins have none",
     "scripts/acceptance/reduce.py": "fails closed on incomplete or mixed acceptance shards and writes the receipt",
+    ".github/workflows/acceptance-scenario.yml": "advisory end-to-end upgrade scenario of the published core",
+    "scripts/acceptance/scenario.py": "the core's end-to-end upgrade scenario on hosted runners; plugins have none",
     "scripts/acceptance/summary.py": "summarizes the acceptance harness's result.json for a job summary",
     "scripts/acceptance/vendor/artifact_provenance.py": "hash-pinned reviewed copy the acceptance harness loads",
     "scripts/acceptance/vendor/guardian.py": "hash-pinned reviewed copy the acceptance harness loads",

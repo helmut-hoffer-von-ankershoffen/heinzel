@@ -6051,6 +6051,84 @@
         "title": "Delivery",
         "type": "string"
       },
+      "DesktopApp": {
+        "description": "The desktop app bundle found in Applications, whoever installed it.",
+        "properties": {
+          "bundle_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its CFBundleIdentifier; none if it can't be read.",
+            "title": "Bundle Id"
+          },
+          "executable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its CFBundleExecutable; none if it can't be read.",
+            "title": "Executable"
+          },
+          "path": {
+            "description": "Where the bundle is.",
+            "title": "Path",
+            "type": "string"
+          },
+          "symlink": {
+            "default": false,
+            "description": "Whether the path is a symbolic link, not the bundle itself.",
+            "title": "Symlink",
+            "type": "boolean"
+          },
+          "variant": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DesktopVariant"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "native (bundle id team.heinzel.apple) or electron (org.heinzelmaennchen.desktop); none if it is neither."
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its CFBundleShortVersionString; none if it can't be read.",
+            "title": "Version"
+          }
+        },
+        "required": [
+          "path",
+          "variant",
+          "bundle_id",
+          "version"
+        ],
+        "title": "DesktopApp",
+        "type": "object"
+      },
+      "DesktopVariant": {
+        "enum": [
+          "native",
+          "electron"
+        ],
+        "type": "string"
+      },
       "DetailLine": {
         "additionalProperties": false,
         "description": "A line of an item's detail, shown on hover or focus.",
@@ -8184,6 +8262,22 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "variant": {
+            "anyOf": [
+              {
+                "enum": [
+                  "native",
+                  "electron"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The desktop app only: native or electron, from its bundle id; none if unknown.",
+            "title": "Variant"
           },
           "version": {
             "anyOf": [
@@ -18806,6 +18900,17 @@
       "SystemInfo": {
         "description": "The state of this Heinzelmännchen installation.",
         "properties": {
+          "desktop_app": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DesktopApp"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The desktop app in Applications on this Mac: native or electron, its version and path; none elsewhere or when there is none."
+          },
           "installation": {
             "description": "Whether hz runs from a uv tool environment or from another Python environment.",
             "enum": [
@@ -21030,6 +21135,22 @@
             "description": "Whether that desktop app is open now.",
             "title": "Desktop Running",
             "type": "boolean"
+          },
+          "desktop_variant": {
+            "anyOf": [
+              {
+                "enum": [
+                  "native",
+                  "electron"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Which desktop app that is: native or electron, from its bundle id.",
+            "title": "Desktop Variant"
           },
           "latest": {
             "anyOf": [

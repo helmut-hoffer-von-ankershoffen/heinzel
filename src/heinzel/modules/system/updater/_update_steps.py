@@ -6,6 +6,7 @@ from heinzel import Progress
 from heinzel.kernel import (
     HeadRefresh,
 )
+from heinzel.kernel._desktop_app import app_hint
 from heinzel.modules.system._models import UpdatePlan, UpdateResult
 from heinzel.modules.system.updater._phases import Phases, State
 from heinzel.modules.system.updater._update_rules import SETTLED, plugin_step
@@ -26,7 +27,9 @@ class Steps:
     row. Every event carries `checklist`, so a terminal draws the rows in place and a web app lists them as before.
     """
 
-    def __init__(self, progress: Progress, own: Sequence[str], count: int, *, desktop: bool, daemon: bool) -> None:
+    def __init__(
+        self, progress: Progress, own: Sequence[str], count: int, *, desktop: str | None, daemon: bool
+    ) -> None:
         self._own = list(own)
         self._count = count
         self._labels = {
@@ -34,7 +37,7 @@ class Steps:
             **{f"plugin:{name}": name for name in own},
             **({"plugins": _plugins_label(count - len(own))} if count > len(own) else {}),
             **({"daemon": "Daemon, web server"} if daemon else {}),
-            **({"desktop": "Desktop app"} if desktop else {}),
+            **({"desktop": desktop} if desktop else {}),
         }
         self._phases = Phases(progress, list(self._labels.items()), operation="system.update", checklist=True)
         self._running: str | None = None
@@ -92,7 +95,7 @@ class Steps:
         """Finish the desktop app's row: done, or a warning with what finishes it."""
         self._running = None
         if "desktop" in self._labels:
-            self._note("desktop", "done" if head.status == "verified" else "warn", _app_words(head))
+            self._note("desktop", "done" if head.status == "verified" else "warn", _app_words(head) + app_hint(head))
 
 
 def _plugins_label(count: int) -> str:

@@ -72,6 +72,7 @@ def local_installation(monkeypatch, tmp_path):
         holding.rename(target)
 
     monkeypatch.setattr(desktop, "_check_platform", lambda: None)
+    monkeypatch.setattr(desktop, "NEW_INSTALL_FLAVOR", desktop.DesktopFlavor.ELECTRON)  # these bundles are Electron
     # Never the real /Applications: these cases cover the per-user fallback; desktop_location_test the system one.
     monkeypatch.setattr(desktop, "SYSTEM_APPLICATIONS", tmp_path / "no-system-Applications")
     if sys.platform != "darwin":
@@ -226,6 +227,7 @@ from heinzel.heads import _desktop_installation as desktop
 {inspect.getsource(extract)}
 operation, boundary, executable, home = sys.argv[1:]
 desktop.fetch_archive = fetch
+desktop.NEW_INSTALL_FLAVOR = desktop.DesktopFlavor.ELECTRON
 desktop.extract_bundle = extract
 desktop._prepare_for_gatekeeper = lambda _bundle, **_options: None
 desktop.SYSTEM_APPLICATIONS = Path(home) / "no-system-Applications"

@@ -150,6 +150,21 @@ acceptance and automatic rollout separately. This experiment has no observed lat
 release-time claim. Three consecutive successful controlled release trials are a measurement convention for assessing
 reliability, not a replacement for any release gate.
 
+## End-to-end upgrade scenario, slice 1 (advisory)
+
+`scenario.py` (workflow `acceptance-scenario.yml`, jobs `Scenario slice 1 (<os>)`) is the first slice of the
+end-to-end acceptance story: the release before N, installed as published with user state (an extra plugin, a
+disabled default, settings, the local test model), then two `hz ui serve` on one state folder that the real
+automatic updater moves to N by its own scheduled check, with no button and no update command. It checks N on both
+servers and the CLI, the Core bytes against N's wheel, the kept configuration and plugin choices, one web chat answered
+by the `dummy` model, and the forbidden-error scan, and writes `reports/acceptance/scenario.json` with one status per
+step. It reuses this harness's private homes, owned processes and byte checks. It is advisory: no release, merge or
+promotion reads it yet, its job names never start with `Acceptance (`, and a failure is a warning, not a red check.
+It uses the user's default state folder inside the private home (the updater treats any other as development), sets
+the core age gate to 0 hours as a user can, and runs two passes: the plugin gate at 0 hours (core and plugins update)
+and at 24 hours (core only). Each job uploads its receipt plus logs, the updater plan and receipts as diagnostics.
+The daemon and apps are later slices.
+
 ## Sharded release acceptance
 
 `acceptance.yml` runs the 13 cases in the four fixed shards above, each shard on its own hosted VM per OS, against

@@ -2517,7 +2517,7 @@ Module `report`. Changes state. Result: `Synced {checkout: string, logs: list[Sy
 
 Show versions, interpreter, settings, modules and what modules report.
 
-Module `system`. Read-only. Result: `SystemInfo {version: string, repository: string \| null, python_version: string, python_executable: string, platform: string, installed: string \| null, installation: 'uv tool' \| 'environment', settings: object, modules: list[ModuleInfo], plugins: list[InstalledPlugin], plugin_errors: dict[string, string], sections: object, latest_release: string \| null}`.
+Module `system`. Read-only. Result: `SystemInfo {version: string, repository: string \| null, python_version: string, python_executable: string, platform: string, installed: string \| null, installation: 'uv tool' \| 'environment', settings: object, modules: list[ModuleInfo], plugins: list[InstalledPlugin], plugin_errors: dict[string, string], sections: object, latest_release: string \| null, desktop_app: DesktopApp \| null}`.
 
 ```json
 {

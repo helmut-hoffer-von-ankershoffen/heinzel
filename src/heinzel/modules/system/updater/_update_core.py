@@ -5,7 +5,7 @@ import subprocess
 import sys
 import threading
 from collections.abc import Callable, Generator
-from contextlib import AbstractContextManager, ExitStack, contextmanager, nullcontext
+from contextlib import AbstractContextManager, ExitStack, contextmanager, nullcontext, suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -26,6 +26,7 @@ from heinzel.kernel import (
     WebHeadRefresh,
     subprocess_environment,
 )
+from heinzel.kernel._desktop_app import DesktopApp, installed_desktop_app
 from heinzel.kernel._logging import log_event
 from heinzel.kernel.install._tool_python import PythonNeed, newer_python
 from heinzel.modules.system._models import UpdateResult
@@ -76,6 +77,7 @@ class UpdateCore:
         need: PythonNeed | None = None,
         daemon: DaemonAttestation | None = None,
         running: Callable[[], bool] | None = None,
+        found: Callable[[], DesktopApp | None] | None = None,
     ) -> None:
         """Create the service with an optional trusted lifecycle boundary and the heads it refreshes afterwards.
 
@@ -83,7 +85,8 @@ class UpdateCore:
         `pinned` asks the releases of plugins pinned to an exact version or a GitHub commit and `newer` those of
         plugins that follow the index (both from the system module's `PluginReleases`); `desktop` runs the new hz's
         `hz app install` (`restart=True`: `--restart`) and returns its exit code and output; `daemon` reads the version
-        the daemon runs and `running` whether the desktop app is open. Tests replace all of them.
+        the daemon runs, `running` whether the desktop app is open and `found` which app sits in Applications (with
+        `home`, only that home's Applications folder is looked at). Tests replace all of them.
         `need` keeps what the last update found about a release that needs a newer Python, for the doctor.
         The world comes in through ports (`heinzel.ports`): `clocks` for time (or the single `clock` and `sleep`
         callables, which win), `runner` for the programs it starts, `state` for the state folder.
@@ -94,6 +97,7 @@ class UpdateCore:
         self._desktop = desktop or self._app_install
         self._daemon = daemon
         self._running = running or self._app_open
+        self._found = found or self._found_app
         self._restart_daemon = True
         """Whether the update in progress may restart the daemon and the web server (`--no-daemon` says not)."""
 
@@ -146,6 +150,13 @@ class UpdateCore:
                     )
                     raise HeinzelError(msg) from None
             yield
+
+    def _found_app(self) -> DesktopApp | None:
+        """The app in Applications, whoever installed it; with a `home` (a test) only in that home's folder."""
+        with suppress(OSError, RuntimeError):
+            home = self._home or Path.home()
+            return installed_desktop_app(home, None if self._home is None else home / "Applications")
+        return None
 
     def _home_file(self, relative: Path) -> str | None:
         """A file under the home folder, read through the state port; with no port, under `home` (tests) or `~`."""
