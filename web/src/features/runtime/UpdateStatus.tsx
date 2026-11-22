@@ -297,7 +297,12 @@ export function UpdateStatus() {
             </PaneAction>
           )}
           {!busy && (
-            <PaneAction icon={RefreshCw} disabled={check.isPending} onClick={() => runCheck()}>
+            <PaneAction
+              icon={RefreshCw}
+              spinning={check.isPending}
+              disabled={check.isPending}
+              onClick={() => runCheck()}
+            >
               {t("updates.check")}
             </PaneAction>
           )}
