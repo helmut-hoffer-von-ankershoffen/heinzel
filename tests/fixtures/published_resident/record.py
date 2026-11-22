@@ -5,6 +5,7 @@ later import that process makes loads the new file, which then takes names from 
 script runs inside a published interpreter, standard library only, with its own HOME, and writes one manifest:
 
     resident MODULE NAME...        a module in memory after the CLI boot, with its runtime names
+    define MODULE CLASS...         the classes a resident module defines itself (`__module__` is the module)
     lazy IMPORTER TARGET NAME,...  an import the published code makes inside a function, so after a swap
 
 Record a published version (never against a real profile):
@@ -52,6 +53,11 @@ def _lazy(module: str, package: bool, tree: ast.AST) -> Iterator[tuple[str, list
     yield from visit(tree, inside=False)
 
 
+def _defined_class(module: object, name: str) -> bool:
+    value = vars(module)[name]
+    return isinstance(value, type) and value.__module__ == getattr(module, "__name__", None)
+
+
 def main() -> None:
     import heinzel.heads.cli
     from heinzel import __version__
@@ -62,6 +68,9 @@ def main() -> None:
     for name in sorted(module for module in sys.modules if _heinzel(module)):
         names = sorted(vars(sys.modules[name]))
         lines.append(" ".join(["resident", name, *names]))
+        classes = [n for n in names if _defined_class(sys.modules[name], n)]
+        if classes:
+            lines.append(" ".join(["define", name, *classes]))
     root = Path(heinzel.__file__).parent.parent
     for path in sorted((root / "heinzel").rglob("*.py")):
         parts = list(path.relative_to(root).with_suffix("").parts)
