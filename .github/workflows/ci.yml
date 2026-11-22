@@ -256,6 +256,9 @@ jobs:
           else
             echo "electron=false" >> "$GITHUB_OUTPUT"
           fi
+          # The merge gate derives the jobs this run must have from this selection (focused_gate.py in scripts).
+          sed 's/^/selector-output: /' "$GITHUB_OUTPUT" | grep -E '^selector-output: (core|site_only|surface_only|macos_full|notifier|contracts|electron|plugins)=(true|false)$'
+          echo "selector-output: release=${FULL_RELEASE:-false}"
 
   macos-main: # main lanes
     permissions:
@@ -481,6 +484,8 @@ jobs:
     timeout-minutes: 18 # setup, then make test's 720 s covered session (es8j), then the report
     permissions:
       contents: read
+    outputs:
+      uncovered: ${{ steps.uncovered.outputs.files }} # the Coverage floor job names them in its verdict
     env:
       UV_NO_SYNC: "1"
     steps:
@@ -501,10 +506,18 @@ jobs:
         run: uv run --frozen --no-sync --no-build python scripts/ci_node.py
       - run: make test
       - name: Enforce coverage and record the measured total
+        if: ${{ !cancelled() }} # after make test's own threshold failed too, so the floor names the measured total
         env:
           MINIMUM_ORANGE: 80
         run: uv run --no-build coverage report --format=total --precision=2 --fail-under=90 > coverage-total.txt
+      - id: uncovered
+        name: Name the least covered files for the Coverage floor verdict
+        if: ${{ !cancelled() && hashFiles('coverage-total.txt') != '' }}
+        run: |
+          uv run --no-build coverage report --sort=-miss --skip-covered --skip-empty --show-missing > coverage-files.txt || true
+          { echo 'files<<COVERAGE_EOF'; sed -n '3,14p' coverage-files.txt | grep -v '^-' | cut -c1-300 || true; echo 'COVERAGE_EOF'; } >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() && hashFiles('coverage-total.txt') != '' }} # a total below the threshold is still judged
         with:
           name: coverage-total
           path: coverage-total.txt
@@ -1269,19 +1282,76 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # The coverage floor, judged inside the pull request's own run (scripts/coverage_floor.py): this run tests the pull
+  # request's merge commit, so there is no stale tested base and no separate check. CI OK requires it on pull requests
+  # and dispatched runs; its verdict names measured vs required percent, the scope and the least covered files, and a
+  # broken judge says TOOL ERROR. A push to main has no floor job: main's coverage is the Coverage job's own threshold.
+  coverage-floor:
+    permissions:
+      contents: read
+    name: Coverage floor
+    needs: [changes, coverage]
+    if: ${{ !cancelled() && needs.changes.outputs.full_ci == 'true' && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' && needs.changes.outputs.lane != 'macos') }} # Core coverage floor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      verdict: ${{ steps.judge.outputs.verdict }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download the total this run's Coverage job measured
+        if: needs.coverage.result == 'success' || needs.coverage.result == 'failure'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: coverage-total
+          path: ${{ runner.temp }}/coverage-total
+      - id: judge
+        name: Judge the coverage floor of this run's merge commit
+        if: ${{ !cancelled() }} # also after a failed download: the judge names a missing total
+        env:
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+          COVERAGE_TOTAL: ${{ runner.temp }}/coverage-total/coverage-total.txt
+          UNCOVERED: ${{ needs.coverage.outputs.uncovered }}
+          FOCUSED_MODE: ${{ needs.changes.outputs.focused_mode }}
+        run: python3 -I scripts/coverage_floor.py
+
+  # Sonar's overall-code ratings (scripts/sonar_ratings.py): the SonarCloud check judges new code; this keeps
+  # reliability, security and maintainability of the whole project at A. CI OK requires it on pull requests.
+  sonar-ratings:
+    permissions:
+      contents: read
+    name: Sonar ratings
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.result == 'success' # Core coverage floor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      verdict: ${{ steps.judge.outputs.verdict }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: judge
+        name: Overall reliability, security and maintainability are rated A
+        run: python3 -I scripts/sonar_ratings.py
+
   ci-ok:
     permissions:
       contents: read
     name: CI OK
     if: always() && (github.event_name != 'push' || needs.admission.outputs.full != 'false')
-    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check, release-candidate-source, quarantine-registry, focused-tests, macos-main]
+    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check, release-candidate-source, quarantine-registry, focused-tests, coverage-floor, sonar-ratings, macos-main]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
-      - name: Fail if any required job failed
+      - name: Fail if any required job failed, naming each with its verdict
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
+          NEEDS: ${{ toJSON(needs) }}
         run: |
+          jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped")
+            | "::error::Required job \(.key) ended with \(.value.result)\(if .value.outputs.verdict then ": " + .value.outputs.verdict else "" end)"' <<< "$NEEDS"
           for result in $RESULTS; do
             case "$result" in
               success | skipped) ;;
@@ -1352,6 +1422,9 @@ jobs:
             fi
           fi
           if [ "${SURFACE_ONLY:-false}" = true ]; then required=(admission changes lint secrets commits dependency-review quarantine-registry macos-specific); fi
+          # The coverage floor: on every pull request, and on a dispatched run outside the macOS main lane.
+          if [ "$EVENT" = pull_request ] || { [ "$EVENT" = workflow_dispatch ] && [ "${LANE:-all}" != macos ]; }; then required+=(coverage-floor); fi # Core coverage floor
+          if [ "$EVENT" = pull_request ]; then required+=(sonar-ratings); fi # Core coverage floor
           for job in "${required[@]}"; do
             jq -e --arg job "$job" '.[$job].result == "success"' <<< "$RESULTS" >/dev/null \
               || { echo "::error::Required full CI job did not pass: $job"; exit 1; }
