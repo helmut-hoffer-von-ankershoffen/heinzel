@@ -370,3 +370,25 @@ def test_no_audio_and_no_frame_when_the_sound_module_is_off(kernel, static, monk
     monkeypatch.setattr(hzk, "provides", lambda kind: False)
     assert web_client.get("/").headers["content-security-policy"] == web.CSP
     assert web_client.get("/sound-assets/demo/layer-0.opus").status_code == 404
+
+
+def test_singularity_is_the_default_once_a_plugin_offers_it_and_silent_while_none_does(kernel):
+    listed = hz(kernel(extra=()), "system", "sound", "list")[1]
+    assert (listed["selected"], listed["effective"], listed["note"]) == ("off", "off", None)
+    hzk = kernel(extra=(paired("singularity"),))
+    listed = hz(hzk, "system", "sound", "list")[1]
+    assert (listed["selected"], listed["effective"], listed["note"]) == ("singularity", "singularity", None)
+    configure("[system.sound]\nvolume = 30\n")  # another key set: the soundscape is still the default
+    assert hz(hzk, "system", "sound", "list")[1]["effective"] == "singularity"
+
+
+def test_an_explicit_choice_beats_the_default_off_included_and_a_missing_one_still_says_so(kernel):
+    hzk = kernel(extra=(paired("singularity"), paired("other")))
+    configure('[system.sound]\nname = "off"\n')
+    assert hz(hzk, "system", "sound", "list")[1]["effective"] == "off"
+    configure('[system.sound]\nname = "other"\n')
+    assert hz(hzk, "system", "sound", "list")[1]["effective"] == "other"
+    configure('[system.sound]\nname = "rain"\n')
+    listed = hz(hzk, "system", "sound", "list")[1]
+    assert listed["effective"] == "off"
+    assert "No installed plugin offers the soundscape 'rain'" in listed["note"]

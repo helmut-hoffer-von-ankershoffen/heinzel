@@ -196,7 +196,9 @@ class SoundService(SoundAssets):
             )
             next_steps = ["hz system config reveal user"]  # show, get and unset fail while a value is invalid
         selected = settings.name
-        if selected != OFF and selected not in available.soundscapes:
+        if "name" not in settings.model_fields_set and selected not in available.soundscapes:
+            selected = OFF  # the default is only a wish: no plugin offering it is no news, and no sound plays
+        elif selected != OFF and selected not in available.soundscapes:
             note = (
                 f"No installed plugin offers the soundscape {selected!r}; no sound plays until you pick another or "
                 "install its plugin."

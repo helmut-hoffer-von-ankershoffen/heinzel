@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 from heinzel import ModuleSettings
 
 NAME_PATTERN = r"^[a-z](?:-?[a-z0-9])*$"
+DEFAULT_SOUNDSCAPE = "singularity"
+"""The soundscape of someone who never chose one; silent (off) while no installed plugin offers it."""
 
 
 class SoundSettings(ModuleSettings):
@@ -21,11 +23,14 @@ class SoundSettings(ModuleSettings):
     )
 
     name: str = Field(
-        default="off",
+        default=DEFAULT_SOUNDSCAPE,
         pattern=NAME_PATTERN,
         max_length=64,
         title="Soundscape",
-        description="The soundscape of the web app; off is no sound, and plugins can bring others.",
+        description=(
+            "The soundscape of the web app; off is no sound, and plugins can bring others. "
+            "Singularity until you choose."
+        ),
         json_schema_extra={"x-hidden": True},
     )
     volume: int = Field(
