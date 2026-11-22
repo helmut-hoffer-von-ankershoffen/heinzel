@@ -163,6 +163,21 @@ enum CloudSyncPreference {
     }
 }
 
+/// What the publishing Mac does with the iCloud item it already wrote.
+enum CloudSignInPlan {
+    enum Action: Equatable { case keep, mint }
+
+    /// The iCloud item carries a named device token (`hzd_`), never the per-process session token; it is renewed
+    /// after `rotateAfter` and whenever the host refused it.
+    static let rotateAfter: TimeInterval = 14 * 24 * 3600
+    static let deviceName = "iCloud sign-in"
+
+    static func decide(existingToken: String?, publishedAt: Date?, hostRefusedIt: Bool, now: Date = .now) -> Action {
+        guard let existingToken, existingToken.hasPrefix("hzd_"), let publishedAt, !hostRefusedIt else { return .mint }
+        return now.timeIntervalSince(publishedAt) >= rotateAfter ? .mint : .keep
+    }
+}
+
 private struct SyncedWorkspace: Codable {
     let workspace: RecentWorkspace
     let token: String
@@ -215,16 +230,24 @@ enum WorkspaceKeychain {
         return (value, entry.workspace)
     }
 
+    /// The token and publication time of the item this Mac wrote for `address`, if any.
+    static func published(address: String) -> (token: String, publishedAt: Date)? {
+        entry(address: address).map { ($0.token, $0.workspace.lastUsed) }
+    }
+
     static func publish(workspace: RecentWorkspace, token: String) -> Bool {
         let query = query(address: workspace.address)
         if let previous = entry(address: workspace.address), previous.token == token { return true }
         guard let data = try? JSONEncoder().encode(SyncedWorkspace(workspace: workspace, token: token)) else { return false }
-        switch SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary) {
+        // AfterFirstUnlock: a headless Mac that rebooted and was never unlocked at the screen still publishes.
+        let update: [String: Any] = [kSecValueData as String: data,
+                                     kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock]
+        switch SecItemUpdate(query as CFDictionary, update as CFDictionary) {
         case errSecSuccess: return true
         case errSecItemNotFound:
             var item = query
             item[kSecValueData as String] = data
-            item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
+            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
             return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
         default: return false
         }
