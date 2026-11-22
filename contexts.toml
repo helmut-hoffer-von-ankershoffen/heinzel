@@ -37,7 +37,7 @@ adapters_only = true
 
 [context.client]
 summary = "the workspace handshake, device and MCP tokens: what connected clients present"
-src = ["src/heinzel/modules/system/client/**"]
+src = ["src/heinzel/modules/system/client/**", "src/heinzel/heads/_mcp_tokens.py"]
 tests = ["tests/integration/runtime/client/**", "tests/unit/runtime/client/**"]
 package = "heinzel.modules.system.client"
 
@@ -105,7 +105,7 @@ src = ["src/heinzel/modules/__init__.py", "src/heinzel/modules/system/*.py"]
 [context.head-kit]
 summary = "what every head shares"
 src = ["src/heinzel/heads/*.py"]
-exclude = ["src/heinzel/modules/system/client/_mcp_tokens.py", "src/heinzel/heads/daemon_recovery.py"]
+exclude = ["src/heinzel/modules/system/client/_mcp_tokens.py", "src/heinzel/heads/daemon_recovery.py", "src/heinzel/heads/_mcp_tokens.py"]
 
 [context.head-cli]
 summary = "the Typer head"

@@ -412,6 +412,8 @@ forbidden_modules = ["heinzel.modules"]
 # never a private file. Until the kernel injects them by type, each importing file is listed; the list may only shrink.
 ignore_imports = [
     "heinzel.heads.cli._serve -> heinzel.modules.system.client",
+    # The old path of the MCP tokens, kept for a published `hz system serve` that outlives an in-place update.
+    "heinzel.heads._mcp_tokens -> heinzel.modules.system.client",
     "heinzel.heads.mcp -> heinzel.modules.system.client",
     "heinzel.heads.web -> heinzel.modules.system.client",
     "heinzel.heads.web._auto_update -> heinzel.modules.system.client",
