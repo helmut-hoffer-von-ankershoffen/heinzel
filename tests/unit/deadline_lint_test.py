@@ -13,11 +13,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 LINTED = [*sorted((ROOT / "tests/unit/runtime").rglob("*_test.py")), ROOT / "tests/unit/ports_contract_test.py"]
-LEGACY = {
-    "tests/unit/runtime/lifecycle/ui_historical_launcher_test.py",
-    "tests/unit/runtime/updater/system_update_all_test.py",
-}
-"""Tests moved into the contexts as they were, with bare limits; the list only shrinks."""
 WAITS = {"wait", "join", "result", "communicate"}
 
 pytestmark = pytest.mark.unit
@@ -51,8 +46,4 @@ def test_the_lint_finds_a_bare_limit_and_lets_scaled_ones_pass():
 
 @pytest.mark.parametrize("path", LINTED, ids=lambda p: p.relative_to(ROOT).as_posix())
 def test_a_limit_in_a_context_test_is_scaled(path):
-    found = bare_limits(path.read_text(encoding="utf-8"))
-    if path.relative_to(ROOT).as_posix() in LEGACY:
-        assert found, "this test is clean now: take it off LEGACY"
-    else:
-        assert found == [], "wrap the seconds in heinzel.testing.scaled(...)"
+    assert bare_limits(path.read_text(encoding="utf-8")) == [], "wrap the seconds in heinzel.testing.scaled(...)"
