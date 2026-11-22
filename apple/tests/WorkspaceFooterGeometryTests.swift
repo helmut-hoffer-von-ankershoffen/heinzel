@@ -49,8 +49,21 @@ import Foundation
         precondition(!WorkspaceVersionObservation.record(observed, origin: origin, selectedOrigin: origin,
                                                          requestRevision: 1, currentRevision: 2, into: &versions))
         try verifyAppBuildObservation(now: now)
+        verifyCloudSyncPreference()
         await verifyVersionRefresh(now: now)
         print("PASS: native footer slot is bounded to the current viewport")
+    }
+
+    private static func verifyCloudSyncPreference() {
+        let suite = "team.heinzel.tests.cloud-sync-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        precondition(CloudSyncPreference.isEnabled(defaults), "missing value migrates to on")
+        CloudSyncPreference.set(false, in: defaults)
+        precondition(!CloudSyncPreference.isEnabled(defaults), "an explicit off stays off")
+        CloudSyncPreference.set(true, in: defaults)
+        precondition(CloudSyncPreference.isEnabled(defaults))
+        print("PASS: iCloud sign-in sync defaults on and keeps an explicit off")
     }
 
     @MainActor private static func verifyVersionRefresh(now: Date) async {

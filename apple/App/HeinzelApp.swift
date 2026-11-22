@@ -311,7 +311,7 @@ struct ConnectionView: View {
     @State private var attemptedCloudSignIns: [String: Date] = [:]
     @State private var cloudSignInInProgress = false
     #if os(macOS)
-    @AppStorage("syncWorkspaceSignIn") private var syncWorkspaceSignIn = false
+    @AppStorage(CloudSyncPreference.key) private var syncWorkspaceSignIn = true
     @AppStorage("publishedWorkspaceOrigin") private var publishedWorkspaceOrigin = ""
     @State private var syncStatus: String?
     private let offersCloudSignIn = Bundle.main.object(forInfoDictionaryKey: "HeinzelCloudSignIn") as? String == "YES"

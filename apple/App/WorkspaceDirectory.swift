@@ -150,6 +150,19 @@ struct RecentWorkspace: Codable, Identifiable {
     }
 }
 
+/// The "Sync Sign-in with iCloud" switch. A missing value means on; only an explicit stored false stays off.
+enum CloudSyncPreference {
+    static let key = "syncWorkspaceSignIn"
+
+    static func isEnabled(_ defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: key) as? Bool ?? true
+    }
+
+    static func set(_ enabled: Bool, in defaults: UserDefaults = .standard) {
+        defaults.set(enabled, forKey: key)
+    }
+}
+
 private struct SyncedWorkspace: Codable {
     let workspace: RecentWorkspace
     let token: String
