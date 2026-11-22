@@ -20,6 +20,7 @@ from heinzel.heads._desktop_release import DesktopFlavor, platform_flavor
 from heinzel.heads.cli._progress import StepReporter
 from heinzel.heads.cli._render import message
 from heinzel.kernel import KERNEL_SECTION, Installation, Kernel
+from heinzel.kernel._desktop_app import read_bundle, update_on_quit_done, update_on_quit_promised
 
 if TYPE_CHECKING:
     from heinzel.heads._desktop_seal import SealReport
@@ -67,15 +68,26 @@ def _eligible_for_refresh(kernel: Kernel) -> bool:
     )
 
 
-def _refresh_after_exit(kernel: Kernel) -> None:
-    """Refresh an owned bundle when the outgoing native process is no longer using it."""
+REFRESH_SECONDS = 30.0
+"""How long the refresh after a quit waits for the quitting app's processes to end before it gives up."""
+
+
+def _refresh_after_exit(kernel: Kernel, home: Path | None = None) -> None:
+    """Refresh an owned bundle when the outgoing app process is no longer using it.
+
+    It runs under automatic updates, or when an update promised the person that the app installs when quit
+    (`UPDATE_ON_QUIT`); that promise is forgotten once the app is at this hz's release.
+    """
     if platform.system() != "Darwin":
         return
     from heinzel.heads._desktop_installation import install_desktop  # noqa: PLC0415 - packaged app exit only
 
-    deadline = time.monotonic() + 12
-    while _eligible_for_refresh(kernel):
+    home = home or Path.home()
+    deadline = time.monotonic() + REFRESH_SECONDS
+    while update_on_quit_promised(home) or _eligible_for_refresh(kernel):
         state = install_desktop(__version__, desktop_executable(kernel), update_only=True)
+        if state in {"updated", "current", "installed-pending", "absent"}:
+            update_on_quit_done(home)
         if state != "deferred" or time.monotonic() >= deadline:
             return
         time.sleep(0.25)
@@ -213,8 +225,9 @@ def _install_app(  # noqa: PLR0913 - the options of hz app install, shared with 
 ) -> None:
     """Install or refresh the app, asking once in a terminal before forgetting an install whose app is gone.
 
-    With `restart` an open app that needs the update is quit first and reopened afterwards; one that does not quit
-    within `QUIT_SECONDS` is left open and the command ends with `RESTART_DEFERRED`.
+    With `restart`, or when `flavor` names the other flavor than the installed app's, an open app that needs the
+    update is quit first and reopened afterwards; one that does not quit within `QUIT_SECONDS` is left open and the
+    command ends with `RESTART_DEFERRED`.
 
     Raises:
         typer.Exit: If the app cannot be installed now.
@@ -224,7 +237,8 @@ def _install_app(  # noqa: PLR0913 - the options of hz app install, shared with 
         install_desktop,
     )
 
-    reopen = restart and _quit_for_update(error)
+    # Switching to the other flavor replaces the app the person has open, so it is quit and reopened unasked.
+    reopen = (restart or _switching(flavor)) and _quit_for_update(error, flavor)
     notes: list[str] = []
     steps, folder = _plan(error, keep_quarantine=keep_quarantine)
 
@@ -252,23 +266,37 @@ def _install_app(  # noqa: PLR0913 - the options of hz app install, shared with 
     except KeyboardInterrupt as exc:
         steps.close(complete=False)
         error.print(say.CANCELLED_INSTALL)
+        _reopen_any(error, reopen=reopen)
         raise typer.Exit(130) from exc
-    except (HeinzelError, OSError, SubprocessError) as exc:
+    except (HeinzelError, OSError, SubprocessError, RuntimeError, ValueError) as exc:
+        # RuntimeError and ValueError too (an unverifiable process identity, a damaged record): never an exit
+        # without a line that says why.
         steps.close(complete=False)
         _print_notes(steps, notes)
+        _reopen_any(error, reopen=reopen)  # the app it quit comes back, as it was
         _fail(error, exc, say.INSTALL_FAILED, details=details)
     steps.close(complete=state in {"installed", "updated"})
     _print_notes(steps, notes)
     if state == "deferred":
         for line in say.app_running(_where_installed()).lines():
             error.print(line, markup=False)
+        _reopen_any(error, reopen=reopen)
         raise typer.Exit(1)
     location = _located(error)
-    if _installed_status(state, location, output):
-        return
-    _report_done(output, error, location, folder)
+    if not _installed_status(state, location, output):
+        _report_done(output, error, location, folder)
     if reopen:
         _reopen(error, location)
+
+
+def _reopen_any(error: Console, *, reopen: bool) -> None:
+    """After a failed install, open the app this command quit again, wherever it is now; nothing if none was quit."""
+    if not reopen:
+        return
+    from heinzel.heads._desktop_installation import desktop_to_update  # noqa: PLC0415 - native install only
+
+    if (installed := desktop_to_update()) is not None:
+        _reopen(error, installed[0])
 
 
 def _report_done(output: Console, error: Console, location: Path, folder: Path) -> None:
@@ -279,8 +307,21 @@ def _report_done(output: Console, error: Console, location: Path, folder: Path) 
     output.print(say.done(location), markup=False, soft_wrap=True)
 
 
-def _quit_for_update(error: Console) -> bool:
-    """Quit the open app that needs the update, so it can be replaced; whether it was open (and is reopened after).
+def _switching(flavor: DesktopFlavor | None) -> bool:
+    """Whether `flavor` names the other flavor than the app installed now (Electron to native, or back)."""
+    if flavor is None or platform.system() != "Darwin":
+        return False
+    from heinzel.heads._desktop_installation import desktop_to_update  # noqa: PLC0415 - native install only
+
+    installed = desktop_to_update()
+    found = None if installed is None else read_bundle(installed[0])
+    return found is not None and found.variant is not None and found.variant != flavor.value
+
+
+def _quit_for_update(error: Console, flavor: DesktopFlavor | None = None) -> bool:
+    """Quit the open app that needs the update or the flavor switch, so it can be replaced; whether it was open.
+
+    An app that was open is reopened after the install.
 
     Raises:
         typer.Exit: With `RESTART_DEFERRED` if the app is still open after `QUIT_SECONDS`; it is left open.
@@ -293,7 +334,7 @@ def _quit_for_update(error: Console) -> bool:
     )
 
     installed = desktop_to_update()
-    if installed is None or installed[1] == __version__ or not is_open(installed[0]):
+    if installed is None or (installed[1] == __version__ and not _switching(flavor)) or not is_open(installed[0]):
         return False
     if not quit_app(installed[0]):
         for line in say.restart_deferred(QUIT_SECONDS).lines():
@@ -499,7 +540,7 @@ def desktop_group(kernel: Kernel, output: Console, error: Console) -> typer.Type
                 "--restart",
                 help="If the app is open and needs the update, quit it, install, and open it again. It waits up to "
                 "20 seconds for the quit and never forces it: an app still open then is left open and the command "
-                "ends with exit code 75.",
+                "ends with exit code 75. Switching to the other --flavor always does this.",
             ),
         ] = False,
     ) -> None:

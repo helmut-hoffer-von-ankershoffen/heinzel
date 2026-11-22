@@ -10,6 +10,7 @@ from heinzel import HeinzelError, Settings, __version__
 from heinzel.heads import web
 from heinzel.heads.web import _updates
 from heinzel.kernel import CorePin, Installation, ReleaseCache
+from heinzel.kernel._desktop_app import DesktopApp
 
 pytestmark = pytest.mark.integration
 TOKEN = "t" * 43
@@ -28,6 +29,12 @@ class Receipt(Installation):
     def installed_core_version(self):
         msg = "This fixture has no installed core metadata."
         raise HeinzelError(msg)
+
+
+@pytest.fixture(autouse=True)
+def no_desktop_app(monkeypatch):
+    """No case reads this machine's /Applications: the desktop app is what a case sets."""
+    monkeypatch.setattr(_updates, "desktop_app_here", lambda: None)
 
 
 def client(make_kernel, tmp_path, **options):
@@ -83,6 +90,7 @@ def test_update_facts_are_authenticated_cache_only_and_keep_source_intent(make_k
         "reason": None,
         "installed": None,
         "idle": True,
+        "desktop": None,
     }
 
 
@@ -276,3 +284,46 @@ def test_an_automatic_update_in_progress_holds_an_automatic_restart(make_kernel,
     assert (held["installed"], held["idle"]) == ("999.0.0", False)
     setattr(plan, step, False if step == "applying" else None)
     assert app.get("/api/update-status", headers=AUTH).json()["idle"] is True
+
+
+def _app_here(monkeypatch, version, variant="electron"):
+    found = DesktopApp(path="/Applications/Heinzelmaennchen.app", variant=variant, bundle_id=None, version=version)
+    monkeypatch.setattr(_updates, "desktop_app_here", lambda: found)
+
+
+@pytest.mark.parametrize(
+    ("version", "behind"), [("0.0.1", True), (__version__, False), ("999.0.0", False), ("not-a-version", False)]
+)
+def test_the_status_says_when_the_desktop_app_is_older_than_this_server(
+    make_kernel, tmp_path, monkeypatch, version, behind
+):
+    _app_here(monkeypatch, version)
+    desktop = client(make_kernel, tmp_path).get("/api/update-status", headers=AUTH).json()["desktop"]
+    assert desktop == {"version": version, "variant": "electron", "behind": behind}
+
+
+def test_update_desktop_app_starts_the_restart_install_in_its_own_session(make_kernel, tmp_path, monkeypatch):
+    _app_here(monkeypatch, "0.0.1", "native")
+    started = []
+    monkeypatch.setattr(_updates.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(_updates.subprocess, "Popen", lambda command, **kwargs: started.append((command, kwargs)))
+    app = client(make_kernel, tmp_path)
+    assert app.post("/api/update-status/desktop").status_code == 401
+    response = app.post("/api/update-status/desktop", headers=AUTH)
+    assert response.status_code == 202
+    assert response.json() == {"started": True, "command": "hz app install --restart"}
+    [(command, kwargs)] = started
+    assert command[-4:] == ["heinzel", "app", "install", "--restart"]
+    assert kwargs["start_new_session"] is True  # it outlives the app it quits and the server that app may stop
+
+
+@pytest.mark.parametrize("version", [__version__, None])
+def test_update_desktop_app_refuses_without_an_out_of_date_app(make_kernel, tmp_path, monkeypatch, version):
+    if version is not None:
+        _app_here(monkeypatch, version)
+    started = []
+    monkeypatch.setattr(_updates.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(_updates.subprocess, "Popen", lambda command, **kwargs: started.append(command))
+    response = client(make_kernel, tmp_path).post("/api/update-status/desktop", headers=AUTH)
+    assert response.status_code == 409
+    assert started == []
