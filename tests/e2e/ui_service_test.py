@@ -14,7 +14,7 @@ from tests.integration.ui_service_test import service, service_factory
 
 __all__ = ["sandbox", "seed_uv_cache", "service", "service_factory", "wheel"]
 
-pytestmark = pytest.mark.e2e
+pytestmark = [pytest.mark.e2e, pytest.mark.real_system]
 
 
 @pytest.fixture

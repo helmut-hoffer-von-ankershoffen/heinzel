@@ -25,6 +25,7 @@ from heinzel.heads.web import _terminal
 from heinzel.heads.web._shutdown import GRACE_SECONDS, OVERDUE, STOP_SECONDS, Stopping
 
 pytestmark = [
+    pytest.mark.real_system,
     pytest.mark.integration,
     pytest.mark.skipif(os.name != "posix", reason="SIGINT as Ctrl-C sends it"),
 ]

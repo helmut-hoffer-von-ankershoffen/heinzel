@@ -11,7 +11,7 @@ from heinzel.heads._exposure import exposed
 from heinzel.modules.system.daemon import DaemonService
 from heinzel.modules.system.daemon._models import Installed, Uninstalled
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.real_system]
 
 TOKEN = "s3ssion-token-for-tests-that-is-long-enough"
 BASE = "http://127.0.0.1:8000"
