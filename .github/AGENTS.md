@@ -37,7 +37,8 @@ Constraints per workflow:
 - `acceptance.yml`: `contents: read`, no secrets, publishes nothing; uploads `result.json`, which promotion reads. A
   candidate run (release wheel URL + sha256 + profile URL) is labelled `CANDIDATE_*`, never a public-path pass.
 - `prepare-release.yml` (`make release`): opens the release PR `chore(release): vX.Y.Z` and dispatches CI on it (token-made
-  PRs trigger none). A maintainer reviews all checks before merging.
+  PRs trigger none). A maintainer reviews all checks before merging. The owner decisions of 2026-11-22 in the root
+  AGENTS.md allow replacing this review and the macOS PR lanes once #907 and #933 merge.
 - `edge.yml`: dark until `vars.RELEASE_CHANNELS` is set (ADR 0114); then publishes pre-releases `edge-v<version>`,
   never latest, never on PyPI.
 - `pypi.yml`: manual dispatch on a final version tag; verifies and promotes the exact signed official GitHub release

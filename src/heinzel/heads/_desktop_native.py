@@ -5,6 +5,7 @@ Unsupported symbols, sizes or identities refuse the operation. No fallback to ki
 """
 
 import ctypes as c
+import errno
 import os
 import platform
 import struct
@@ -21,6 +22,14 @@ _ZOMBIE = 5
 
 class NativeUnavailableError(RuntimeError):
     """The native identity or lifecycle operation could not be verified."""
+
+
+class ImageGoneError(NativeUnavailableError):
+    """A live process whose executable file no longer has a path: it was deleted or its folder replaced.
+
+    Such a process cannot be running from any bundle that is on disk now, so it never makes an app look open. Any
+    other unreadable process still refuses the operation.
+    """
 
 
 @dataclass(frozen=True)
@@ -78,7 +87,7 @@ class Native:
         if platform.system() != "Darwin" or int(platform.mac_ver()[0].split(".")[0]) < _MIN_MACOS:
             raise NativeUnavailableError
         try:
-            self.proc = c.CDLL("/usr/lib/libproc.dylib")
+            self.proc = c.CDLL("/usr/lib/libproc.dylib", use_errno=True)
             self.cf = c.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
             self.security = c.CDLL("/System/Library/Frameworks/Security.framework/Security")
             self.core = c.CDLL("/System/Library/Frameworks/CoreServices.framework/CoreServices")
@@ -189,12 +198,16 @@ class Native:
         """Read the kernel's executable vnode path with audit-generation binding.
 
         Raises:
+            ImageGoneError: If the same live process's executable no longer has a path.
             NativeUnavailableError: If the image is inaccessible, replaced or incomplete.
         """
         unique_id, version = self.generation(pid)
         token = struct.pack("=8I", 0, 0, 0, 0, 0, pid, 0, version)
         buffer = c.create_string_buffer(4096)
+        c.set_errno(0)
         size = self._pidpath(token, buffer, len(buffer))
+        if size <= 0 and c.get_errno() == errno.ENOENT and self.generation(pid) == (unique_id, version):
+            raise ImageGoneError  # the same live process, its executable unlinked (an app updated while it runs)
         if not 0 < size < len(buffer) or len(buffer.value) != size:
             raise NativeUnavailableError
         path = Path(os.fsdecode(buffer.value))

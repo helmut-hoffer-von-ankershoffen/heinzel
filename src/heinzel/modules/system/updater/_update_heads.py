@@ -6,6 +6,7 @@ import platform
 import subprocess
 from contextlib import suppress
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, cast
 
 from heinzel import HeinzelError
@@ -14,6 +15,7 @@ from heinzel.kernel import (
     HeadRefresh,
 )
 from heinzel.kernel._desktop_app import DesktopApp
+from heinzel.kernel._desktop_update_promise import promise_update_on_quit
 from heinzel.kernel._logging import log_event, step
 from heinzel.modules.system._models import UpdateResult
 from heinzel.modules.system.updater._update_core import UpdateCore
@@ -113,6 +115,8 @@ class UpdateHeads(UpdateCore):
             )
         if running and (from_app or not restart):
             why = "installs when you quit the app" if from_app else "installs when you quit it"
+            # The app's quit installs it only under automatic updates; this record keeps the promise either way.
+            promise_update_on_quit(self._home or Path.home(), target)
             return HeadRefresh(head="desktop", status="pending", detail=f"{why}.", before=release, was_running=running)
         return self._desktop_install(target, restart=running and restart, known=known)
 
