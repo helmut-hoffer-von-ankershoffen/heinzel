@@ -179,7 +179,7 @@ export function AboutDialog() {
       <div className="flex max-h-full w-[min(32rem,100%)] flex-col overflow-hidden rounded-xl border border-border bg-popover text-sm shadow-2xl">
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
           <header className="flex items-center gap-3">
-            <span role="img" aria-label={t("app.name")} className="shrink-0">
+            <span role="img" aria-label={t("app.name")} className="size-12 shrink-0 overflow-hidden">
               <HeinzelSwarm className="size-12" />
             </span>
             <div>

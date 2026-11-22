@@ -88,6 +88,9 @@ describe("About dialog", () => {
     const dialog = screen.getByRole("dialog", { name: "Heinzelmännchen" });
     const logo = within(dialog).getByRole("img", { name: "Heinzelmännchen" });
     expect(within(logo).getByTestId("heinzel-swarm")).toHaveClass("size-12");
+    // The swarm draws `overflow-visible`; the header slot clips it to its 48px, as the single mascot was.
+    expect(logo).toHaveClass("size-12", "overflow-hidden");
+    expect(logo).not.toHaveClass("overflow-visible");
     expect(logo.querySelector("[data-view]")).toBeNull();
   });
 
