@@ -19,14 +19,14 @@ test("the app menu offers About, Settings, Check for Updates and the standard en
   assert.equal(app.label, "Heinzelm\u00e4nnchen");
   const labels = app.submenu.map((item) => item.label ?? item.role ?? item.type);
   assert.deepEqual(labels.filter((label) => label !== "separator"), [
-    "About Heinzelm\u00e4nnchen", "Settings\u2026", "Check for Updates\u2026", "Connection\u2026",
+    "About Heinzelm\u00e4nnchen", "Settings\u2026", "Check for Updates\u2026", "Switch Workspace\u2026",
     "services", "Hide Heinzelm\u00e4nnchen", "hideOthers", "unhide", "Quit Heinzelm\u00e4nnchen",
   ]);
   const settings = app.submenu.find((item) => item.accelerator === "Command+,");
   for (const item of app.submenu.filter((entry) => entry.click)) item.click();
   assert.equal(settings.label, "Settings\u2026");
   assert.deepEqual(sent, ["about", "settings", "updates", "connection"]);
-  assert.equal(app.submenu.find((item) => item.label === "Connection\u2026").accelerator, "CommandOrControl+Shift+,");
+  assert.equal(app.submenu.find((item) => item.label === "Switch Workspace\u2026").accelerator, "CommandOrControl+Shift+,");
 });
 
 test("the page is told only a known menu action", () => {
