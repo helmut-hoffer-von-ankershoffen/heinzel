@@ -443,7 +443,7 @@ def test_installed_on_reads_the_day_from_the_metadata_file(tmp_path, monkeypatch
     metadata.write_text("Name: x")
     dist = SimpleNamespace(files=[SimpleNamespace(name="METADATA")], locate_file=lambda file: metadata)
     monkeypatch.setattr(_service.importlib.metadata, "distribution", lambda name: dist)
-    assert _service._installed_on("x") == datetime.fromtimestamp(metadata.stat().st_mtime).astimezone().date()
+    assert _service._installed_on("x") == datetime.fromtimestamp(metadata.stat().st_mtime).astimezone()
     monkeypatch.setattr(dist, "files", None)
     assert _service._installed_on("x") is None
 

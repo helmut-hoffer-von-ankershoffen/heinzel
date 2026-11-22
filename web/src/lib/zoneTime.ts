@@ -24,3 +24,9 @@ export function zoneClock(date: Date, zone?: string): string {
 export function zoneHour(hour: number, _zone?: string): string {
   return `${String(hour).padStart(2, "0")}:00`;
 }
+
+/** `date` as day and time of day in `zone` (this machine's by default): "Nov 22, 2026, 05:31". */
+export function zoneDateTime(date: Date, zone?: string): string {
+  const day = date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric", timeZone: zone });
+  return `${day}, ${zoneTime(date, zone)}`;
+}

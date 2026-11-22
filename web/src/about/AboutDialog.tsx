@@ -6,8 +6,9 @@ import { createPortal } from "react-dom";
 import { useInfo } from "@/api/queries";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
-import { format, t } from "@/i18n";
+import { t } from "@/i18n";
 import { loadedFrontend, surfaceDetails } from "@/lib/surfaceDiagnostics";
+import { zoneDateTime } from "@/lib/zoneTime";
 import { onMenuAction } from "./menu";
 
 const REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel";
@@ -194,7 +195,7 @@ export function AboutDialog() {
                   hz {data.version}
                   {data.installed && (
                     <span className="block text-xs text-muted-foreground">
-                      {t("about.installedOn", { date: format.date(data.installed) })}
+                      {t("about.installedOn", { date: zoneDateTime(new Date(data.installed)) })}
                     </span>
                   )}
                 </Row>
@@ -239,7 +240,7 @@ export function AboutDialog() {
                             </span>
                           )}
                         </td>
-                        <td className="py-1">{plugin.installed ? format.date(plugin.installed) : ""}</td>
+                        <td className="py-1">{plugin.installed ? zoneDateTime(new Date(plugin.installed)) : ""}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -179,7 +179,12 @@ describe("Footer items are icons with a state and a pane", () => {
     ],
     "/api/org/agenda": { current: null, next: null, problem: "no calendar", fix: null },
     "/api/org/meeting": null,
-    "/api/system/changelog/released": { version: "0.4.0", published_at: "2026-10-25T07:41:00Z", day: "2026-10-25", source: "github" },
+    "/api/system/changelog/released": {
+      version: "0.4.0",
+      published_at: "2026-10-25T07:41:00Z",
+      day: "2026-10-25",
+      source: "github",
+    },
     "/api/system/changelog": "## [0.4.0] - 2026-10-25\n\n### Features\n\n- Something new\n",
   };
   const widthBefore = window.innerWidth;

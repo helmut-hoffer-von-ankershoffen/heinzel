@@ -9985,7 +9985,7 @@ export interface components {
         InstalledPlugin: {
             /**
              * Installed
-             * @description The day this version was installed here; none if unknown.
+             * @description The moment this version was installed here; none if unknown.
              */
             installed: string | null;
             /**
@@ -15879,7 +15879,7 @@ export interface components {
             installation: "uv tool" | "environment";
             /**
              * Installed
-             * @description The day this Heinzelmännchen version was installed here; none if unknown.
+             * @description The moment this Heinzelmännchen version was installed here; none if unknown.
              */
             installed: string | null;
             /**

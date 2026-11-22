@@ -6,6 +6,7 @@ import { Providers, queryClient } from "@/app/providers";
 import { KEY } from "@/features/runtime/updates/autoUpdateApi";
 import { readUpdatePlan, startUpdate } from "@/features/runtime/updates/controller";
 import { type Phase, type PhaseState, resetOperationRun } from "@/lib/operationRun";
+import { zoneDateTime } from "@/lib/zoneTime";
 import { shell } from "@/test/fixtures";
 import { expectPane } from "@/test/pane";
 import { expectAccessible, mockApi } from "@/test/render";
@@ -91,11 +92,8 @@ it("keeps a current core neutral because an empty plan cannot establish every pl
   });
   await userEvent.setup().hover(icon);
   expect(await screen.findByText("Couldn't check plugin updates right now")).toBeInTheDocument();
-  const expectedDate = new Date(status.installed_at).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  const expectedDate = zoneDateTime(new Date(status.installed_at));
+  expect(expectedDate).toMatch(/, \d\d:\d\d$/);
   expect(screen.getByText(`Last installed: ${expectedDate}`)).toBeInTheDocument();
   expect(screen.queryByText(/is up to date/)).not.toBeInTheDocument();
 });

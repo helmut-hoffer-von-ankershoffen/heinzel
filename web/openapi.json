@@ -9040,14 +9040,14 @@
           "installed": {
             "anyOf": [
               {
-                "format": "date",
+                "format": "date-time",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "The day this version was installed here; none if unknown.",
+            "description": "The moment this version was installed here; none if unknown.",
             "title": "Installed"
           },
           "name": {
@@ -18996,14 +18996,14 @@
           "installed": {
             "anyOf": [
               {
-                "format": "date",
+                "format": "date-time",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "The day this Heinzelmännchen version was installed here; none if unknown.",
+            "description": "The moment this Heinzelmännchen version was installed here; none if unknown.",
             "title": "Installed"
           },
           "latest_release": {

@@ -263,9 +263,9 @@ HEADED = (
 
 
 def test_changelog_header_time_is_read_with_or_without_a_time():
-    from datetime import UTC, date, datetime  # noqa: PLC0415
+    from datetime import UTC, date, datetime
 
-    from heinzel.modules.system._service import changelog_release_time  # noqa: PLC0415
+    from heinzel.modules.system._service import changelog_release_time
 
     new = changelog_release_time(HEADED, "0.9.54")
     assert new.published_at == datetime(2026, 11, 22, 7, 41, tzinfo=UTC)
@@ -277,10 +277,10 @@ def test_changelog_header_time_is_read_with_or_without_a_time():
 
 
 def test_release_time_prefers_github_caches_it_and_falls_back_offline(monkeypatch, tmp_path):
-    from datetime import UTC, datetime  # noqa: PLC0415
+    from datetime import UTC, datetime
 
-    from heinzel.modules.system import _github as github  # noqa: PLC0415
-    from heinzel.modules.system._service import release_time  # noqa: PLC0415
+    from heinzel.modules.system import _github as github
+    from heinzel.modules.system._service import release_time
 
     calls = []
 
@@ -294,7 +294,8 @@ def test_release_time_prefers_github_caches_it_and_falls_back_offline(monkeypatc
     assert (first.source, first.published_at) == ("github", datetime(2026, 11, 22, 8, 15, 30, tzinfo=UTC))
 
     def offline(url, token, timeout):
-        raise OSError("offline")
+        msg = "offline"
+        raise OSError(msg)
 
     monkeypatch.setattr(github, "get_json", offline)
     assert release_time(installation, tmp_path, "0.9.54", HEADED).source == "github"  # from the cache, no request
@@ -307,10 +308,10 @@ def test_release_time_prefers_github_caches_it_and_falls_back_offline(monkeypatc
 
 
 def test_newer_release_shows_publish_time_with_zone(monkeypatch):
-    from datetime import UTC, datetime  # noqa: PLC0415
+    from datetime import UTC, datetime
 
     monkeypatch.setenv("TZ", "Europe/Berlin")
-    import time  # noqa: PLC0415
+    import time
 
     time.tzset()
     moment = datetime(2026, 11, 22, 7, 41, tzinfo=UTC)

@@ -24,7 +24,14 @@ from heinzel.kernel import EDGE_WHEEL_PREFIX, EdgeRelease, Installation, Release
 from heinzel.kernel._desktop_app import desktop_app_here
 from heinzel.kernel._logging import log_event
 from heinzel.modules.system import _github
-from heinzel.modules.system._models import InstalledPlugin, ModuleInfo, ReleaseCheck, ReleaseNotes, ReleaseTime, SystemInfo
+from heinzel.modules.system._models import (
+    InstalledPlugin,
+    ModuleInfo,
+    ReleaseCheck,
+    ReleaseNotes,
+    ReleaseTime,
+    SystemInfo,
+)
 from heinzel.modules.system._pypi import PYPI, fetch
 
 DEFAULT_REPOSITORY = "helmut-hoffer-von-ankershoffen/heinzel"
@@ -395,7 +402,9 @@ def release_time(
             answer = _github.get_json(
                 f"{_github.GITHUB_API}/repos/{repository}/releases/tags/v{version}", token, RELEASE_TIMEOUT
             )
-            moment = _moment(answer.get("published_at")) if isinstance(answer, dict) else None
+            moment = (
+                _moment(cast("dict[str, object]", answer).get("published_at")) if isinstance(answer, dict) else None
+            )
         except (OSError, ValueError, TypeError):
             moment = None
         if moment is not None:
@@ -419,14 +428,14 @@ def installed_releases(installation: Installation, channel: str = "stable") -> G
     return GitHubReleases(repository_of(requirements[0] if requirements else None), channel)
 
 
-def _installed_on(distribution: str) -> date | None:
-    """The day a distribution was installed here: the change time of its METADATA file; None if it can't be read."""
+def _installed_on(distribution: str) -> datetime | None:
+    """The moment a distribution was installed here: the change time of its METADATA file; None if it can't be read."""
     try:
         dist = importlib.metadata.distribution(distribution)
         metadata = next((file for file in dist.files or [] if file.name == "METADATA"), None)
         if metadata is None:
             return None
-        return datetime.fromtimestamp(Path(str(dist.locate_file(metadata))).stat().st_mtime).astimezone().date()
+        return datetime.fromtimestamp(Path(str(dist.locate_file(metadata))).stat().st_mtime).astimezone()
     except (importlib.metadata.PackageNotFoundError, OSError, ValueError):
         return None
 
