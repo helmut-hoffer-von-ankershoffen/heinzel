@@ -1125,14 +1125,14 @@ def test_template_installed_cli_uses_its_own_daemon_unit_directory(tmp_path, tmp
         assert units != str(inherited_units)
 
 
-def test_claude_review_prefers_the_api_key():
-    """The review step authenticates with ANTHROPIC_API_KEY and uses the subscription token only without one."""
+def test_claude_review_prefers_the_subscription_token():
+    """The review step authenticates with CLAUDE_CODE_OAUTH_TOKEN and uses the API key only without one."""
     spec = yaml.safe_load((REPO / ".github" / "workflows" / "claude-review.yml").read_text(encoding="utf-8"))
     actions = [step for step in spec["jobs"]["model"]["steps"] if "claude-code-action" in step.get("uses", "")]
     assert len(actions) == 1
     for step in actions:
-        assert step["with"]["anthropic_api_key"] == "${{ secrets.ANTHROPIC_API_KEY }}"
-        assert step["with"]["claude_code_oauth_token"].startswith("${{ secrets.ANTHROPIC_API_KEY == '' && ")
+        assert step["with"]["claude_code_oauth_token"] == "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}"
+        assert step["with"]["anthropic_api_key"].startswith("${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && ")
 
 
 def _template_sync_module():
