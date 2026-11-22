@@ -122,3 +122,34 @@ def test_ci_asks_the_selector_for_pull_requests_only():
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "python3 -I scripts/contexts.py select" in workflow
     assert '[ "$EVENT" = pull_request ] && [ "${RELEASE_FULL:-false}" != true ] && [ -z "${BATCH_BASE:-}" ]' in workflow
+
+
+def _upgrade(*changed):
+    return contexts.upgrade_needed(CONFIG, list(changed))[0]
+
+
+def test_update_lifecycle_and_kernel_changes_select_the_upgrade_lane_and_macos():
+    assert _upgrade("src/heinzel/modules/system/updater/_schedule.py")
+    assert _upgrade("src/heinzel/heads/web/_updates.py")
+    assert _upgrade("src/heinzel/modules/system/lifecycle/_handover.py")
+    assert _upgrade("src/heinzel/_lifecycle_control.py")
+    assert _upgrade("src/heinzel/kernel/_kernel.py")
+    assert _upgrade("src/heinzel/ports.py"), "the spec context owns the public heinzel names"
+    assert _upgrade("tests/unit/runtime/updater/plan_test.py"), "a test of an upgrade context"
+    assert _upgrade("tests/unit/kernel/lets_test.py")
+    for path in ("uv.lock", "pyproject.toml", ".github/workflows/ci.yml", "scripts/acceptance/scenario.py"):
+        assert _upgrade("docs/guide/start.md", path), path
+    assert _upgrade(), "an empty change fails closed"
+
+
+def test_other_contexts_skip_the_upgrade_lane_and_macos_on_a_pull_request():
+    assert not _upgrade("src/heinzel/modules/ui/browser/_page.py")
+    assert not _upgrade("web/src/App.tsx", "docs/guide/start.md")
+    assert not _upgrade("apple/App/HeinzelApp.swift")
+    assert not _upgrade("tests/integration/chat_test.py")
+
+
+def test_ci_asks_the_upgrade_selector_and_fails_closed():
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "python3 -I scripts/contexts.py upgrade" in workflow
+    assert "upgrade=true" in workflow  # no answer from the selector keeps the lane

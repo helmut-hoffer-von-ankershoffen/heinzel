@@ -163,6 +163,25 @@ skip_python = ["apple"]
 docs = ["docs/**", "*.md", "mkdocs.yml"]
 # The CHANGELOG and README are read by the release and the end-to-end suite, so they are never skipped:
 keep = ["CHANGELOG.md", "README.md", "docs/**/*.sh"]
+# The in-place upgrade (CI job `upgrade`, lane B: the published release updates itself to the pull request's wheel) and
+# the macOS unit and integration cells run on a pull request that touches these contexts (their source or their
+# tests) or one of the upgrade paths: what decides how an installed Core replaces itself (#919).
+upgrade = ["runtime-update", "runtime-lifecycle", "spec"]
+upgrade_paths = [
+    "pyproject.toml",
+    "uv.lock",
+    "hatch_build.py",
+    "scripts/build.py",
+    "scripts/contexts.py",
+    "contexts.toml",
+    "scripts/acceptance/scenario.py",
+    "scripts/acceptance/run_acceptance.py",
+    ".github/workflows/ci.yml",
+    "tests/unit/cross_version_imports_test.py",
+    "tests/fixtures/published_resident/**",
+    "tests/e2e/_candidate_wheel.py",
+    "tests/e2e/daemon_legacy_recovery_test.py",
+]
 
 # Today's violations of the generated contracts. Each list may only shrink: a new entry fails review.
 [allow]

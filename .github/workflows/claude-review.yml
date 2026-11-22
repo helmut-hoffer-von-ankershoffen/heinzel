@@ -8,7 +8,11 @@ name: Gate review
 #     review is posted as a pull request comment;
 #   - gate paths touched but the review cannot run (bot sender such as Dependabot or the update-prs merge, fork, draft,
 #     CLAUDE_REVIEW not "true"): the check fails with "needs a human or agent review". A review that did not run never
-#     passes.
+#     passes;
+#   - gate paths touched but no Claude credential is set, or the API rejects it before any model call (the result is
+#     an error with zero cost and no model usage): nothing was reviewed and nobody can fix it in the pull request, so
+#     the model job ends green with one warning line and the "Gate review" check is skipped (grey: neither passed nor
+#     failed, GitHub's neutral for a job). It never passes. A review that ran and did not approve still fails.
 # It runs on pull_request_target, so the workflow and its gate-path list are the base branch's: a pull request cannot
 # edit them to pass its own review. The pull request head is data only: the file list comes from the API, and the
 # reviewer works in a checkout of the base branch (its CLAUDE.md, settings and hooks are the base's) and reads the head
@@ -90,7 +94,13 @@ jobs:
     outputs:
       verdict_line: ${{ steps.result.outputs.verdict_line }}
       result: ${{ steps.result.outputs.result }}
+      state: ${{ steps.result.outputs.state }} # reviewed or not-run (no credential, or the API rejected it)
     steps:
+      - name: Is a Claude credential set?
+        id: credential
+        env:
+          PRESENT: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
+        run: echo "present=$PRESENT" >> "$GITHUB_OUTPUT"
       # The base branch, never the head: the reviewer's CLAUDE.md, settings and hooks are the trusted ones.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -107,6 +117,7 @@ jobs:
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}" fetch --no-tags origin "+refs/pull/${PR}/head:refs/review/head"
           git rev-parse --verify "refs/review/head^{commit}"
       - id: review
+        if: steps.credential.outputs.present == 'true'
         continue-on-error: true # judged by the next step
         uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc # v1.0.276
         with:
@@ -131,9 +142,18 @@ jobs:
       - id: result
         name: Collect the result
         env:
+          PRESENT: ${{ steps.credential.outputs.present }}
           OUTCOME: ${{ steps.review.outcome }}
           EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
         run: |
+          not_run() { echo "::warning title=Gate review not run::$1: nothing was reviewed"; echo "state=not-run" >> "$GITHUB_OUTPUT"; exit 0; }
+          if [[ "$PRESENT" != true ]]; then not_run "No Claude credential is set (CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY)"; fi
+          # The API refused the credential before any model call: an error result with zero cost and no model usage.
+          if [[ -f "$EXECUTION_FILE" ]] && jq -e 'map(select(.type == "result")) | last | . != null and .is_error == true
+              and (.total_cost_usd // 0) == 0 and (.num_turns // 0) <= 1 and ((.modelUsage // {}) | length) == 0' \
+              "$EXECUTION_FILE" >/dev/null; then
+            not_run "The Claude API rejected the credential before any model call"
+          fi
           if [[ "$OUTCOME" != success || ! -f "$EXECUTION_FILE" ]]; then
             echo "::error::Gate review failed, nothing was reviewed (review step: $OUTCOME)"
             exit 1
@@ -143,6 +163,7 @@ jobs:
           last="$(grep -v '^[[:space:]]*$' <<<"$result" | tail -n 1 | tr -d '\r')"
           delimiter="EOF_$(openssl rand -hex 16)"
           {
+            echo "state=reviewed"
             echo "verdict_line=${last}"
             echo "result<<${delimiter}"
             printf '%s\n' "${result:0:50000}"
@@ -151,7 +172,9 @@ jobs:
   gate-review:
     name: Gate review
     needs: [scope, model]
-    if: ${{ !cancelled() }}
+    # Skipped (neutral) only when the model job finished and says nothing could be reviewed; a failed or skipped
+    # model job has no state, so the judge runs and fails closed.
+    if: ${{ !cancelled() && !(needs.model.result == 'success' && needs.model.outputs.state == 'not-run') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

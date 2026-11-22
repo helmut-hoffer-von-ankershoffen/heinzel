@@ -206,7 +206,8 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "claude-review.yml": {
         "gate_paths='^(": "finds the gate paths the pull request touches; no tokens when there are none",
         'auth="$(printf': "fetches the head as git objects only, never checks it out",
-        'if [[ "$OUTCOME" != success': "collects the model result; a review that did not run fails",
+        'echo "present=$PRESENT"': "records whether a Claude credential is set, without reading it",
+        "not_run() {": "collects the model result: no or a rejected credential is neutral, any other unrun one fails",
         'if [[ "$MODE" == pass ]]': "no model call without gate paths; a gate change nobody reviewed fails",
     },
     "update-prs.yml": {
@@ -985,7 +986,10 @@ def test_gate_review_always_reports_one_check_and_fails_closed():
     job = spec["jobs"]["gate-review"]
     assert spec["name"] == job["name"] == "Gate review"
     assert job["needs"] == ["scope", "model"]
-    assert job["if"] == "${{ !cancelled() }}"  # runs whatever the model job did, so nothing hangs pending
+    # runs whatever the model job did, so nothing hangs pending; skipped only on the model job's own not-run state
+    assert job["if"] == (
+        "${{ !cancelled() && !(needs.model.result == 'success' && needs.model.outputs.state == 'not-run') }}"
+    )
     script = job["steps"][0]["run"]
     assert 'if [[ "$MODE" == pass ]]' in script
     assert "needs a human or agent review" in script  # a bot, fork or draft gate change
@@ -1069,6 +1073,79 @@ def test_gate_review_holds_least_privilege():
     assert spec["jobs"]["model"]["permissions"] == {"contents": "read"}  # holds the secrets: no write
     assert spec["jobs"]["gate-review"]["permissions"] == {"pull-requests": "write"}
     assert spec["permissions"] == {}
+
+
+def _collect(tmp_path, *, present="true", outcome="failure", result=None):
+    """Run the model job's `Collect the result` step; returns (exit status, outputs, stdout)."""
+    script = next(step["run"] for step in _gate_review()["jobs"]["model"]["steps"] if step.get("id") == "result")
+    execution = tmp_path / "execution.json"
+    if result is not None:
+        execution.write_text(json.dumps([{"type": "system"}, {"type": "result", **result}]))
+    output = tmp_path / "output"
+    output.write_text("")
+    env = {
+        "PATH": os.environ["PATH"],
+        "PRESENT": present,
+        "OUTCOME": outcome,
+        "EXECUTION_FILE": str(execution) if result is not None else "",
+        "GITHUB_OUTPUT": str(output),
+    }
+    done = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", script], env=env, capture_output=True, text=True, check=False, timeout=30
+    )
+    return done.returncode, output.read_text(), done.stdout
+
+
+REJECTED = {"subtype": "success", "is_error": True, "num_turns": 1, "total_cost_usd": 0, "modelUsage": {}}
+"""The result of run 44985171290: the API refused the credential before any model call."""
+
+
+def test_gate_review_without_a_credential_is_neutral_with_one_line(tmp_path):
+    status, outputs, stdout = _collect(tmp_path, present="false", outcome="skipped")
+    assert status == 0
+    assert "state=not-run" in outputs
+    assert "verdict_line" not in outputs
+    assert stdout.count("::warning title=Gate review not run::") == 1
+    assert "No Claude credential is set" in stdout
+    review = next(step for step in _gate_review()["jobs"]["model"]["steps"] if step.get("id") == "review")
+    assert review["if"] == "steps.credential.outputs.present == 'true'"
+    credential = next(step for step in _gate_review()["jobs"]["model"]["steps"] if step.get("id") == "credential")
+    assert "secrets.CLAUDE_CODE_OAUTH_TOKEN != ''" in credential["env"]["PRESENT"]
+    assert "secrets.ANTHROPIC_API_KEY != ''" in credential["env"]["PRESENT"]
+
+
+def test_gate_review_with_a_rejected_credential_is_neutral_with_one_line(tmp_path):
+    status, outputs, stdout = _collect(tmp_path, result=REJECTED | {"result": "Invalid API key"})
+    assert status == 0
+    assert "state=not-run" in outputs
+    assert stdout.count("::warning title=Gate review not run::") == 1
+    assert "rejected the credential" in stdout
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        REJECTED | {"total_cost_usd": 0.42},  # the model was called: a real failure
+        REJECTED | {"modelUsage": {"claude-opus": {"inputTokens": 10}}},
+        REJECTED | {"num_turns": 7},
+        REJECTED | {"is_error": False},  # an unsuccessful step without an error result
+    ],
+)
+def test_gate_review_that_called_the_model_and_failed_still_fails(tmp_path, result):
+    status, outputs, stdout = _collect(tmp_path, result=result)
+    assert status == 1
+    assert "state=not-run" not in outputs
+    assert "Gate review failed, nothing was reviewed" in stdout
+
+
+def test_gate_review_that_ran_and_did_not_approve_still_fails(tmp_path):
+    reviewed = {"is_error": False, "num_turns": 9, "total_cost_usd": 1.2, "result": "Weakens ci.yml:1\nVERDICT: REJECT"}
+    status, outputs, _ = _collect(tmp_path, outcome="success", result=reviewed)
+    assert status == 0
+    assert "state=reviewed" in outputs
+    assert "verdict_line=VERDICT: REJECT" in outputs
+    judge = _gate_review()["jobs"]["gate-review"]["steps"][0]["run"]
+    assert judge.rstrip().endswith("exit 1")  # anything but the exact approve line fails the check
 
 
 def test_gate_review_reruns_on_reopened_pull_requests():
@@ -1196,7 +1273,9 @@ def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
     assert '"os":"macos-latest","python":"3.15"' in jobs["test"]["strategy"]["matrix"]["include"]
 
 
-def _macos_include(matrix: dict, event: str, full: bool, *, release: bool = False, lane: str = "") -> list[dict]:
+def _macos_include(  # noqa: PLR0913 - one keyword per changes output the matrix expression reads
+    matrix: dict, event: str, full: bool, *, release: bool = False, lane: str = "", upgrade: bool | None = None
+) -> list[dict]:
     expression = re.fullmatch(r"\$\{\{ fromJSON\((.*)\) \}\}", matrix["include"].strip())
     assert expression
     context = {
@@ -1204,6 +1283,10 @@ def _macos_include(matrix: dict, event: str, full: bool, *, release: bool = Fals
         "needs.changes.outputs.lane": lane or ("linux" if event == "push" else "all"),
         "needs.changes.outputs.macos_full": str(full).lower(),
         "needs.changes.outputs.full_ci": str(release).lower(),
+        # a release PR and every non-PR run select the upgrade lane (changes job); a PR only for its contexts
+        "needs.changes.outputs.upgrade": str(
+            release or event != "pull_request" if upgrade is None else upgrade
+        ).lower(),
     }
     for branch in expression[1].split(" || "):
         value = None
@@ -1249,6 +1332,14 @@ def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes(event, full, pyt
     assert "-m '($(TEST_LEVELS)) and not perf'" in recipe
     assert "--session-timeout=420" in recipe  # each shard has the cap the whole suite had
     assert {"changes", "notifier", "build"} <= set(jobs["ci-ok"]["needs"])
+
+
+def test_a_pull_request_gets_the_macos_cells_only_when_it_touches_update_lifecycle_or_kernel():
+    matrix = _ci_jobs()["test"]["strategy"]["matrix"]
+    cells = [{"os": "macos-latest", "python": "3.15", "levels": level} for level in ("unit", "integration")]
+    assert _macos_include(matrix, "pull_request", full=True, upgrade=True) == cells
+    assert _macos_include(matrix, "pull_request", full=True, upgrade=False) == []
+    assert _macos_include(matrix, "pull_request", full=True, release=True, upgrade=False) == []  # changes sets it
 
 
 def test_electron_ci_runs_when_its_trigger_or_make_target_changes():
@@ -2005,9 +2096,10 @@ def test_release_candidate_source_and_selector_never_reach_plugin_templates():
     assert "release-candidate-source" not in generated
     assert "full_release" not in generated
     assert (
-        "github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true'"
+        "github.event_name == 'pull_request' && needs.changes.outputs.upgrade != 'true'"
         in (_ci_jobs()["test"]["strategy"]["matrix"]["include"])
     )
+    assert "upgrade" not in generated
 
 
 def test_lint_job_leaves_room_for_the_candidate_web_component_suite():

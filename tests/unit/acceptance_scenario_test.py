@@ -157,3 +157,125 @@ def test_diagnostics_copy_logs_plan_and_receipts_redacted_and_never_outside_the_
     assert copied == ["logs/01-server-a.log", "state_dir/web/auto-update.json"]
     assert "SECRET-TOKEN" not in (out / "logs/01-server-a.log").read_text()
     assert not (out / "data_dir/standard-app.json").exists()
+
+
+def test_lane_b_takes_a_candidate_wheel_only_with_the_candidate_expectation(tmp_path):
+    wheel = tmp_path / "heinzel-1.0.0-py3-none-any.whl"
+    args = scenario.parse_args(["--expect-version", "candidate", "--candidate-wheel", str(wheel)])
+    assert args.candidate_wheel == wheel
+    assert args.from_version == ""
+    for argv in (
+        ["--expect-version", "candidate"],
+        ["--expect-version", "1.0.0", "--candidate-wheel", str(wheel)],
+        ["--expect-version", "published", "--candidate-wheel", str(wheel)],
+    ):
+        with pytest.raises(SystemExit):
+            scenario.parse_args(argv)
+
+
+def test_lane_b_passes_only_when_every_candidate_step_passed():
+    passing = {ident: {"status": "PASS"} for ident in scenario.CANDIDATE_STEPS}
+    assert "B3" not in scenario.CANDIDATE_STEPS
+    assert scenario.verdict(passing, scenario.CANDIDATE_STEPS) == "SCENARIO_PASSED"
+    assert scenario.verdict(passing | {"B4": {"status": "FAIL"}}, scenario.CANDIDATE_STEPS) == "SCENARIO_FAILED"
+    assert scenario.verdict(passing) == "SCENARIO_FAILED", "the published story still needs B3"
+
+
+def test_lane_b_starts_from_pypi_latest_and_binds_the_candidate(tmp_path, monkeypatch):
+    harness = scenario.HARNESS
+    monkeypatch.setattr(harness, "fetch", lambda url, limit: json.dumps({"info": {"version": "1.0.0"}}).encode())
+    monkeypatch.setattr(
+        harness, "bind_old_app", lambda version, dest: {"version": version, "profile_sha256": "p" * 64, "url": "u"}
+    )
+    candidate = {"version": "1.0.0", "sha256": "c" * 64, "wheel": tmp_path / "w.whl", "dir": tmp_path}
+    monkeypatch.setattr(harness, "bind_candidate", lambda path, parent: candidate)
+    args = SimpleNamespace(from_version="", candidate_wheel=tmp_path / "w.whl", expect_wheel_sha256="")
+    old, new, identity = scenario.bind_candidate_releases(args, tmp_path)
+    assert old["version"] == "1.0.0"
+    assert new == {"version": "1.0.0", "wheel": candidate["wheel"], "accepted": tmp_path}
+    assert identity["candidate_wheel_sha256"] == "c" * 64
+    args = SimpleNamespace(from_version="0.9.9", candidate_wheel=tmp_path / "w.whl", expect_wheel_sha256="d" * 64)
+    with pytest.raises(harness.StepFailed, match="differs from the expected sha256"):
+        scenario.bind_candidate_releases(args, tmp_path)
+
+
+def test_lane_b_updates_in_place_with_the_published_cores_own_updater(tmp_path, monkeypatch):
+    calls = []
+
+    def run_update(case, label, *, previous=None):
+        calls.append((case.ctx["update_target"], label, previous))
+        return {"updated": True, "before": "1.0.0", "after": "1.0.0", "message": "Reinstalled", "extra": "x"}
+
+    monkeypatch.setattr(scenario.HARNESS, "run_update", run_update)
+    case = SimpleNamespace(ctx={})
+    new = {"version": "1.0.0", "wheel": tmp_path / "w.whl"}
+    evidence = scenario.update_in_place(case, {"version": "1.0.0"}, new)
+    assert calls == [
+        ({"mode": "candidate", "version": "1.0.0", "wheel": new["wheel"]}, "hz-system-update-candidate", "1.0.0")
+    ]
+    assert evidence == {"updated": True, "before": "1.0.0", "after": "1.0.0", "message": "Reinstalled"}
+
+
+class _Case:
+    def __init__(self, ident, parent, ctx):
+        self.root, self.ctx, self.env, self.steps, self.hits = parent, dict(ctx), {}, [], []
+        self.first_failure, self.started = None, 0.0
+
+    def provide_uv(self):
+        pass
+
+    def step(self, name, action):
+        self.steps.append({"name": name})
+        return action()
+
+
+@pytest.mark.parametrize("failing", [None, "update_in_place"])
+def test_lane_b_runs_its_steps_in_order_and_stops_at_the_first_failure(tmp_path, monkeypatch, failing):
+    seen = []
+    harness = scenario.HARNESS
+    old = {"version": "1.0.0", "profile": {}, "accepted": tmp_path, "url": "u"}
+    new = {"version": "1.0.0", "wheel": tmp_path / "w.whl", "accepted": tmp_path}
+    monkeypatch.setattr(scenario, "bind_candidate_releases", lambda args, parent: (old, new, {"candidate": True}))
+    monkeypatch.setattr(harness, "Case", _Case)
+    monkeypatch.setattr(harness, "app_cycle", lambda case, name, command: seen.append("install"))
+
+    def fake(name):
+        def action(*args, **kwargs):
+            seen.append(name)
+            if name == failing:
+                message = "boom"
+                raise harness.StepFailed(message)
+
+        return action
+
+    for name in ("default_state_folder", "prepare_state", "update_in_place", "verify_after", "serve_and_chat"):
+        monkeypatch.setattr(scenario, name, fake(name))
+    monkeypatch.setattr(harness, "verify_state", fake("verify_state"))
+    monkeypatch.setattr(scenario, "start_servers", fake("start_servers"))
+    monkeypatch.setattr(scenario, "await_update", fake("await_update"))
+    args = SimpleNamespace(candidate_wheel=new["wheel"], plugin_age_hours=0, update_deadline=60)
+    result = {"steps": {}}
+    scenario.run_scenario(args, tmp_path, result, {})
+    steps = {ident: step["status"] for ident, step in result["steps"].items()}
+    if failing is None:
+        assert seen == [
+            "default_state_folder", "install", "prepare_state", "verify_state",
+            "update_in_place", "verify_after", "serve_and_chat",
+        ]  # fmt: skip
+        assert steps == dict.fromkeys(scenario.CANDIDATE_STEPS, "PASS")
+        assert scenario.verdict(result["steps"], scenario.CANDIDATE_STEPS) == "SCENARIO_PASSED"
+    else:
+        assert seen[-1] == "update_in_place"
+        assert steps["B4"] == "FAIL"
+        assert steps["B5"] == steps["T1"] == "NOT_RUN"
+    assert "start_servers" not in seen
+    assert "await_update" not in seen
+
+
+def test_lane_b_summary_names_the_gate_and_its_steps(tmp_path):
+    path = tmp_path / "scenario.json"
+    path.write_text(json.dumps({"mode": "candidate", "verdict": "SCENARIO_PASSED", "steps": {}}))
+    text = scenario.summary(path)
+    assert "Upgrade in place, published to candidate (gate)" in text
+    assert "| B3 |" not in text
+    assert "| B4 | NOT_RUN |" in text
