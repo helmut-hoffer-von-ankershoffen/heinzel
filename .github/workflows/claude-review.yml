@@ -101,7 +101,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
         run: |
-          git -c "http.extraheader=AUTHORIZATION: bearer ${GH_TOKEN}" fetch --no-tags origin "refs/pull/${PR}/head:refs/review/head"
+          # git over HTTPS takes basic auth with the token as password, not a bearer header
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::${auth}"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}" fetch --no-tags origin "+refs/pull/${PR}/head:refs/review/head"
+          git rev-parse --verify "refs/review/head^{commit}"
       - id: review
         continue-on-error: true # judged by the next step
         uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc # v1.0.276
