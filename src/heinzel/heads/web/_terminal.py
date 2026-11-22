@@ -31,7 +31,7 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket
 from fastapi.websockets import WebSocketDisconnect
 
-from heinzel.heads import api
+from heinzel.heads import _kit
 from heinzel.heads.web._agent_titles import claude_title
 from heinzel.heads.web._shutdown import Stopping
 
@@ -171,12 +171,12 @@ async def session(  # noqa: PLR0913 - the socket plus explicit terminal authenti
     headers = websocket.headers
     origin = headers.get("origin")
     request_origins = allowed_origins() if callable(allowed_origins) else allowed_origins
-    problem = api.request_refusal(
+    problem = _kit.request_refusal(
         headers,
-        api.LOOPBACK,
+        _kit.LOOPBACK,
         port,
         allowed_origins=request_origins,
-        host_help=api.WEB_HOST_HELP,
+        host_help=_kit.WEB_HOST_HELP,
     )
     if problem or origin is None:
         await websocket.close(code=POLICY_VIOLATION, reason="Refused: open the terminal from the hz ui app.")
@@ -186,12 +186,12 @@ async def session(  # noqa: PLR0913 - the socket plus explicit terminal authenti
         await websocket.close(code=POLICY_VIOLATION, reason="Refused: the session token is missing or wrong.")
         return
     active_origins = allowed_origins() if callable(allowed_origins) else allowed_origins
-    problem = api.request_refusal(
+    problem = _kit.request_refusal(
         headers,
-        api.LOOPBACK,
+        _kit.LOOPBACK,
         port,
         allowed_origins=active_origins,
-        host_help=api.WEB_HOST_HELP,
+        host_help=_kit.WEB_HOST_HELP,
     )
     if problem:
         await websocket.close(code=POLICY_VIOLATION, reason="This origin is no longer allowed.")
@@ -227,7 +227,7 @@ def _external_origin(host: str, origin: str | None, allowed_origins: frozenset[s
     if origin not in allowed_origins:
         return None
     name = host.lower().split("]", maxsplit=1)[0] + "]" if host.startswith("[") else host.partition(":")[0].lower()
-    return origin if name not in api.LOOPBACK else None
+    return origin if name not in _kit.LOOPBACK else None
 
 
 async def _authenticated(websocket: WebSocket, token: str, accept: Callable[[str], object] | None) -> bool:

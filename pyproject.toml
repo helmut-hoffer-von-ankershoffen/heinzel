@@ -408,7 +408,7 @@ forbidden_modules = ["heinzel.modules"]
 # handshake) and the web head serves the `updater` context's schedule, each by importing the context's public entry,
 # never a private file. Until the kernel injects them by type, each importing file is listed; the list may only shrink.
 ignore_imports = [
-    "heinzel.heads.cli._serve -> heinzel.modules.system.client",
+    "heinzel.heads._compose -> heinzel.modules.system.client",
     # The old path of the MCP tokens, kept for a published `hz system serve` that outlives an in-place update.
     "heinzel.heads._mcp_tokens -> heinzel.modules.system.client",
     "heinzel.heads.mcp -> heinzel.modules.system.client",
@@ -447,11 +447,9 @@ type = "independence"
 modules = ["heinzel.heads.cli", "heinzel.heads.api", "heinzel.heads.mcp", "heinzel.heads.web"]
 ignore_imports = [
     "heinzel.heads._served_tools -> heinzel.heads.mcp",
-    "heinzel.heads.cli._serve -> heinzel.heads.**",
+    "heinzel.heads.** -> heinzel.heads._compose",
     "heinzel.heads.web -> heinzel.heads.api",
-    "heinzel.heads.web._browser_bridge -> heinzel.heads.api",
     "heinzel.heads.web._mcp -> heinzel.heads.mcp",
-    "heinzel.heads.web._terminal -> heinzel.heads.api",
 ]
 
 # END generated from contexts.toml

@@ -265,6 +265,7 @@ def test_the_kept_mcp_tokens_path_answers_with_the_client_context() -> None:
     ("old", "new"),
     [
         ("heinzel.modules.system.updater._phases", "heinzel._phases"),
+        ("heinzel.heads.cli._serve", "heinzel.heads._compose"),
     ],
 )
 def test_a_moved_module_keeps_its_old_path_with_the_same_objects(old: str, new: str) -> None:
@@ -274,3 +275,12 @@ def test_a_moved_module_keeps_its_old_path_with_the_same_objects(old: str, new: 
     assert {name: getattr(before, name) is getattr(after, name) for name in before.__all__} == dict.fromkeys(
         before.__all__, True
     )
+
+
+def test_the_rest_head_keeps_the_authority_names_the_kit_now_owns() -> None:
+    """The Host and Origin policy moved to the head kit; `heinzel.heads.api` still answers with the same objects."""
+    from heinzel.heads import _kit, api
+
+    names = ("API_HOST_HELP", "DEFAULT_PORTS", "FORBIDDEN", "LOOPBACK", "WEB_HOST_HELP", "refusal", "request_refusal")
+    for name in names:
+        assert getattr(api, name) is getattr(_kit, name), name
