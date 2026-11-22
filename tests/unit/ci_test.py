@@ -1333,8 +1333,8 @@ def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes(event, full, pyt
 def test_a_pull_request_gets_the_macos_cells_only_when_it_touches_update_lifecycle_or_kernel():
     matrix = _ci_jobs()["test"]["strategy"]["matrix"]
     cells = [{"os": "macos-latest", "python": "3.15", "levels": level} for level in ("unit", "integration")]
-    assert _macos_include(matrix, "pull_request", full=True, upgrade=True) == cells
-    assert _macos_include(matrix, "pull_request", full=True, upgrade=False) == []
+    assert _macos_include(matrix, "pull_request", full=True, release=True, upgrade=True) == cells
+    assert _macos_include(matrix, "pull_request", full=True, release=True, upgrade=False) == []
     assert _macos_include(matrix, "pull_request", full=True, release=True, upgrade=False) == []  # changes sets it
 
 
@@ -2552,7 +2552,7 @@ def _ci_ok_run(run: str, **env: str) -> tuple[int, str]:
 
 
 _OFF = {"NOTIFIER": "false", "ELECTRON": "false", "MACOS_FULL": "false", "CONTRACTS": "false", "PLUGIN_PATHS": "false"}
-_PROSE = {**_OFF, "SITE_ONLY": "true", "CORE": "true", "PLUGINS": "False"}
+_PROSE = {**_OFF, "SITE_ONLY": "true", "CORE": "true", "PLUGINS": "False", "UPGRADE": "false"}
 _PROSE_JOBS = ["admission", "changes", "lint", "secrets", "setup", "audit", "site-tests", "build", "core-wheel"]
 PROSE_RUN = " ".join([*_PROSE_JOBS, "quarantine-registry", "commits", "dependency-review"])
 

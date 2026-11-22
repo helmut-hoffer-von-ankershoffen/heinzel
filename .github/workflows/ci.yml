@@ -446,7 +446,7 @@ jobs:
         # under that same cap. PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.
         # Core upgrade lane: a pull request gets the macOS cells when it touches update, lifecycle or kernel.
         include:
-          ${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || github.event_name == 'pull_request' && (needs.changes.outputs.full_ci != 'true' || needs.changes.outputs.upgrade != 'true') && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
+          ${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.upgrade != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
     env:
       HZ_TEST_TIMEOUT_SCALE: "${{ contains(matrix.os, 'macos') && '3' || '1' }}" # hosted macOS runners are slower; Linux stays at 1
       # Unit-bearing cells need locked Node; integration-only dependency groups stay unchanged.
