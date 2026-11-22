@@ -144,6 +144,12 @@ def test_plan_resumes_a_published_release_without_marker_at_its_tail():
     assert chain.plan(reader(routes(rels=rels, tails=done)), "", auto=False, tip=TIP)["phase"] == "tail"
 
 
+def test_a_tail_workflow_not_yet_on_main_has_no_running_run():
+    assert chain.tail_running(reader({}), "0.9.54") is False
+    with pytest.raises(chain.ChainError, match="cannot read"):
+        chain.tail_running(reader({"actions/workflows/release-tail.yml/runs": {"oops": 1}}), "0.9.54")
+
+
 def test_no_cut_past_a_tail_that_is_not_running():
     # A Latest-less release is still final; without its marker and a tail run it is resumed first.
     rels = [release("0.9.53", marker=False)]

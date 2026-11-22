@@ -496,6 +496,8 @@ def tail_running(read: Callable[[str], Any], version: str) -> bool:
         ChainError: The listing is unreadable.
     """
     data = read(f"actions/workflows/{TAIL}/runs?per_page={PAGE}")
+    if data is None:  # the workflow is not on the default branch yet: no run of it exists
+        return False
     if not isinstance(data, dict) or not isinstance(data.get("workflow_runs"), list):
         msg = "cannot read the release tail runs"
         raise ChainError(msg)
