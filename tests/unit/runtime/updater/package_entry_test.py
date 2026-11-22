@@ -27,5 +27,5 @@ def test_importing_one_file_of_the_package_leaves_the_schedule_unloaded() -> Non
         "import sys; import heinzel.modules.system.updater._plugin_standing; "
         "print('heinzel.modules.system.updater._schedule' in sys.modules)"
     )
-    result = subprocess.run([sys.executable, "-I", "-c", probe], capture_output=True, text=True, check=True)
+    result = subprocess.run([sys.executable, "-I", "-c", probe], capture_output=True, text=True, check=True, timeout=60)
     assert result.stdout.strip() == "False"
