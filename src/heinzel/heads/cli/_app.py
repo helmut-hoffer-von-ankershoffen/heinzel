@@ -268,6 +268,8 @@ def _install_app(  # noqa: PLR0913 - the options of hz app install, shared with 
         error.print(say.CANCELLED_INSTALL)
         _reopen_any(error, reopen=reopen)
         raise typer.Exit(130) from exc
+    except typer.Exit:
+        raise  # already told (typer.Exit is a RuntimeError)
     except (HeinzelError, OSError, SubprocessError, RuntimeError, ValueError) as exc:
         # RuntimeError and ValueError too (an unverifiable process identity, a damaged record): never an exit
         # without a line that says why.
@@ -277,6 +279,15 @@ def _install_app(  # noqa: PLR0913 - the options of hz app install, shared with 
         _fail(error, exc, say.INSTALL_FAILED, details=details)
     steps.close(complete=state in {"installed", "updated"})
     _print_notes(steps, notes)
+    _installed(state, output, error, folder, reopen=reopen)
+
+
+def _installed(state: str, output: Console, error: Console, folder: Path, *, reopen: bool) -> None:
+    """Tell how the install ended and open the app again when this command quit it.
+
+    Raises:
+        typer.Exit: If the app was open and so not replaced.
+    """
     if state == "deferred":
         for line in say.app_running(_where_installed()).lines():
             error.print(line, markup=False)

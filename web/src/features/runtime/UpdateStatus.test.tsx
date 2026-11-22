@@ -571,7 +571,7 @@ it("says when the desktop app is older than Heinzel and updates it with one butt
   const icon = await screen.findByRole("button", { name: /Updates available/ });
   expect(icon).toHaveClass("animate-pulse", "text-bad");
   await user.click(icon);
-  expect(await screen.findByText("The desktop app 0.0.9 is older than Heinzel 0.1.0")).toBeInTheDocument();
+  expect(await screen.findByText("Desktop app 0.0.9 is older than Heinzel 0.1.0")).toBeInTheDocument();
   expect(updateDesktopApp).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Update desktop app" }));
   expect(updateDesktopApp).toHaveBeenCalledTimes(1);
