@@ -22,7 +22,8 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.unit
+# Each test parses the whole source tree, which takes seconds on a loaded runner: the integration limit, scaled by CI.
+pytestmark = [pytest.mark.unit, pytest.mark.timeout(15)]
 
 REPO = Path(__file__).resolve().parents[2]
 SOURCE = REPO / "src"
@@ -33,7 +34,7 @@ FIXTURE_VERSIONS = ("0.9.14", "0.9.15")
 
 # Imports inside functions of a published version that already failed after a swap to a newer tree before the
 # check existed (version skew of those heads and renderers, not of the update path). This list may only shrink.
-KNOWN_BROKEN = {
+KNOWN_BROKEN: dict[str, set[str]] = {
     "0.9.14": {"heinzel.heads"},
     "0.9.15": {
         "heinzel.heads",
@@ -51,8 +52,8 @@ KNOWN_BROKEN = {
 
 @dataclass
 class Published:
-    resident: dict[str, set[str]] = field(default_factory=dict)
-    lazy: list[tuple[str, str, list[str]]] = field(default_factory=list)
+    resident: dict[str, set[str]] = field(default_factory=dict[str, set[str]])
+    lazy: list[tuple[str, str, list[str]]] = field(default_factory=list[tuple[str, str, list[str]]])
 
     def has(self, module: str, name: str) -> bool:
         return name in self.resident.get(module, set()) or f"{module}.{name}" in self.resident
