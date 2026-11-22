@@ -1,6 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
-import { addressUrl, BrowserPanel, externalBrowserUrl } from "./BrowserPanel";
+import { Providers, queryClient } from "@/app/providers";
+import { mockApi } from "@/test/render";
+import { addressUrl, BrowserPanel, externalBrowserUrl, urlParts } from "./BrowserPanel";
 
 afterEach(() => {
   Reflect.deleteProperty(window, "heinzelDesktop");
@@ -189,7 +192,7 @@ it("the tab lane ends with New tab, Browser settings and Close icons, and the ol
   expect(settings).toHaveBeenCalledOnce();
   fireEvent.click(lane[2] as HTMLElement);
   expect(close).toHaveBeenCalledOnce();
-  expect(screen.getByRole("textbox", { name: "Website address" }).nextElementSibling).toBe(
+  expect(screen.getByRole("textbox", { name: "Website address" }).parentElement?.nextElementSibling).toBe(
     screen.getByRole("button", { name: "Open this address" }),
   );
 });
@@ -703,3 +706,128 @@ it.each([
     await waitFor(() => expect(answered).toEqual([`${action}:${cardA.id}`, `${action}:${cardB.id}`]));
   },
 );
+
+const withTabs = () => {
+  const browser = vi.fn(async () => ({
+    status: "ready",
+    url: "https://docs.example.com/x-api/v1?q=1",
+    tabs: [
+      {
+        id: "a",
+        owner: "person",
+        selected: true,
+        status: "ready",
+        url: "https://docs.example.com/x-api/v1?q=1",
+        title: "Docs",
+      },
+      { id: "b", owner: "person", selected: false, status: "ready", url: "https://news.example/", title: "News" },
+    ],
+    selected: "a",
+  }));
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  return browser;
+};
+
+it("puts New tab right after the last tab and the expand, settings and close icons at the right end", async () => {
+  withTabs();
+  render(<BrowserPanel active={false} onClose={vi.fn()} onSettings={vi.fn()} onToggleFull={vi.fn()} />);
+  const news = await screen.findByRole("tab", { name: "News" });
+  const plus = screen.getByRole("button", { name: "New tab" });
+  const expand = screen.getByRole("button", { name: "Expand the browser to full width" });
+  const settings = screen.getByRole("button", { name: "Browser settings" });
+  const close = screen.getByRole("button", { name: "Close the browser" });
+  const follows = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  expect(follows(news, plus) && follows(plus, expand) && follows(expand, settings) && follows(settings, close)).toBe(
+    true,
+  );
+  expect(plus.parentElement).toBe(screen.getByRole("tablist").parentElement);
+  expect(expand.parentElement).toBe(close.parentElement);
+  expect(expand.parentElement).toHaveClass("ml-auto");
+  for (const icon of [plus, expand, settings, close]) expect(icon.textContent).toBe("");
+});
+
+it("expands to full width and back with a pressed state", async () => {
+  withTabs();
+  const toggle = vi.fn();
+  const view = render(<BrowserPanel active={false} onClose={vi.fn()} onToggleFull={toggle} />);
+  const expand = await screen.findByRole("button", { name: "Expand the browser to full width" });
+  expect(expand).toHaveAttribute("aria-pressed", "false");
+  fireEvent.click(expand);
+  expect(toggle).toHaveBeenCalledOnce();
+  view.rerender(<BrowserPanel active={false} onClose={vi.fn()} onToggleFull={toggle} full />);
+  expect(screen.getByRole("button", { name: "Restore the browser size" })).toHaveAttribute("aria-pressed", "true");
+});
+
+it("splits an address into a bright host and a dimmed path", () => {
+  expect(urlParts("https://docs.example.com/x-api/v1?q=1")).toEqual({
+    host: "docs.example.com",
+    rest: "/x-api/v1?q=1",
+  });
+  expect(urlParts("https://docs.example.com/")).toEqual({ host: "docs.example.com", rest: "" });
+  expect(urlParts("not an address")).toBeNull();
+});
+
+it("shows host bright and path dimmed in a rounded field, and the full address while focused", async () => {
+  withTabs();
+  const { container } = render(<BrowserPanel active={false} onClose={vi.fn()} />);
+  const field = await screen.findByRole("textbox", { name: "Website address" });
+  await waitFor(() => expect(container.querySelector("[data-url-display]")).not.toBeNull());
+  const display = container.querySelector("[data-url-display]") as HTMLElement;
+  expect(display.children[0]).toHaveTextContent("docs.example.com");
+  expect(display.children[0]).toHaveClass("text-foreground");
+  expect(display.children[1]).toHaveTextContent("/x-api/v1?q=1");
+  expect(display.children[1]).toHaveClass("text-muted-foreground");
+  expect(field).toHaveClass("rounded-full", "w-full");
+  expect(field).toHaveValue("https://docs.example.com/x-api/v1?q=1");
+  fireEvent.focus(field);
+  expect(container.querySelector("[data-url-display]")).toBeNull();
+  expect(field).not.toHaveClass("text-transparent");
+  fireEvent.blur(field);
+  expect(container.querySelector("[data-url-display]")).not.toBeNull();
+});
+
+it("asks the Heinzel about this page: the URL and title go into the chat for the person to send", async () => {
+  withTabs();
+  const ask = vi.fn();
+  render(<BrowserPanel active={false} onClose={vi.fn()} onAsk={ask} askName="Helmi" />);
+  const button = await screen.findByRole("button", { name: "Ask Helmi about this page" });
+  await waitFor(() => expect(button).toBeEnabled());
+  fireEvent.click(button);
+  expect(ask).toHaveBeenCalledWith("Please look at this page with me: Docs https://docs.example.com/x-api/v1?q=1");
+});
+
+it("keeps the star slot, Open in browser and Ask side by side at the end of the address row", async () => {
+  withTabs();
+  render(<BrowserPanel active={false} onClose={vi.fn()} onAsk={vi.fn()} askName="Helmi" />);
+  const open = await screen.findByRole("button", { name: "Open in browser" });
+  const ask = screen.getByRole("button", { name: "Ask Helmi about this page" });
+  expect(open.nextElementSibling).toBe(ask);
+  expect(screen.queryByRole("button", { name: "Ask Helmi about this page" })).toHaveAttribute(
+    "data-heinzel-browser-ask",
+  );
+});
+
+it.each([
+  [true, 1],
+  [false, 0],
+] as const)("the bookmarks bar follows the setting (bar on: %s)", async (bar, shown) => {
+  withTabs();
+  mockApi({
+    "/api/system/bookmark/list": {
+      bookmarks: [
+        { id: "b-1", kind: "bookmark", title: "Docs", url: "https://docs.example/", origin: null, parent: null },
+      ],
+      favicons: {},
+    },
+  });
+  render(
+    <Providers client={queryClient()}>
+      <MemoryRouter>
+        <BrowserPanel active={false} onClose={vi.fn()} bookmarks bookmarksBar={bar} />
+      </MemoryRouter>
+    </Providers>,
+  );
+  await screen.findByRole("tab", { name: "News" });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(screen.queryAllByRole("list", { name: "Bookmarks" })).toHaveLength(shown);
+});

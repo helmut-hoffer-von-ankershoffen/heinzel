@@ -1,9 +1,18 @@
-// Settings > Browser: the start page, the setting `hz.browser_start_page`, in the same row as every other setting.
+// Settings > Browser: the start page and the bookmarks bar, the settings `hz.browser_start_page` and
+// `hz.browser_bookmarks_bar`, in the same rows as every other setting.
 import { useConfig } from "@/api/queries";
 import { Row } from "./SettingControls";
 
+const KEYS = ["browser_start_page", "browser_bookmarks_bar"];
+
 export function BrowserStartPageRow() {
   const config = useConfig();
-  const setting = config.data?.settings.find((s) => s.section === "hz" && s.key === "browser_start_page");
-  return setting ? <Row setting={setting} /> : null;
+  const rows = KEYS.flatMap((key) => config.data?.settings.find((s) => s.section === "hz" && s.key === key) ?? []);
+  return (
+    <>
+      {rows.map((setting) => (
+        <Row key={setting.key} setting={setting} />
+      ))}
+    </>
+  );
 }

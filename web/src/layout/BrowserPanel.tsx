@@ -1,4 +1,17 @@
-import { ArrowLeft, ArrowRight, Bot, CornerDownLeft, ExternalLink, Plus, RefreshCw, Wrench, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bot,
+  CornerDownLeft,
+  ExternalLink,
+  Maximize2,
+  Minimize2,
+  Plus,
+  RefreshCw,
+  Send,
+  Wrench,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { MENU_EVENT } from "@/about/menu";
 import { BookmarkBar } from "@/bookmarks/BookmarkStar";
@@ -97,6 +110,18 @@ export function addressUrl(value: string): string | null {
   return `https://${input}`;
 }
 
+/** An address split for display: the host, then the rest (path, query), which is shown dimmed. */
+export function urlParts(value: string): { host: string; rest: string } | null {
+  try {
+    const url = new URL(value);
+    if (!url.host) return null;
+    const rest = `${url.pathname === "/" ? "" : url.pathname}${url.search}${url.hash}`;
+    return { host: url.host, rest };
+  } catch {
+    return null;
+  }
+}
+
 export function externalBrowserUrl(value: string): string | null {
   try {
     const url = new URL(value);
@@ -120,6 +145,11 @@ export function BrowserPanel({
   onSettings,
   bookmarks = false,
   startPage = DEFAULT_START_PAGE,
+  bookmarksBar = true,
+  full = false,
+  onToggleFull,
+  onAsk,
+  askName,
 }: Readonly<{
   active: boolean;
   onClose: () => void /** Show the bookmark star; needs the app's providers. */;
@@ -127,7 +157,17 @@ export function BrowserPanel({
   bookmarks?: boolean;
   /** The page a first open and every new tab load (Settings > Browser). */
   startPage?: string;
+  /** Whether the bookmarks bar shows under the address row (Settings > Browser). */
+  bookmarksBar?: boolean;
+  /** The panel covers the whole workspace; `onToggleFull` expands or restores it. */
+  full?: boolean;
+  onToggleFull?: () => void;
+  /** Put a prefilled message about the page into the chat; the person reads it and sends it. */
+  onAsk?: (text: string) => void;
+  /** Who is asked: the default Heinzel's name. */
+  askName?: string;
 }>) {
+  const [urlFocused, setUrlFocused] = useState(false);
   const [address, setAddress] = useState(startPage);
   const [addressEdited, setAddressEdited] = useState(false);
   const addressRevision = useRef(0);
@@ -268,6 +308,7 @@ export function BrowserPanel({
   // The bookmark bar draws its star into the tools row.
   const [starSlot, setStarSlot] = useState<HTMLElement | null>(null);
   const displayAddress = !addressEdited && state.status === "ready" && state.url ? state.url : address;
+  const shownParts = urlParts(displayAddress);
   const target = addressUrl(displayAddress);
   const external = target ? externalBrowserUrl(target) : null;
   // The desktop refuses local, private and non-HTTPS targets; say so instead of a silent failure.
@@ -305,7 +346,7 @@ export function BrowserPanel({
           <div
             role="tablist"
             aria-label={t("browser.tabs")}
-            className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+            className="flex min-w-0 items-center gap-1 overflow-x-auto"
           >
             {tabs.map((tab) => (
               <div
@@ -359,30 +400,46 @@ export function BrowserPanel({
           >
             <Plus aria-hidden />
           </Button>
-          {onSettings && (
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {onToggleFull && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-9 shrink-0"
+                aria-pressed={full}
+                aria-label={full ? t("browser.collapse") : t("browser.expand")}
+                title={full ? t("browser.collapse") : t("browser.expand")}
+                onClick={onToggleFull}
+              >
+                {full ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
+              </Button>
+            )}
+            {onSettings && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-9 shrink-0"
+                aria-label={t("browser.settings")}
+                title={t("browser.settings")}
+                onClick={onSettings}
+              >
+                <Wrench aria-hidden />
+              </Button>
+            )}
             <Button
               type="button"
               variant="ghost"
               size="icon"
               className="size-9 shrink-0"
-              aria-label={t("browser.settings")}
-              title={t("browser.settings")}
-              onClick={onSettings}
+              aria-label={t("browser.close")}
+              title={t("browser.close")}
+              onClick={onClose}
             >
-              <Wrench aria-hidden />
+              <X aria-hidden />
             </Button>
-          )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-9 shrink-0"
-            aria-label={t("browser.close")}
-            title={t("browser.close")}
-            onClick={onClose}
-          >
-            <X aria-hidden />
-          </Button>
+          </div>
         </div>
       )}
       <form
@@ -432,24 +489,38 @@ export function BrowserPanel({
             </Button>
           </>
         )}
-        <input
-          ref={addressInput}
-          aria-label={t("browser.address")}
-          // Text, not type=url: form validation would refuse "example.com" or a search before it is read.
-          type="text"
-          inputMode="url"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          value={displayAddress}
-          onChange={(event) => {
-            addressRevision.current += 1;
-            setAddress(event.target.value);
-            setAddressEdited(true);
-            setRefused(false);
-          }}
-          className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1 text-sm"
-        />
+        <div className="relative min-w-0 flex-1">
+          <input
+            ref={addressInput}
+            aria-label={t("browser.address")}
+            // Text, not type=url: form validation would refuse "example.com" or a search before it is read.
+            type="text"
+            inputMode="url"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            value={displayAddress}
+            onChange={(event) => {
+              addressRevision.current += 1;
+              setAddress(event.target.value);
+              setAddressEdited(true);
+              setRefused(false);
+            }}
+            onFocus={() => setUrlFocused(true)}
+            onBlur={() => setUrlFocused(false)}
+            className={`w-full rounded-full border border-border bg-background px-3 py-1 text-sm ${shownParts && !urlFocused ? "text-transparent" : ""}`}
+          />
+          {shownParts && !urlFocused && (
+            <span
+              aria-hidden
+              data-url-display=""
+              className="pointer-events-none absolute inset-y-0 right-3 left-3 flex items-center overflow-hidden text-sm whitespace-nowrap"
+            >
+              <span className="text-foreground">{shownParts.host}</span>
+              <span className="truncate text-muted-foreground">{shownParts.rest}</span>
+            </span>
+          )}
+        </div>
         {native ? (
           <Button
             type="submit"
@@ -485,6 +556,27 @@ export function BrowserPanel({
             >
               <ExternalLink aria-hidden />
             </Button>
+            {onAsk && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-8 shrink-0 sm:size-9"
+                data-heinzel-browser-ask=""
+                aria-label={t("browser.askAbout", { name: askName ?? "Heinzel" })}
+                title={t("browser.askAbout", { name: askName ?? "Heinzel" })}
+                disabled={!(current?.url || state.url)}
+                onClick={() =>
+                  onAsk(
+                    t("browser.askPrompt", { title: current?.title ?? "", url: current?.url || state.url || "" })
+                      .replace(/\s+/g, " ")
+                      .trim(),
+                  )
+                }
+              >
+                <Send aria-hidden />
+              </Button>
+            )}
           </>
         ) : (
           <Button
@@ -506,7 +598,7 @@ export function BrowserPanel({
           >
             {status}
           </output>
-          {bookmarks && <BookmarksStrip />}
+          {bookmarks && bookmarksBar && <BookmarksStrip />}
           {bookmarks && (
             <BookmarkBar slot={starSlot} url={current?.url || state.url} title={current?.title ?? ""} tabs={tabs} />
           )}

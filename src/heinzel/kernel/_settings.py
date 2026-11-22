@@ -102,6 +102,12 @@ class Settings(ModuleSettings):
         max_length=ORIGIN_MAX_LENGTH,
         json_schema_extra={"x-live": True},  # the web app reads it again as the browser opens a tab
     )
+    browser_bookmarks_bar: bool = Field(
+        default=True,
+        title="Bookmarks bar in the browser",
+        description="Show your bookmarks in a bar under the address row of the built-in browser.",
+        json_schema_extra={"x-live": True},  # the web app reads it again as the browser draws
+    )
     plugins_enabled: bool = Field(
         default=True,
         title="Load plugins",
