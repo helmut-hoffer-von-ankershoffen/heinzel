@@ -16,7 +16,8 @@ native, browser, Electron and release-acceptance coverage and its limits. Linux 
 
 macOS e2e, Electron and setup lanes run on push to main, schedule and dispatch, and on a release PR
 (`full_release`); an ordinary PR runs every Linux job, the in-place upgrade job, macOS-specific and notifier, and
-macOS unit and integration only when `scripts/contexts.py upgrade` selects it (owner decision 2026-11-22, root AGENTS.md).
+macOS unit and integration only when `scripts/contexts.py upgrade` selects it (owner decision 2026-11-22, see the
+root AGENTS.md).
 Narrow by matrix, never by a job-level `if` on a required job. The nightly requires the full matrix (`CI OK`
 checks it), and a red nightly or main macOS lane blocks the next release. PR matrices use `fail-fast: false`, and the
 template job starts with the Linux jobs instead of waiting for lint. The pre-push hook is capped at lint, types and
