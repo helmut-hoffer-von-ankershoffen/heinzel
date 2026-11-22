@@ -173,13 +173,32 @@ struct Endpoint: Equatable {
         return target
     }
 
+    /// Ask this Mac's host for a named device token with the session token (`POST /api/_web/device`, ADR 0046).
+    /// The token survives restarts of the host; the host stores only its SHA-256.
+    func mintDeviceToken(name: String) async throws -> String {
+        let body = try JSONSerialization.data(withJSONObject: ["name": name])
+        let (data, status) = try await readAuthenticatedAPI("api/_web/device", method: "POST", body: body)
+        guard status == 200, let paired = try? JSONDecoder().decode(Paired.self, from: data),
+              paired.token.hasPrefix("hzd_") else { throw ConnectionError.authentication }
+        return paired.token
+    }
+
+    /// A device token forgets itself (`DELETE /api/_web/device`); best effort when switching sync off or rotating.
+    func revokeDeviceToken() async {
+        _ = try? await readAuthenticatedAPI("api/_web/device", method: "DELETE")
+    }
+
+    private struct Paired: Decodable {
+        let token: String
+    }
+
     private struct Sharing: Decodable {
         let state: String
         let origin: String?
     }
     #endif
 
-    private func readAuthenticatedAPI(_ route: String) async throws -> (Data, Int) {
+    private func readAuthenticatedAPI(_ route: String, method: String = "GET", body: Data? = nil) async throws -> (Data, Int) {
         guard let token else { throw ConnectionError.authentication }
         let configuration = URLSessionConfiguration.ephemeral
         #if os(macOS)
@@ -199,6 +218,11 @@ struct Endpoint: Equatable {
         var request = URLRequest(
             url: origin.appending(path: route), cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 6
         )
+        request.httpMethod = method
+        if let body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (body, response) = try await session.data(for: request)
