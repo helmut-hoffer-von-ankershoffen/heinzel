@@ -15,7 +15,8 @@ Intel large runners, or Intel self-hosted runners. Keep the shared bootstrap arc
 native, browser, Electron and release-acceptance coverage and its limits. Linux coverage is unchanged.
 
 macOS e2e, Electron and setup lanes run on push to main, schedule and dispatch, and on a release PR
-(`full_release`); an ordinary PR runs every Linux job plus macOS unit, integration, macOS-specific and notifier.
+(`full_release`); an ordinary PR runs every Linux job, the in-place upgrade job, macOS-specific and notifier, and
+macOS unit and integration only when `scripts/contexts.py upgrade` selects it (owner decision 2026-11-22, root AGENTS.md).
 Narrow by matrix, never by a job-level `if` on a required job. The nightly requires the full matrix (`CI OK`
 checks it), and a red nightly or main macOS lane blocks the next release. PR matrices use `fail-fast: false`, and the
 template job starts with the Linux jobs instead of waiting for lint. The pre-push hook is capped at lint, types and
@@ -37,7 +38,8 @@ Constraints per workflow:
 - `acceptance.yml`: `contents: read`, no secrets, publishes nothing; uploads `result.json`, which promotion reads. A
   candidate run (release wheel URL + sha256 + profile URL) is labelled `CANDIDATE_*`, never a public-path pass.
 - `prepare-release.yml` (`make release`): opens the release PR `chore(release): vX.Y.Z` and dispatches CI on it (token-made
-  PRs trigger none). A maintainer reviews all checks before merging.
+  PRs trigger none). The release chain merges it once its checks pass; the maintainer's review happens on the change
+  PRs and through Gate review (owner decision 2026-11-22, root AGENTS.md).
 - `edge.yml`: dark until `vars.RELEASE_CHANNELS` is set (ADR 0114); then publishes pre-releases `edge-v<version>`,
   never latest, never on PyPI.
 - `pypi.yml`: manual dispatch on a final version tag; verifies and promotes the exact signed official GitHub release

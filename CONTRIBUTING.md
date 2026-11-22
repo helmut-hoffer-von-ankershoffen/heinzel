@@ -233,7 +233,8 @@ on your machine (`make release-local` is the same script locally). It opens `cho
 and `CHANGELOG.md` updated. The required **intro** (`make release INTRO="..."`) becomes the release's introduction
 under its heading in `CHANGELOG.md` and in the release notes; edit the pull request to change it. Introductions of
 earlier releases survive regeneration; hand edits to their entries don't, because entries come from the commits.
-A maintainer reviews the release and verifies all checks on its current head before merging. The merge tags the
+The release chain merges the release once all checks on its current head pass; the maintainer reviews the change
+pull requests and through Gate review (owner decision 2026-11-22, [AGENTS.md](AGENTS.md)). The merge tags the
 commit, and **Publish** builds wheel and sdist, attests their provenance and creates the GitHub
 release with the changelog section as notes.
 

@@ -43,6 +43,19 @@ every operation takes `--json`; options in [docs/CLI_REFERENCE.md](docs/CLI_REFE
   route/settings mobile sweep for new interactions, test Chromium and WebKit phone layouts. Fix axe contrast and
   target-size findings in tokens and components, never by relaxing a rule.
 
+## Release and CI policy (owner decisions)
+
+- 2026-11-22, owner: after a PR merges, CI does the release. The release chain (`release-chain.yml`) cuts, merges the
+  release PR, tags, publishes to PyPI, composes, runs acceptance and marks Latest without a person, behind the same
+  gates: required `CI OK`, SonarCloud and Gate review on every PR, the candidate verdict, first-attempt acceptance
+  receipts, Latest only after acceptance, and the release freeze. Manual dispatch (`sm release VERSION`) is the
+  default; scheduled cuts (`AUTO_CUT`) are enabled by the owner's word only. The maintainer reviews the change PRs and
+  through Gate review, not the release PR.
+- 2026-11-22, owner/SDLC (packets 055-ACTIONS item 9): a PR runs macOS unit and integration only when
+  `scripts/contexts.py upgrade` selects update, lifecycle, kernel/spec or upgrade paths. Every PR still runs the full
+  Linux suite and the in-place upgrade job; main's coalesced macOS lane runs on every main commit; release candidates
+  run everything on both OSes.
+
 ## Picking up work
 
 - Sonar security remediation: read [docs/SONAR_SECURITY.md](docs/SONAR_SECURITY.md) first.
