@@ -63,6 +63,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'version="$(sed -n': "archives a release candidate's desktop apps under its version for Publish to promote",
         "echo 'DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer'": "selects the installed Xcode for macOS CI",
         "python3 -I scripts/release_candidate.py": "records release source",
+        "python3 -I scripts/coverage_floor.py": "judges this run's coverage floor, standard library only",
         "echo 'selected=true'": "selects complete CI directly without an external plan",
         'if [ "$GITHUB_REPOSITORY" != helmut-hoffer-von-ankershoffen/heinzel ]': (
             "restricts scheduled maintenance to canonical main"
@@ -90,7 +91,8 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'changed="$(git diff --name-only': "decides from the changed paths whether a pull request builds the macOS app",
         "if compgen -G ": "selects the built core candidate or an independently released artifact for source plugins",
         "for result in $RESULTS": "the CI OK gate aggregates the results of the other jobs",
-        "uv run --no-build coverage report --format=total": "hands the measured total to the merge gate",
+        "uv run --no-build coverage report --format=total": "hands the measured total to the Coverage floor job",
+        "uv run --no-build coverage report --sort=-miss": "names the least covered files for the Coverage floor",
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
         'gh run cancel "$RUN_ID"': "a failed cheap check cancels the rest of its own pull request run",
@@ -98,13 +100,6 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f lane=macos': (
             "queues the coalesced macOS main run; its concurrency group replaces an older pending one"
         ),
-    },
-    "merge-gate.yml": {
-        "uv run --no-build --frozen --script scripts/merge_gate.py": "judges by public APIs, from the base branch",
-        "uv run --no-build --frozen --script scripts/focused_gate.py": "verifies protected focused evidence",
-        '[[ "$PR_HEAD_SHA" =~': "finds the open pull request whose finished CI the gates judge",
-        "for check in merge-gate coverage-floor": "reports the gates as check runs on the pull request's head",
-        "for check in MERGE_GATE COVERAGE_FLOOR": "completes both check runs, failing closed",
     },
     "focused-job.yml": {
         '[[ "$FOCUSED_REF" == "$GITHUB_REF_NAME" ]]': "refuses a ref input other than the dispatched branch",

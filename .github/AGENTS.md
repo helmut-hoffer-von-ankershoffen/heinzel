@@ -30,8 +30,10 @@ Constraints per workflow:
 - Merge policy: require `CI OK` from GitHub Actions and `SonarCloud Code Analysis` from the Sonar integration.
   Independently review the exact head before merging, especially workflow and gate changes. This uses conventional
   reviewed-PR trust: PR jobs execute the reviewed repository code; job names alone do not authenticate that code.
-  The old custom `merge-gate` and `coverage-floor` checks remain diagnostic during migration and are not admission
-  requirements. Their registry and project-wide Sonar dependency must not prevent corrective PRs from merging.
+  The coverage floor is the `Coverage floor` job of `ci.yml` (`scripts/coverage_floor.py`), which `CI OK` requires on
+  pull requests: it judges the total this run measured at its own merge commit, so it has no stale base, and its
+  verdict names measured vs required percent, the scope and the least covered files (`TOOL ERROR` when the judge
+  broke). There is no `merge-gate` workflow and no separate `merge-gate` or `coverage-floor` check.
 - `update-prs.yml`: core keeps tested PR heads for the merge queue; plugin repositories update behind branches and
   approve the resulting CI runs. Closed code-scanning threads are resolved in both.
 - `acceptance.yml`: `contents: read`, no secrets, publishes nothing; uploads `result.json`, which promotion reads. A

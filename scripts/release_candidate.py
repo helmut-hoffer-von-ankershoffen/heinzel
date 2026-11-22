@@ -234,6 +234,7 @@ def expected_jobs(event: str) -> dict[str, str]:
         "Secret scan",
         "Dependency audit",
         "Coverage",
+        "Coverage floor",
         "Optional source plugins",
         "Plugin SDK candidate",
         "Lint, contracts and types",

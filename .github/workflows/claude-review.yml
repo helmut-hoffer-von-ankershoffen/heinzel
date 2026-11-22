@@ -15,9 +15,10 @@ name: Gate review
 # through git objects. Nothing of the head is ever executed, and no job that holds a secret checks the head out.
 # Authentication: the secret CLAUDE_CODE_OAUTH_TOKEN (a Claude subscription, from `claude setup-token`), else
 # ANTHROPIC_API_KEY (billed per token). Both exist in this repository. Forks get no review.
-# Gate paths: workflows and actions, CODEOWNERS and the CI configs, the release, merge-gate, CI and acceptance scripts,
-# the bootstrap modules, contexts.toml, the [tool.importlinter] contracts in pyproject.toml, the tests of the gates, and
-# the reviewer's own instructions (root CLAUDE.md, AGENTS.md, .claude/). Renames count on both sides.
+# Gate paths: workflows and actions, CODEOWNERS and the CI configs, the release, merge-gate, coverage-floor, CI and
+# acceptance scripts, the bootstrap modules, contexts.toml, the [tool.importlinter] contracts in pyproject.toml, the
+# tests of the gates, and the reviewer's own instructions (root CLAUDE.md, AGENTS.md, .claude/). Renames count on both
+# sides.
 
 on:
   pull_request_target: # zizmor: ignore[dangerous-triggers] the head is read as data and never executed
@@ -54,7 +55,7 @@ jobs:
           ENABLED: ${{ vars.CLAUDE_REVIEW }}
           CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
         run: |
-          gate_paths='^(\.github/(workflows/|actions/|CODEOWNERS$|dependabot\.yml$|zizmor\.yml$)|\.claude/|(CLAUDE|AGENTS)\.md$|\.pre-commit-config\.yaml$|\.sonarcloud\.properties$|contexts\.toml$|scripts/(release_|release\.sh|merge_gate|focused_|ci_|pypi_release|prepare_release|check_|review_|acceptance/)|tools/release_|src/heinzel/bootstrap_|tests/.*(acceptance|merge_gate|focused_gate|release_policy|ci)_test\.py$)'
+          gate_paths='^(\.github/(workflows/|actions/|CODEOWNERS$|dependabot\.yml$|zizmor\.yml$)|\.claude/|(CLAUDE|AGENTS)\.md$|\.pre-commit-config\.yaml$|\.sonarcloud\.properties$|contexts\.toml$|scripts/(release_|release\.sh|merge_gate|coverage_floor|focused_|ci_|pypi_release|prepare_release|check_|review_|acceptance/)|tools/release_|src/heinzel/bootstrap_|tests/.*(acceptance|merge_gate|coverage_floor|focused_gate|release_policy|ci)_test\.py$)'
           # both sides of a rename: the API lists filename and previous_filename
           files="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR}/files" --jq '.[] | .filename, (.previous_filename // empty)')"
           hits="$(grep -E "$gate_paths" <<<"$files" || true)"
