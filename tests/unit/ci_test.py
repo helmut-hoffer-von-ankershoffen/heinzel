@@ -205,7 +205,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "release-tag.yml": {'tag="v$(uv version --short)"': "tags a merged release commit"},
     "claude-review.yml": {
         "gate_paths='^(": "finds the gate paths the pull request touches; no tokens when there are none",
-        'git -c "http.extraheader': "fetches the head as git objects only, never checks it out",
+        'auth="$(printf': "fetches the head as git objects only, never checks it out",
         'if [[ "$OUTCOME" != success': "collects the model result; a review that did not run fails",
         'if [[ "$MODE" == pass ]]': "no model call without gate paths; a gate change nobody reviewed fails",
     },
@@ -1014,6 +1014,19 @@ def test_gate_review_fails_closed_beyond_the_files_api_limit():
     scope = _gate_scope_script()
     assert "CHANGED_FILES > 3000" in scope
     assert scope.index("CHANGED_FILES > 3000") < scope.index("mode=pass")  # checked before it can pass
+
+
+def test_gate_review_fetches_the_head_with_basic_auth():
+    """A bearer header is not accepted by git over HTTPS (exit 128: could not read Username)."""
+    model = _gate_review()["jobs"]["model"]
+    fetch = next(step["run"] for step in model["steps"] if step.get("name", "").startswith("Fetch the head"))
+    assert "x-access-token:%s" in fetch
+    assert "AUTHORIZATION: basic" in fetch
+    assert "bearer" not in fetch.replace("not a bearer header", "")
+    assert "::add-mask::" in fetch
+    assert "+refs/pull/${PR}/head:refs/review/head" in fetch
+    assert "git rev-parse --verify refs/review/head" in fetch  # the head must have arrived
+    assert "checkout" not in fetch
 
 
 def test_gate_review_lists_both_sides_of_a_rename():
