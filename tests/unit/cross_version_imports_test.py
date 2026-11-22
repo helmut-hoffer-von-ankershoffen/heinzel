@@ -5,7 +5,7 @@ Two kinds of code run across a version boundary:
 - `hz system update` replaces the installed files while the published process keeps its booted modules in
   memory. Each import that process makes later, inside a function, loads a file of the new tree, and that file
   takes names from the old modules in memory. The manifests in `tests/fixtures/published_resident/` record, per
-  published version (the legacy fixture's 0.9.14 and 0.9.15, and the 0.9.52 and 0.9.53 users update from), the
+  published version (the legacy fixture's 0.9.14 and 0.9.15, and the 0.9.52 to 0.9.54 users update from), the
   modules in memory after boot with their runtime names, and the imports made inside functions (`record.py` says
   how to record one).
 - `tests/fixtures/legacy_recovery_manager.py` is installed next to published wheels and imported by their
@@ -28,7 +28,13 @@ REPO = Path(__file__).resolve().parents[2]
 SOURCE = REPO / "src"
 MANIFESTS = REPO / "tests/fixtures/published_resident"
 FIXTURE = REPO / "tests/fixtures/legacy_recovery_manager.py"
-VERSIONS = ("0.9.14", "0.9.15", "0.9.52", "0.9.53")  # the legacy fixture's versions and what users update from
+VERSIONS = (
+    "0.9.14",
+    "0.9.15",
+    "0.9.52",
+    "0.9.53",
+    "0.9.54",
+)  # the legacy fixture's versions and what users update from
 FIXTURE_VERSIONS = ("0.9.14", "0.9.15")
 
 # Imports inside functions of a published version that already failed after a swap to a newer tree before the
@@ -46,6 +52,7 @@ KNOWN_BROKEN = {
     },
     "0.9.52": set(),
     "0.9.53": set(),
+    "0.9.54": set(),
 }
 
 
@@ -252,3 +259,18 @@ def test_the_kept_mcp_tokens_path_answers_with_the_client_context() -> None:
     from heinzel.modules.system.client import tokens_for_user as current
 
     assert tokens_for_user is current
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ("heinzel.modules.system.updater._phases", "heinzel._phases"),
+    ],
+)
+def test_a_moved_module_keeps_its_old_path_with_the_same_objects(old: str, new: str) -> None:
+    """No importable path disappears in 0.9.55: the old module re-exports every name of the new one, as is."""
+    before, after = importlib.import_module(old), importlib.import_module(new)
+    assert before.__all__, old
+    assert {name: getattr(before, name) is getattr(after, name) for name in before.__all__} == dict.fromkeys(
+        before.__all__, True
+    )
