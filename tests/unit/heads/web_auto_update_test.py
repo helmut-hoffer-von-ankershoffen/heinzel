@@ -328,7 +328,8 @@ def test_a_failed_update_keeps_the_version_says_so_once_and_retries_after_six_ho
     status = made.status()
     assert calls == {"restart": 0, "update": 1}
     assert status.phase == "waiting"
-    assert status.message == auto.failure_message("1.0.0")
+    assert status.message == f"{auto.failure_message('1.0.0')} Reason: uv failed"
+    assert status.error == "uv failed"
     assert made.dismiss().message is None
     for _ in range(11):  # checks keep coming every half hour; none opens a countdown before six hours
         advance(made, clock, 30 * 60)
@@ -694,6 +695,9 @@ def test_github_failing_for_hz_keeps_the_plugins_news(make_kernel, tmp_path):
     kernel.bind(ReleaseSource, GitHubDown())
     advance(made, clock, 5 * 60)
     assert (made.plan.core, made.plan.plugins) == (None, {"heinzel-example": "2.0.0"})
+    status = made.status()
+    assert status.core_checked is False
+    assert (status.error or "").startswith("hz: ")  # the reason is shown, never "up to date"
 
 
 def test_hz_from_pypi_never_asks_github_for_its_tag(make_kernel, tmp_path):
@@ -765,7 +769,7 @@ def test_a_failure_another_version_reported_is_history_once_the_server_runs_a_la
     made, clock, _, kernel = updater(make_kernel, tmp_path, outcome=RuntimeError("uv failed"))
     advance(made, clock, 5 * 60)
     advance(made, clock, 30)
-    assert made.status().message == auto.failure_message("1.0.0")
+    assert made.status().message == f"{auto.failure_message('1.0.0')} Reason: uv failed"
     assert made.plan.failed_on == "1.0.0"
     # `hz system update` (or the footer) installed 9.9.9 and restarted the web server: no stale failure, no news.
     after = AutoUpdater(

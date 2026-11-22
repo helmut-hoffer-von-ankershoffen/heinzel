@@ -12,6 +12,7 @@ from xml.parsers.expat import ExpatError
 from heinzel.heads._desktop_native import (
     CodeIdentity,
     ExecutableIdentity,
+    ImageGoneError,
     Native,
     NativeUnavailableError,
     ProcessIdentity,
@@ -45,6 +46,10 @@ def inventory() -> tuple[ExecutableIdentity, ...]:
     for pid in _pids():
         try:
             rows.append(native.executable(pid))
+        except ImageGoneError:
+            # Its executable has no path any more (deleted, or its folder replaced by an update), so it runs from no
+            # bundle on disk: an unrelated program updated while it runs must not make Heinzel look open.
+            continue
         except NativeUnavailableError:
             # A vanished/zombie process is no longer using resources. Permission errors,
             # fallback names and unreadable live processes never become unrelated/idle.

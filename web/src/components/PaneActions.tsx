@@ -161,6 +161,7 @@ export function PaneAction({
   destructive = false,
   ghost = false,
   leaves = false,
+  spinning = false,
   to,
   href,
   className,
@@ -173,6 +174,8 @@ export function PaneAction({
     destructive?: boolean;
     ghost?: boolean;
     leaves?: boolean;
+    /** The icon turns while the action works (a check running), and stops when it ends. */
+    spinning?: boolean;
   }) {
   const slot = useContext(Slot);
   const leave = useContext(PaneLeave);
@@ -205,7 +208,7 @@ export function PaneAction({
   };
   const body = (
     <>
-      <Icon aria-hidden />
+      <Icon aria-hidden className={spinning ? "animate-spin" : undefined} data-spinning={spinning ? "" : undefined} />
       {words && children}
     </>
   );

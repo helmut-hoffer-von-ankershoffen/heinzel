@@ -30,14 +30,17 @@ Constraints per workflow:
 - Merge policy: require `CI OK` from GitHub Actions and `SonarCloud Code Analysis` from the Sonar integration.
   Independently review the exact head before merging, especially workflow and gate changes. This uses conventional
   reviewed-PR trust: PR jobs execute the reviewed repository code; job names alone do not authenticate that code.
-  The old custom `merge-gate` and `coverage-floor` checks remain diagnostic during migration and are not admission
-  requirements. Their registry and project-wide Sonar dependency must not prevent corrective PRs from merging.
+  The coverage floor is the `Coverage floor` job of `ci.yml` (`scripts/coverage_floor.py`), which `CI OK` requires on
+  pull requests: it judges the total this run measured at its own merge commit, so it has no stale base, and its
+  verdict names measured vs required percent, the scope and the least covered files (`TOOL ERROR` when the judge
+  broke). There is no `merge-gate` workflow and no separate `merge-gate` or `coverage-floor` check.
 - `update-prs.yml`: core keeps tested PR heads for the merge queue; plugin repositories update behind branches and
   approve the resulting CI runs. Closed code-scanning threads are resolved in both.
 - `acceptance.yml`: `contents: read`, no secrets, publishes nothing; uploads `result.json`, which promotion reads. A
   candidate run (release wheel URL + sha256 + profile URL) is labelled `CANDIDATE_*`, never a public-path pass.
 - `prepare-release.yml` (`make release`): opens the release PR `chore(release): vX.Y.Z` and dispatches CI on it (token-made
-  PRs trigger none). A maintainer reviews all checks before merging.
+  PRs trigger none). A maintainer reviews all checks before merging. The owner decisions of 2026-11-22 in the root
+  AGENTS.md allow replacing this review and the macOS PR lanes once #907 and #933 merge.
 - `edge.yml`: dark until `vars.RELEASE_CHANNELS` is set (ADR 0114); then publishes pre-releases `edge-v<version>`,
   never latest, never on PyPI.
 - `pypi.yml`: manual dispatch on a final version tag; verifies and promotes the exact signed official GitHub release

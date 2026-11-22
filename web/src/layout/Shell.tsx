@@ -15,6 +15,7 @@ import { t } from "@/i18n";
 import { clearChatLink, isDurableSession, OPEN_CHAT, OPEN_NEW_CHAT, requestComposerFocus } from "@/lib/chatIntent";
 import { useOperationRun } from "@/lib/operationRun";
 import { OverlayTarget } from "@/lib/overlayTarget";
+import { anchorPress } from "@/lib/pressAnchor";
 import { clampSidebar, readSidebarWidth, sidebarMax, writeSidebarWidth } from "@/lib/sidebarWidth";
 import { OPEN_TERMINAL } from "@/lib/terminal";
 import { useWidth } from "@/lib/useWidth";
@@ -166,6 +167,7 @@ function Layout() {
   }, [home, setChatOpen]);
   const area = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  const mainContent = useRef<HTMLElement>(null);
   const pageContent = useRef<HTMLDivElement>(null);
   const workspace = useRef<HTMLDivElement>(null);
   const pageScroll = useRef<(() => void) | null>(null);
@@ -351,6 +353,15 @@ function Layout() {
     // With Page selected, protect only the press that opens a workspace tab.
     return anchorWorkspace(scroller.current, pageContent.current, workspace.current, selectedPanel === "page");
   }, [flowingWorkspace, workspaceShown, selectedPanel]);
+  // A pressed page control stays under the pointer when the page above it loads late: the page scrolls in the shared
+  // scroller below the header, or in its own column beside the workspace.
+  useLayoutEffect(() => {
+    if (full) return;
+    const box = flowingWorkspace ? scroller.current : mainContent.current;
+    const region = flowingWorkspace ? pageContent.current : mainContent.current;
+    if (!box || !region) return;
+    return anchorPress(box, region);
+  }, [flowingWorkspace, full]);
   // An explicit navigation to the view can repeat the same URL, and should still bring it into view.
   const previousLocation = useRef(location);
   const ownNavigation = useRef<{ path: string; search: string } | null>(null);
@@ -699,6 +710,7 @@ function Layout() {
           >
             <div ref={besideHeader} hidden={!beside} className="shrink-0" />
             <main
+              ref={mainContent}
               id="content"
               inert={!beside && selectedPanel !== "page" && !flowingWorkspace}
               aria-hidden={!beside && selectedPanel !== "page" && !flowingWorkspace ? true : undefined}

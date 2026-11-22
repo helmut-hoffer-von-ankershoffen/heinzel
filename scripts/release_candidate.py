@@ -234,6 +234,7 @@ def expected_jobs(event: str) -> dict[str, str]:
         "Secret scan",
         "Dependency audit",
         "Coverage",
+        "Coverage floor",
         "Optional source plugins",
         "Plugin SDK candidate",
         "Lint, contracts and types",
@@ -272,7 +273,9 @@ def expected_jobs(event: str) -> dict[str, str]:
             for name in ("commits", "dependency-review", "secrets", "audit", "setup", "lint")
         ],
     }
-    (success if event == "pull_request" else skipped).update(("Conventional commits", "Dependency review"))
+    (success if event == "pull_request" else skipped).update(
+        ("Conventional commits", "Dependency review", "Sonar ratings")
+    )
     return dict.fromkeys(success, "success") | dict.fromkeys(skipped, "skipped")
 
 

@@ -323,6 +323,12 @@ def _not_newer(release: str, running: str) -> bool:
         return False
 
 
+def _reason(exc: BaseException) -> str:
+    """A failure's reason in one short line: its words, else its kind."""
+    words = " ".join(str(exc).split())
+    return (words or type(exc).__name__)[:300]
+
+
 def failure_message(running: str) -> str:
     """The one plain message after a failed attempt."""
     return (
@@ -394,6 +400,11 @@ class AutoUpdateStatus(BaseModel):
         default=None,
         description="The one line both switches show, disabled, when the setting can't turn updates on here: "
         "development, or update checks off.",
+    )
+    error: str | None = Field(
+        default=None,
+        description="Why the last look for news or the last automatic update failed, in the words the failure gave; "
+        "None when the last look and the last update went well.",
     )
 
 
@@ -640,6 +651,8 @@ class Schedule:
         """Automatic updates couldn't run at the last look; once they can, the next look checks at once."""
         self._looked: tuple[datetime, bool, bool] | None = None
         """When hz and the plugins were last asked for news, and whether each answered; this process only."""
+        self._error: str | None = None
+        """Why the last look for news, or the last automatic update, failed; this process only."""
         self._waited: list[str] = []
         """What held the countdown off at the last look, so the log says it once per change."""
         self._applying: IO[str] | None = None
@@ -871,19 +884,23 @@ class Schedule:
             return False
         settings = self._read_settings()
         core_ok = plugins_ok = True
+        errors: list[str] = []
         try:
             core, commit, core_held = self._check_core(settings, now)
         except Exception as exc:  # noqa: BLE001 - offline or rate-limited: keep what hz's last check found
             log.info("automatic update check of hz failed: %s", exc)
             core, commit, core_held = self.plan.core, self.plan.commit, self.plan.core_held
             core_ok = False
+            errors.append(f"hz: {_reason(exc)}")
         try:
             news = self._check_plugins(settings, now)
         except Exception as exc:  # noqa: BLE001 - the same for the plugins
             log.info("automatic update check of the plugins failed: %s", exc)
             news = None
             plugins_ok = False
+            errors.append(f"plugins: {_reason(exc)}")
         self._looked = (now, core_ok, plugins_ok)
+        self._error = "; ".join(errors) or None
         plugins = dict(self.plan.plugins) if news is None else {n: r.version for n, r in news.releases.items()}
         with self._editing() as plan:
             before = (plan.core, dict(plan.plugins))
@@ -980,7 +997,10 @@ class Schedule:
             result = self._run_update(news)
         except Exception as exc:  # noqa: BLE001 - every failure leaves the old version running and is reported once
             log.warning("automatic update failed: %s", exc)
-            self._fail(failure_message(self._version))
+            self._error = _reason(exc)
+            self._fail(
+                failure_message(self._version)
+            )  # the stored words stay as 0.9.21 wrote them: recovery reads them
             return
         after = getattr(result, "after", None)
         message = getattr(result, "message", None) or failure_message(self._version)
@@ -1042,6 +1062,12 @@ class Schedule:
                 log, "update.auto.reload", level=logging.WARNING, outcome="error", installed=installed, error=str(exc)
             )
         return True
+
+    def _with_reason(self, message: str | None) -> str | None:
+        """The plan's failure message with why it failed, when this process saw the failure; the stored words stay."""
+        if message is not None and self._error and message == failure_message(self._version):
+            return f"{message} Reason: {self._error}"
+        return message
 
     def _fail(self, message: str) -> None:
         with self._editing() as plan:
@@ -1139,9 +1165,10 @@ class Schedule:
                 apply_at=plan.apply_at if phase == "countdown" else None,
                 next_window_at=plan.window_at if phase == "waiting" else None,
                 postponements=plan.postponements,
-                message=None if self.development is not None else plan.message,
+                message=None if self.development is not None else self._with_reason(plan.message),
                 development=self.development,
                 held=self.development or (reason if reason == CHECKS_OFF else None),
+                error=None if self.development is not None else self._error,
                 by_hand=[] if self.development is not None else self.by_hand(),
                 holds=[] if self.development is not None else self.holds(),
                 checked_at=self._looked[0] if self._looked else None,

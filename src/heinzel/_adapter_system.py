@@ -60,9 +60,16 @@ class SubprocessRunner:
         )
 
     def spawn(
-        self, command: Sequence[str], *, env: Mapping[str, str] | None = None, capture: bool = False
+        self,
+        command: Sequence[str],
+        *,
+        env: Mapping[str, str] | None = None,
+        capture: bool = False,
+        detached: bool = False,
     ) -> RunningProcess:
         """Start `command` and return the child; with `capture` its standard output is a text pipe.
+
+        With `detached` the child runs in its own session and outlives this process.
 
         Raises:
             OSError: If the program can't be started.
@@ -74,6 +81,7 @@ class SubprocessRunner:
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
             text=True,
+            start_new_session=detached,
         )
 
     def exec(self, command: Sequence[str], *, env: Mapping[str, str] | None = None) -> None:

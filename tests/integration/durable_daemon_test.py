@@ -22,6 +22,12 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(autouse=True)
+def no_disk_flush(monkeypatch):
+    """These tests check journal logic, not the disk: hundreds of `fsync` calls took over 15 s on a loaded CI disk."""
+    monkeypatch.setattr(os, "fsync", lambda _fd: None)
+
+
+@pytest.fixture(autouse=True)
 def no_live_notifications(monkeypatch):
     """Keep these lifecycle regressions in the durable store; never invoke the host desktop notifier."""
     from heinzel.modules.system.notify._service import NotifyService

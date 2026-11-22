@@ -35,6 +35,7 @@
         "Consumer (heinzel-zoom)",
         "Conventional commits",
         "Coverage",
+        "Coverage floor",
         "Dependency audit",
         "Dependency review",
         "Electron (macos-latest)",
@@ -59,6 +60,7 @@
         "Public contract consumers",
         "Release candidate source",
         "Secret scan",
+        "Sonar ratings",
         "Test (macos-latest, Python 3.15, integration)",
         "Test (macos-latest, Python 3.15, unit)",
         "Test (ubuntu-24.04, Python 3.15, integration)",
@@ -78,6 +80,7 @@
         "Main batch delegated to ${{ needs.admission.outputs.run }}",
         "Main batch focused scope (${{ needs.admission.outputs.base }})",
         "Site tests",
+        "Sonar ratings",
         "Source plugin (${{ matrix.name }})",
         "Stop after audit failure",
         "Stop after commits failure",
@@ -104,6 +107,7 @@
         "Consumer (heinzel-weather)",
         "Consumer (heinzel-zoom)",
         "Coverage",
+        "Coverage floor",
         "Dependency audit",
         "Electron (macos-latest)",
         "Electron (ubuntu-24.04)",
@@ -139,11 +143,6 @@
     }
   },
   "focused_job": "Focused tests ({lane})",
-  "gate_checks": {
-    "coverage": "coverage-floor",
-    "sonar": "merge-gate"
-  },
-  "judge_workflow": ".github/workflows/merge-gate.yml",
   "lanes": {
     "browser": {
       "kind": "e2e",
@@ -283,9 +282,7 @@
   "recorder": "scripts/release_candidate.py",
   "repository": "helmut-hoffer-von-ankershoffen/heinzel",
   "required_contexts": [
-    "CI OK",
-    "coverage-floor",
-    "merge-gate"
+    "CI OK"
   ],
   "test_jobs": [
     "Test (macos-latest, Python 3.15, integration)",

@@ -503,13 +503,16 @@ def _trash_unowned(home: Path, config: Path, genuine: DesktopFlavor | None = Non
     return notes
 
 
-def _in_use(bundle: Path) -> bool:
+def _in_use(bundle: Path, *, besides: Path | None = None) -> bool:
+    """Whether a process runs from inside `bundle` (or a translocated copy of it); `besides` is not counted."""
     result = subprocess.run(["/bin/ps", "-ww", "-axo", "comm="], check=True, stdout=subprocess.PIPE, timeout=10)
     prefix = os.fsencode(bundle) + b"/"
     translocated = b"/AppTranslocation/"
     name = b"/" + os.fsencode(bundle.name) + b"/"
+    skip = None if besides is None else os.fsencode(besides)
     return any(
-        line.startswith(prefix) or (translocated in line and name in line) for line in result.stdout.splitlines()
+        line != skip and (line.startswith(prefix) or (translocated in line and name in line))
+        for line in result.stdout.splitlines()
     )
 
 
@@ -523,8 +526,12 @@ _QUIT_SCRIPT = ("on run argv", "tell application (item 1 of argv) to quit", "end
 
 
 def is_open(bundle: Path) -> bool:
-    """Whether the app at `bundle` is open now."""
-    return _in_use(bundle)
+    """Whether the app at `bundle` is open now: one of its processes runs, not counting the native app's widgets.
+
+    macOS keeps the widget extension running after the app quits; the installer stops it on its own (`quiesce`), so
+    it never means the person has to quit anything.
+    """
+    return _in_use(bundle, besides=bundle / widget.WIDGET_EXECUTABLE)
 
 
 def quit_app(  # noqa: PLR0913 - the seams a test replaces: the clock, the wait, the quit and the check
@@ -534,7 +541,7 @@ def quit_app(  # noqa: PLR0913 - the seams a test replaces: the clock, the wait,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
     run: Callable[..., object] = subprocess.run,
-    running: Callable[[Path], bool] = _in_use,
+    running: Callable[[Path], bool] = is_open,
 ) -> bool:
     """Ask the open app to quit with an Apple event and wait up to `wait` seconds; whether it is gone.
 
