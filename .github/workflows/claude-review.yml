@@ -13,8 +13,8 @@ name: Gate review
 # edit them to pass its own review. The pull request head is data only: the file list comes from the API, and the
 # reviewer works in a checkout of the base branch (its CLAUDE.md, settings and hooks are the base's) and reads the head
 # through git objects. Nothing of the head is ever executed, and no job that holds a secret checks the head out.
-# Authentication: the secret ANTHROPIC_API_KEY (billed per token), else CLAUDE_CODE_OAUTH_TOKEN (a Claude subscription,
-# from `claude setup-token`). Both exist in this repository. Forks get no review.
+# Authentication: the secret CLAUDE_CODE_OAUTH_TOKEN (a Claude subscription, from `claude setup-token`), else
+# ANTHROPIC_API_KEY (billed per token). Both exist in this repository. Forks get no review.
 # Gate paths: workflows and actions, CODEOWNERS and the CI configs, the release, merge-gate, CI and acceptance scripts,
 # the bootstrap modules, contexts.toml, the [tool.importlinter] contracts in pyproject.toml, the tests of the gates, and
 # the reviewer's own instructions (root CLAUDE.md, AGENTS.md, .claude/). Renames count on both sides.
@@ -110,8 +110,8 @@ jobs:
         continue-on-error: true # judged by the next step
         uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc # v1.0.276
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && secrets.ANTHROPIC_API_KEY || '' }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           claude_args: --model opus --max-turns 15 --setting-sources user --settings '{"disableAllHooks":true}' --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)" --disallowedTools "Bash(git diff*--output*),Bash(git log*--output*),Bash(git show*--output*)"
           prompt: |
