@@ -11,10 +11,11 @@ re-checked just before its signal. A server whose app still runs goes when the u
 import os
 import signal
 import subprocess
-import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+
+from heinzel._adapter_system import SYSTEM_CLOCK, SYSTEM_RUNNER
 
 APP_SPAWN = ("ui", "serve", "--port", "0", "--no-browser")
 """The exact arguments both desktop apps used to start their private server."""
@@ -27,9 +28,11 @@ Signaller = Callable[[int, int], None]
 
 def _ps() -> str:
     # A fixed argument vector of the platform's own ps; nothing from the process list reaches a shell.
-    return subprocess.run(
-        ["/bin/ps", "-axww", "-o", "pid=,ppid=,uid=,command="], capture_output=True, text=True, check=True, timeout=10
-    ).stdout
+    command = ["/bin/ps", "-axww", "-o", "pid=,ppid=,uid=,command="]
+    result = SYSTEM_RUNNER.run(command, timeout=10)
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
+    return result.stdout
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,8 +113,8 @@ def retire_strays(  # noqa: PLR0913 - isolated process seams
     listing: Lister = _ps,
     send: Signaller = os.kill,
     alive: Callable[[int], bool] = _alive,
-    clock: Callable[[], float] = time.monotonic,
-    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = SYSTEM_CLOCK.monotonic,
+    sleep: Callable[[float], None] = SYSTEM_CLOCK.sleep,
 ) -> tuple[list[int], list[int]]:
     """Stop orphaned app-spawned servers with SIGINT and wait for them; return (stopped, survivors).
 

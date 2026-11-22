@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from heinzel.modules.system.lifecycle._historical_launcher import HistoricalLauncher
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -36,7 +37,7 @@ def _run(script: str, tmp_path: Path, **environment: str) -> subprocess.Complete
         capture_output=True,
         text=True,
         check=False,
-        timeout=30,
+        timeout=scaled(30),
         env={"PATH": "/usr/bin:/bin", **environment},
     )
 
