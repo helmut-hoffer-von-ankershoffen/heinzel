@@ -15,7 +15,7 @@ from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
@@ -42,6 +42,10 @@ from heinzel.kernel import (
 from heinzel.kernel.install._offline_uv import verified_installed_path
 from heinzel.kernel.install._tool_uninstall import OwnedFile, owned_file, remove_owned_file
 from heinzel.kernel.install._uv_locate import find_uv
+from heinzel.modules.system.lifecycle import _adapter_launchd as launchd
+from heinzel.modules.system.lifecycle import _adapter_systemd as systemd
+from heinzel.modules.system.lifecycle._adapter_launchd import LaunchdWebCommands
+from heinzel.modules.system.lifecycle._adapter_systemd import SystemdWebCommands
 from heinzel.modules.system.lifecycle._historical_launcher import HistoricalLauncher
 from heinzel.modules.system.lifecycle._launcher_transition import Action, LauncherTransition
 from heinzel.modules.system.lifecycle._profile import (
@@ -200,7 +204,7 @@ class WebService:
             prefix=installation.prefix.resolve(strict=True),
             uv=uv,
             runner=lambda command: manager.command(list(command)),
-            which=lambda name: "/bin/launchctl" if name == "launchctl" else "/usr/bin/systemctl",
+            which=lambda name: launchd.PATH if name == launchd.MANAGER else systemd.PATH,
             profile=user_profile(
                 config, settings, Path.home(), installation.prefix.resolve(strict=True), binary / "hz"
             ),
@@ -231,13 +235,20 @@ class WebService:
             raise HeinzelError(msg)
         return Path(value)
 
-    def _command(self, *arguments: str) -> list[str]:
-        manager = "launchctl" if self.platform == "darwin" else "systemctl"
+    def _commands(self) -> "LaunchdWebCommands | SystemdWebCommands":
+        """The platform's argument vectors for the web job; the manager is looked up on every call.
+
+        Raises:
+            HeinzelError: If the platform has no supported manager.
+        """
+        manager = launchd.MANAGER if self.platform == "darwin" else systemd.MANAGER
         executable = self.which(manager)
         if self.platform not in {"darwin", "linux"} or executable is None:
             msg = "Persistent web access requires macOS launchd or Linux systemd user services."
             raise HeinzelError(msg)
-        return [executable, *arguments] if self.platform == "darwin" else [executable, "--user", *arguments]
+        if self.platform == "darwin":
+            return LaunchdWebCommands(executable, self.uid, LABEL)
+        return SystemdWebCommands(executable, UNIT)
 
     def _launch_content(
         self, port: int, generation: str, profile: dict[str, str] | None = None, *, legacy: bool = False
@@ -386,10 +397,10 @@ class WebService:
         return self._manager_linux(record)
 
     def _manager_darwin(self, record: dict[str, JsonValue] | None) -> tuple[bool, int | None]:
-        result = self.runner(self._command("print", f"gui/{self.uid}/{LABEL}"))
+        result = self.runner(self._commands().inspect())
         if result.returncode != 0:
             # A failed label-specific request is not evidence of absence: require the complete listing.
-            listing = self.runner(self._command("list"))
+            listing = self.runner(cast("LaunchdWebCommands", self._commands()).listing())
             lines = listing.stdout.splitlines()
             if listing.returncode or not lines or lines[0].split() != ["PID", "Status", "Label"]:
                 msg = "The web service manager could not be inspected."
@@ -413,9 +424,7 @@ class WebService:
         return True, int(pids[0]) if len(pids) == 1 else None
 
     def _manager_linux(self, record: dict[str, JsonValue] | None) -> tuple[bool, int | None]:
-        result = self.runner(
-            self._command("show", UNIT, "--property=LoadState,FragmentPath,DropInPaths,ExecStart,MainPID")
-        )
+        result = self.runner(self._commands().inspect())
         if result.returncode != 0:
             msg = "The web service manager could not be inspected."
             raise HeinzelError(msg)
@@ -574,11 +583,7 @@ class WebService:
                 }
             ),
         )
-        commands = (
-            [self._command("bootstrap", f"gui/{self.uid}", str(self.unit))]
-            if self.platform == "darwin"
-            else [self._command("daemon-reload"), self._command("enable", "--now", UNIT)]
-        )
+        commands = self._commands().load(str(self.unit))
         for command in commands:
             if self.runner(command).returncode:
                 msg = (
@@ -716,7 +721,7 @@ class WebService:
     def _finish_retirement(self, transition: LauncherTransition) -> None:
         value = transition.record
         transition.require_gates()
-        if self.platform == "linux" and self.runner(self._command("daemon-reload")).returncode:
+        if self._reload_failed():
             msg = "The retired web definitions need a verified user-manager reload."
             raise HeinzelError(msg)
         if not self._stop_complete(value.old):
@@ -733,11 +738,7 @@ class WebService:
         if transition.record.phase != "loaded" or not loaded:
             self._stop_owned(new, fence=transition.require_gates)
             self._prepare_install(int(str(new["port"])))
-            commands = (
-                [self._command("bootstrap", f"gui/{self.uid}", str(self.unit))]
-                if self.platform == "darwin"
-                else [self._command("daemon-reload"), self._command("enable", "--now", UNIT)]
-            )
+            commands = self._commands().load(str(self.unit))
             for command in commands:
                 transition.require_gates()
                 if self.runner(command).returncode:
@@ -753,8 +754,8 @@ class WebService:
             msg = "Install and verify the persistent uv tool app before enabling its web service."
             raise HeinzelError(msg)
         if self.platform == "darwin":
-            session = self.runner(self._command("managername"))
-            owner = self.runner(self._command("manageruid"))
+            asked_session, asked_owner = cast("LaunchdWebCommands", self._commands()).session()
+            session, owner = self.runner(asked_session), self.runner(asked_owner)
             if session.returncode or session.stdout.strip() != "Aqua" or owner.stdout.strip() != str(self.uid):
                 msg = "Install web availability from your own logged-in desktop session."
                 raise HeinzelError(msg)
@@ -849,14 +850,9 @@ class WebService:
         Raises:
             HeinzelError: With the manager's own reason when it refuses.
         """
-        command = (
-            self._command("bootstrap", f"gui/{self.uid}", str(self.unit))
-            if self.platform == "darwin"
-            else self._command("start", UNIT)
-        )
-        result = self.runner(command)
+        result = self.runner(self._commands().start(str(self.unit)))
         if result.returncode != 0:
-            # An already loaded job also exits nonzero (launchctl bootstrap: "already loaded"): not a refusal.
+            # An already loaded job also exits nonzero (launchd's bootstrap: "already loaded"): not a refusal.
             observed = self.status()
             if observed.loaded or observed.ready:
                 return
@@ -917,6 +913,11 @@ class WebService:
             message="Restart requested. Use `hz ui status` to verify a different ready instance.",
         )
 
+    def _reload_failed(self) -> bool:
+        """Reload the manager's definitions where it needs it (systemd); True when that reload failed."""
+        command = self._commands().reload() if self.platform == "linux" else None
+        return command is not None and bool(self.runner(command).returncode)
+
     def service_manager(self) -> ServiceManager:
         """The platform's manager of the web job, sending its commands through `runner`.
 
@@ -925,7 +926,7 @@ class WebService:
         """
         if self._manager_port is not None:
             return self._manager_port
-        base = self._command()
+        base = self._commands().base()
         if self.platform == "darwin":
             return LaunchdServiceManager(self.runner, uid=self.uid, base=base, subject="web service")
         return SystemdServiceManager(self.runner, base=base, subject="web service")
@@ -933,7 +934,7 @@ class WebService:
     def restart_job(self, record: dict[str, JsonValue] | None = None) -> WebRestart:
         """Restart the owned web job through its service manager, which needs no control channel.
 
-        macOS: `launchctl kickstart -k`; Linux: `systemctl --user restart` of the user unit.
+        macOS: launchd's `kickstart -k`; Linux: systemd's `restart` of the user unit.
 
         Raises:
             HeinzelError: If the job is not owned and loaded, or the manager refuses.
@@ -1055,7 +1056,7 @@ class WebService:
                     raise HeinzelError(msg)
                 for captured in files:
                     remove_owned_file(captured)
-                if files and self.platform == "linux" and self.runner(self._command("daemon-reload")).returncode:
+                if files and self._reload_failed():
                     msg = "Web integration was removed but the user manager needs a local reload."
                     raise HeinzelError(msg)
                 return WebChange(changed=bool(files), status=WebStatus(installed=False, loaded=False, ready=False))
@@ -1117,7 +1118,7 @@ class WebService:
         loaded, _ = self._manager(record)
         if self.platform == "darwin":
             return not loaded
-        stopped = self.runner(self._command("show", UNIT, "--property=ActiveState,MainPID"))
+        stopped = self.runner(cast("list[str]", self._commands().stop_state()))
         properties = {
             key: value for line in stopped.stdout.splitlines() if "=" in line for key, value in [line.split("=", 1)]
         }
@@ -1175,7 +1176,7 @@ class WebService:
         self.unit.unlink()
         self.launcher.unlink()
         self.marker.unlink()
-        if self.platform == "linux" and self.runner(self._command("daemon-reload")).returncode:
+        if self._reload_failed():
             msg = "Web integration was removed but systemd reload failed; inspect your user manager."
             raise HeinzelError(msg)
         return WebChange(changed=True, status=self.status())
@@ -1188,11 +1189,7 @@ class WebService:
         """
         loaded, _ = self._manager(record)
         if loaded:
-            command = (
-                self._command("bootout", f"gui/{self.uid}/{LABEL}")
-                if self.platform == "darwin"
-                else self._command("disable", "--now", UNIT)
-            )
+            command = self._commands().unload()
             if fence is not None:
                 fence()
             if self.runner(command).returncode:
