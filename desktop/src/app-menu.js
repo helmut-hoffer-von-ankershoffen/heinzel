@@ -49,7 +49,7 @@ export function appMenuTemplate({ name, send, open, devTools = false }) {
         { type: "separator" },
         { label: "Settings\u2026", accelerator: "Command+,", click: () => send("settings") },
         { label: "Check for Updates\u2026", click: () => send("updates") },
-        { label: "Connection\u2026", accelerator: "CommandOrControl+Shift+,", click: () => send("connection") },
+        { label: "Switch Workspace\u2026", accelerator: "CommandOrControl+Shift+,", click: () => send("connection") },
         { type: "separator" },
         { role: "services" },
         { type: "separator" },
