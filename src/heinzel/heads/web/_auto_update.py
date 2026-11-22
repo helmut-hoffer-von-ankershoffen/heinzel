@@ -20,7 +20,7 @@ from heinzel import HeinzelError
 from heinzel.heads._stream import WORK
 from heinzel.kernel import Installation
 from heinzel.modules.system.client import open_updater_file, private_directory
-from heinzel.modules.system.updater import Activity, AutoUpdateStatus, Schedule, StateFiles
+from heinzel.modules.system.updater.api import Activity, AutoUpdateStatus, Schedule, StateFiles
 
 __all__ = [
     "AUTO_UPDATE_PATH",
