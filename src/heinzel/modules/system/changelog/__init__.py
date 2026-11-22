@@ -142,7 +142,7 @@ def _read_changelog() -> str:
 
 @module.operation(render=render_released)
 def released(installation: Installation, kernel: Kernel, settings: ChangelogSettings) -> ReleaseTime:
-    """Show when the installed version was released: day and time, the publish time on GitHub if it can be asked.
+    """Show when the installed version was released, by its GitHub publish time or the changelog.
 
     Asks GitHub once for the release (then remembers the answer); offline it falls back to the changelog's header,
     which names the cut time, or on older releases only the day.

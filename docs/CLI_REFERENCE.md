@@ -2242,7 +2242,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `agent`: (expert) Install the Heinzelmännchen...
 * `bookmark`: (expert) Keep the built-in browser&#x27;s...
 * `capability`: (expert) Show which adapters serve which...
-* `changelog`: (expert) Show the installed version&#x27;s...
+* `changelog`: (expert) Release notes of the installed...
 * `channel`: Show the update channel, or say what...
 * `claude`: (expert) See the MCP servers and skills...
 * `config`: (expert) Show, get, set and initialize...
@@ -2540,17 +2540,37 @@ $ hz system capability list [OPTIONS]
 
 ### `hz system changelog`
 
-(expert) Show the installed version&#x27;s changelog as Markdown, or with `--newer` what newer releases bring.
+(expert) Release notes of the installed version and of newer releases.
 
 **Usage**:
 
 ```console
-$ hz system changelog [OPTIONS]
+$ hz system changelog [OPTIONS] COMMAND [ARGS]...
 ```
 
 **Options**:
 
 * `--newer / --no-newer`: Show what the releases newer than the installed version bring instead, newest first; asks GitHub, with GH_TOKEN or GITHUB_TOKEN if set. As JSON: a list of {version, date, notes, url}.  [default: no-newer]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `released`: (expert) Show when the installed version...
+
+#### `hz system changelog released`
+
+(expert) Show when the installed version was released, by its GitHub publish time or the changelog.
+
+**Usage**:
+
+```console
+$ hz system changelog released [OPTIONS]
+```
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

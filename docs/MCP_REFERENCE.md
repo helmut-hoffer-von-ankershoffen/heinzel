@@ -3112,6 +3112,20 @@ Module `system.changelog`. Read-only. Result: `string \| list[ReleaseNotes]`.
 }
 ```
 
+## `system_changelog_released`
+
+Show when the installed version was released, by its GitHub publish time or the changelog.
+
+Module `system.changelog`. Read-only. Result: `ReleaseTime {version: string, published_at: string \| null, day: string \| null, source: 'github' \| 'changelog' \| null}`.
+
+```json
+{
+  "properties": {},
+  "title": "system_changelog_releasedArguments",
+  "type": "object"
+}
+```
+
 ## `system_claude_summary`
 
 Count the MCP servers and skills found in Claude's configuration per source, without their names.

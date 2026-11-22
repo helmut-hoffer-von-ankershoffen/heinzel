@@ -2503,8 +2503,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Show when the installed version was released: day and time, the publish time on GitHub if it can be asked.
-         * @description Show when the installed version was released: day and time, the publish time on GitHub if it can be asked.
+         * Show when the installed version was released, by its GitHub publish time or the changelog.
+         * @description Show when the installed version was released, by its GitHub publish time or the changelog.
          *
          *     Asks GitHub once for the release (then remembers the answer); offline it falls back to the changelog's header,
          *     which names the cut time, or on older releases only the day.
