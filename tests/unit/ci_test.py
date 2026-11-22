@@ -207,7 +207,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "gate_paths='^(": "finds the gate paths the pull request touches; no tokens when there are none",
         'auth="$(printf': "fetches the head as git objects only, never checks it out",
         'echo "present=$PRESENT"': "records whether a Claude credential is set, without reading it",
-        "not_run() {": "collects the model result: no or a rejected credential is neutral, any other unrun one fails",
+        "not_run() {": "collects the model result: a review that did not run fails, a missing or rejected key says so",
         'if [[ "$MODE" == pass ]]': "no model call without gate paths; a gate change nobody reviewed fails",
     },
     "update-prs.yml": {
@@ -986,10 +986,7 @@ def test_gate_review_always_reports_one_check_and_fails_closed():
     job = spec["jobs"]["gate-review"]
     assert spec["name"] == job["name"] == "Gate review"
     assert job["needs"] == ["scope", "model"]
-    # runs whatever the model job did, so nothing hangs pending; skipped only on the model job's own not-run state
-    assert job["if"] == (
-        "${{ !cancelled() && !(needs.model.result == 'success' && needs.model.outputs.state == 'not-run') }}"
-    )
+    assert job["if"] == "${{ !cancelled() }}"  # runs whatever the model job did, so nothing hangs pending
     script = job["steps"][0]["run"]
     assert 'if [[ "$MODE" == pass ]]' in script
     assert "needs a human or agent review" in script  # a bot, fork or draft gate change
@@ -1100,13 +1097,13 @@ REJECTED = {"subtype": "success", "is_error": True, "num_turns": 1, "total_cost_
 """The result of run 44985171290: the API refused the credential before any model call."""
 
 
-def test_gate_review_without_a_credential_is_neutral_with_one_line(tmp_path):
+def test_gate_review_without_a_credential_fails_with_one_line(tmp_path):
+    """A review that did not run fails: a skipped check would satisfy a required status check."""
     status, outputs, stdout = _collect(tmp_path, present="false", outcome="skipped")
-    assert status == 0
-    assert "state=not-run" in outputs
+    assert status == 1
     assert "verdict_line" not in outputs
-    assert stdout.count("::warning title=Gate review not run::") == 1
-    assert "No Claude credential is set" in stdout
+    assert stdout.count("::error") == 1
+    assert "::error title=Gate review not run::No Claude credential is set" in stdout
     review = next(step for step in _gate_review()["jobs"]["model"]["steps"] if step.get("id") == "review")
     assert review["if"] == "steps.credential.outputs.present == 'true'"
     credential = next(step for step in _gate_review()["jobs"]["model"]["steps"] if step.get("id") == "credential")
@@ -1114,12 +1111,12 @@ def test_gate_review_without_a_credential_is_neutral_with_one_line(tmp_path):
     assert "secrets.ANTHROPIC_API_KEY != ''" in credential["env"]["PRESENT"]
 
 
-def test_gate_review_with_a_rejected_credential_is_neutral_with_one_line(tmp_path):
+def test_gate_review_with_a_rejected_credential_fails_with_one_line(tmp_path):
     status, outputs, stdout = _collect(tmp_path, result=REJECTED | {"result": "Invalid API key"})
-    assert status == 0
-    assert "state=not-run" in outputs
-    assert stdout.count("::warning title=Gate review not run::") == 1
-    assert "rejected the credential" in stdout
+    assert status == 1
+    assert "verdict_line" not in outputs
+    assert stdout.count("::error") == 1
+    assert "::error title=Gate review not run::The Claude API rejected the credential" in stdout
 
 
 @pytest.mark.parametrize(
@@ -1134,7 +1131,7 @@ def test_gate_review_with_a_rejected_credential_is_neutral_with_one_line(tmp_pat
 def test_gate_review_that_called_the_model_and_failed_still_fails(tmp_path, result):
     status, outputs, stdout = _collect(tmp_path, result=result)
     assert status == 1
-    assert "state=not-run" not in outputs
+    assert "verdict_line" not in outputs
     assert "Gate review failed, nothing was reviewed" in stdout
 
 
@@ -1142,7 +1139,6 @@ def test_gate_review_that_ran_and_did_not_approve_still_fails(tmp_path):
     reviewed = {"is_error": False, "num_turns": 9, "total_cost_usd": 1.2, "result": "Weakens ci.yml:1\nVERDICT: REJECT"}
     status, outputs, _ = _collect(tmp_path, outcome="success", result=reviewed)
     assert status == 0
-    assert "state=reviewed" in outputs
     assert "verdict_line=VERDICT: REJECT" in outputs
     judge = _gate_review()["jobs"]["gate-review"]["steps"][0]["run"]
     assert judge.rstrip().endswith("exit 1")  # anything but the exact approve line fails the check

@@ -10,9 +10,8 @@ name: Gate review
 #     CLAUDE_REVIEW not "true"): the check fails with "needs a human or agent review". A review that did not run never
 #     passes;
 #   - gate paths touched but no Claude credential is set, or the API rejects it before any model call (the result is
-#     an error with zero cost and no model usage): nothing was reviewed and nobody can fix it in the pull request, so
-#     the model job ends green with one warning line and the "Gate review" check is skipped (grey: neither passed nor
-#     failed, GitHub's neutral for a job). It never passes. A review that ran and did not approve still fails.
+#     an error with zero cost and no model usage): the check fails like any review that did not run, with one line
+#     that names the credential as the cause, so nobody looks for a fault in the pull request.
 # It runs on pull_request_target, so the workflow and its gate-path list are the base branch's: a pull request cannot
 # edit them to pass its own review. The pull request head is data only: the file list comes from the API, and the
 # reviewer works in a checkout of the base branch (its CLAUDE.md, settings and hooks are the base's) and reads the head
@@ -94,7 +93,6 @@ jobs:
     outputs:
       verdict_line: ${{ steps.result.outputs.verdict_line }}
       result: ${{ steps.result.outputs.result }}
-      state: ${{ steps.result.outputs.state }} # reviewed or not-run (no credential, or the API rejected it)
     steps:
       - name: Is a Claude credential set?
         id: credential
@@ -146,7 +144,7 @@ jobs:
           OUTCOME: ${{ steps.review.outcome }}
           EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
         run: |
-          not_run() { echo "::warning title=Gate review not run::$1: nothing was reviewed"; echo "state=not-run" >> "$GITHUB_OUTPUT"; exit 0; }
+          not_run() { echo "::error title=Gate review not run::$1: nothing was reviewed; fix the repository secret, then rerun"; exit 1; }
           if [[ "$PRESENT" != true ]]; then not_run "No Claude credential is set (CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY)"; fi
           # The API refused the credential before any model call: an error result with zero cost and no model usage.
           if [[ -f "$EXECUTION_FILE" ]] && jq -e 'map(select(.type == "result")) | last | . != null and .is_error == true
@@ -163,7 +161,6 @@ jobs:
           last="$(grep -v '^[[:space:]]*$' <<<"$result" | tail -n 1 | tr -d '\r')"
           delimiter="EOF_$(openssl rand -hex 16)"
           {
-            echo "state=reviewed"
             echo "verdict_line=${last}"
             echo "result<<${delimiter}"
             printf '%s\n' "${result:0:50000}"
@@ -172,9 +169,7 @@ jobs:
   gate-review:
     name: Gate review
     needs: [scope, model]
-    # Skipped (neutral) only when the model job finished and says nothing could be reviewed; a failed or skipped
-    # model job has no state, so the judge runs and fails closed.
-    if: ${{ !cancelled() && !(needs.model.result == 'success' && needs.model.outputs.state == 'not-run') }}
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
