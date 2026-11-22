@@ -11,26 +11,20 @@ guarded state folder of the client context (`StateFiles`), which this context do
 """
 
 import contextlib
-import fcntl
-import importlib.metadata
 import json
 import logging
 import os
 import random
-import re
 import secrets
-import sys
 import threading
 import weakref
-from collections.abc import Callable, Generator, Mapping
-from contextlib import AbstractContextManager, contextmanager
-from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import IO, Any, ClassVar, Literal, cast
+from typing import IO, Any, ClassVar, Literal
 
-from packaging.version import InvalidVersion, Version
-from pydantic import BaseModel, Field
+from packaging.version import Version
 
 from heinzel import HeinzelError, __version__
 from heinzel._adapter_system import SYSTEM_CLOCK
@@ -49,548 +43,113 @@ from heinzel.kernel import (
 )
 from heinzel.kernel._logging import get_logger, log_event
 from heinzel.kernel._logging import step as log_step
+from heinzel.modules.system.updater._schedule_plan import (
+    ACCEPTANCE_EVENT,
+    CHECK_EVERY,
+    COUNTDOWN,
+    FILENAME,
+    FIRST_CHECK,
+    JITTER,
+    POSTPONE,
+    RECHECK_GAP,
+    RECOVER_OPERATION,
+    RELOAD_RETRY,
+    REPAIR_OPERATION,
+    RETRY_AFTER_FAILURE,
+    STEP_SECONDS,
+    TIMEOUT,
+    UPDATE_MODULE,
+    UPDATE_OPERATION,
+    Activity,
+    AutoUpdateStatus,
+    Plan,
+    PluginHold,
+    done,
+    failed,
+    failure_message,
+    found,
+    postpone,
+    settle,
+    step,
+)
+from heinzel.modules.system.updater._schedule_plan import (
+    not_newer as _not_newer,
+)
+from heinzel.modules.system.updater._schedule_plan import (
+    plan_phase as _phase,
+)
+from heinzel.modules.system.updater._schedule_policy import (
+    CHECKS_OFF,
+    DEVELOPMENT,
+    DEVELOPMENT_VARIABLES,
+    PINNED,
+    SOURCE_CHECKOUT,
+    TEST_OVERRIDE,
+    development_reason,
+    update_summary,
+)
+from heinzel.modules.system.updater._schedule_policy import (
+    canonical_name as _canonical,
+)
+from heinzel.modules.system.updater._schedule_policy import (
+    old_enough as _old_enough,
+)
+from heinzel.modules.system.updater._schedule_state import (
+    StateFiles,
+)
+from heinzel.modules.system.updater._schedule_state import (
+    locked as _locked,
+)
+from heinzel.modules.system.updater._schedule_state import (
+    try_lock as _try_lock,
+)
+from heinzel.modules.system.updater._schedule_state import (
+    unlock as _unlock,
+)
+
+__all__ = [
+    "ACCEPTANCE_EVENT",
+    "CHECKS_OFF",
+    "CHECK_EVERY",
+    "COUNTDOWN",
+    "DEVELOPMENT",
+    "DEVELOPMENT_VARIABLES",
+    "FILENAME",
+    "FIRST_CHECK",
+    "JITTER",
+    "PINNED",
+    "POSTPONE",
+    "RECHECK_GAP",
+    "RECOVER_OPERATION",
+    "RELOAD_RETRY",
+    "REPAIR_OPERATION",
+    "RETRY_AFTER_FAILURE",
+    "SOURCE_CHECKOUT",
+    "STEP_SECONDS",
+    "TEST_OVERRIDE",
+    "TIMEOUT",
+    "UPDATE_MODULE",
+    "UPDATE_OPERATION",
+    "Activity",
+    "AutoUpdateStatus",
+    "Plan",
+    "PluginHold",
+    "Schedule",
+    "StateFiles",
+    "development_reason",
+    "done",
+    "failed",
+    "failure_message",
+    "found",
+    "postpone",
+    "settle",
+    "step",
+    "update_summary",
+]
 
 log = logging.getLogger("heinzel.heads.web._auto_update")
 """The logger the web head's updater always had: log names stay as they were before the plan moved here."""
 events = get_logger("web.auto_update")
-ACCEPTANCE_EVENT = "web.auto_update.acceptance"
-"""Once per check of a newer hz old enough to install: whether its release was accepted (ADR 0138)."""
-
-CHECK_EVERY = timedelta(minutes=30)
-"""How often the server asks for newer releases."""
-RECHECK_GAP = timedelta(seconds=10)
-"""The least time between two looks that people ask for."""
-JITTER = timedelta(minutes=5)
-"""At most this much is added to each check at random, so many installations don't ask at the same second."""
-FIRST_CHECK = (timedelta(minutes=1), timedelta(minutes=5))
-"""The first check comes this long after start, at random within the range."""
-COUNTDOWN = timedelta(seconds=30)
-"""The warning every window gets before an update applies."""
-POSTPONE = timedelta(hours=1)
-"""How far one click on Postpone moves the apply time."""
-RETRY_AFTER_FAILURE = timedelta(hours=6)
-"""The earliest next attempt after a failed one."""
-TIMEOUT = 10.0
-"""Seconds a release source may take per network operation."""
-STEP_SECONDS = 1.0
-"""How often the server looks at its plan."""
-RELOAD_RETRY = timedelta(minutes=1)
-"""How soon a server that runs an older hz than is installed looks again, when work held off its restart."""
-FILENAME = "auto-update.json"
-
-UPDATE_MODULE, UPDATE_OPERATION, RECOVER_OPERATION = "system", "apply-announced", "recover-announced"
-REPAIR_OPERATION = ("system.plugin", "repair")
-"""Installs the plugins an installed plugin requires but lacks; the updater asks it when nothing else is due."""
-
-type Phase = Literal["off", "idle", "waiting", "countdown", "applying"]
-
-
-@dataclass
-class Plan:
-    """What is pending and when it applies; pure data, changed only by the functions below."""
-
-    core: str | None = None
-    """The newer hz release, if any."""
-    plugins: dict[str, str] = field(default_factory=dict[str, str])
-    """Plugins with a newer release, by distribution, mapped to it."""
-    window_at: datetime | None = None
-    """The earliest time the countdown may start; None when nothing is pending."""
-    apply_at: datetime | None = None
-    """When the running countdown ends and the update applies; None when no countdown runs."""
-    postponements: int = 0
-    retry_at: datetime | None = None
-    """No attempt before this, after a failure."""
-    message: str | None = None
-    """One plain message for the person: an update that worked or failed."""
-    applying: bool = False
-    """The update runs now."""
-    restarting_to: str | None = None
-    """The version a restart in place is expected to load, saved before restarting."""
-    commit: str | None = None
-    """The commit the announced hz release's tag named when it was announced; checked once it is installed."""
-    refused: dict[str, Any] | None = None
-    """News that was installed but didn't start, and was put back: never applied again; newer news is."""
-    failed_on: str | None = None
-    """The hz version that was running when `message` reported a failure; another version makes it history."""
-    plugin_commits: dict[str, str] = field(default_factory=dict[str, str])
-    """For announced plugins pinned to a GitHub commit: the commit their release tag named when announced."""
-    followed: list[str] = field(default_factory=list[str])
-    """Plugins pinned to a GitHub commit whose release tags the last check could read: not updated by hand."""
-    held_plugins: list[str] = field(default_factory=list[str])
-    """One line per plugin release the last check held back, because another plugin can't move with it."""
-    core_held: str | None = None
-    """A newer hz release the last check held back, because its release is not accepted (yet)."""
-
-    @property
-    def pending(self) -> bool:
-        """Whether anything newer is waiting to be installed."""
-        return self.core is not None or bool(self.plugins)
-
-    def to_json(self) -> dict[str, Any]:
-        """The plan as JSON for the state file."""
-
-        def stamp(value: datetime | None) -> str | None:
-            return value.isoformat() if value else None
-
-        return {
-            "core": self.core,
-            "plugins": self.plugins,
-            "window_at": stamp(self.window_at),
-            "apply_at": stamp(self.apply_at),
-            "postponements": self.postponements,
-            "retry_at": stamp(self.retry_at),
-            "message": self.message,
-            "restarting_to": self.restarting_to,
-            "refused": self.refused,
-            "commit": self.commit,
-            "failed_on": self.failed_on,
-            "plugin_commits": self.plugin_commits,
-            "followed": self.followed,
-            "held_plugins": self.held_plugins,
-            "core_held": self.core_held,
-        }
-
-    @classmethod
-    def from_json(cls, data: object, *, fresh: bool = False) -> "Plan":
-        """A plan from the state file; anything unreadable starts afresh; `fresh` at a server's start."""
-        if not isinstance(data, dict):
-            return cls()
-        values: dict[str, Any] = dict(data)  # pyright: ignore[reportUnknownArgumentType] - free-form JSON
-
-        def when(name: str) -> datetime | None:
-            value = values.get(name)
-            try:
-                parsed = datetime.fromisoformat(value) if isinstance(value, str) else None
-            except ValueError:
-                return None
-            return parsed if parsed is None or parsed.tzinfo else parsed.replace(tzinfo=UTC)
-
-        def text(name: str) -> str | None:
-            value = values.get(name)
-            return value if isinstance(value, str) else None
-
-        found_plugins: object = values.get("plugins")
-        plugins = (
-            {str(k): str(v) for k, v in found_plugins.items()}  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
-            if isinstance(found_plugins, dict)
-            else {}
-        )
-
-        def texts(name: str) -> list[str]:
-            value: object = values.get(name)
-            return [str(item) for item in cast("list[object]", value)] if isinstance(value, list) else []
-
-        found_commits: object = values.get("plugin_commits")
-        commits = (
-            {str(k): str(v) for k, v in cast("dict[object, object]", found_commits).items()}
-            if isinstance(found_commits, dict)
-            else {}
-        )
-        count = values.get("postponements")
-        return cls(
-            core=text("core"),
-            plugins=plugins,
-            window_at=when("window_at"),
-            # A countdown never survives a restart: the windows must see it again. Another server's countdown does.
-            apply_at=None if fresh else when("apply_at"),
-            postponements=count if isinstance(count, int) and count >= 0 else 0,
-            retry_at=when("retry_at"),
-            message=text("message"),
-            restarting_to=text("restarting_to"),
-            refused=_news(values.get("refused")),
-            commit=text("commit"),
-            failed_on=text("failed_on"),
-            plugin_commits=commits,
-            followed=texts("followed"),
-            held_plugins=texts("held_plugins"),
-            core_held=text("core_held"),
-        )
-
-
-def _news(value: object) -> dict[str, Any] | None:
-    if not isinstance(value, dict):
-        return None
-    news = cast("dict[str, Any]", value)
-    plugins: object = news.get("plugins")
-    core: object = news.get("core")
-    return {
-        "core": core if isinstance(core, str) else None,
-        "plugins": {str(k): str(v) for k, v in cast("dict[object, object]", plugins).items()}
-        if isinstance(plugins, dict)
-        else {},
-    }
-
-
-def found(plan: Plan, core: str | None, plugins: dict[str, str], now: datetime) -> None:
-    """Record what a check found. The same news keeps its times; new news waits for its own window.
-
-    News that was put back after it didn't start counts as no news, so the same broken release is never retried.
-    """
-    if plan.refused == {"core": core, "plugins": dict(plugins)}:
-        core, plugins = None, {}
-    if core == plan.core and plugins == plan.plugins:
-        return
-    first_news = not plan.pending
-    plan.core, plan.plugins = core, dict(plugins)
-    if core is None and not plugins:
-        plan.window_at = plan.apply_at = None
-        plan.postponements = 0
-        return
-    if first_news:
-        plan.window_at = max(now, plan.retry_at) if plan.retry_at else now
-        plan.apply_at = None
-        plan.postponements = 0
-
-
-def step(plan: Plan, now: datetime, *, busy: bool) -> bool:
-    """Advance the plan to `now`; True when the update should apply now.
-
-    The countdown starts only when nothing is busy, and work that starts during it cancels it until all is idle again,
-    when a fresh countdown warns every window once more.
-    """
-    if not plan.pending or plan.applying or plan.window_at is None:
-        return False
-    if plan.retry_at is not None and now < plan.retry_at:
-        plan.apply_at = None
-        return False
-    if plan.apply_at is None:
-        if now >= plan.window_at and not busy:
-            plan.apply_at = now + COUNTDOWN
-        return False
-    if busy:
-        plan.apply_at = None
-        plan.window_at = now
-        return False
-    return now >= plan.apply_at
-
-
-def postpone(plan: Plan, now: datetime) -> None:
-    """Move the apply time one hour later; the countdown comes back 30 seconds before it."""
-    if not plan.pending or plan.applying:
-        return
-    due = plan.apply_at or max(now + COUNTDOWN, (plan.window_at or now) + COUNTDOWN)
-    plan.apply_at = None
-    plan.window_at = due + POSTPONE - COUNTDOWN
-    plan.postponements += 1
-
-
-def failed(plan: Plan, message: str, now: datetime, running: str | None = None) -> None:
-    """Keep the news, wait at least six hours, and say what happened once, naming the version still `running`."""
-    plan.failed_on = running
-    plan.applying = False
-    plan.apply_at = None
-    plan.restarting_to = None
-    plan.retry_at = now + RETRY_AFTER_FAILURE
-    plan.window_at = plan.retry_at
-    plan.message = message
-
-
-def done(plan: Plan, message: str) -> None:
-    """Forget what was pending after an update that worked, keeping the message that says so and what is followed."""
-    plan.__dict__.update(Plan(message=message, followed=list(plan.followed)).__dict__)
-
-
-def settle(plan: Plan, running: str, now: datetime) -> None:
-    """At a server's start: forget what the installation already has, and a failure another version reported.
-
-    hz may have been updated by other means since (`hz system update`, the footer, another server): news of a release
-    that is not newer than `running` is done, and its failure, or one reported while another version ran, is history.
-    A failure without a recorded version is history once its news is, or no news is left: older state files didn't
-    record one.
-    """
-    if plan.applying or plan.restarting_to is not None:
-        return
-    done_news = plan.core is not None and _not_newer(plan.core, running)
-    if done_news:
-        plan.core, plan.commit = None, None
-        if not plan.plugins:
-            plan.window_at = plan.apply_at = None
-            plan.postponements = 0
-    stale = plan.failed_on is not None and plan.failed_on != running
-    legacy = plan.failed_on is None and (done_news or not plan.pending)  # older files; no news left to retry
-    if plan.retry_at is not None and (stale or legacy):
-        plan.retry_at = plan.message = plan.failed_on = None  # only a failure sets `retry_at`, with its message
-        if plan.pending:  # other news, e.g. a plugin, waits only for its own window again
-            plan.window_at = now
-    elif stale:
-        plan.failed_on = None
-
-
-def _not_newer(release: str, running: str) -> bool:
-    try:
-        return Version(release) <= Version(running)
-    except InvalidVersion:
-        return False
-
-
-def failure_message(running: str) -> str:
-    """The one plain message after a failed attempt."""
-    return (
-        f"The automatic update didn't work, so hz {running} keeps running as before. It will try again in 6 hours; "
-        "to update now, use Update in the footer."
-    )
-
-
-class PluginHold(BaseModel):
-    """One installed plugin that automatic updates leave alone, and why, in the words the Updates pane needs."""
-
-    name: str = Field(description="The plugin's distribution name.")
-    why: Literal["pinned", "source"] = Field(
-        description="pinned: someone holds it to one version; source: it is installed from git, a folder or a URL."
-    )
-    version: str | None = Field(default=None, description="The version a pinned plugin is held to.")
-    how: Literal["git", "folder", "link"] | None = Field(
-        default=None, description="Where a source plugin comes from: a git repository, a folder or a URL."
-    )
-
-
-class AutoUpdateStatus(BaseModel):
-    """What every window shows about automatic updates; the server's plan, never a browser's."""
-
-    enabled: bool = Field(description="Whether automatic updates are on and can work here.")
-    reason: str | None = Field(description="Why they can't work here, in plain words; none when they can.")
-    phase: Phase = Field(description="off, idle (nothing newer), waiting, countdown or applying.")
-    version: str = Field(description="The hz version this server loaded.")
-    core: str | None = Field(description="The newer hz release that will be installed, if any.")
-    plugins: dict[str, str] = Field(description="Plugins that will be updated, mapped to their new version.")
-    seconds_left: int | None = Field(description="Seconds until the update applies, while the countdown runs.")
-    apply_at: datetime | None = Field(description="When the update applies, while the countdown runs.")
-    next_window_at: datetime | None = Field(description="When the next countdown may start, while waiting.")
-    postponements: int = Field(description="How often the update has been put off.")
-    message: str | None = Field(description="One plain message about the last automatic update.")
-    development: str | None = Field(
-        default=None,
-        description="Why this hz runs for development, so it never updates itself and both switches are disabled.",
-    )
-    by_hand: list[str] = Field(
-        default_factory=list[str],
-        description="Installed plugins from git, a folder or a URL, which only a person updates; not those pinned to "
-        "a GitHub commit whose repository tags their releases.",
-    )
-    plugins_held: list[str] = Field(
-        default_factory=list[str],
-        description="One line per plugin release held back because another plugin can't move with it.",
-    )
-    core_held: str | None = Field(
-        default=None,
-        description="A newer hz release automatic updates hold back because it is not accepted yet; installing it by "
-        "hand (`hz system update`) still works.",
-    )
-    holds: list[PluginHold] = Field(
-        default_factory=list[PluginHold],
-        description="Every installed plugin automatic updates leave alone, with the reason; by_hand lists the "
-        "source installs among them.",
-    )
-    checked_at: datetime | None = Field(
-        default=None, description="When this server last looked for hz and plugin news; None before its first look."
-    )
-    core_checked: bool | None = Field(
-        default=None, description="Whether the last look at hz releases got an answer; None before the first look."
-    )
-    plugins_checked: bool | None = Field(
-        default=None, description="Whether the last look at plugin releases got an answer; None before the first look."
-    )
-    held: str | None = Field(
-        default=None,
-        description="The one line both switches show, disabled, when the setting can't turn updates on here: "
-        "development, or update checks off.",
-    )
-
-
-def _phase(plan: Plan, reason: str | None) -> Phase:
-    """The phase every window shows for `plan`."""
-    if reason is not None:
-        return "off"
-    if plan.applying or plan.restarting_to:
-        return "applying"
-    if plan.apply_at is not None:
-        return "countdown"
-    return "waiting" if plan.pending else "idle"
-
-
-class Activity:
-    """Requests that change state and are still running in this server: a chat answer, an install."""
-
-    def __init__(self) -> None:
-        """Nothing running yet."""
-        self._lock = threading.Lock()
-        self._running: dict[str, int] = {}
-
-    def enter(self, what: str = "a request") -> None:
-        """One more request is running; `what` names it (`POST /api/...`) for the log."""
-        with self._lock:
-            self._running[what] = self._running.get(what, 0) + 1
-
-    def leave(self, what: str = "a request") -> None:
-        """One request finished."""
-        with self._lock:
-            count = self._running.get(what, 0) - 1
-            if count > 0:
-                self._running[what] = count
-            else:
-                self._running.pop(what, None)
-
-    @property
-    def busy(self) -> bool:
-        """Whether any is running."""
-        with self._lock:
-            return bool(self._running)
-
-    def running(self) -> list[str]:
-        """What is running, by name, for the log."""
-        with self._lock:
-            return sorted(self._running)
-
-
-SOURCE_CHECKOUT = "Updates are managed by your source checkout."
-"""What both switches say when hz runs from a source checkout or an editable install."""
-DEVELOPMENT = "Automatic updates are off while hz runs for development or tests."
-"""What both switches say when another development fact holds: tests, CI, a dev server or make, a test state folder."""
-PINNED = "This installation is pinned or isn't a uv tool, so it can't update itself."
-CHECKS_OFF = "Update checks are off, so hz neither looks for updates nor installs them by itself."
-"""What both switches say while `update_check` is off: no automatic update without a check."""
-TEST_OVERRIDE = "HEINZEL_AUTO_UPDATE_TEST"
-"""Set to 1 by a test that drives the real automatic-update flow: none of the development facts below count then."""
-DEVELOPMENT_VARIABLES = (
-    "HZ_DEV",
-    "HZ_TEST",
-    "CI",
-    "PYTEST_CURRENT_TEST",
-    "PYTEST_XDIST_WORKER",
-    "TEST_WORKER_INDEX",  # the Playwright test runner
-    "PLAYWRIGHT_TEST_BASE_URL",
-    "MAKELEVEL",  # started by a make target
-    "npm_lifecycle_event",  # started by an npm script, such as the Vite dev server
-)
-"""Environment variables that mean this process runs for development, a test or CI, whatever their value."""
-
-
-def _distribution_is_editable() -> bool:
-    """Whether the installed `heinzel` distribution is an editable install, as its `direct_url.json` records it."""
-    try:
-        text = importlib.metadata.distribution("heinzel").read_text("direct_url.json")
-        data: object = json.loads(text) if text else None
-    except (importlib.metadata.PackageNotFoundError, ValueError, OSError):
-        return False
-    if not isinstance(data, dict):
-        return False
-    info: object = cast("dict[str, object]", data).get("dir_info")
-    return isinstance(info, dict) and cast("dict[str, object]", info).get("editable") is True
-
-
-def _default_state_dir() -> Path:
-    factory = Settings.model_fields["state_dir"].default_factory
-    return cast("Callable[[], Path]", factory)()
-
-
-def _is_checkout(folder: Path) -> bool:
-    return (folder / ".git").exists() or (folder / "pyproject.toml").is_file()
-
-
-def development_reason(
-    state_dir: Path,
-    *,
-    environ: Mapping[str, str] | None = None,
-    package: Path | None = None,
-    prefix: Path | None = None,
-    editable: Callable[[], bool] = _distribution_is_editable,
-) -> str | None:
-    """Why this process runs for development, judged by facts; None for an installed hz with the user's state folder.
-
-    Automatic updates never run then: an update would replace code someone is working on, or race a test (ADR 0116).
-    The facts: the code is imported from a source tree or an editable install, or its environment sits in a checkout
-    (a `.venv` next to `.git`); a development, test or CI variable is set; make or npm started it; or the state folder
-    isn't the user's default. `HEINZEL_AUTO_UPDATE_TEST=1` turns them all off, for the test of the real flow.
-    """
-    env = os.environ if environ is None else environ
-    if env.get(TEST_OVERRIDE) == "1":
-        return None
-    package = package or Path(__file__).resolve().parents[2]  # the `heinzel` package folder
-    prefix = prefix or Path(sys.prefix)
-    if "site-packages" not in package.parts or editable() or _is_checkout(prefix.parent):
-        return SOURCE_CHECKOUT
-    if any(name in env for name in DEVELOPMENT_VARIABLES):
-        return DEVELOPMENT
-    try:
-        default = _default_state_dir().resolve()
-        if state_dir.expanduser().resolve() != default:
-            return DEVELOPMENT
-    except OSError:
-        return DEVELOPMENT
-    return None
-
-
-def update_summary(plan: Plan) -> str:
-    """What a plan installs, in plain words, for the log."""
-    parts = [f"hz {plan.core}"] if plan.core else []
-    return ", ".join([*parts, *(f"{name} {version}" for name, version in plan.plugins.items())])
-
-
-def _canonical(name: str) -> str:
-    """A distribution's canonical name, without extras: `Heinzel_CRM[x]` is `heinzel-crm`."""
-    return re.sub(r"[-_.]+", "-", name.split("[", 1)[0]).lower()
-
-
-def _old_enough(published: datetime | None, hours: int, now: datetime) -> bool:
-    """Whether a release published at `published` is at least `hours` old; an unknown time counts as too new."""
-    if hours <= 0:
-        return True
-    return published is not None and now - published >= timedelta(hours=hours)
-
-
-@dataclass(frozen=True, slots=True)
-class StateFiles:
-    """The guarded state folder the plan lives in: the client context's checks, handed in by the web head."""
-
-    private_directory: Callable[[Path], AbstractContextManager[int]]
-    """Open and tighten a directory; yields its verified descriptor."""
-    open_updater_file: Callable[[int, str, int], int]
-    """Open an updater file relative to a verified directory descriptor."""
-
-
-@contextmanager
-def _locked(path: Path, files: StateFiles) -> Generator[int | None]:
-    """Lock one verified directory for the complete read/edit/write operation.
-
-    Yields:
-        The stable directory descriptor, or None for in-memory-only operation when storage is unsafe/unavailable.
-    """
-    with contextlib.ExitStack() as stack:
-        try:
-            folder = stack.enter_context(files.private_directory(path.parent))
-            descriptor = files.open_updater_file(folder, path.name, os.O_WRONLY | os.O_CREAT | os.O_APPEND)
-            handle = stack.enter_context(os.fdopen(descriptor, "a", encoding="utf-8"))
-            fcntl.flock(handle, fcntl.LOCK_EX)
-        except (OSError, HeinzelError):
-            yield None
-            return
-        try:
-            yield folder
-        finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
-
-
-def _try_lock(path: Path, files: StateFiles) -> IO[str] | None:
-    """An exclusive lock on `path` if no other holder has it, kept until released or this process ends."""
-    try:
-        with files.private_directory(path.parent) as folder:
-            descriptor = files.open_updater_file(folder, path.name, os.O_WRONLY | os.O_CREAT | os.O_APPEND)
-            handle = os.fdopen(descriptor, "a", encoding="utf-8")
-    except (OSError, HeinzelError):
-        return None
-    try:
-        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        handle.close()
-        return None
-    return handle
-
-
-def _unlock(handle: IO[str] | None) -> None:
-    if handle is not None and not handle.closed:
-        with contextlib.suppress(OSError):
-            fcntl.flock(handle, fcntl.LOCK_UN)
-        handle.close()
 
 
 def _now() -> datetime:

@@ -29,6 +29,7 @@ from rich.text import Text
 from typer.core import TyperGroup
 
 from heinzel import __version__
+from heinzel.heads._compose import UI_HELP, attach_command, serve_group, ui_command
 from heinzel.heads._exposure import collapses, owns_path, restricts
 from heinzel.heads._served_tools import bind_served_tools
 from heinzel.heads.cli import _playful, _update
@@ -37,7 +38,6 @@ from heinzel.heads.cli._branding import footer as brand_footer
 from heinzel.heads.cli._command import command
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
-from heinzel.heads.cli._serve import UI_HELP, attach_command, serve_group, ui_command
 from heinzel.heads.cli._update import print_changelog_header, print_notice, start_check
 from heinzel.kernel import (
     DaemonLifecycleWait,

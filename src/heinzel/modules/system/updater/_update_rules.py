@@ -16,6 +16,7 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 from heinzel import HeinzelError
+from heinzel._phases import State
 from heinzel.kernel import (
     CorePin,
     HeadRefresh,
@@ -26,7 +27,6 @@ from heinzel.modules.system.updater._announced import (
     Announcement,
     installed_identity,
 )
-from heinzel.modules.system.updater._phases import State
 from heinzel.modules.system.updater._plugin_releases import PinnedPlugins
 from heinzel.modules.system.updater._plugin_standing import standing
 

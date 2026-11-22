@@ -43,7 +43,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.websockets import WebSocketDisconnect
 from pydantic import JsonValue
 
-from heinzel.heads import api
+from heinzel.heads import _kit
 from heinzel.heads.web._shutdown import Stopping
 from heinzel.kernel import HeinzelError, Kernel
 from heinzel.kernel._browser import NEEDS_DESKTOP, BrowserBridge, BrowserCommand, BrowserError
@@ -279,7 +279,7 @@ async def session(  # noqa: PLR0913 - the socket plus explicit authentication, t
     `current` holds the desktop connected through this route, so a newer one can end it.
     """
     headers = websocket.headers
-    problem = api.request_refusal(headers, api.LOOPBACK, port, host_help=api.WEB_HOST_HELP)
+    problem = _kit.request_refusal(headers, _kit.LOOPBACK, port, host_help=_kit.WEB_HOST_HELP)
     if token is None or bridge is None or problem or headers.get("origin") is None:
         await websocket.close(code=POLICY_VIOLATION, reason="Refused: only the desktop app on this computer connects.")
         return

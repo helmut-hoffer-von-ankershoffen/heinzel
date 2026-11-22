@@ -308,7 +308,10 @@ def test_the_kernel_entry_keeps_every_name_the_published_updater_holds(version: 
 def test_a_resident_lazy_hook_serves_only_the_names_the_current_package_has() -> None:
     """0.9.54's updater package answers `Activity` through its PEP 562 hook; a name the hook lost is a problem."""
     tree, old, updater = Tree(SOURCE), published("0.9.54"), "heinzel.modules.system.updater"
-    needs = f"heinzel.heads.web._auto_update needs {updater}.Activity"
+    # The web head now asks `updater.api`, a file 0.9.54 never held; pin the model with a file that asks the package.
+    asker = "heinzel.heads.web._auto_update"
+    tree.modules[asker] = (ast.parse(f"from {updater} import Activity"), False)
+    needs = f"{asker} needs {updater}.Activity"
     assert needs not in swap_problems(old, tree).get("heinzel.heads", [])
     source = ast.unparse(tree.modules[updater][0]).replace("Activity, ", "").replace("'Activity', ", "")
     tree.modules[updater] = (ast.parse(source), True)
@@ -422,3 +425,28 @@ def test_the_kept_mcp_tokens_path_answers_with_the_client_context() -> None:
     from heinzel.modules.system.client import tokens_for_user as current
 
     assert tokens_for_user is current
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ("heinzel.modules.system.updater._phases", "heinzel._phases"),
+        ("heinzel.heads.cli._serve", "heinzel.heads._compose"),
+    ],
+)
+def test_a_moved_module_keeps_its_old_path_with_the_same_objects(old: str, new: str) -> None:
+    """No importable path disappears in 0.9.55: the old module re-exports every name of the new one, as is."""
+    before, after = importlib.import_module(old), importlib.import_module(new)
+    assert before.__all__, old
+    assert {name: getattr(before, name) is getattr(after, name) for name in before.__all__} == dict.fromkeys(
+        before.__all__, True
+    )
+
+
+def test_the_rest_head_keeps_the_authority_names_the_kit_now_owns() -> None:
+    """The Host and Origin policy moved to the head kit; `heinzel.heads.api` still answers with the same objects."""
+    from heinzel.heads import _kit, api
+
+    names = ("API_HOST_HELP", "DEFAULT_PORTS", "FORBIDDEN", "LOOPBACK", "WEB_HOST_HELP", "refusal", "request_refusal")
+    for name in names:
+        assert getattr(api, name) is getattr(_kit, name), name

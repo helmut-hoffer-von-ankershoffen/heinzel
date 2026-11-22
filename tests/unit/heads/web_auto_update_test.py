@@ -25,6 +25,7 @@ from heinzel.kernel import (
     discover,
 )
 from heinzel.modules.system.updater import _schedule as auto
+from heinzel.modules.system.updater import _schedule_policy
 from heinzel.modules.system.updater._schedule import Plan
 
 pytestmark = pytest.mark.unit
@@ -398,7 +399,7 @@ INSTALLED = {
 def installed_state(tmp_path, monkeypatch):
     """A state folder that is the user's default, as for an installed hz started by its person."""
     state = tmp_path / "home-state"
-    monkeypatch.setattr(auto, "_default_state_dir", lambda: state)
+    monkeypatch.setattr(_schedule_policy, "_default_state_dir", lambda: state)
     return state
 
 
@@ -438,7 +439,7 @@ def test_the_test_override_counts_none_of_the_facts(tmp_path):
 
 
 def test_this_test_run_counts_as_development():
-    assert auto.development_reason(auto._default_state_dir()) is not None
+    assert auto.development_reason(_schedule_policy._default_state_dir()) is not None
 
 
 def test_while_developing_nothing_is_checked_scheduled_or_shown_and_the_switches_say_why(
