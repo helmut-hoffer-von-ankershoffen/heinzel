@@ -1203,7 +1203,8 @@ def _macos_include(matrix: dict, event: str, full: bool, *, release: bool = Fals
         "github.event_name": event,
         "needs.changes.outputs.lane": lane or ("linux" if event == "push" else "all"),
         "needs.changes.outputs.macos_full": str(full).lower(),
-        "needs.changes.outputs.full_ci": str(release).lower(),
+        "needs.changes.outputs.full_ci": "true",
+        "needs.changes.outputs.full_release": str(release).lower(),
     }
     for branch in expression[1].split(" || "):
         value = None
@@ -2005,7 +2006,7 @@ def test_release_candidate_source_and_selector_never_reach_plugin_templates():
     assert "release-candidate-source" not in generated
     assert "full_release" not in generated
     assert (
-        "github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true'"
+        "github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true'"
         in (_ci_jobs()["test"]["strategy"]["matrix"]["include"])
     )
 
@@ -2418,3 +2419,74 @@ def test_the_plugin_template_never_sees_the_main_lanes():
     assert "lane" not in generated
     assert MAIN_MACOS_GROUP not in generated
     assert "macos-main" not in generated
+
+
+# Path selection on pull requests (the paths step reads the real release flag, not an always-true one).
+_NATIVE_OFF = {"notifier=false", "contracts=false", "electron=false", "macos_full=false"}
+
+
+@pytest.mark.parametrize(
+    ("changed", "expected"),
+    [
+        ("docs/guides/install.md\n", {"site_only=true", "core=true"} | _NATIVE_OFF),  # prose: site-tests only
+        ("web/src/components/Footer.tsx\n", {"site_only=false", "macos_full=false", "contracts=false"}),
+        ("src/heinzel/kernel/_exposure_x.py\n", {"macos_full=true", "contracts=true"}),
+        ("plugins/example/file.py\n", {"core=false", "plugins=true", "notifier=false", "contracts=false"}),
+    ],
+)
+def test_an_ordinary_pull_request_selects_only_what_its_paths_need(tmp_path, ci_paths, changed, expected):
+    assert expected <= _changes_outputs(tmp_path, ci_paths, "pull_request", changed, release=False)
+
+
+def _ci_ok_run(run: str, **env: str) -> tuple[int, str]:
+    jobs = _ci_jobs()
+    step = next(s for s in jobs["ci-ok"]["steps"] if s.get("name") == "Require the complete direct CI workload")
+    ran = run.split()
+    results = {name: {"result": "success" if name in ran else "skipped"} for name in jobs["ci-ok"]["needs"]}
+    base = {
+        "PATH": os.environ["PATH"],
+        "RESULTS": json.dumps(results),
+        "EVENT": "pull_request",
+        "FULL_RELEASE": "false",
+    }
+    result = subprocess.run(
+        ["bash", "-e", "-c", step["run"]], env={**base, **env}, capture_output=True, text=True, check=False, timeout=10
+    )
+    return result.returncode, result.stdout
+
+
+_OFF = {"NOTIFIER": "false", "ELECTRON": "false", "MACOS_FULL": "false", "CONTRACTS": "false", "PLUGIN_PATHS": "false"}
+_PROSE = {**_OFF, "SITE_ONLY": "true", "CORE": "true", "PLUGINS": "False"}
+_PROSE_JOBS = ["admission", "changes", "lint", "secrets", "setup", "audit", "site-tests", "build", "core-wheel"]
+PROSE_RUN = " ".join([*_PROSE_JOBS, "quarantine-registry", "commits", "dependency-review"])
+
+
+def test_a_prose_pull_request_passes_ci_ok_with_site_tests_alone():
+    assert _ci_ok_run(PROSE_RUN, **_PROSE)[0] == 0
+
+
+def test_a_prose_pull_request_cannot_pass_without_its_site_tests():
+    code, out = _ci_ok_run(PROSE_RUN.replace("site-tests", ""), **_PROSE)
+    assert code != 0
+    assert "site-tests" in out
+
+
+def test_a_plugins_only_pull_request_needs_no_core_job():
+    run = "admission changes secrets quarantine-registry commits dependency-review local-plugin-plan"
+    env = {**_OFF, "SITE_ONLY": "false", "CORE": "false", "PLUGIN_PATHS": "true", "PLUGINS": "False"}
+    assert _ci_ok_run(run, **env)[0] == 0
+    assert _ci_ok_run(run.replace("local-plugin-plan", ""), **env)[0] != 0
+
+
+def test_a_release_pull_request_and_main_still_require_everything():
+    assert _ci_ok_run(PROSE_RUN, **_PROSE, FULL_RELEASE="true")[0] != 0
+    assert _ci_ok_run(PROSE_RUN, **_PROSE, EVENT="push")[0] != 0
+
+
+def test_the_macos_jobs_wait_for_a_native_path_on_ordinary_pull_requests():
+    condition = _ci_jobs()["macos-specific"]["if"]
+    base = {"full_ci": "true", "core": "true", "site_only": "false", "lane": "all", "surface_only": "false"}
+    assert not _evaluate_if(condition, "pull_request", {**base, "macos_full": "false", "full_release": "false"})
+    assert _evaluate_if(condition, "pull_request", {**base, "macos_full": "true", "full_release": "false"})
+    assert _evaluate_if(condition, "pull_request", {**base, "macos_full": "false", "full_release": "true"})
+    assert _evaluate_if(condition, "push", {**base, "macos_full": "false", "full_release": "false"})

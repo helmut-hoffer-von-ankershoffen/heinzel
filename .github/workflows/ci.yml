@@ -163,7 +163,7 @@ jobs:
         name: Heinzel Notifier is built always, except on a pull request that leaves its sources alone
         env:
           EVENT: ${{ github.event_name }}
-          FULL_RELEASE: ${{ steps.full.outputs.selected }}
+          FULL_RELEASE: ${{ steps.release.outputs.full_release }}
           BASE: ${{ needs.admission.outputs.base || github.event.pull_request.base.sha || github.event.before }}
           BATCH_BASE: ${{ needs.admission.outputs.base }}
           RELEASE_FULL: ${{ steps.release.outputs.full_release }}
@@ -205,8 +205,7 @@ jobs:
           # Level L0 of the test selection (contexts.toml): a pull request that changes only the Apple apps and prose
           # skips the Python jobs. The release run, a batch, a push to main and the nightly stay complete.
           surface_only=false
-          # RELEASE_FULL is the real release-candidate flag (FULL_RELEASE above is always true until this selector is the
-          # rule). Fail closed: a release branch, a candidate, a batch, a push, a refactor-sized change, a path no context
+          # RELEASE_FULL is the real release-candidate flag, the same as FULL_RELEASE above. Fail closed: a release branch, a candidate, a batch, a push, a refactor-sized change, a path no context
           # owns or a selector that does not answer keep the complete run.
           if [ "$EVENT" = pull_request ] && [ "${RELEASE_FULL:-false}" != true ] && [ -z "${BATCH_BASE:-}" ] \
             && [[ "${HEAD_REF:-}" != release/* ]] && [ -n "$changed" ] && [ "$(printf '%s\n' "$changed" | wc -l)" -lt 200 ] \
@@ -432,7 +431,7 @@ jobs:
         # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
         # under that same cap. PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.
         include:
-          ${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
+          ${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.full_release != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
     env:
       HZ_TEST_TIMEOUT_SCALE: "${{ contains(matrix.os, 'macos') && '3' || '1' }}" # hosted macOS runners are slower; Linux stays at 1
       # Unit-bearing cells need locked Node; integration-only dependency groups stay unchanged.
@@ -609,7 +608,7 @@ jobs:
       contents: read
     name: Plugin template
     needs: changes # starts with the Linux jobs; lint gates the merge through CI OK
-    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.lane != 'macos'
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.site_only != 'true' && needs.changes.outputs.lane != 'macos'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -652,7 +651,7 @@ jobs:
       contents: read
     name: macOS-specific tests
     needs: changes
-    if: needs.changes.outputs.full_ci == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_ci == 'true') && (needs.changes.outputs.core == 'true' || needs.changes.outputs.surface_only == 'true') && needs.changes.outputs.site_only != 'true') && needs.changes.outputs.lane != 'linux' # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true' || needs.changes.outputs.macos_full == 'true' || needs.changes.outputs.surface_only == 'true') && (needs.changes.outputs.core == 'true' || needs.changes.outputs.surface_only == 'true') && needs.changes.outputs.site_only != 'true') && needs.changes.outputs.lane != 'linux' # Core candidate-only
     runs-on: macos-latest
     timeout-minutes: 10
     env:
@@ -1310,6 +1309,14 @@ jobs:
           EVENT: ${{ github.event_name }}
           SURFACE_ONLY: ${{ needs.changes.outputs.surface_only }}
           PLUGINS: ${{ needs.local-plugin-plan.outputs.selected }}
+          FULL_RELEASE: ${{ needs.changes.outputs.full_release }}
+          SITE_ONLY: ${{ needs.changes.outputs.site_only }}
+          CORE: ${{ needs.changes.outputs.core }}
+          NOTIFIER: ${{ needs.changes.outputs.notifier }}
+          ELECTRON: ${{ needs.changes.outputs.electron }}
+          MACOS_FULL: ${{ needs.changes.outputs.macos_full }}
+          CONTRACTS: ${{ needs.changes.outputs.contracts }}
+          PLUGIN_PATHS: ${{ needs.changes.outputs.plugins }}
           LANE: ${{ needs.changes.outputs.lane }} # main lanes
         run: |
           required=(admission changes lint secrets setup audit test coverage perf e2e template notifier macos-specific electron build core-wheel local-plugin-plan consumer-plan consumer-check quarantine-registry)
@@ -1320,6 +1327,21 @@ jobs:
           if [ "$EVENT" = pull_request ]; then required+=(commits dependency-review); fi
           if [ "${PLUGINS:-False}" = True ]; then required+=(local-plugin-check); fi
           # An Apple-only or prose-only pull request (contexts.toml, level L0) skips the Python jobs.
+          # An ordinary pull request (not a release candidate) requires what its changed paths select, no more: the jobs
+          # the selector skipped are not required. Main, the nightly, a release and a missing selector stay complete.
+          if [ "$EVENT" = pull_request ] && [ "${FULL_RELEASE:-true}" != true ] && [ "${LANE:-all}" = all ]; then
+            drop() { local keep=() job x; for job in "${required[@]}"; do for x in "$@"; do [ "$job" = "$x" ] && continue 2; done; keep+=("$job"); done; required=("${keep[@]}"); }
+            if [ "${SITE_ONLY:-false}" = true ]; then drop test coverage perf e2e template; required+=(site-tests); fi
+            [ "${NOTIFIER:-true}" = true ] || drop notifier
+            [ "${ELECTRON:-true}" = true ] || drop electron
+            [ "${MACOS_FULL:-true}" = true ] || drop macos-specific
+            [ "${CONTRACTS:-true}" = true ] || drop consumer-plan consumer-check
+            [ "${PLUGIN_PATHS:-true}" = true ] || [ "${CONTRACTS:-true}" = true ] || drop local-plugin-plan
+            if [ "${CORE:-true}" != true ]; then
+              required=(admission changes secrets quarantine-registry commits dependency-review)
+              [ "${PLUGIN_PATHS:-false}" != true ] || required+=(local-plugin-plan)
+            fi
+          fi
           if [ "${SURFACE_ONLY:-false}" = true ]; then required=(admission changes lint secrets commits dependency-review quarantine-registry macos-specific); fi
           for job in "${required[@]}"; do
             jq -e --arg job "$job" '.[$job].result == "success"' <<< "$RESULTS" >/dev/null \
