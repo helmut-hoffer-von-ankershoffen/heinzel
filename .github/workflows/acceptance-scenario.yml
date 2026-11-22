@@ -1,0 +1,114 @@
+name: Acceptance scenario
+run-name: Acceptance scenario ${{ inputs.expected_version || 'published' }} ${{ inputs.release_attempt }}
+
+# Slice 1 of the end-to-end acceptance scenario (scripts/acceptance/scenario.py), ADVISORY: no release, merge or
+# promotion waits for it, and no required check or sm step reads it yet. On each hosted OS it installs the previous
+# published release with user state, lets the real automatic updater move two `hz ui serve` on one state folder to
+# release N, checks N everywhere and sends one web chat message answered by the local test model. It installs only
+# public bytes in a private home, with no credentials, and publishes nothing. Its job names never start with
+# "Acceptance (", so the release driver never mistakes it for the release acceptance.
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_version:
+        description: "Release N (X.Y.Z) PyPI latest must be; empty takes PyPI latest"
+        required: false
+        default: ""
+        type: string
+      from_version:
+        description: "Starting release (X.Y.Z); empty takes the one before N"
+        required: false
+        default: ""
+        type: string
+      expected_wheel_sha256:
+        description: "Optional: the exact Core wheel digest of N"
+        required: false
+        default: ""
+        type: string
+      release_attempt:
+        description: "Optional opaque coordinator marker, used only to identify this run"
+        required: false
+        default: ""
+        type: string
+  schedule:
+    - cron: "41 5 * * *" # once a day against what is published: the advisory record between releases
+  pull_request:
+    paths:
+      - ".github/workflows/acceptance-scenario.yml"
+      - "scripts/acceptance/scenario.py"
+      - "scripts/acceptance/run_acceptance.py"
+      - "scripts/acceptance/vendor/**"
+      - "tests/unit/acceptance_scenario_test.py"
+
+permissions: {}
+
+concurrency:
+  group: acceptance-scenario-${{ github.event_name }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  scenario:
+    name: Scenario slice 1 (${{ matrix.os }}, plugin gate ${{ matrix.plugin_age_hours }} h)
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/'))
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+        # 0: core and plugins update together; 24 (a user's default): core only. Two passes tell the two apart.
+        plugin_age_hours: [0, 24]
+    env:
+      EXPECTED_VERSION: ${{ inputs.expected_version || 'published' }}
+      FROM_VERSION: ${{ inputs.from_version || '' }}
+      EXPECTED_WHEEL_SHA256: ${{ inputs.expected_wheel_sha256 || '' }}
+      PLUGIN_AGE_HOURS: ${{ matrix.plugin_age_hours }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - run: uv python install 3.15
+      # Advisory: a failing scenario is reported (the summary, a warning and the receipt), never a red check, until
+      # the scenario gates a release. Its jobs are in no required set (CI OK lives in ci.yml).
+      - name: Run the scenario
+        id: scenario
+        continue-on-error: true
+        timeout-minutes: 25
+        env:
+          TMPDIR: /tmp
+        run: >-
+          "$(uv python find 3.15)" -I scripts/acceptance/scenario.py
+          --expect-version "$EXPECTED_VERSION"
+          --from-version "$FROM_VERSION"
+          --expect-wheel-sha256 "$EXPECTED_WHEEL_SHA256"
+          --plugin-age-hours "$PLUGIN_AGE_HOURS"
+          --diagnostics reports/acceptance/scenario-diagnostics
+      - name: Report an advisory failure
+        if: steps.scenario.outcome != 'success'
+        run: echo "::warning title=Advisory scenario failed::See the job summary and the uploaded receipt and diagnostics."
+      - name: Summarize the scenario
+        if: always()
+        run: >-
+          "$(uv python find 3.15)" -I scripts/acceptance/scenario.py --summary reports/acceptance/scenario.json
+          >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the scenario receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: acceptance-scenario-${{ runner.os }}-plugins-${{ matrix.plugin_age_hours }}h
+          path: reports/acceptance/scenario.json
+          if-no-files-found: error
+      - name: Upload the logs, the updater plan and the receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: acceptance-scenario-diagnostics-${{ runner.os }}-plugins-${{ matrix.plugin_age_hours }}h
+          path: reports/acceptance/scenario-diagnostics/
+          if-no-files-found: warn
+          retention-days: 7
