@@ -6,7 +6,7 @@ separate check to wait for. The verdict names the measured and the required perc
 files. A judge that broke says TOOL ERROR, so nobody hunts for a coverage gap that isn't there.
 
 Environment (set by the workflow): COVERAGE_RESULT (the Coverage job's result), COVERAGE_TOTAL (the downloaded
-coverage-total.txt; absent when the job measured nothing), UNCOVERED (the Coverage job's least covered files),
+coverage-total.txt; absent or empty when the job measured nothing), UNCOVERED (the Coverage job's least covered files),
 FOCUSED_MODE (empty: this workflow runs full CI), GITHUB_SHA, GITHUB_OUTPUT and GITHUB_STEP_SUMMARY.
 Standard library only.
 """
@@ -103,7 +103,8 @@ def judge(env: Mapping[str, str], workflow: str, notes: list[str]) -> str:
     threshold = fail_under(workflow)
     required = f"{floor:g}% floor" + (f" and {threshold:g}% report threshold (--fail-under)" if threshold else "")
     total_path = env.get("COVERAGE_TOTAL", "")
-    if not total_path or not Path(total_path).is_file():
+    # An empty file is a report that printed nothing: no data was combined because the tests failed.
+    if not total_path or not Path(total_path).is_file() or not Path(total_path).stat().st_size:
         if result == "success":
             message = "the Coverage job passed but left no coverage-total artifact"
             raise ToolError(message)

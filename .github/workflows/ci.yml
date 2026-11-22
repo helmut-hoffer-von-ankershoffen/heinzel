@@ -498,6 +498,7 @@ jobs:
         run: uv run --frozen --no-sync --no-build python scripts/ci_node.py
       - run: make test
       - name: Enforce coverage and record the measured total
+        if: ${{ !cancelled() }} # after make test's own threshold failed too, so the floor names the measured total
         env:
           MINIMUM_ORANGE: 80
         run: uv run --no-build coverage report --format=total --precision=2 --fail-under=90 > coverage-total.txt

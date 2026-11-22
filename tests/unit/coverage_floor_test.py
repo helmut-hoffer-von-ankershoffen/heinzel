@@ -67,6 +67,7 @@ def test_a_total_above_both_thresholds_passes_and_names_measured_required_and_sc
         ("95", "failure", "the Coverage job ended with failure after measuring 95%"),
         (None, "failure", "the Coverage job ended with failure before it measured a total"),
         (None, "cancelled", "the Coverage job ended with cancelled before it measured a total"),
+        ("", "failure", "the Coverage job ended with failure before it measured a total"),
     ],
 )
 def test_a_shortfall_fails_as_not_met_with_its_reason(floor, tmp_path, capsys, case):
@@ -83,6 +84,7 @@ def test_a_shortfall_fails_as_not_met_with_its_reason(floor, tmp_path, capsys, c
     "case",
     [
         (None, "success", {}, "the Coverage job passed but left no coverage-total artifact"),
+        ("", "success", {}, "the Coverage job passed but left no coverage-total artifact"),
         ("ninety", "success", {}, "not a percentage"),
         ("101", "success", {}, "not a percentage"),
         ("9" * 80, "success", {}, "not a percentage"),
