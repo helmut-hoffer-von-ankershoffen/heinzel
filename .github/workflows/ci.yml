@@ -163,7 +163,7 @@ jobs:
         name: Heinzel Notifier is built always, except on a pull request that leaves its sources alone
         env:
           EVENT: ${{ github.event_name }}
-          FULL_RELEASE: ${{ steps.full.outputs.selected }}
+          FULL_RELEASE: ${{ steps.release.outputs.full_release }}
           BASE: ${{ needs.admission.outputs.base || github.event.pull_request.base.sha || github.event.before }}
           BATCH_BASE: ${{ needs.admission.outputs.base }}
           RELEASE_FULL: ${{ steps.release.outputs.full_release }}
@@ -171,6 +171,8 @@ jobs:
         run: |
           changed="$(git diff --name-only "$BASE...HEAD")" || changed=""
           full_release="${FULL_RELEASE:-false}"
+          # Any release/* branch gets the complete run, the canonical candidate or not.
+          [[ "${HEAD_REF:-}" != release/* ]] || full_release=true
           # A push to main of prose alone: the pull request already ran everything on the same content. docs/ also
           # holds the install scripts, and release commits change CHANGELOG.md, so neither counts.
           prose_push=false
@@ -205,8 +207,7 @@ jobs:
           # Level L0 of the test selection (contexts.toml): a pull request that changes only the Apple apps and prose
           # skips the Python jobs. The release run, a batch, a push to main and the nightly stay complete.
           surface_only=false
-          # RELEASE_FULL is the real release-candidate flag (FULL_RELEASE above is always true until this selector is the
-          # rule). Fail closed: a release branch, a candidate, a batch, a push, a refactor-sized change, a path no context
+          # RELEASE_FULL is the real release-candidate flag, the same as FULL_RELEASE above. Fail closed: a release branch, a candidate, a batch, a push, a refactor-sized change, a path no context
           # owns or a selector that does not answer keep the complete run.
           if [ "$EVENT" = pull_request ] && [ "${RELEASE_FULL:-false}" != true ] && [ -z "${BATCH_BASE:-}" ] \
             && [[ "${HEAD_REF:-}" != release/* ]] && [ -n "$changed" ] && [ "$(printf '%s\n' "$changed" | wc -l)" -lt 200 ] \
@@ -230,14 +231,18 @@ jobs:
           else
             echo "plugins=false" >> "$GITHUB_OUTPUT"
           fi
-          if [ "$core_work" = true ] && { [ "$full_release" = true ] || [ "$EVENT" != pull_request ] \
+          if [ "$core_work" = true ] && { [ "$full_release" = true ] || [ "$EVENT" != pull_request ] || [ -z "$changed" ] \
             || grep -qE '^(src/heinzel/modules/system/notify/macos/|scripts/notifier\.py$|scripts/tools\.toml$|Makefile$|pyproject\.toml$|\.github/workflows/ci\.yml$)' <<< "$changed"; }; then
             echo "notifier=true" >> "$GITHUB_OUTPUT"
           else
             echo "notifier=false" >> "$GITHUB_OUTPUT"
           fi
-          if [ "$core_work" = true ] && { [ "$full_release" = true ] || [ "$EVENT" != pull_request ] \
-            || grep -qE '^(src/heinzel/kernel/|src/heinzel/__init__\.py$|src/heinzel/heads/|src/heinzel/modules/system/ui/|web/src/plugins/)' <<< "$changed"; }; then
+          # Contract consumers fail closed: only a change whose every path is in the known-safe list (prose, the web UI
+          # outside web/src/plugins/, desktop, the Apple apps, tests) leaves them off. An empty or failed diff, an unknown
+          # path, src/heinzel/ code, pyproject.toml and uv.lock keep them on.
+          if [ "$core_work" = true ] && { [ "$full_release" = true ] || [ "$EVENT" != pull_request ] || [ -z "$changed" ] \
+            || grep -qE '^web/src/plugins/' <<< "$changed" \
+            || grep -qvE '^(docs/.*|[^/]*\.md|mkdocs\.yml|web/(src|e2e)/.*|desktop/.*|apple/.*|tests/.*)$' <<< "$changed"; }; then
             echo "contracts=true" >> "$GITHUB_OUTPUT"
           else
             echo "contracts=false" >> "$GITHUB_OUTPUT"
@@ -619,7 +624,7 @@ jobs:
       contents: read
     name: Plugin template
     needs: changes # starts with the Linux jobs; lint gates the merge through CI OK
-    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.lane != 'macos'
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.site_only != 'true' && needs.changes.outputs.lane != 'macos'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -662,7 +667,7 @@ jobs:
       contents: read
     name: macOS-specific tests
     needs: changes
-    if: needs.changes.outputs.full_ci == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_ci == 'true') && (needs.changes.outputs.core == 'true' || needs.changes.outputs.surface_only == 'true') && needs.changes.outputs.site_only != 'true') && needs.changes.outputs.lane != 'linux' # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && ((github.event_name != 'pull_request' || needs.changes.outputs.full_release == 'true' || needs.changes.outputs.macos_full == 'true' || needs.changes.outputs.surface_only == 'true') && (needs.changes.outputs.core == 'true' || needs.changes.outputs.surface_only == 'true') && needs.changes.outputs.site_only != 'true') && needs.changes.outputs.lane != 'linux' # Core candidate-only
     runs-on: macos-latest
     timeout-minutes: 10
     env:
@@ -1377,6 +1382,15 @@ jobs:
           EVENT: ${{ github.event_name }}
           SURFACE_ONLY: ${{ needs.changes.outputs.surface_only }}
           PLUGINS: ${{ needs.local-plugin-plan.outputs.selected }}
+          FULL_RELEASE: ${{ needs.changes.outputs.full_release }}
+          HEAD_REF: ${{ github.head_ref }}
+          SITE_ONLY: ${{ needs.changes.outputs.site_only }}
+          CORE: ${{ needs.changes.outputs.core }}
+          NOTIFIER: ${{ needs.changes.outputs.notifier }}
+          ELECTRON: ${{ needs.changes.outputs.electron }}
+          MACOS_FULL: ${{ needs.changes.outputs.macos_full }}
+          CONTRACTS: ${{ needs.changes.outputs.contracts }}
+          PLUGIN_PATHS: ${{ needs.changes.outputs.plugins }}
           LANE: ${{ needs.changes.outputs.lane }} # main lanes
         run: |
           required=(admission changes lint secrets setup audit test coverage perf e2e template notifier macos-specific electron build core-wheel local-plugin-plan consumer-plan consumer-check quarantine-registry)
@@ -1387,6 +1401,23 @@ jobs:
           if [ "$EVENT" = pull_request ]; then required+=(commits dependency-review); fi
           if [ "${PLUGINS:-False}" = True ]; then required+=(local-plugin-check); fi
           # An Apple-only or prose-only pull request (contexts.toml, level L0) skips the Python jobs.
+          # An ordinary pull request (not a release candidate) requires what its changed paths select, no more: the jobs
+          # the selector skipped are not required. Main, the nightly, a release and a missing selector stay complete.
+          if [ "$EVENT" = pull_request ] && [ "${FULL_RELEASE:-true}" != true ] \
+            && [[ "${HEAD_REF:-}" != release/* ]] && [ "${LANE:-all}" = all ]; then
+            drop() { local keep=() job x; for job in "${required[@]}"; do for x in "$@"; do [ "$job" = "$x" ] && continue 2; done; keep+=("$job"); done; required=("${keep[@]}"); }
+            if [ "${SITE_ONLY:-false}" = true ]; then drop test coverage perf e2e template; required+=(site-tests); fi
+            [ "${NOTIFIER:-true}" = true ] || drop notifier
+            [ "${ELECTRON:-true}" = true ] || drop electron
+            [ "${MACOS_FULL:-true}" = true ] || drop macos-specific
+            [ "${CONTRACTS:-true}" = true ] || drop consumer-plan consumer-check
+            [ "${PLUGIN_PATHS:-true}" = true ] || [ "${CONTRACTS:-true}" = true ] || drop local-plugin-plan
+            if [ "${CORE:-true}" != true ]; then
+              required=(admission changes secrets quarantine-registry commits dependency-review)
+              [ "${PLUGIN_PATHS:-false}" != true ] || required+=(local-plugin-plan)
+              [ "${PLUGINS:-False}" != True ] || required+=(local-plugin-check)
+            fi
+          fi
           if [ "${SURFACE_ONLY:-false}" = true ]; then required=(admission changes lint secrets commits dependency-review quarantine-registry macos-specific); fi
           # The coverage floor: on every pull request, and on a dispatched run outside the macOS main lane.
           if [ "$EVENT" = pull_request ] || { [ "$EVENT" = workflow_dispatch ] && [ "${LANE:-all}" != macos ]; }; then required+=(coverage-floor); fi # Core coverage floor
