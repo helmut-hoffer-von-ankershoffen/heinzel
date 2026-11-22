@@ -2,6 +2,7 @@
 
 import importlib.util
 import re
+import subprocess
 import sys
 from pathlib import Path, PurePosixPath
 
@@ -134,12 +135,34 @@ def test_update_lifecycle_and_kernel_changes_select_the_upgrade_lane_and_macos()
     assert _upgrade("src/heinzel/modules/system/lifecycle/_handover.py")
     assert _upgrade("src/heinzel/_lifecycle_control.py")
     assert _upgrade("src/heinzel/kernel/_kernel.py")
+    for path in (
+        "src/heinzel/modules/system/daemon/_package_handover_recovery.py",
+        "src/heinzel/modules/system/daemon/_handover_files.py",
+        "src/heinzel/modules/system/daemon/_handover_request.py",
+        "src/heinzel/modules/system/daemon/_legacy_retirement.py",
+        "src/heinzel/heads/cli/_update.py",
+        "src/heinzel/heads/web/_auto_update.py",
+        "src/heinzel/heads/web/_lifecycle.py",
+        "src/heinzel/heads/web/_supervision.py",
+        "src/heinzel/heads/daemon_recovery.py",
+        "src/heinzel/kernel/_daemon_recovery.py",
+    ):
+        assert _upgrade(path), path
     assert _upgrade("src/heinzel/ports.py"), "the spec context owns the public heinzel names"
     assert _upgrade("tests/unit/runtime/updater/plan_test.py"), "a test of an upgrade context"
     assert _upgrade("tests/unit/kernel/lets_test.py")
     for path in ("uv.lock", "pyproject.toml", ".github/workflows/ci.yml", "scripts/acceptance/scenario.py"):
         assert _upgrade("docs/guide/start.md", path), path
     assert _upgrade(), "an empty change fails closed"
+
+
+def test_no_update_lifecycle_handover_or_daemon_source_is_left_out_of_the_upgrade_lane():
+    sources = subprocess.run(
+        ["git", "ls-files", "src"], cwd=ROOT, capture_output=True, text=True, check=True, timeout=30
+    ).stdout.split()
+    named = [p for p in sources if re.search(r"update|lifecycle|handover|daemon", p) and p.endswith(".py")]
+    assert named
+    assert [p for p in named if not _upgrade(p)] == []
 
 
 def test_other_contexts_skip_the_upgrade_lane_and_macos_on_a_pull_request():

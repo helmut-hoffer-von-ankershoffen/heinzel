@@ -1335,7 +1335,7 @@ def test_a_pull_request_gets_the_macos_cells_only_when_it_touches_update_lifecyc
     cells = [{"os": "macos-latest", "python": "3.15", "levels": level} for level in ("unit", "integration")]
     assert _macos_include(matrix, "pull_request", full=True, release=True, upgrade=True) == cells
     assert _macos_include(matrix, "pull_request", full=True, release=True, upgrade=False) == []
-    assert _macos_include(matrix, "pull_request", full=True, release=True, upgrade=False) == []  # changes sets it
+    assert _macos_include(matrix, "schedule", full=False, upgrade=False) == cells  # a non-PR run keeps both cells
 
 
 def test_electron_ci_runs_when_its_trigger_or_make_target_changes():
