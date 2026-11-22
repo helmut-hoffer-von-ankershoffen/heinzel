@@ -27,6 +27,16 @@ final class WorkspaceNotifications: NSObject, UNUserNotificationCenterDelegate {
         NotificationCenter.default.post(name: Self.changed, object: nil)
     }
 
+    /// Said once, the first time this Mac publishes its sign-in through iCloud Keychain.
+    func announceCloudPublish() async {
+        let settings = await center.notificationSettings()
+        guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Sign-in shared through iCloud"
+        content.body = "This Mac’s sign-in is now available to your devices through iCloud Keychain. Turn it off in Workspace."
+        try? await center.add(UNNotificationRequest(identifier: "cloud-publish", content: content, trigger: nil))
+    }
+
     private func scope(for endpoint: Endpoint) -> String {
         // The locally owned Mac service binds a fresh loopback port at each launch.
         endpoint.origin.scheme == "http" ? "local" : endpoint.origin.absoluteString
