@@ -18,8 +18,8 @@ from pydantic_ai.providers import openai_chatgpt
 from heinzel import CredentialLet, Credentials
 from heinzel.heads import web
 from heinzel.heads.web import _chatgpt_signin
-from heinzel.heads.web._devices import Devices
 from heinzel.kernel import EnvironmentBackend
+from heinzel.modules.system.client._devices import Devices
 from heinzel.testing import MemoryBackend
 
 pytestmark = pytest.mark.integration

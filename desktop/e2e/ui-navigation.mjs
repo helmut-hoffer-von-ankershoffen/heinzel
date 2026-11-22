@@ -27,14 +27,20 @@ let initialRedirectHits = 0;
 let initialRedirectLifecycleHits = 0;
 let subsequentRedirectHits = 0;
 let lifecycleHits = 0;
+// Per launch: lifecycle hits at its start, and the hits it made before its first page request. The attached service's
+// periodic lifecycle probe (every 5 s) adds hits to a long launch, so only the per-launch order is exact.
+let launchLifecycleStart = 0;
+let firstPageLifecycleHits = null;
+const launches = [];
 const target = createServer((_request, response) => { targetRequests++; response.writeHead(200); response.end("unexpected"); });
 const source = createServer((request, response) => {
+  if (request.url === "/" && firstPageLifecycleHits === null) firstPageLifecycleHits = lifecycleHits - launchLifecycleStart;
   if (request.url === "/api/lifecycle") {
     lifecycleHits++;
     response.writeHead(request.headers.authorization === `Bearer ${token}` ? 200 : 403, { "content-type": "application/json" });
     response.end(JSON.stringify({ instance: "isolated", version: "0.0.0" }));
   } else if ((request.url === "/" && initialRedirect) || request.url === "/redirect") {
-    if (initialRedirect && request.url === "/") { initialRedirectHits++; initialRedirectLifecycleHits = lifecycleHits; }
+    if (initialRedirect && request.url === "/") { initialRedirectHits++; initialRedirectLifecycleHits = lifecycleHits - launchLifecycleStart; }
     if (request.url === "/redirect") subsequentRedirectHits++;
     response.writeHead(302, { location: `http://127.0.0.1:${target.address().port}/target` });
     response.end();
@@ -57,11 +63,15 @@ await Promise.all([listen(target), listen(source)]);
 try {
   await run(false);
   await run(true);
+  const [navigation, redirect] = launches;
   assert.equal(targetRequests, 0, "Cross-origin target received a request.");
   assert.equal(initialRedirectHits, 1, "The initial redirect was not exercised.");
-  assert.equal(initialRedirectLifecycleHits, 2, "The initial redirect must follow authenticated lifecycle verification.");
+  assert.equal(navigation.beforePage, 1, "The first page must follow exactly one authenticated lifecycle verification.");
+  assert.ok(navigation.total >= 2, "The attached service's periodic lifecycle probe did not run during the long launch.");
+  assert.equal(redirect.beforePage, 1, "The initial redirect must follow authenticated lifecycle verification.");
+  assert.equal(initialRedirectLifecycleHits, 1, "The initial redirect must follow authenticated lifecycle verification.");
   assert.equal(subsequentRedirectHits, 1, "The page redirect was not exercised.");
-  assert.equal(lifecycleHits, 3, "Both launches and the recovery picker must verify lifecycle.");
+  assert.ok(redirect.total >= 2, "The recovery picker must verify lifecycle after the rejected redirect.");
   console.log("Electron handed off trusted public media, refused scripted/unsafe opening, and blocked page navigation, redirects and popups before the target request.");
 } finally {
   await Promise.all([close(source), close(target)]);
@@ -69,6 +79,16 @@ try {
 
 async function run(redirectOnStart) {
   initialRedirect = redirectOnStart;
+  launchLifecycleStart = lifecycleHits;
+  firstPageLifecycleHits = null;
+  try {
+    await launch(redirectOnStart);
+  } finally {
+    launches.push({ beforePage: firstPageLifecycleHits, total: lifecycleHits - launchLifecycleStart });
+  }
+}
+
+async function launch(redirectOnStart) {
   const root = await mkdtemp(join(tmpdir(), "hz-navigation-isolated-"));
   let app, processHandle, stopped = false, launchAttempted = false, primary;
   try {
@@ -119,6 +139,13 @@ async function run(redirectOnStart) {
     } else {
       const page = await app.firstWindow({ timeout: 30_000 });
       await page.locator("p").waitFor();
+      // Hold this launch past one probe interval on every runner, so the periodic lifecycle probe is always part of
+      // the proof and never only on a slow runner (a fast runner hid that it adds to the lifecycle count).
+      let probeDeadline = false;
+      await withTimeout((async () => {
+        while (!probeDeadline && lifecycleHits - launchLifecycleStart < 2) await new Promise((done) => setTimeout(done, 50));
+      })(), 15_000, "The attached service's periodic lifecycle probe did not reach the isolated service.")
+        .finally(() => { probeDeadline = true; });
       assert.deepEqual(await page.evaluate(() => Object.keys(window.heinzelDesktop)), [
         "workspaceAudio", "titlebar", "browser", "player", "linkMode", "lifecycle", "about", "systemAudio", "audioSource",
         "onFullscreen",
@@ -173,7 +200,7 @@ async function run(redirectOnStart) {
     });
   } catch (error) {
     primary = error;
-    console.error(`Electron navigation requests: ${JSON.stringify({ initialRedirectHits, subsequentRedirectHits, lifecycleHits, targetRequests })}`);
+    console.error(`Electron navigation requests: ${JSON.stringify({ initialRedirectHits, subsequentRedirectHits, lifecycleHits, firstPageLifecycleHits, targetRequests })}`);
     console.error(`Electron phases:\n${await readFile(join(root, "phases"), "utf8").catch(() => "none")}`);
     throw error;
   } finally {

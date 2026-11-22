@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/app/providers";
 import { OperationDialog } from "@/components/OperationDialog";
+import { NeedsAttention } from "@/features/runtime/lifecycle/applySteps";
 import { DAEMON_INSTALL, DAEMON_RESTART } from "@/lib/operationCalls";
 import {
   getRun,
@@ -14,7 +15,6 @@ import {
   startOperation,
   trackOperation,
 } from "@/lib/operationRun";
-import { NeedsAttention } from "@/lifecycle/applySteps";
 import { expectAccessible } from "@/test/render";
 import {
   CandidateDetails,

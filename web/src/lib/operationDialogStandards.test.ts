@@ -1,12 +1,18 @@
 // One surface per write (owner 2026-11-08): a plugin change asks once, in the operation dialog, and shows its whole
 // progress there. No inline confirm card, no second question about the restart the person already agreed to.
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 
 const read = (path: string) => readFileSync(join(__dirname, "..", path), "utf8");
+/** The catalogue's source: the index and every messages/ file. */
+const catalogue = (src: string) =>
+  [join(src, "i18n.ts"), ...readdirSync(join(src, "messages")).map((f) => join(src, "messages", f))]
+    .map((f) => readFileSync(f, "utf8"))
+    .join("\n");
+
 /** Every English message as [key, text], read from the catalogue's source. */
-const messages = [...read("i18n.ts").matchAll(/^\s+"([\w.]+)":\s*"((?:[^"\\]|\\.)*)"/gm)].map(
+const messages = [...catalogue(join(__dirname, "..")).matchAll(/^\s+"([\w.]+)":\s*"((?:[^"\\]|\\.)*)"/gm)].map(
   (match) => [match[1] ?? "", match[2] ?? ""] as const,
 );
 

@@ -8,7 +8,7 @@ from pydantic import JsonValue, TypeAdapter
 
 from heinzel.kernel import Config, HeinzelError, LocalObservation, Settings, WebOverview, private_read
 from heinzel.modules.system.daemon._overview import loaded
-from heinzel.modules.ui._service import LABEL, UNIT
+from heinzel.modules.system.lifecycle._service import LABEL, UNIT
 
 MAX_PORT = 65535
 

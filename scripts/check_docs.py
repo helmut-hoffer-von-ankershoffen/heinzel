@@ -38,10 +38,18 @@ GENERATED = (
     "docs/research/*",
 )
 I18N = "web/src/i18n.ts"
-CLAIM_SCOPE = ("docs/README*.md", "docs/guides/*", "docs/VISION.md", "docs/CATALOG.md", I18N, "src/heinzel/*")
+CLAIM_SCOPE = (
+    "docs/README*.md",
+    "docs/guides/*",
+    "docs/VISION.md",
+    "docs/CATALOG.md",
+    I18N,
+    "web/src/messages/*",
+    "src/heinzel/*",
+)
 VERSION_SCOPE = ("docs/guides/*", "docs/README.md", "README.md")
 TABLE_SCOPE = ("docs/guides/*", "README.md", "docs/README.md")
-COPY_SCOPE = (I18N, "src/heinzel/*")
+COPY_SCOPE = (I18N, "web/src/messages/*", "src/heinzel/*")
 SHELL = {"sh", "bash", "shell", "zsh", "console"}
 MAX_COLUMNS = 4
 WARN_SENTENCES = 3
@@ -348,10 +356,12 @@ def setting_descriptions(path: Path) -> list[tuple[int, str]]:
 def copy_findings(root: Path) -> list[Finding]:
     """Filler and claims in the web app's strings and the settings' help texts."""
     found: list[Finding] = []
-    sources: list[tuple[str, list[tuple[int, str]]]] = []
-    catalogue = root / I18N
-    if catalogue.is_file():
-        sources.append((I18N, i18n_strings(catalogue.read_text(encoding="utf-8"))))
+    catalogues = [root / I18N, *sorted((root / "web/src/messages").glob("*.ts"))]
+    sources: list[tuple[str, list[tuple[int, str]]]] = [
+        (path.relative_to(root).as_posix(), i18n_strings(path.read_text(encoding="utf-8")))
+        for path in catalogues
+        if path.is_file()
+    ]
     source = root / "src/heinzel"
     for path in sorted(source.rglob("*.py")) if source.is_dir() else []:
         text = path.read_text(encoding="utf-8")

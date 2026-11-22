@@ -58,7 +58,7 @@ own read-only operations, consumed by a new `system.ui` submodule**, because eve
 operation's result, gated, validated and limited to its heads like any other, and the app only ever renders typed
 data.
 
-- **Declaration** (`heinzel.kernel._contributions`, data only): `@module.status(source=..., order=, refresh=)` and
+- **Declaration** (`heinzel.kernel.look._contributions`, data only): `@module.status(source=..., order=, refresh=)` and
   `@module.widget(source=..., order=, refresh=)` decorate a view function `view(result) -> StatusItem | None` or
   `-> Widget | None`; `module.action(name, label=, icon=, effect=, order=, source=None, badge=None, refresh=)`
   declares a header action whose optional `badge(result) -> int | str | None` views `source`. `source` names an

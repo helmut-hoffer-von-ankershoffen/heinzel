@@ -39,7 +39,7 @@ from heinzel import (
 from heinzel.kernel import KERNEL_SECTION
 from heinzel.kernel._calendar_reminders import agenda_plan
 from heinzel.kernel._logging import get_logger, log_event
-from heinzel.kernel._self_chat import STATE, SelfChat
+from heinzel.kernel.session._self_chat import STATE, SelfChat
 from heinzel.modules.system.notify import _chat, _resolve
 from heinzel.modules.system.notify import _policy as policy
 from heinzel.modules.system.notify._channels import (

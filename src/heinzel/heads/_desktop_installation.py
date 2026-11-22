@@ -514,7 +514,10 @@ def _in_use(bundle: Path) -> bool:
 
 
 QUIT_SECONDS = 20.0
-"""How long `hz app install --restart` waits for an open app to quit (`heinzel.modules.system._update` mirrors it)."""
+"""How long `hz app install --restart` waits for an open app to quit.
+
+`heinzel.modules.system.updater._update_rules` mirrors it.
+"""
 _QUIT_POLL_SECONDS = 0.5
 _QUIT_SCRIPT = ("on run argv", "tell application (item 1 of argv) to quit", "end run")
 

@@ -15,8 +15,8 @@ from starlette.websockets import WebSocketDisconnect
 from heinzel import Config, HeinzelError
 from heinzel.heads import web
 from heinzel.heads.web import _browser_bridge
-from heinzel.heads.web._devices import Devices
 from heinzel.modules.heinzel._session_crud import SessionCrud
+from heinzel.modules.system.client._devices import Devices
 
 pytestmark = pytest.mark.integration
 TOKEN = "widget-test-session"
@@ -258,7 +258,7 @@ def test_two_devices_rotation_inactivity_and_cross_process_revocation(tmp_path):
     other, _, _ = devices.widget_issue(second.id, "owner")
     assert devices.widget_check(old, "owner", workspace) is None
     script = (
-        "import json,sys; from pathlib import Path; from heinzel.heads.web._devices import Devices; "
+        "import json,sys; from pathlib import Path; from heinzel.modules.system.client._devices import Devices; "
         "d=Devices(Path(sys.argv[1])); print(json.dumps(d.widget_issue(sys.argv[2], 'owner'), default=str))"
     )
     result = subprocess.run(
@@ -271,7 +271,7 @@ def test_two_devices_rotation_inactivity_and_cross_process_revocation(tmp_path):
     cross_process_token = json.loads(result.stdout)[0]
     assert devices.widget_check(cross_process_token, "owner", workspace) == first.id
     revoke_script = (
-        "import sys; from pathlib import Path; from heinzel.heads.web._devices import Devices; "
+        "import sys; from pathlib import Path; from heinzel.modules.system.client._devices import Devices; "
         "Devices(Path(sys.argv[1])).revoke(sys.argv[2])"
     )
     subprocess.run(
@@ -300,7 +300,7 @@ def test_two_devices_rotation_inactivity_and_cross_process_revocation(tmp_path):
 def _concurrent_widget_calls(devices, device_id, actions):
     """Start children together while the parent holds the store lock, then release all contenders."""
     script = (
-        "import json,sys; from pathlib import Path; from heinzel.heads.web._devices import Devices; "
+        "import json,sys; from pathlib import Path; from heinzel.modules.system.client._devices import Devices; "
         "d=Devices(Path(sys.argv[1])); print('ready',flush=True); input(); print('attempt',flush=True); "
         "r=d.widget_issue(sys.argv[2], 'owner') if sys.argv[3]=='issue' else d.revoke(sys.argv[2]); "
         "print(json.dumps(r,default=str),flush=True)"

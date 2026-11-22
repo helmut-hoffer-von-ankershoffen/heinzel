@@ -4,7 +4,9 @@ import { runInThisContext } from "node:vm";
 import { expect, it, vi } from "vitest";
 
 function versionRequest() {
-  const source = readFileSync(resolve(process.cwd(), "../apple/App/WorkspaceView.swift"), "utf8");
+  const source = ["WorkspaceView", "NativePrompt", "TitleBarDragLayout", "Navigation"]
+    .map((name) => readFileSync(resolve(process.cwd(), `../apple/App/${name}.swift`), "utf8"))
+    .join("\n");
   const section = source.split("private func resolveWorkspaceVersion(in view: WKWebView)")[1];
   const body = section?.split('body: """')[1]?.split('"""')[0];
   if (!body) throw new Error("missing native version request");

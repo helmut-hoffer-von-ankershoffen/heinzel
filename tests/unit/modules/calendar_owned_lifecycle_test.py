@@ -19,9 +19,9 @@ from heinzel.kernel import (
     host_maintenance_lock,
     private_write,
 )
-from heinzel.kernel._offline_uv import VerifiedUV
-from heinzel.kernel._tool_uninstall import owned_file
-from heinzel.kernel._uninstall_journal import RemovalCapture, RemovalJournal
+from heinzel.kernel.install._offline_uv import VerifiedUV
+from heinzel.kernel.install._tool_uninstall import owned_file
+from heinzel.kernel.install._uninstall_journal import RemovalCapture, RemovalJournal
 from heinzel.modules.org import _reminder_service as supervisor
 from heinzel.modules.org._reminder_maintenance import CalendarMaintenance
 from tests.unit.kernel.installation_continuity_test import tool
@@ -225,7 +225,7 @@ def _calendar_record(calendar, tmp_path, monkeypatch, *, compatibility=False, be
         state / "daemon/lifecycle.lock",
         state / "daemon/tick.lock",
     )
-    from heinzel.kernel import _uninstall_journal as journal_module
+    from heinzel.kernel.install import _uninstall_journal as journal_module
 
     monkeypatch.setattr(journal_module, "sys", SimpleNamespace(platform=owner.platform))
     with MaintenanceLocks(paths):
@@ -553,7 +553,7 @@ def test_changed_historical_fence_after_stopped_refuses_native_removal_and_clean
 def test_prepared_partial_fence_publication_revalidates_and_completes_only_its_exact_missing_gate(
     calendar, tmp_path, monkeypatch
 ):
-    from heinzel.kernel import _uninstall_journal as journals
+    from heinzel.kernel.install import _uninstall_journal as journals
 
     installation, _owner, descriptors, manager, _profiles = calendar
     record = _calendar_record(calendar, tmp_path, monkeypatch, compatibility=True, begin=False)

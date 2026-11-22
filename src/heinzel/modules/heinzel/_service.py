@@ -62,7 +62,7 @@ from heinzel.kernel import (
     record_usage,
     toml_value,
 )
-from heinzel.kernel._features import feature_enabled
+from heinzel.kernel.ai._features import feature_enabled
 from heinzel.modules.heinzel import _measure, _playbooks
 from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules, ScheduleBinding
 from heinzel.modules.heinzel._channel_delivery import ChannelDelivery

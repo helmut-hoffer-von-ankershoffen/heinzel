@@ -27,8 +27,8 @@ from heinzel.kernel import (
     private_socket_directory,
     private_write,
 )
+from heinzel.modules.system.lifecycle._service import LABEL, WebService
 from heinzel.modules.system.runner.chat._policy import refusal
-from heinzel.modules.ui._service import LABEL, WebService
 
 pytestmark = pytest.mark.integration
 TOKEN = "t" * 43
@@ -415,7 +415,7 @@ def test_dangling_integration_links_do_not_count_as_never_enabled(service, tmp_p
 
 def test_foreground_ui_with_no_owned_integration_does_not_require_uv(make_kernel, monkeypatch):
     from heinzel.heads import web
-    from heinzel.modules.ui import _service
+    from heinzel.modules.system.lifecycle import _service
 
     monkeypatch.setattr(_service.shutil, "which", lambda _, path=None: None)
     opened = []
@@ -494,7 +494,7 @@ def test_user_service_factory_captures_verified_uv_and_tool_prefix_without_loadi
     service, make_kernel, monkeypatch
 ):
     from heinzel.kernel import Installation
-    from heinzel.modules.ui import _service
+    from heinzel.modules.system.lifecycle import _service
 
     service, manager, _ = service
     expected = service.prefix / "bin/hz"
@@ -685,7 +685,7 @@ def test_linux_second_exec_vector_is_refused_even_when_first_vector_matches(serv
 
 
 def test_profile_binding_survives_minimal_and_conflicting_manager_environment(service, tmp_path):
-    from heinzel.modules.ui._profile import default_profile
+    from heinzel.modules.system.lifecycle._profile import default_profile
 
     selected, manager, port = service
     config = tmp_path / "selected-config/config.toml"
@@ -747,7 +747,7 @@ def test_profile_binding_survives_minimal_and_conflicting_manager_environment(se
 
 def test_process_only_behavior_is_refused_before_install_without_exposing_values(service, monkeypatch):
     from heinzel import Config
-    from heinzel.modules.ui._profile import installation_overrides
+    from heinzel.modules.system.lifecycle._profile import installation_overrides
 
     selected, manager, port = service
     monkeypatch.setenv("HZ_FEATURES", "fixture-secret-never-persist")
@@ -785,7 +785,7 @@ def test_real_user_factory_binds_profile_and_refuses_process_behavior_before_man
     service, make_kernel, monkeypatch, tmp_path
 ):
     from heinzel.kernel import Installation
-    from heinzel.modules.ui import _service
+    from heinzel.modules.system.lifecycle import _service
 
     selected, manager, port = service
     for name in list(os.environ):
@@ -1095,7 +1095,7 @@ def test_explicit_restart_migrates_before_requesting_any_old_runtime_restart(ser
 
 @pytest.mark.parametrize("boundary", ["stopped", "launcher-replaced", "loaded", "compatibility-cleared"])
 def test_interrupted_historical_migration_keeps_exact_fences_and_can_resume(service, monkeypatch, boundary):
-    from heinzel.modules.ui._launcher_transition import LauncherTransition
+    from heinzel.modules.system.lifecycle._launcher_transition import LauncherTransition
 
     selected, manager, port, _old = seed_released_service(service, "published015")
     original_phase, original_replace, original_unlink = LauncherTransition.phase, Path.replace, Path.unlink
@@ -1141,7 +1141,7 @@ def test_interrupted_historical_migration_keeps_exact_fences_and_can_resume(serv
 
 @pytest.mark.parametrize("change", ["foreign", "missing", "edited-launcher", "edited-journal"])
 def test_interrupted_historical_transition_refuses_changed_authority_before_new_effects(service, monkeypatch, change):
-    from heinzel.modules.ui._launcher_transition import LauncherTransition
+    from heinzel.modules.system.lifecycle._launcher_transition import LauncherTransition
 
     selected, manager, port, _old = seed_released_service(service, "main505-canonical")
     original = LauncherTransition.phase

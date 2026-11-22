@@ -9,7 +9,7 @@ from pydantic import Field
 
 from heinzel import Config, Module, ModuleSettings, Settings
 from heinzel.heads import web
-from heinzel.heads.web._devices import Devices
+from heinzel.modules.system.client._devices import Devices
 
 pytestmark = pytest.mark.integration
 TOKEN = "owning-session-for-origin-policy-proof"

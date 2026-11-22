@@ -18,8 +18,8 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 
 from heinzel import CurrentUser, HeinzelError, ModelOffer, ModelUnavailableError, UsageEntry
 from heinzel.kernel import AiModelsSource
-from heinzel.kernel._ai_models import PluginModelChoice
 from heinzel.kernel._bindings import CapabilitySettings
+from heinzel.kernel.ai._ai_models import PluginModelChoice
 from heinzel.modules.heinzel._autonomous_schedule import model_binding_fingerprint
 from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._user_chat import UserChatService

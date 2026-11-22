@@ -119,7 +119,7 @@ def test_concurrent_consumers_append_only_once(setup):
 
 
 def test_unknown_acknowledgement_after_durable_append_recovers_as_existing(setup, monkeypatch):
-    from heinzel.kernel._session_store import SessionWriter
+    from heinzel.kernel.session._session_store import SessionWriter
 
     current, repository, session, intent, _record = setup
     original = SessionWriter.append

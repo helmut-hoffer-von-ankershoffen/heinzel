@@ -165,9 +165,9 @@ _STARTUP_MODULES.update(
     {
         "heinzel/__init__.py",
         "heinzel/kernel/__init__.py",
-        "heinzel/kernel/_agents.py",
+        "heinzel/kernel/ai/_agents.py",
         "heinzel/kernel/_bindings.py",
-        "heinzel/kernel/_contributions.py",
+        "heinzel/kernel/look/_contributions.py",
         "heinzel/kernel/_lets.py",
         "heinzel/kernel/_module.py",
         "heinzel/kernel/_protocols.py",

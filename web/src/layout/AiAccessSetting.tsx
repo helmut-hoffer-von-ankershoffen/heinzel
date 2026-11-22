@@ -27,6 +27,8 @@ import { authorityEpoch, sessionToken, subscribeAuthority } from "@/api/token";
 import { CopyCommand } from "@/components/common";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
+import { ApplySteps, applyWithSteps } from "@/features/runtime/lifecycle/applySteps";
+import { RestartApplyError, type RestartObservation } from "@/features/runtime/lifecycle/controller";
 import { type MessageKey, t } from "@/i18n";
 import {
   acknowledgePluginRestart,
@@ -38,8 +40,6 @@ import {
 import { PLANS } from "@/lib/operationPlans";
 import { OperationRecoveryRequired, type Phase, requestDrivenOperation } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
-import { ApplySteps, applyWithSteps } from "@/lifecycle/applySteps";
-import { RestartApplyError, type RestartObservation } from "@/lifecycle/controller";
 
 type Tone = "ok" | "idle" | "warn" | "bad";
 const tone: Record<SchemaAccessOption["status"], Tone> = {

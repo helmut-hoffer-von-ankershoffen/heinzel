@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from heinzel import HeinzelError, NoticeHelper, NoticeKind, SelfMessage
-from heinzel.kernel._self_chat import SelfChat
+from heinzel.kernel.session._self_chat import SelfChat
 from heinzel.modules.system.notify import NotifyService, NotifySettings
 from heinzel.modules.system.notify._chat import WINDOW, chat_context, chat_text, forget_chats, notice_ledger
 from heinzel.modules.system.notify._native import Native
@@ -255,7 +255,7 @@ class Hung(Inbox):
 
 
 def test_a_hung_chat_never_holds_the_pop_ups_or_the_tick(make, monkeypatch):
-    from heinzel.kernel import _self_chat
+    from heinzel.kernel.session import _self_chat
 
     monkeypatch.setattr(_self_chat, "NOTIFY_WAIT", 0.2)
     hung = Hung()

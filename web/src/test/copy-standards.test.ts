@@ -3,7 +3,7 @@
 // - no internal state words reach the person (requested, applied, verified, owning, ...);
 // - a control has at most one status line.
 // ALLOW only shrinks: every entry needs a reason, and an entry whose string now passes must be deleted.
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -42,7 +42,9 @@ const ALLOW: Record<string, string> = {
 };
 
 function entries(): [string, string][] {
-  const text = readFileSync(join(SRC, "i18n.ts"), "utf8");
+  const text = [join(SRC, "i18n.ts"), ...readdirSync(join(SRC, "messages")).map((name) => join(SRC, "messages", name))]
+    .map((file) => readFileSync(file, "utf8"))
+    .join("\n");
   return [...text.matchAll(/^\s*"([^"]+)":\s*"((?:[^"\\]|\\.)*)",?\s*$/gm)].map((m) => [m[1] ?? "", m[2] ?? ""]);
 }
 

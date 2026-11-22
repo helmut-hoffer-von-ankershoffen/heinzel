@@ -24,7 +24,7 @@ def test_process_death_after_fsync_before_index_commit_does_not_duplicate_a_chec
 import os, signal, sys
 from pathlib import Path
 from heinzel import SessionStore
-from heinzel.kernel import _session_store
+from heinzel.kernel.session import _session_store
 store = SessionStore(Path(sys.argv[1]))
 def killed(*args):
     os.kill(os.getpid(), signal.SIGKILL)

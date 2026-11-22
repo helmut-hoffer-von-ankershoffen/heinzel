@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FULL_PLAN } from "@/lifecycle/applySteps";
+import { FULL_PLAN } from "@/features/runtime/lifecycle/applySteps";
 import { PLANS } from "./operationPlans";
 
 describe("The step plan of every restarting write", () => {

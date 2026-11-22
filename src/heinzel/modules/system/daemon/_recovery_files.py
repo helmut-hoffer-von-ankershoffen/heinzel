@@ -55,7 +55,7 @@ def recovery_file(path: Path, *, private: bool = True) -> RecoveryFile:
         OSError: If the file could not be opened or read.
     """
     # Reuse the daemon's physical-parent, no-follow file boundary, not Path.read_bytes().
-    from heinzel.modules.system.daemon._service import verified_handover_file  # noqa: PLC0415 - shared sibling boundary
+    from heinzel.modules.system.daemon._handover_files import verified_handover_file  # noqa: PLC0415 - shared sibling boundary
 
     with verified_handover_file(path) as handle:
         info = os.fstat(handle.fileno())

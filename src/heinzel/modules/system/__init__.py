@@ -21,8 +21,7 @@ from heinzel.kernel import (
     UninstallResult,
     WebHeadRefresh,
 )
-from heinzel.kernel._tool_python import PythonNeed
-from heinzel.modules.system._announced import Announcement, ToolSnapshot, trial_start
+from heinzel.kernel.install._tool_python import PythonNeed
 from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
 from heinzel.modules.system._models import (
     AnnouncedUpdate,
@@ -37,13 +36,15 @@ from heinzel.modules.system._models import (
     UpdatePlan,
     UpdateResult,
 )
-from heinzel.modules.system._plugin_releases import PyPIPluginReleases, plugin_releases
 from heinzel.modules.system._service import GitHubReleases, SystemService, github_releases
 from heinzel.modules.system._tools import render as render_tools_text
 from heinzel.modules.system._tools import tools as tool_list
 from heinzel.modules.system._uninstall import SystemOfflineUninstall
-from heinzel.modules.system._update import UpdateService
 from heinzel.modules.system.config._service import ConfigService
+from heinzel.modules.system.updater._adapter_state import FileInstallationState
+from heinzel.modules.system.updater._announced import Announcement, ToolSnapshot, trial_start
+from heinzel.modules.system.updater._plugin_releases import PyPIPluginReleases, plugin_releases
+from heinzel.modules.system.updater._update import UpdateService
 
 
 def render_channel(report: ChannelReport) -> RenderableType:
@@ -103,6 +104,7 @@ def _update_service(installation: Installation, releases: ReleaseSource, kernel:
         newer=plugins.newer if plugins is not None else None,
         need=PythonNeed(kernel.settings.cache_dir),
         daemon=daemon,
+        state=FileInstallationState(kernel.settings.state_dir),
     )
 
 
@@ -354,7 +356,7 @@ def render_plan(plan: UpdatePlan) -> RenderableType:
 
 
 AUTOMATIC_CHECK_MINUTES = 30
-"""How often the web server checks for updates (`heinzel.heads.web._auto_update.CHECK_EVERY`; a test checks)."""
+"""How often the web server checks for updates (`updater._schedule.CHECK_EVERY`; a test checks)."""
 
 
 @module.operation(read_only=False, heads={"cli"}, audience="everyday")

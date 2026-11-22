@@ -20,10 +20,10 @@ from heinzel.kernel import (
     PostedMessage,
     Window,
 )
-from heinzel.kernel import _self_chat as self_chat
-from heinzel.kernel._capabilities import Capability, declared_unsupported
 from heinzel.kernel._protocols import Chat
-from heinzel.kernel._self_chat import (
+from heinzel.kernel.ai._capabilities import Capability, declared_unsupported
+from heinzel.kernel.session import _self_chat as self_chat
+from heinzel.kernel.session._self_chat import (
     INERT_AT,
     MAX_ANSWER,
     MAX_SELF_TEXT,

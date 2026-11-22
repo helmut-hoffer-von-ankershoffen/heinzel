@@ -95,7 +95,7 @@ credential, each device can be revoked on its own, and nothing new crosses the m
 
 ### Confirmation
 
-- `tests/integration/web_devices_test.py`: pairing with the session token only; device tokens open the app and are
+- `tests/integration/runtime/client/web_devices_test.py`: pairing with the session token only; device tokens open the app and are
   stored as digests (0600/0700); unknown, malformed and revoked tokens are refused; the REST head's refusals apply to
   device tokens; `hz ui --devices` and `--revoke`; bounded, cleaned names; a damaged file accepts nothing.
 - `tests/integration/notify_stream_test.py`: the stream's refusals and what it sends with and without `popups`.

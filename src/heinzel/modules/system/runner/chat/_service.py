@@ -45,10 +45,10 @@ from heinzel.kernel import (
     record_usage,
     untrusted,
 )
-from heinzel.kernel._agent_writes import caller_or_none
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer, arguments_hash
 from heinzel.kernel._browser import BROWSER_MODULE, BrowserCaller, PageImage, browser_caller
 from heinzel.kernel._logging import log_event
+from heinzel.kernel.ai._agent_writes import caller_or_none
 from heinzel.modules.system.runner.chat._models import ChatAction, ChatContext, ChatMessage, ChatSession, ChatSettings
 from heinzel.modules.system.runner.chat._policy import guarded_settings, refusal
 from heinzel.modules.system.runner.chat._store import MAX_MESSAGES, ChatStore, dumps, now

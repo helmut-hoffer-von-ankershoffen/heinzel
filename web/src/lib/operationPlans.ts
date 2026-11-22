@@ -2,8 +2,8 @@
 // steps the operation dialog shows from the start, and `useOperation` to ask for it and run it there.
 import { useCallback } from "react";
 import type { SchemaOperationCall } from "@/api/client";
-import { type ApplyStepId, ApplySteps, applyWithSteps } from "@/lifecycle/applySteps";
-import type { ApplyOptions } from "@/lifecycle/controller";
+import { type ApplyStepId, ApplySteps, applyWithSteps } from "@/features/runtime/lifecycle/applySteps";
+import type { ApplyOptions } from "@/features/runtime/lifecycle/controller";
 import { type Phase, requestDrivenOperation } from "./operationRun";
 
 /** Every kind and its plan, in order. Each plan with `restart` has `wait` and `reload` after it and ends with `check`. */

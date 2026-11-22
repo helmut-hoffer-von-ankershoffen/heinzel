@@ -16,10 +16,10 @@ from typer.testing import CliRunner
 
 from heinzel import HeinzelError
 from heinzel.heads import mcp
-from heinzel.heads._mcp_tokens import McpTokens
 from heinzel.heads.cli import build
 from heinzel.heads.mcp._http_check import check_http
 from heinzel.kernel._logging import record_fields
+from heinzel.modules.system.client._mcp_tokens import McpTokens
 from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 
 pytestmark = pytest.mark.integration

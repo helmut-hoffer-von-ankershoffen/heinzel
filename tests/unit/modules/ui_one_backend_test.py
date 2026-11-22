@@ -11,9 +11,9 @@ from pathlib import Path
 import pytest
 
 from heinzel import HeinzelError, Status
-from heinzel.modules.ui._runtime import runtime_checks
-from heinzel.modules.ui._service import WebService, WebStatus
-from heinzel.modules.ui._strays import retire_strays, strays
+from heinzel.modules.system.lifecycle._runtime import runtime_checks
+from heinzel.modules.system.lifecycle._service import WebService, WebStatus
+from heinzel.modules.system.lifecycle._strays import retire_strays, strays
 
 pytestmark = [pytest.mark.unit, pytest.mark.timeout(10)]
 

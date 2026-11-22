@@ -4,7 +4,7 @@ import pytest
 
 from heinzel import ModelOffer
 from heinzel.kernel import AiModelsSource
-from heinzel.kernel._ai_models import list_offers
+from heinzel.kernel.ai._ai_models import list_offers
 
 pytestmark = pytest.mark.unit
 

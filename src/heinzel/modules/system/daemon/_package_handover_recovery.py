@@ -23,8 +23,8 @@ from heinzel.kernel import (
     private_lock,
 )
 from heinzel.modules.system.daemon._abandoned_mutation import parse_marker
+from heinzel.modules.system.daemon._handover_files import handover_absolute_path, verified_handover_file
 from heinzel.modules.system.daemon._recovery_files import RecoveryFile, path_absent, recovery_file, rename_exclusive
-from heinzel.modules.system.daemon._service import handover_absolute_path, verified_handover_file
 
 if TYPE_CHECKING:
     from heinzel.modules.system.daemon._service import DaemonService

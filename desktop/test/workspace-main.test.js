@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
+import { mainScript } from "./main-source.js";
 import test from "node:test";
 import { appMenuTemplate } from "../src/app-menu.js";
 import { createInstanceLifecycle } from "../src/instance-lifecycle.js";
@@ -16,7 +16,7 @@ import { createMiniBrowser } from "../src/mini-browser.js";
 import { createMediaPlayer } from "../src/media-player.js";
 
 const moduleUrl = new URL("../src/main.js", import.meta.url).href;
-const source = readFileSync(new URL(moduleUrl), "utf8").replace(/^import .*;\n/gm, "").replaceAll("import.meta.url", "moduleUrl");
+const source = mainScript();
 const local = { origin: "http://127.0.0.1:1234", token: "l".repeat(32) };
 const remote = { kind: "link", link: `https://studio.example/#token=${"r".repeat(32)}` };
 const flush = () => new Promise(setImmediate);

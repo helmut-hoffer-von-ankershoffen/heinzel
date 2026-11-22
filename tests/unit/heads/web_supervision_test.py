@@ -8,6 +8,7 @@ import pytest
 
 from heinzel.heads.web import _supervision
 from heinzel.kernel import HeinzelError
+from heinzel.modules.system.lifecycle import _supervision as lifecycle_supervision
 
 pytestmark = pytest.mark.unit
 
@@ -26,7 +27,7 @@ def test_publication_failure_keeps_shutdown_and_sanitizes_error(caplog, monkeypa
     def refused(*args, **kwargs):
         raise error
 
-    monkeypatch.setattr(_supervision, "SupervisedWeb", refused)
+    monkeypatch.setattr(lifecycle_supervision, "SupervisedWeb", refused)
     stopped, announced = [], []
     publication = _supervision.WebPublication(
         Path("/private/example"),
@@ -43,8 +44,9 @@ def test_publication_failure_keeps_shutdown_and_sanitizes_error(caplog, monkeypa
     assert announced == []
     assert publication.control is None
     assert len(caplog.records) == 1
-    assert caplog.records[0].exc_info is None
-    assert caplog.records[0].getMessage() == f"Owned web publication failed: category={category} errno={number}"
+    assert not caplog.records[0].exc_info
+    record = caplog.records[0]
+    assert (record.getMessage(), record.category, record.errno) == ("web.publication.failed", category, number)
     assert "private-error-body" not in caplog.text
     assert "/private/example" not in caplog.text
     assert "#token=" not in caplog.text
@@ -67,10 +69,13 @@ def test_supervised_stderr_goes_to_a_private_log_and_rotates(tmp_path):
     log = log_dir / _supervision.SUPERVISED_LOG
     assert log.read_text() == "startup failed: why\n"
     assert log.stat().st_mode & 0o777 == 0o600
-    log.write_bytes(b"x" * (_supervision.SUPERVISED_LOG_LIMIT + 1))
+    log.write_bytes(b"x" * (lifecycle_supervision.SUPERVISED_LOG_LIMIT + 1))
     _write_stderr(log_dir)
     assert log.read_text() == "startup failed: why\n"
-    assert log.with_name(f"{_supervision.SUPERVISED_LOG}.1").stat().st_size == _supervision.SUPERVISED_LOG_LIMIT + 1
+    assert (
+        log.with_name(f"{_supervision.SUPERVISED_LOG}.1").stat().st_size
+        == lifecycle_supervision.SUPERVISED_LOG_LIMIT + 1
+    )
 
 
 def test_supervised_stderr_refuses_a_linked_log(tmp_path):

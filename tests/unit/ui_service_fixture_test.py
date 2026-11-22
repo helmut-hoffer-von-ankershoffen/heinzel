@@ -113,7 +113,7 @@ def test_python_startup_snapshots_expose_only_bounded_fixed_source_labels():
         "heinzel/modules/system/plugin/docs/_build.py",
         "heinzel/modules/heinzel/_session_models.py",
         "heinzel/modules/graph/_models.py",
-        "heinzel/kernel/_contributions.py",
+        "heinzel/kernel/look/_contributions.py",
         "pydantic/_internal/_model_construction.py",
         "rich/markdown.py",
         "markdown_it/parser_inline.py",

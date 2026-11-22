@@ -243,7 +243,7 @@ def test_models_that_hang_fail_quoting_the_contract(monkeypatch: pytest.MonkeyPa
             release.wait(2)
             return []
 
-    monkeypatch.setattr("heinzel.kernel._ai_models.LIST_TIMEOUT", 0.05)
+    monkeypatch.setattr("heinzel.kernel.ai._ai_models.LIST_TIMEOUT", 0.05)
     try:
         (finding,) = failures(check_adapter(Slow(), "ai-models", name="acme"))
     finally:

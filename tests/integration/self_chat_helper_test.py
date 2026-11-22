@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from heinzel.kernel._self_chat import STATE
+from heinzel.kernel.session._self_chat import STATE
 from heinzel.modules.heinzel._self_chat_questions import HELPER
 
 pytestmark = pytest.mark.integration

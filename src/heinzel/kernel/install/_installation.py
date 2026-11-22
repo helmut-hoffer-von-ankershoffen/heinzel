@@ -1,0 +1,1605 @@
+"""How Heinzelmännchen is installed, and the uv commands that change the installation.
+
+Heinzelmännchen is meant to be installed with `uv tool install`. uv records the tool's requirements — Heinzelmännchen
+plus every
+`--with <plugin>` — in `uv-receipt.toml`, and `uv tool upgrade` keeps them, whereas packages put into the tool
+environment any other way are dropped on the next upgrade (ADR 0006). So adding a plugin means reinstalling the tool
+with one more `--with`, and updating Heinzelmännchen means reinstalling it with the same `--with`s. Outside a uv tool
+environment (a development checkout) packages are installed with `uv pip install` instead.
+"""
+
+import json
+import os
+import re
+import shlex
+import stat
+import subprocess
+import sys
+import tempfile
+import tomllib
+from collections.abc import Callable, Collection, Generator, Mapping, MutableMapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, cast
+from urllib.parse import parse_qs, unquote, urlsplit, urlunsplit
+
+if TYPE_CHECKING:
+    from heinzel.kernel.install._offline_uv import VerifiedUV
+
+import tomlkit
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.specifiers import SpecifierSet
+from packaging.utils import (
+    InvalidSdistFilename,
+    InvalidWheelFilename,
+    canonicalize_name,
+    parse_sdist_filename,
+    parse_wheel_filename,
+)
+from packaging.version import InvalidVersion, Version
+
+from heinzel.kernel._credentials import subprocess_environment
+from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel._progress import Progress
+from heinzel.kernel.install import _installation_continuity, _installed_metadata, _tool_python
+from heinzel.kernel.install._uv_locate import find_uv, missing_uv_message, with_search_path
+
+RECEIPT_FILENAME = "uv-receipt.toml"
+_MAX_RECEIPT_BYTES = 1024 * 1024
+CORE_DISTRIBUTION = "heinzel"
+
+Runner = Callable[..., subprocess.CompletedProcess[str]]
+"""Runs a command and returns the completed process: `runner(command)`, or `runner(command, environment)` with
+variables to add to the environment."""
+
+
+COMMAND_TIMEOUT = 900  # seconds; a uv tool install that downloads a lot is slow, one that hangs is broken
+HZ_TIMEOUT = 120
+
+
+def _read_tool_receipt(prefix: Path) -> dict[str, Any]:
+    return tomllib.loads(_read_tool_receipt_bytes(prefix).decode("utf-8"))
+
+
+def _read_tool_receipt_bytes(prefix: Path) -> bytes:
+    """Read a bounded regular receipt without following a receipt symlink.
+
+    Raises:
+        ValueError: If the receipt is unsafe, oversized or changes during the read.
+    """
+    directory = os.open(prefix, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        fd = os.open(RECEIPT_FILENAME, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        try:
+            info = os.fstat(fd)
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_uid != os.getuid()
+                or info.st_mode & 0o022
+                or info.st_size > _MAX_RECEIPT_BYTES
+            ):
+                msg = "The uv tool receipt is unsafe or too large."
+                raise ValueError(msg)
+            parts: list[bytes] = []
+            remaining = _MAX_RECEIPT_BYTES + 1
+            while remaining:
+                chunk = os.read(fd, min(remaining, 65536))
+                if not chunk:
+                    break
+                parts.append(chunk)
+                remaining -= len(chunk)
+            data = b"".join(parts)
+            after = os.fstat(fd)
+            if len(data) > _MAX_RECEIPT_BYTES or (
+                info.st_dev,
+                info.st_ino,
+                info.st_size,
+                info.st_mode,
+                info.st_uid,
+                info.st_mtime_ns,
+                info.st_ctime_ns,
+            ) != (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mode,
+                after.st_uid,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
+            ):
+                msg = "The uv tool receipt changed during inspection."
+                raise ValueError(msg)
+        finally:
+            os.close(fd)
+    finally:
+        os.close(directory)
+    return data
+
+
+def _run(command: Sequence[str], environment: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Run a command; a timeout becomes exit code 124 (as with timeout(1)), so callers handle it like any failure."""
+    env = with_search_path(subprocess_environment() | dict(environment or {}))
+    try:
+        return subprocess.run(  # noqa: S603 - trusted parts, no shell
+            command, capture_output=True, text=True, check=False, timeout=COMMAND_TIMEOUT, env=env
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(command, 124, "", f"{command[0]} timed out after {COMMAND_TIMEOUT}s")
+
+
+def _run_exact(command: Sequence[str], environment: Mapping[str, str]) -> subprocess.CompletedProcess[str]:
+    """Run an offline removal with exactly its selected environment, never merging ambient resolver policy."""
+    try:
+        return subprocess.run(  # noqa: S603 - verified private executable and a fixed offline command
+            command, capture_output=True, text=True, check=False, timeout=COMMAND_TIMEOUT, env=dict(environment)
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(command, 124, "", "Offline removal timed out; inspect its local outcome.")
+
+
+def _core_requirement(source: str) -> str:  # noqa: C901 - validate several source forms before invoking uv
+    """Bind a selected source to the Heinzel distribution before asking uv to resolve it.
+
+    Raises:
+        HeinzelError: If a requirement or identifiable artifact names another distribution.
+    """
+    message = "The selected source must install the heinzel distribution."
+    try:
+        requirement = Requirement(source)
+    except InvalidRequirement:
+        parts = urlsplit(source)
+        if parts.scheme in {"https", "http", "file", "git+https", "git+ssh", "git+file"}:
+            url = source
+        else:
+            try:
+                path = Path(source).expanduser().resolve(strict=True)
+                url = path.as_uri()
+            except (OSError, ValueError) as exc:
+                raise HeinzelError(message) from exc
+        try:
+            requirement = Requirement(f"{CORE_DISTRIBUTION} @ {url}")
+        except InvalidRequirement as exc:
+            raise HeinzelError(message) from exc
+    if canonicalize_name(requirement.name) != CORE_DISTRIBUTION or requirement.marker:
+        raise HeinzelError(message)
+    if requirement.url:
+        filename = Path(urlsplit(requirement.url).path).name
+        name: str
+        try:
+            if filename.endswith(".whl"):
+                name, _, _, _ = parse_wheel_filename(filename)
+            elif filename.endswith((".tar.gz", ".zip")):
+                name, _ = parse_sdist_filename(filename)
+            else:
+                name = CORE_DISTRIBUTION
+        except (InvalidWheelFilename, InvalidSdistFilename) as exc:
+            raise HeinzelError(message) from exc
+        if canonicalize_name(name) != CORE_DISTRIBUTION:
+            raise HeinzelError(message)
+    return str(requirement)
+
+
+def requirement_from_receipt(entry: dict[str, Any]) -> str:
+    """Turn a requirement from a uv tool receipt back into a PEP 508 string uv accepts on the command line."""
+    name = str(entry["name"])
+    if extras := entry.get("extras"):
+        name = f"{name}[{','.join(extras)}]"
+    if "git" in entry:
+        parts = urlsplit(str(entry["git"]))
+        query = parse_qs(parts.query)
+        ref = next((query[key][0] for key in ("rev", "tag", "branch") if key in query), None)
+        url = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+        fragment = f"#subdirectory={query['subdirectory'][0]}" if "subdirectory" in query else ""
+        return f"{name} @ git+{url}{'@' + ref if ref else ''}{fragment}"
+    for key in ("directory", "editable", "path"):
+        if key in entry:
+            return f"{name} @ {Path(entry[key]).resolve().as_uri()}"
+    if "url" in entry:
+        return f"{name} @ {entry['url']}"
+    return f"{name}{entry.get('specifier', '')}"
+
+
+def _validate_receipt_policy(data: dict[str, Any]) -> dict[str, Any]:
+    tool = data["tool"]
+    if not isinstance(tool, dict):
+        msg = "The receipt policy is malformed."
+        raise TypeError(msg)
+    tool = cast("dict[str, Any]", tool)
+    known = {
+        "requirements",
+        "constraints",
+        "overrides",
+        "excludes",
+        "build-constraint-dependencies",
+        "python",
+        "entrypoints",
+        "options",
+    }
+    if set(tool) - known:
+        msg = "The receipt has an unsupported policy field."
+        raise ValueError(msg)
+    for key in ("overrides", "excludes", "build-constraint-dependencies"):
+        value = tool.get(key, [])
+        if not isinstance(value, list) or value:
+            msg = "The receipt has unsupported resolver policy."
+            raise ValueError(msg)
+    options = tool.get("options", {})
+    if not isinstance(options, dict) or options:
+        msg = "The receipt has unsupported tool options."
+        raise ValueError(msg)
+    return tool
+
+
+def _constraints_from_receipt(data: dict[str, Any]) -> list[str]:
+    tool = _validate_receipt_policy(data)
+    entries = tool.get("constraints", [])
+    if not isinstance(entries, list):
+        msg = "The receipt constraints are malformed."
+        raise TypeError(msg)
+    result: list[str] = []
+    for entry in cast("list[object]", entries):
+        if isinstance(entry, str):
+            text = entry
+        elif isinstance(entry, dict):
+            entry = cast("dict[str, Any]", entry)
+            allowed = {"name", "extras", "specifier", "git", "url", "directory", "path", "marker"}
+            if set(entry) - allowed or "name" not in entry:
+                msg = "The receipt constraint has unsupported fields."
+                raise ValueError(msg)
+            sources = [key for key in ("specifier", "git", "url", "directory", "path") if key in entry]
+            if (
+                "git" in entry
+                or len(sources) > 1
+                or any(
+                    key in entry and (not isinstance(entry[key], str) or not Path(entry[key]).is_absolute())
+                    for key in ("directory", "path")
+                )
+            ):
+                msg = "The receipt constraint has an ambiguous source."
+                raise ValueError(msg)
+            text = requirement_from_receipt(entry)
+            if entry.get("marker"):
+                text += f"; {entry['marker']}"
+        else:
+            msg = "The receipt constraint is malformed."
+            raise TypeError(msg)
+        result.append(str(Requirement(text)))
+    return result
+
+
+_OVERRIDE_ERROR = "The uv receipt overrides do not match the verified artifacts; inspect the installation manually."
+_CONSTRAINT_ERROR = "The uv receipt constraints changed unexpectedly; inspect the installation manually."
+
+
+@dataclass(frozen=True, slots=True)
+class ToolConstraintPolicy:
+    """Opaque snapshot of the validated pre-mutation receipt constraints."""
+
+    present: bool
+    entries: tuple[str, ...] = field(repr=False)
+
+
+def _constraint_policy(data: dict[str, Any]) -> ToolConstraintPolicy:
+    _constraints_from_receipt(data)
+    tool = data["tool"]
+    return ToolConstraintPolicy(
+        present="constraints" in tool,
+        entries=tuple(
+            json.dumps(entry, sort_keys=True, separators=(",", ":")) for entry in tool.get("constraints", [])
+        ),
+    )
+
+
+def _transient_entry(added: str) -> str:
+    """The receipt entry one exact-version or hash-bound local wheel guard becomes.
+
+    Raises:
+        HeinzelError: If `added` is not a supported exact-version or hash-bound local wheel requirement.
+    """
+    requirement = Requirement(added)
+    if requirement.url is not None:
+        return _transient_wheel_entry(requirement)
+    specifiers = list(requirement.specifier)
+    if requirement.marker or requirement.extras or len(specifiers) != 1:
+        msg = f"{_CONSTRAINT_ERROR} (unsupported temporary version guard)"
+        raise HeinzelError(msg)
+    specifier = specifiers[0]
+    if specifier.operator != "==" or "*" in specifier.version:
+        msg = f"{_CONSTRAINT_ERROR} (unsupported temporary version guard)"
+        raise HeinzelError(msg)
+    Version(specifier.version)
+    entry = {"name": canonicalize_name(requirement.name, validate=True), "specifier": str(specifier)}
+    return json.dumps(entry, sort_keys=True, separators=(",", ":"))
+
+
+def _transient_wheel_entry(requirement: Requirement) -> str:
+    """Match uv's local wheel constraint entry; metadata verification separately checks the selected hash.
+
+    uv 0.13.7 retains the path in its receipt and drops the hash fragment. Only a hash-bound local wheel is accepted.
+
+    Raises:
+        HeinzelError: If this is not one exact hash-bound local wheel source.
+    """
+    source = urlsplit(requirement.url or "")
+    if (
+        requirement.marker
+        or requirement.extras
+        or source.scheme != "file"
+        or source.netloc
+        or source.query
+        or not source.path.startswith("/")
+        or not re.fullmatch(r"sha256=[a-f0-9]{64}", source.fragment)
+    ):
+        msg = f"{_CONSTRAINT_ERROR} (unsupported temporary wheel guard)"
+        raise HeinzelError(msg)
+    name, _, _, _ = parse_wheel_filename(unquote(source.path.rsplit("/", 1)[-1]))
+    if name != canonicalize_name(requirement.name):
+        msg = f"{_CONSTRAINT_ERROR} (unsupported temporary wheel guard)"
+        raise HeinzelError(msg)
+    entry = {"name": name, "path": unquote(source.path)}
+    return json.dumps(entry, sort_keys=True, separators=(",", ":"))
+
+
+def _without_added_options(raw: bytes, options: Mapping[str, object]) -> bytes:
+    """The receipt without the `[tool.options]` a mutation added: they must be exactly `options`, nothing more.
+
+    The receipt policy allows no options of its own (`_validate_receipt_policy`), so the table goes as a whole.
+
+    Raises:
+        HeinzelError: If the options differ from `options` in any way.
+    """
+    try:
+        data = tomllib.loads(raw.decode("utf-8"))
+        if data["tool"].get("options") != dict(options):
+            msg = f"{_CONSTRAINT_ERROR} (temporary resolver options mismatch)"
+            raise HeinzelError(msg)
+        document = tomlkit.parse(raw.decode("utf-8"))
+        del cast("Any", document)["tool"]["options"]
+        del data["tool"]["options"]
+        # uv separates the table with a blank line; without it the receipt ends as uv writes one with no options.
+        replacement = (tomlkit.dumps(document).rstrip("\n") + "\n").encode("utf-8")
+        if tomllib.loads(replacement.decode("utf-8")) != data:
+            msg = f"{_CONSTRAINT_ERROR} (resolver option removal serialization mismatch)"
+            raise HeinzelError(msg)
+    except (KeyError, TypeError, ValueError, UnicodeError) as exc:
+        msg = f"{_CONSTRAINT_ERROR} (invalid receipt during resolver option removal)"
+        raise HeinzelError(msg) from exc
+    else:
+        return replacement
+
+
+def _constraint_mismatch(
+    original: ToolConstraintPolicy, actual: ToolConstraintPolicy, expected: tuple[str, ...]
+) -> str:
+    """Describe a refused comparison without exposing requirement names, sources or credentials."""
+    if not actual.present:
+        return "post-mutation constraints missing"
+    count = len(original.entries) + len(expected)
+    if len(actual.entries) != count:
+        return f"constraint count: expected {count}, observed {len(actual.entries)}"
+    if actual.entries[: len(original.entries)] != original.entries:
+        return "captured constraint entries changed or reordered"
+    return "temporary constraint entries changed or reordered"
+
+
+def _remove_transient_constraint(raw: bytes, original: ToolConstraintPolicy, added: tuple[str, ...]) -> bytes:
+    """Remove exactly the last temporary constraints from a matching receipt.
+
+    Raises:
+        HeinzelError: If the policy or added constraints do not match exactly.
+    """
+    try:
+        snapshot = cast("object", original)
+        if (
+            not isinstance(snapshot, ToolConstraintPolicy)
+            or type(cast("object", snapshot.present)) is not bool
+            or not isinstance(cast("object", snapshot.entries), tuple)
+            or any(not isinstance(entry, str) for entry in cast("tuple[object, ...]", snapshot.entries))
+            or (not snapshot.present and snapshot.entries)
+            or not added
+        ):
+            msg = f"{_CONSTRAINT_ERROR} (invalid captured constraint snapshot)"
+            raise HeinzelError(msg)
+        expected = tuple(_transient_entry(item) for item in added)
+        data = tomllib.loads(raw.decode("utf-8"))
+        actual = _constraint_policy(data)
+        if not actual.present or actual.entries != (*original.entries, *expected):
+            reason = _constraint_mismatch(original, actual, expected)
+            msg = f"{_CONSTRAINT_ERROR} ({reason})"
+            raise HeinzelError(msg)
+        document = tomlkit.parse(raw.decode("utf-8"))
+        table = cast("MutableMapping[str, Any]", document["tool"])
+        for current in (table, data["tool"]):
+            if original.present:
+                for _ in expected:
+                    current["constraints"].pop()
+            else:
+                del current["constraints"]
+        replacement = tomlkit.dumps(document).encode("utf-8")
+        if tomllib.loads(replacement.decode("utf-8")) != data:
+            msg = f"{_CONSTRAINT_ERROR} (constraint removal serialization mismatch)"
+            raise HeinzelError(msg)
+    except (KeyError, TypeError, ValueError, UnicodeError, InvalidRequirement, InvalidVersion) as exc:
+        msg = f"{_CONSTRAINT_ERROR} (invalid post-mutation receipt or guard)"
+        raise HeinzelError(msg) from exc
+    else:
+        return replacement
+
+
+_RECEIPT_ERROR = "The uv receipt's requirements couldn't be put back as they were; inspect the receipt."
+_RETAG_ERROR = "The installed core isn't the commit the release tag named; inspect the uv receipt."
+
+
+def _requirements_from(raw: bytes, original: bytes, names: Sequence[str]) -> bytes:
+    """The receipt `raw` with the requirement entries for `names` exactly as in `original`, nothing else changed.
+
+    Raises:
+        HeinzelError: If an entry is missing, or anything else would change.
+    """
+    wanted = {canonicalize_name(name) for name in names}
+    try:
+        data = tomllib.loads(raw.decode("utf-8"))
+        previous = cast("Any", tomlkit.parse(original.decode("utf-8")))["tool"]["requirements"]
+        before = {canonicalize_name(str(entry["name"])): entry for entry in previous}
+        plain = {
+            canonicalize_name(str(e["name"])): e
+            for e in tomllib.loads(original.decode("utf-8"))["tool"]["requirements"]
+        }
+        document = tomlkit.parse(raw.decode("utf-8"))
+        entries = cast("Any", document)["tool"]["requirements"]
+        for index, entry in enumerate(list(entries)):
+            name = canonicalize_name(str(entry["name"]))
+            if name in wanted:
+                entries[index] = before[name]
+        for index, entry in enumerate(data["tool"]["requirements"]):
+            name = canonicalize_name(str(entry["name"]))
+            if name in wanted:
+                data["tool"]["requirements"][index] = plain[name]
+        replacement = tomlkit.dumps(document).encode("utf-8")
+        if tomllib.loads(replacement.decode("utf-8")) != data:
+            raise HeinzelError(_RECEIPT_ERROR)
+    except (KeyError, IndexError, TypeError, ValueError, UnicodeError) as exc:
+        raise HeinzelError(_RECEIPT_ERROR) from exc
+    else:
+        return replacement
+
+
+_UNPIN_ERROR = "This plugin does not have one supported exact index pin; no requirement was changed."
+
+
+def _unpinned_index_requirement(raw: bytes, distribution: str) -> tuple[str, bytes]:
+    """Project one exact plugin pin removal and preserve every other receipt value.
+
+    Raises:
+        HeinzelError: If the exact pin or the unchanged resolver policy cannot be established.
+    """
+    try:
+        text = raw.decode("utf-8")
+        data = tomllib.loads(text)
+        tool = _validate_receipt_policy(data)
+        if any(canonicalize_name(Requirement(item).name) == distribution for item in _constraints_from_receipt(data)):
+            msg = "This plugin has an additional tool constraint; no requirement was changed."
+            raise HeinzelError(msg)
+        entries = tool["requirements"]
+        matches = [i for i, entry in enumerate(entries) if canonicalize_name(entry["name"]) == distribution]
+        if len(matches) != 1 or matches[0] == 0:
+            raise HeinzelError(_UNPIN_ERROR)
+        index = matches[0]
+        entry = entries[index]
+        if set(entry) != {"name", "specifier"} or not isinstance(entry["specifier"], str):
+            raise HeinzelError(_UNPIN_ERROR)
+        specifiers = list(SpecifierSet(entry["specifier"]))
+        if len(specifiers) != 1 or specifiers[0].operator != "==" or "*" in specifiers[0].version:
+            raise HeinzelError(_UNPIN_ERROR)
+        version = str(Version(specifiers[0].version))
+        document = cast("Any", tomlkit.parse(text))
+        del document["tool"]["requirements"][index]["specifier"]
+        del entry["specifier"]
+        replacement = tomlkit.dumps(document).encode("utf-8")
+        if tomllib.loads(replacement.decode("utf-8")) != data:
+            raise HeinzelError(_UNPIN_ERROR)
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise HeinzelError(_UNPIN_ERROR) from exc
+    return version, replacement
+
+
+def _core_by_tag(raw: bytes, commit: str, tag: str) -> bytes:
+    """The receipt with its core's git `rev` moved from `commit` to `tag`, and nothing else changed.
+
+    Raises:
+        HeinzelError: If the core isn't from git at exactly `commit`.
+    """
+    try:
+        data = tomllib.loads(raw.decode("utf-8"))
+        document = tomlkit.parse(raw.decode("utf-8"))
+        entries = (document["tool"]["requirements"], data["tool"]["requirements"])
+        parts = urlsplit(str(entries[1][0]["git"]))
+        query = parse_qs(parts.query)
+        if query.get("rev") != [commit] or set(query) - {"rev", "subdirectory"}:
+            raise HeinzelError(_RETAG_ERROR)
+        query["rev"] = [tag]
+        url = urlunsplit(parts._replace(query="&".join(f"{k}={v[0]}" for k, v in sorted(query.items()))))
+        for current in entries:
+            current[0]["git"] = url
+        replacement = tomlkit.dumps(document).encode("utf-8")
+        if tomllib.loads(replacement.decode("utf-8")) != data:
+            raise HeinzelError(_RETAG_ERROR)
+    except (KeyError, IndexError, TypeError, ValueError, UnicodeError) as exc:
+        raise HeinzelError(_RETAG_ERROR) from exc
+    else:
+        return replacement
+
+
+def _expected_overrides(overrides: Mapping[str, Path]) -> dict[str, str]:
+    expected: dict[str, str] = {}
+    for name, path in overrides.items():
+        normalized = canonicalize_name(name, validate=True)
+        if normalized in expected or not path.is_absolute() or ".." in path.parts:
+            raise HeinzelError(_OVERRIDE_ERROR)
+        expected[normalized] = str(path)
+    if not expected or len(set(expected.values())) != len(expected):
+        raise HeinzelError(_OVERRIDE_ERROR)
+    return expected
+
+
+def _receipt_overrides(entries: object) -> dict[str, str]:
+    if not isinstance(entries, list):
+        raise HeinzelError(_OVERRIDE_ERROR)
+    actual: dict[str, str] = {}
+    for entry in cast("list[object]", entries):
+        if not isinstance(entry, dict):
+            raise HeinzelError(_OVERRIDE_ERROR)
+        values = cast("dict[str, Any]", entry)
+        if (
+            set(values) != {"name", "path"}
+            or not isinstance(values["name"], str)
+            or not isinstance(values["path"], str)
+        ):
+            raise HeinzelError(_OVERRIDE_ERROR)
+        normalized = canonicalize_name(values["name"], validate=True)
+        if normalized in actual:
+            raise HeinzelError(_OVERRIDE_ERROR)
+        actual[normalized] = values["path"]
+    return actual
+
+
+def _without_verified_overrides(raw: bytes, overrides: Mapping[str, Path]) -> bytes:
+    """Remove only an exact set of named file overrides, preserving every other parsed receipt value.
+
+    Raises:
+        HeinzelError: If the receipt or the expected overrides cannot be verified.
+    """
+    try:
+        expected = _expected_overrides(overrides)
+        original = tomllib.loads(raw.decode("utf-8"))
+        tool = original["tool"]
+        actual = _receipt_overrides(tool["overrides"])
+        document = tomlkit.parse(raw.decode("utf-8"))
+        table = cast("MutableMapping[str, Any]", document["tool"])
+        del table["overrides"]
+        replacement = tomlkit.dumps(document).encode("utf-8")
+        del tool["overrides"]
+        preserved = tomllib.loads(replacement.decode("utf-8")) == original
+    except (KeyError, TypeError, ValueError, UnicodeError) as exc:
+        raise HeinzelError(_OVERRIDE_ERROR) from exc
+    if actual != expected or not preserved:
+        raise HeinzelError(_OVERRIDE_ERROR)
+    return replacement
+
+
+EDGE_WHEEL_PREFIX = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/download/edge-v"
+"""Where edge wheels live; a pin elsewhere is someone's own choice and stays theirs."""
+
+type PinKind = Literal["release", "ref", "commit", "default", "local", "url", "index"]
+"""What the core requirement installs from: a release tag `vX.Y.Z`, another git ref (a branch or a tag that is no
+release), a commit, a git repository's default branch, a local directory or file, a URL, or a package index."""
+
+_COMMIT = re.compile(r"[0-9a-f]{7,40}")
+_RELEASE_PARTS = 3  # vX.Y.Z
+
+
+def _is_release_tag(ref: str) -> bool:
+    """Whether `ref` is a release tag, `v` and a SemVer version such as `v0.4.0` or `v0.5.0rc1`."""
+    if not ref.startswith("v"):
+        return False
+    try:
+        return len(Version(ref[1:]).release) == _RELEASE_PARTS
+    except InvalidVersion:
+        return False
+
+
+@dataclass(frozen=True, slots=True)
+class CorePin:
+    """Where the core requirement in the uv tool receipt installs Heinzelmännchen from, and what it is pinned to."""
+
+    kind: PinKind
+    requirement: str
+    """The requirement as uv takes it on the command line, e.g. `heinzel @ git+https://github.com/org/heinzel@v0.2.0`."""
+    ref: str | None = None
+    """The git ref, the path, the URL or the version specifier it is pinned to; None if it follows a default."""
+    name: str = CORE_DISTRIBUTION
+    """The distribution with its extras, e.g. `heinzel[web]`."""
+    git: str | None = None
+    """The git repository's URL without ref, query or fragment; None if it isn't installed from git."""
+    subdirectory: str | None = None
+
+    @property
+    def is_edge(self) -> bool:
+        """Whether this is an edge release's wheel, the only pin the edge channel makes (ADR 0114)."""
+        return self.kind == "url" and (self.ref or "").startswith(EDGE_WHEEL_PREFIX)
+
+    @property
+    def version(self) -> str | None:
+        """The version of a release tag (`v0.2.0` is `0.2.0`); None for anything else."""
+        return self.ref[1:] if self.kind == "release" and self.ref else None
+
+    def source_at(self, ref: str) -> str:
+        """The same git repository at `ref`, as `hz system update --source` takes it.
+
+        Raises:
+            HeinzelError: If Heinzelmännchen isn't installed from git.
+        """
+        if self.git is None:
+            msg = f"{self.requirement} isn't installed from git, so it has no ref to move."
+            raise HeinzelError(msg)
+        fragment = f"#subdirectory={self.subdirectory}" if self.subdirectory else ""
+        return f"git+{self.git}@{ref}{fragment}"
+
+    def at(self, ref: str) -> str:
+        """The same requirement at another git ref, e.g. a newer release tag.
+
+        Raises:
+            HeinzelError: If Heinzelmännchen isn't installed from git.
+        """
+        return f"{self.name} @ {self.source_at(ref)}"
+
+
+def pin_from_receipt(entry: dict[str, Any]) -> CorePin:
+    """What a requirement from a uv tool receipt installs from and is pinned to.
+
+    uv records `git+URL@ref` as `?rev=ref` whether the ref is a branch, a tag or a commit, so a ref that looks like
+    neither a release tag nor a commit is a `ref`: a branch, or a tag that is no release.
+    """
+    name = str(entry["name"])
+    if extras := entry.get("extras"):
+        name = f"{name}[{','.join(extras)}]"
+    requirement = requirement_from_receipt(entry)
+    if "git" in entry:
+        parts = urlsplit(str(entry["git"]))
+        query = parse_qs(parts.query)
+        url = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+        subdirectory = query["subdirectory"][0] if "subdirectory" in query else None
+        ref = next((query[key][0] for key in ("rev", "tag", "branch") if key in query), None)
+        kind: PinKind
+        if ref is None:
+            kind = "default"
+        elif "branch" not in query and _is_release_tag(ref):
+            kind = "release"
+        elif "branch" not in query and "tag" not in query and _COMMIT.fullmatch(ref):
+            kind = "commit"
+        else:
+            kind = "ref"
+        return CorePin(kind, requirement, ref, name, url, subdirectory)
+    for key in ("directory", "editable", "path"):
+        if key in entry:
+            return CorePin("local", requirement, str(Path(entry[key]).resolve()), name)
+    if "url" in entry:
+        return CorePin("url", requirement, str(entry["url"]), name)
+    return CorePin("index", requirement, entry.get("specifier") or None, name)
+
+
+@dataclass(frozen=True, slots=True)
+class IndexPluginPin:
+    """Exact version and installation generation observed before confirming a metadata-only unpin."""
+
+    distribution: str
+    version: str
+    generation: str
+
+
+class Installation:
+    """The environment Heinzelmännchen runs in, and the commands that install into it. Injected by type."""
+
+    def __init__(
+        self,
+        progress: Progress,
+        prefix: Path | None = None,
+        runner: Runner = _run,
+        uv: str | None = None,
+    ) -> None:
+        """Create the installation; `progress` is injected, the rest is for tests.
+
+        Args:
+            progress: Shows that a command is running.
+            prefix: Environment Heinzelmännchen runs in; defaults to `sys.prefix`.
+            runner: Runs a command and returns the completed process.
+            uv: Path to the uv executable; defaults to the one on `PATH` or in uv's standard install directories.
+        """
+        self._progress = progress
+        self.prefix = prefix or Path(sys.prefix)
+        self._runner = runner
+        self._exact_runner: Runner = _run_exact
+        self._uv = uv or find_uv()
+        self._tool_scope: ContextVar[
+            tuple[
+                dict[str, str],
+                tuple[tuple[int, int], ...],
+                dict[str, tuple[int, int, str]],
+                tuple[str, str, tuple[int, ...]],
+            ]
+            | None
+        ] = ContextVar("installation_tool_scope", default=None)
+        self._target_python: ContextVar[tuple[str, str, tuple[int, ...]] | None] = ContextVar(
+            "installation_target_python", default=None
+        )
+
+    @property
+    def is_tool(self) -> bool:
+        """Whether Heinzelmännchen runs from a `uv tool` environment."""
+        return (self.prefix / RECEIPT_FILENAME).is_file()
+
+    def requirements(self) -> list[str] | None:
+        """Requirements of the uv tool environment, Heinzelmännchen first; None outside of one."""
+        entries = self._receipt()
+        return None if entries is None else [requirement_from_receipt(entry) for entry in entries]
+
+    def _continuity_authority(self) -> tuple[dict[str, str], tuple[tuple[int, int], ...]]:
+        target = self._tool_target()
+        return target, self._target_directories(target)
+
+    def startup_fingerprint(self) -> str:
+        """Inspect the owned tool without executing installed code.
+
+        Raises:
+            HeinzelError: If the installation cannot be inspected safely.
+        """
+        return _installation_continuity.fingerprint(self.prefix, self._continuity_authority)
+
+    def content_fingerprint(self) -> str:
+        """The startup fingerprint without the tool folder's own identity, which a change of interpreter renews.
+
+        Raises:
+            HeinzelError: If the installation cannot be inspected safely.
+        """
+        return _installation_continuity.content_fingerprint(self.prefix, self._continuity_authority)
+
+    def remove_tool_overrides(self, *, expected: str, overrides: Mapping[str, Path]) -> str:
+        """Remove exactly the independently verified transient wheel overrides, without recording continuity.
+
+        Raises:
+            HeinzelError: If the receipt, overrides, or expected installation cannot be verified.
+            OSError: If the receipt cannot be safely replaced and synchronized.
+        """
+
+        def transform() -> bytes:
+            try:
+                receipt = _read_tool_receipt_bytes(self.prefix)
+            except ValueError as exc:
+                raise HeinzelError(_OVERRIDE_ERROR) from exc
+            return _without_verified_overrides(receipt, overrides)
+
+        return _installation_continuity.replace_receipt(self.prefix, self._continuity_authority, expected, transform)
+
+    def capture_tool_constraint_policy(self) -> ToolConstraintPolicy:
+        """Capture validated receipt constraints before a trusted tool mutation.
+
+        Raises:
+            HeinzelError: If the installation or policy changes during inspection.
+        """
+        before = self.startup_fingerprint()
+        try:
+            result = _constraint_policy(_read_tool_receipt(self.prefix))
+        except (OSError, ValueError, TypeError, KeyError, tomllib.TOMLDecodeError) as exc:
+            msg = f"{_CONSTRAINT_ERROR} (cannot capture existing constraint policy)"
+            raise HeinzelError(msg) from exc
+        if self.startup_fingerprint() != before:
+            msg = f"{_CONSTRAINT_ERROR} (installation changed while capturing constraint policy)"
+            raise HeinzelError(msg)
+        return result
+
+    def receipt(self) -> bytes:
+        """The uv receipt as it is now, read without following a symlink.
+
+        Raises:
+            HeinzelError: If it can't be read safely.
+        """
+        try:
+            return _read_tool_receipt_bytes(self.prefix)
+        except ValueError as exc:
+            raise HeinzelError(_RECEIPT_ERROR) from exc
+
+    def restore_receipt_requirements(self, *, expected: str, original: bytes, names: Sequence[str]) -> str:
+        """Put the receipt's requirements for `names` back as `original` had them, changing nothing else.
+
+        Automatic updates hold a plugin from git at its installed commit while they install (ADR 0116); the receipt
+        then follows the branch or tag it followed before.
+
+        Raises:
+            HeinzelError: If anything but those requirements would change.
+            OSError: If the private receipt replacement cannot be synchronized.
+        """
+
+        def transform() -> bytes:
+            try:
+                receipt = _read_tool_receipt_bytes(self.prefix)
+            except ValueError as exc:
+                raise HeinzelError(_RECEIPT_ERROR) from exc
+            return _requirements_from(receipt, original, names)
+
+        return _installation_continuity.replace_receipt(self.prefix, self._continuity_authority, expected, transform)
+
+    def index_plugin_pin(self, distribution: str) -> IndexPluginPin:
+        """Observe one removable exact index pin in a verified tool without executing installed code.
+
+        Raises:
+            HeinzelError: If the receipt, current package identity or installation continuity is unavailable.
+            OSError: If the selected tool's metadata cannot be read.
+        """
+        try:
+            name = canonicalize_name(distribution, validate=True)
+        except ValueError as exc:
+            raise HeinzelError(_UNPIN_ERROR) from exc
+        if name == CORE_DISTRIBUTION or not self.is_tool or not self.startup_state_matches():
+            msg = "Unpin requires a verified installed Heinzel tool and a separate plugin."
+            raise HeinzelError(msg)
+        generation = self.startup_fingerprint()
+        version, _ = _unpinned_index_requirement(self.receipt(), name)
+        requirements = self.requirements()
+        if requirements is None:
+            raise HeinzelError(_UNPIN_ERROR)
+        constraints = (*self.tool_constraints(), *self.preserved_tool_wheel_constraints(requirements))
+        installed = self.verify_installed_requirements(requirements, constraints=constraints)
+        actual = installed.get(name)
+        if actual is None or Version(actual) != Version(version):
+            raise HeinzelError(_UNPIN_ERROR)
+        if self.startup_fingerprint() != generation or not self.startup_state_matches():
+            msg = "The installation changed while observing the plugin pin; preview it again."
+            raise HeinzelError(msg)
+        return IndexPluginPin(name, actual, generation)
+
+    def unpin_index_plugin(self, observed: IndexPluginPin) -> str:
+        """Remove exactly the observed index pin through the existing receipt transaction, without reinstalling.
+
+        Raises:
+            HeinzelError: If the confirmed installed generation or receipt policy changed.
+            OSError: If receipt replacement cannot be made durable; retain existing recovery evidence.
+        """
+        if self.index_plugin_pin(observed.distribution) != observed:
+            msg = "The confirmed plugin pin changed; preview it again."
+            raise HeinzelError(msg)
+        return _installation_continuity.replace_receipt(
+            self.prefix,
+            self._continuity_authority,
+            observed.generation,
+            lambda: _unpinned_index_requirement(self.receipt(), observed.distribution)[1],
+        )
+
+    def name_core_by_tag(self, *, expected: str, commit: str, tag: str) -> str:
+        """Name the core in the receipt by its release `tag` again after it was installed from that tag's `commit`.
+
+        An automatic update installs the exact commit a tag named when it was announced (ADR 0116); the receipt goes
+        on following release tags, so the next update moves on from `tag`.
+
+        Raises:
+            HeinzelError: If the receipt's core isn't from git at `commit`, or anything else would change.
+            OSError: If the private receipt replacement cannot be synchronized.
+        """
+
+        def transform() -> bytes:
+            try:
+                receipt = _read_tool_receipt_bytes(self.prefix)
+            except ValueError as exc:
+                raise HeinzelError(_RETAG_ERROR) from exc
+            return _core_by_tag(receipt, commit, tag)
+
+        return _installation_continuity.replace_receipt(self.prefix, self._continuity_authority, expected, transform)
+
+    def remove_transient_tool_constraint(
+        self,
+        *,
+        expected: str,
+        original: ToolConstraintPolicy,
+        added: str | tuple[str, ...],
+        options: Mapping[str, object] | None = None,
+    ) -> str:
+        """Remove version and verified wheel-source guards from the independently verified post-mutation generation.
+
+        uv also records the resolver options a run was given (`[tool.options]`, such as `exclude-newer`); `options`
+        names exactly those this mutation added, and they go too. Anything else in the receipt stays as it is.
+
+        Raises:
+            HeinzelError: If the receipt, policy or installation generation cannot be verified.
+            OSError: If the private receipt replacement cannot be synchronized.
+        """
+
+        def transform() -> bytes:
+            try:
+                receipt = _read_tool_receipt_bytes(self.prefix)
+            except ValueError as exc:
+                msg = f"{_CONSTRAINT_ERROR} (cannot read post-mutation receipt)"
+                raise HeinzelError(msg) from exc
+            if options:
+                receipt = _without_added_options(receipt, options)
+            return _remove_transient_constraint(receipt, original, (added,) if isinstance(added, str) else added)
+
+        return _installation_continuity.replace_receipt(self.prefix, self._continuity_authority, expected, transform)
+
+    def installed_versions(self, names: Sequence[str]) -> dict[str, str]:
+        """The installed version of each named distribution, read without starting its interpreter.
+
+        Raises:
+            HeinzelError: If the metadata cannot be safely inspected.
+        """
+        return _installed_metadata.inspect_versions(self.prefix, names)
+
+    def installed_core_version(self) -> str:
+        """Inspect the currently installed core version without starting its interpreter.
+
+        Raises:
+            HeinzelError: If the selected core or its local metadata cannot be verified.
+        """
+        self._current_tool_target()
+        before = self.startup_fingerprint()
+        version = _installed_metadata.inspect_core_version(self.prefix)
+        if self.startup_fingerprint() != before:
+            msg = "The installed tool changed during version inspection; no code was started."
+            raise HeinzelError(msg)
+        return version
+
+    def rollback_identity(self) -> str:
+        """Capture exact owned inode identities and content for a proven-unchanged rollback.
+
+        Raises:
+            HeinzelError: If the installation cannot be inspected safely.
+        """
+        return _installation_continuity.fingerprint(self.prefix, self._continuity_authority, strict_identity=True)
+
+    def verify_installed_requirements(
+        self,
+        requirements: list[str],
+        *,
+        expected_version: str | None = None,
+        forbidden: tuple[str, ...] = (),
+        constraints: tuple[str, ...] = (),
+    ) -> dict[str, str]:
+        """Inspect selected metadata under a stable local generation without starting the installed tool.
+
+        Raises:
+            HeinzelError: If the selected sources, versions or local generation cannot be established.
+        """
+        self._current_tool_target()
+        before = self.startup_fingerprint()
+        result = _installed_metadata.inspect_requirements(
+            self.prefix, requirements, expected_version, forbidden=forbidden, constraints=constraints
+        )
+        if self.startup_fingerprint() != before:
+            msg = "The installed tool changed during metadata inspection; no installed code was started."
+            raise HeinzelError(msg)
+        return result
+
+    def unchanged_wheel_sources(self, requirements: Sequence[str], moving: Collection[str]) -> tuple[str, ...]:
+        """The hash-bound wheel sources of every requirement that isn't moving, as transient constraints.
+
+        One rule for each path that keeps installed packages while others move (the announced and the manual update,
+        a plugin change): a standard-app wheel the receipt names as a bare index requirement is held to the verified
+        wheel it was installed from, so uv keeps it and its metadata matches the selected source afterwards.
+
+        Raises:
+            HeinzelError: If metadata or the checkpoint changes during capture.
+        """
+        excluded = {canonicalize_name(name) for name in moving}
+        unchanged = [item for item in requirements if canonicalize_name(Requirement(item).name) not in excluded]
+        return self.preserved_tool_wheel_constraints(unchanged) if unchanged else ()
+
+    def preserved_tool_wheel_constraints(self, requirements: list[str]) -> tuple[str, ...]:
+        """Keep unchanged verified wheel provenance while a plugin mutation retains installed packages.
+
+        A bare registry receipt may name a standard-app wheel installed through a verified transient override.
+        Its existing hash-bound source is authoritative only while the complete startup checkpoint still matches.
+
+        Raises:
+            HeinzelError: If metadata or the checkpoint changes during capture.
+        """
+        if not self.startup_state_matches():
+            return ()
+        before = self.startup_fingerprint()
+        result = _installed_metadata.preserved_wheel_constraints(self.prefix, requirements)
+        if self.startup_fingerprint() != before or not self.startup_state_matches():
+            msg = "The verified tool changed while preserving its wheel sources; no package change was started."
+            raise HeinzelError(msg)
+        return result
+
+    def validate_install_constraints(self, requirements: list[str], constraints: tuple[str, ...]) -> None:
+        """Validate captured requirement and constraint combinations without reading or executing the tool.
+
+        Raises:
+            HeinzelError: If selected requirements and constraints conflict or cannot be safely combined.
+        """
+        _installed_metadata.validate_constraint_policy(requirements, constraints)
+
+    def record_startup_state(self, *, expected: str) -> None:
+        """Record the exact fingerprint independently verified after an authorized installation change.
+
+        Capture `expected` after the change and before independent source, version and runtime checks; those checks
+        must all concern that same observed generation.
+
+        Raises:
+            HeinzelError: If inspection or confirmation after the write fails.
+            OSError: If the private record cannot be written or synchronized.
+        """
+        _installation_continuity.record(self.prefix, self._continuity_authority, expected=expected)
+
+    def startup_state_matches(self) -> bool:
+        """Check existing continuity evidence, without creating or refreshing it."""
+        return _installation_continuity.matches(self.prefix, self._continuity_authority)
+
+    def clear_stale_startup_pending(self) -> bool:
+        """Remove a continuity pending marker an unfinished change left, once the tool matches its record again.
+
+        A put-back that restored the verified generation, or a change that failed before it changed anything, leaves
+        the marker although nothing is uncertain any more; it would hold every later update and web restart. True if
+        one was removed; a marker whose installation doesn't match the record stays.
+
+        Raises:
+            HeinzelError: If the marker is unsafe.
+            OSError: If it can't be removed durably.
+        """
+        return _installation_continuity.clear_stale_pending(self.prefix, self._continuity_authority)
+
+    def repaired_startup_state_matches(self) -> bool:
+        """`startup_state_matches`, after removing a stale pending marker (`clear_stale_startup_pending`)."""
+        try:
+            self.clear_stale_startup_pending()
+        except (OSError, HeinzelError):
+            return False
+        return self.startup_state_matches()
+
+    def verify_tool_destination(self, store: Path, binary: Path) -> None:
+        """Verify requested uv store and executable directory against this tool's receipt.
+
+        Raises:
+            HeinzelError: If the tool or requested destinations cannot be verified.
+        """
+        msg = "The requested uv store or executable directory does not match the verified tool."
+        try:
+            target = self._tool_target()
+            if store.resolve(strict=True) != Path(target["UV_TOOL_DIR"]) or binary.resolve(strict=True) != Path(
+                target["UV_TOOL_BIN_DIR"]
+            ):
+                raise HeinzelError(msg)
+        except OSError as exc:
+            raise HeinzelError(msg) from exc
+
+    def tool_destination(self) -> tuple[Path, Path]:
+        """Return the verified running tool's store and script directory, without querying uv.
+
+        Raises:
+            HeinzelError: If the running tool's receipt or physical authority cannot be verified.
+            OSError: If a target cannot be inspected.
+        """
+        from heinzel.kernel.install._tool_uninstall import physical_directory  # noqa: PLC0415 - removal-only validation
+
+        target = self._current_tool_target()
+        store, binary = Path(target["UV_TOOL_DIR"]), Path(target["UV_TOOL_BIN_DIR"])
+        for path in (self.prefix, store, binary):
+            physical_directory(path)
+        return store, binary
+
+    def tool_entrypoints(self) -> tuple[Path, ...]:
+        """Return only the currently verified receipt-owned script links.
+
+        Raises:
+            HeinzelError: If the installation or any named script cannot be verified.
+        """
+        target = self._current_tool_target()
+        links = self._owned_tool_links(target)
+        return tuple(Path(target["UV_TOOL_BIN_DIR"]) / name for name in links)
+
+    def uninstall_offline(self, *, expected: str, executable: "VerifiedUV") -> None:
+        """Remove only this continuity-verified tool through offline uv under the caller's quiescence fence.
+
+        No refused or uncertain removal triggers a network restore. The caller retains its durable mutation gate.
+
+        Raises:
+            HeinzelError: If continuity, target, uv or the observed removal cannot be verified.
+            OSError: If a selected path cannot be inspected.
+        """
+        from heinzel.kernel.install._tool_uninstall import physical_directory  # noqa: PLC0415 - removal only
+
+        with self.tool_transaction():
+            target = self._current_tool_target()
+            prefix = self.prefix
+            for path in (prefix, Path(target["UV_TOOL_DIR"]), Path(target["UV_TOOL_BIN_DIR"])):
+                physical_directory(path)
+            links = self._owned_tool_links(target)
+            executable.verify()
+            if not self.startup_state_matches() or self.startup_fingerprint() != expected:
+                msg = "The Heinzel installation changed; nothing was uninstalled. Inspect its local installation."
+                raise HeinzelError(msg)
+            executable.verify()
+            environment = {"PATH": "/usr/bin:/bin", "LANG": "C", "UV_NO_CACHE": "1", **target}
+            command = [
+                str(executable.path),
+                "--offline",
+                "--no-config",
+                "--no-python-downloads",
+                "tool",
+                "uninstall",
+                "heinzel",
+            ]
+            try:
+                result = self._exact_runner(command, environment)
+            except (OSError, subprocess.SubprocessError) as exc:
+                msg = "Offline removal did not finish. Heinzel services remain stopped; inspect the local uv tool."
+                raise HeinzelError(msg) from exc
+            if (
+                result.returncode
+                or os.path.lexists(prefix)
+                or any(os.path.lexists(Path(target["UV_TOOL_BIN_DIR"]) / name) for name in links)
+            ):
+                msg = (
+                    "Offline removal could not be verified. Heinzel services remain stopped; inspect the local uv tool."
+                )
+                raise HeinzelError(msg)
+            from heinzel.kernel.install._offline_uv import fsync_directory  # noqa: PLC0415 - durable removal result
+
+            fsync_directory(Path(target["UV_TOOL_DIR"]))
+            fsync_directory(Path(target["UV_TOOL_BIN_DIR"]))
+
+    def tool_constraints(self) -> list[str]:
+        """Read existing uv tool constraints as normalized requirements for a subsequent install.
+
+        Raises:
+            HeinzelError: If the receipt constraints cannot be preserved without guessing.
+        """
+        try:
+            data = _read_tool_receipt(self.prefix.resolve(strict=True))
+            result = _constraints_from_receipt(data)
+        except (OSError, ValueError, KeyError, TypeError, tomllib.TOMLDecodeError) as exc:
+            msg = (
+                "The tool's existing constraints cannot be safely preserved; the update was not started. "
+                "Inspect the uv receipt and update the tool manually with its original resolver policy."
+            )
+            raise HeinzelError(msg) from exc
+        else:
+            return result
+
+    def core_pin(self) -> CorePin | None:
+        """Where the uv tool environment installs Heinzelmännchen from and what it is pinned to; None outside of one."""
+        entries = self._receipt()
+        return pin_from_receipt(entries[0]) if entries else None
+
+    def plugin_pins(self) -> list[CorePin]:
+        """What each plugin in the uv tool environment installs from, as the receipt has it; empty outside of one."""
+        return [pin_from_receipt(entry) for entry in (self._receipt() or [])[1:]]
+
+    def _receipt(self) -> list[dict[str, Any]] | None:
+        if not self.is_tool:
+            return None
+        data = _read_tool_receipt(self.prefix.resolve(strict=True))
+        return list(data["tool"]["requirements"])
+
+    @staticmethod
+    def core_requirement(source: str) -> str:
+        """Normalize and validate the selected core source as a distribution requirement.
+
+        Raises:
+            HeinzelError: If the source does not identify the core distribution.
+        """
+        return _core_requirement(source)
+
+    def tool_install_command(
+        self,
+        core: str,
+        plugins: Sequence[str],
+        *,
+        refresh: bool = False,
+        reinstall: bool = True,
+        original: bool = False,
+    ) -> list[str]:
+        """Reinstall the tool environment from `core` with `plugins`, on the Python Heinzelmännchen runs on.
+
+        With `refresh` uv asks the indexes and git remotes again instead of trusting its cache, so a branch is
+        resolved to its newest commit and an index to its newest release. Without `reinstall`, what is installed and
+        still satisfies the requirements stays as it is (automatic updates, ADR 0116). Inside `newer_interpreter` the
+        command names that verified interpreter instead, unless `original` asks for the one the tool runs on (a
+        restore always does).
+        """
+        requirement = _core_requirement(core)
+        scope = self._tool_scope.get()
+        target = None if original else self._target_python.get()
+        if target is not None:
+            python = target[0]
+        else:
+            python = scope[3][0] if scope else _installation_continuity.tool_python(self.prefix)[0]
+        command = [
+            self.uv,
+            "tool",
+            "install",
+            *(["--reinstall"] if reinstall else []),
+            *(["--refresh"] if refresh else []),
+            "--python",
+            python,
+            requirement,
+        ]
+        for plugin in plugins:
+            command += ["--with", plugin]
+        return command
+
+    @property
+    def changes_interpreter(self) -> bool:
+        """Whether installs now go onto a newer interpreter (`newer_interpreter`), so uv recreates the tool folder."""
+        return self._target_python.get() is not None
+
+    @contextmanager
+    def newer_interpreter(self, version: str, environment: Mapping[str, str] | None = None) -> Generator[str]:
+        """Install onto a verified uv-managed Python `version` (`X.Y`) for one update; yields its path.
+
+        A target release that needs a newer Python than the tool runs on can only be reached this way. The
+        interpreter is obtained (uv installs it if missing) and verified before anything is installed; restores keep
+        naming the original interpreter.
+
+        Yields:
+            The path of the verified interpreter.
+
+        Raises:
+            HeinzelError: If uv can't provide a verified interpreter; the tool is untouched then.
+        """
+        identity = _tool_python.managed_python(self._runner, self.uv, version, environment)
+        token = self._target_python.set(identity)
+        try:
+            yield identity[0]
+        finally:
+            self._target_python.reset(token)
+
+    def pip_command(self, action: str, spec: str) -> list[str]:
+        """`uv pip install` or `uninstall` into the environment Heinzelmännchen runs in."""
+        return [self.uv, "pip", action, "--python", sys.executable, spec]
+
+    def _tool_target(self) -> dict[str, str]:
+        """Bind uv's tool store and executable directory to the running installation.
+
+        Raises:
+            HeinzelError: If the receipt does not identify the running tool and its installed entry point.
+        """
+        msg = "Cannot verify the running uv tool and its hz entry point; update it explicitly with uv."
+        try:
+            prefix = self.prefix.resolve(strict=True)
+            if prefix.name != CORE_DISTRIBUTION:
+                raise HeinzelError(msg)
+            data = _read_tool_receipt(prefix)
+            entries = data["tool"]["entrypoints"]
+            if (prefix / "bin").is_symlink():
+                raise HeinzelError(msg)
+            matches = [item for item in entries if item.get("name") == "hz"]
+            if len(matches) != 1:
+                raise HeinzelError(msg)
+            executable = Path(matches[0]["install-path"])
+            directory = executable.parent.resolve(strict=True)
+            for item in entries:
+                name, path = item["name"], Path(item["install-path"])
+                if (
+                    not isinstance(name, str)
+                    or not name
+                    or name in {".", ".."}
+                    or Path(name).name != name
+                    or not path.is_absolute()
+                    or path.name != name
+                    or path.parent.resolve(strict=True) != directory
+                    or not path.is_symlink()
+                    or (prefix / "bin" / name).is_symlink()
+                    or not (prefix / "bin" / name).is_file()
+                    or path.resolve(strict=True) != (prefix / "bin" / name).resolve(strict=True)
+                ):
+                    raise HeinzelError(msg)
+            return {"UV_TOOL_DIR": str(prefix.parent), "UV_TOOL_BIN_DIR": str(directory)}
+        except (OSError, ValueError, TypeError, KeyError, AttributeError, tomllib.TOMLDecodeError) as exc:
+            raise HeinzelError(msg) from exc
+
+    @contextmanager
+    def tool_transaction(self) -> Generator[None]:
+        """Keep a validated target only for one update and its recovery attempt.
+
+        Raises:
+            HeinzelError: If the target or interpreter cannot be verified.
+        """
+        scope = self._tool_scope.get()
+        if scope is not None:
+            self._current_tool_target()
+            if self._tool_target() != scope[0] or _installation_continuity.tool_python(self.prefix) != scope[3]:
+                msg = "The verified uv tool target or interpreter changed; inspect it before updating."
+                raise HeinzelError(msg)
+            yield
+            return
+        target = self._tool_target()
+        identities = self._target_directories(target)
+        owned = self._owned_tool_links(target)
+        python = _installation_continuity.tool_python(self.prefix)
+        if self._tool_target() != target or self._target_directories(target) != identities:
+            msg = "The verified uv tool target changed; update it explicitly with uv."
+            raise HeinzelError(msg)
+        token = self._tool_scope.set((target, identities, owned, python))
+        try:
+            yield
+        finally:
+            self._tool_scope.reset(token)
+
+    def _owned_tool_links(self, target: Mapping[str, str]) -> dict[str, tuple[int, int, str]]:
+        """Capture only receipt-owned, presently verified links for this operation's recovery.
+
+        Raises:
+            HeinzelError: If the entrypoints cannot be verified.
+        """
+        msg = "The verified uv tool entrypoints changed; update it explicitly with uv."
+        try:
+            if self._tool_target() != target:
+                raise HeinzelError(msg)
+            prefix = self.prefix.resolve(strict=True)
+            data = _read_tool_receipt(prefix)
+            owned: dict[str, tuple[int, int, str]] = {}
+            for entry in data["tool"]["entrypoints"]:
+                path = Path(entry["install-path"])
+                name = entry["name"]
+                if path.parent.resolve(strict=True) != Path(target["UV_TOOL_BIN_DIR"]) or path.name != name:
+                    raise HeinzelError(msg)
+                info = path.lstat()
+                link = str(path.readlink())
+                if path.resolve(strict=True) != (prefix / "bin" / name).resolve(strict=True):
+                    raise HeinzelError(msg)
+                owned[name] = (info.st_dev, info.st_ino, link)
+            if self._tool_target() != target:
+                raise HeinzelError(msg)
+        except (OSError, ValueError, TypeError, KeyError, AttributeError, tomllib.TOMLDecodeError) as exc:
+            raise HeinzelError(msg) from exc
+        else:
+            return owned
+
+    @staticmethod
+    def _target_directories(
+        target: Mapping[str, str], owned: Mapping[str, tuple[int, int, str]] | None = None
+    ) -> tuple[tuple[int, int], ...]:
+        """Refuse a missing, replaced or symlinked authority directory.
+
+        Raises:
+            HeinzelError: If a target directory cannot be verified.
+        """
+        result: list[tuple[int, int]] = []
+        msg = "The verified uv tool target changed; update it explicitly with uv."
+        try:
+            for key in ("UV_TOOL_DIR", "UV_TOOL_BIN_DIR"):
+                path = Path(target[key])
+                if path.is_symlink() or not path.is_dir() or path.resolve(strict=True) != path:
+                    raise HeinzelError(msg)
+                info = path.stat()
+                if key == "UV_TOOL_BIN_DIR":
+                    with os.scandir(path) as entries:
+                        for entry in entries:
+                            if entry.is_symlink():
+                                try:
+                                    entry.stat(follow_symlinks=True)
+                                except OSError as exc:
+                                    link_info = entry.stat(follow_symlinks=False)
+                                    current = (link_info.st_dev, link_info.st_ino, str(Path(entry.path).readlink()))
+                                    if owned is None or owned.get(entry.name) != current:
+                                        detail = "Repair unresolved uv executable symlinks before updating."
+                                        raise HeinzelError(detail) from exc
+                result.append((info.st_dev, info.st_ino))
+        except (OSError, KeyError) as exc:
+            raise HeinzelError(msg) from exc
+        return tuple(result)
+
+    def _current_tool_target(self, *, recovery: bool = False) -> dict[str, str]:
+        scope = self._tool_scope.get()
+        if scope is None:
+            target = self._tool_target()
+            self._target_directories(target)
+            return target
+        target, identities, owned, _python = scope
+        if self._target_directories(target, owned if recovery else None) != identities:
+            msg = "The verified uv tool target changed; update it explicitly with uv."
+            raise HeinzelError(msg)
+        return target
+
+    def run(
+        self,
+        command: list[str],
+        failure: str,
+        activity: str,
+        environment: Mapping[str, str] | None = None,
+        *,
+        additional_constraints: tuple[str, ...] = (),
+    ) -> None:
+        """Run a command with a progress indicator, with `environment` added to its environment if given.
+
+        `additional_constraints` applies only to uv tool installs and is combined with the verified receipt policy
+        for both the attempt and any recovery. Conflicting or malformed constraints are refused before uv starts.
+
+        Raises:
+            HeinzelError: If the command fails or its tool target or constraints cannot be verified.
+        """
+        if command[1:3] == ["tool", "install"]:
+            self._run_tool(command, failure, activity, environment, additional_constraints)
+            return
+        if additional_constraints:
+            msg = "Tool constraints cannot be applied to this command."
+            raise HeinzelError(msg)
+        result = self.attempt(command, activity, environment)
+        if result.returncode != 0:
+            msg = f"{failure}\n{result.stderr.strip() or result.stdout.strip()}"
+            raise HeinzelError(msg)
+
+    def _run_tool(
+        self,
+        command: list[str],
+        failure: str,
+        activity: str,
+        environment: Mapping[str, str] | None,
+        additional_constraints: tuple[str, ...],
+    ) -> None:
+        with self.tool_transaction():
+            requirements = self.requirements()
+            if not requirements:
+                msg = "Cannot verify the running uv tool requirements; update it explicitly with uv."
+                raise HeinzelError(msg)
+            try:
+                constraints = [*self.tool_constraints(), *(str(Requirement(item)) for item in additional_constraints)]
+            except InvalidRequirement as exc:
+                msg = "The additional tool constraints are invalid; the update was not started."
+                raise HeinzelError(msg) from exc
+            if additional_constraints:
+                try:
+                    python = command.index("--python")
+                    selected = [
+                        command[python + 2],
+                        *(command[index + 1] for index, item in enumerate(command) if item == "--with"),
+                    ]
+                except (ValueError, IndexError) as exc:
+                    msg = "The selected tool requirements cannot be verified; the update was not started."
+                    raise HeinzelError(msg) from exc
+                self.validate_install_constraints(selected, tuple(constraints))
+            if constraints and any(arg.startswith(("-c", "--constraints")) for arg in command):
+                msg = "Cannot combine supplied constraints with the existing receipt policy; update manually."
+                raise HeinzelError(msg)
+            restore = self.tool_install_command(requirements[0], requirements[1:], original=True)
+            with tempfile.TemporaryDirectory(prefix="heinzel-tool-constraints-") as directory:
+                args: list[str] = []
+                if constraints:
+                    contents = ("\n".join(constraints) + "\n").encode("utf-8")
+                    if len(contents) > 1024 * 1024:
+                        msg = "The receipt constraints are too large to preserve safely; inspect and update manually."
+                        raise HeinzelError(msg)
+                    path = Path(directory) / "constraints.txt"
+                    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    with os.fdopen(fd, "wb") as stream:
+                        stream.write(contents)
+                    args = ["--constraints", str(path)]
+                self._run_tool_with_policy(command + args, restore, args, (failure, activity), environment)
+
+    def _run_tool_with_policy(
+        self,
+        command: list[str],
+        restore: list[str],
+        constraints: list[str],
+        messages: tuple[str, str],
+        environment: Mapping[str, str] | None,
+    ) -> None:
+        """Run the attempt and recovery with captured policy.
+
+        Raises:
+            HeinzelError: If the attempt fails.
+        """
+        failure, activity = messages
+        target = self._current_tool_target()
+        try:
+            original = self.startup_fingerprint()
+        except HeinzelError:
+            original = None
+        result = self.attempt(command, activity, environment)
+        if result.returncode == 0:
+            return
+        detail = result.stderr.strip() or result.stdout.strip()
+        try:
+            intact = self._tool_target() == target
+        except HeinzelError:
+            intact = False
+        recovery = ""
+        if not intact:
+            try:
+                restored = self.attempt(
+                    restore + constraints, "Restoring the previous tool", environment, recovery=True
+                )
+                if restored.returncode == 0 and original is not None and self.startup_fingerprint() == original:
+                    self.hz("--version")
+                    recovery = "The previous tool was restored."
+            except HeinzelError:
+                pass
+            if not recovery:
+                recovery = f"The previous tool may not start; restore it with: {self.tool_restore_hint(restore)}"
+                if constraints:
+                    recovery += " Inspect and reapply its original constraints when restoring manually."
+        msg = "\n".join(part for part in (failure, detail, recovery) if part)
+        raise HeinzelError(msg)
+
+    def tool_restore_hint(self, command: Sequence[str]) -> str:
+        """Show a restore command with its verified tool store and executable directory."""
+        scope = self._tool_scope.get()
+        target = scope[0] if scope else self._tool_target()
+        variables = " ".join(f"{key}={shlex.quote(value)}" for key, value in target.items())
+        return f"{variables} {shlex.join(command)}"
+
+    def attempt(
+        self, command: list[str], activity: str, environment: Mapping[str, str] | None = None, *, recovery: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        """Run a command with a progress indicator and return how it ended, for callers that explain a failure.
+
+        Raises:
+            HeinzelError: If the selected interpreter cannot be verified.
+        """
+        if command[1:3] == ["tool", "install"]:
+            environment = dict(environment or {}) | self._current_tool_target(recovery=recovery)
+            scope = self._tool_scope.get()
+            python = scope[3] if scope else _installation_continuity.tool_python(self.prefix)
+            if (
+                _installation_continuity.external_python(Path(python[0])) != python
+                or (not recovery and _installation_continuity.tool_python(self.prefix) != python)
+                or command.count("--python") != 1
+            ):
+                msg = "The original tool interpreter changed; inspect the installation before updating."
+                raise HeinzelError(msg)
+            position = command.index("--python") + 1
+            target = None if recovery else self._target_python.get()
+            if target is not None and position < len(command) and command[position] == target[0]:
+                if _installation_continuity.external_python(Path(target[0])) != target:
+                    msg = "The selected newer interpreter changed; the update was not started."
+                    raise HeinzelError(msg)
+            elif position >= len(command) or command[position] != python[0]:
+                msg = "The selected tool interpreter changed; reload before updating."
+                raise HeinzelError(msg)
+        kept = _installation_continuity.kept_records(self.prefix) if command[1:3] == ["tool", "install"] else {}
+        with self._progress.task(activity):
+            try:
+                return self._runner(command, environment) if environment else self._runner(command)
+            finally:
+                if kept:  # uv recreates the tool folder for another interpreter, deleting them
+                    _installation_continuity.put_back_records(self.prefix, kept)
+
+    def hz(self, *args: str) -> str:
+        """Run `hz` in a fresh interpreter and return its output; this process still has the old environment loaded.
+
+        Raises:
+            HeinzelError: If the command fails.
+        """
+        flags = ["-I", "-B"] if sys.dont_write_bytecode else ["-I"]
+        try:
+            result = subprocess.run(  # noqa: S603 - our own interpreter and module
+                [sys.executable, *flags, "-m", "heinzel", *args],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=HZ_TIMEOUT,
+                # A probe, not a person: no update check (ADR 0031) to wait for or to spend a request on.
+                env=with_search_path(subprocess_environment()) | {"HZ_UPDATE_CHECK": "false"},
+            )
+        except subprocess.TimeoutExpired as exc:
+            msg = f"`hz {' '.join(args)}` did not finish within {HZ_TIMEOUT}s after the change."
+            raise HeinzelError(msg) from exc
+        except OSError as exc:
+            msg = f"`hz {' '.join(args)}` could not start after the change."
+            raise HeinzelError(msg) from exc
+        if result.returncode != 0:
+            msg = f"`hz {' '.join(args)}` failed after the change:\n{result.stderr}"
+            raise HeinzelError(msg)
+        return result.stdout
+
+    @property
+    def uv(self) -> str:
+        """The uv executable.
+
+        Raises:
+            HeinzelError: If uv is not installed.
+        """
+        if not self._uv:
+            raise HeinzelError(missing_uv_message())
+        return self._uv

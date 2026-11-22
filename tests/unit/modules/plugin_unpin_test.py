@@ -9,7 +9,8 @@ import pytest
 import tomlkit
 
 from heinzel import HeinzelError, Progress
-from heinzel.kernel import ENTRY_POINT_GROUP, Installation, _installation_continuity
+from heinzel.kernel import ENTRY_POINT_GROUP, Installation
+from heinzel.kernel.install import _installation_continuity
 from heinzel.modules.system.plugin._models import PluginSettings
 from heinzel.modules.system.plugin._service import PluginService
 from tests.unit.modules.plugin_service_test import isolated_python, tool_env

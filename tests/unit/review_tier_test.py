@@ -16,16 +16,16 @@ spec.loader.exec_module(review_tier)
 @pytest.mark.parametrize(
     "path",
     [
-        "src/heinzel/kernel/_installation.py",
-        "src/heinzel/kernel/_installation_continuity.py",
-        "src/heinzel/kernel/_installed_metadata.py",
-        "src/heinzel/kernel/_metadata_verifier.py",
+        "src/heinzel/kernel/install/_installation.py",
+        "src/heinzel/kernel/install/_installation_continuity.py",
+        "src/heinzel/kernel/install/_installed_metadata.py",
+        "src/heinzel/kernel/install/_metadata_verifier.py",
         "src/heinzel/heads/install.py",
         "src/heinzel/heads/_tool_install.py",
         "src/heinzel/heads/bootstrap.py",
         "src/heinzel/heads/cli/_update.py",
         "src/heinzel/heads/web/_updates.py",
-        "src/heinzel/modules/system/_update.py",
+        "src/heinzel/modules/system/updater/_update.py",
         "src/heinzel/modules/system/lifecycle/_uninstall.py",
         "src/heinzel/modules/system/daemon/_service.py",
         "docs/install.sh",
@@ -42,7 +42,7 @@ spec.loader.exec_module(review_tier)
         "src/heinzel/modules/heinzel/_model_grants.py",
         "src/heinzel/modules/heinzel/_model_admission.py",
         "src/heinzel/modules/heinzel/_turn_authority_fence.py",
-        "src/heinzel/kernel/_release.py",
+        "src/heinzel/kernel/install/_release.py",
         "scripts/release.sh",
         "scripts/pypi_release.py",
         ".github/workflows/ci.yml",
@@ -129,8 +129,8 @@ def test_markdown_that_is_shipped_or_run_is_not_none():
 
 
 def test_a_deleted_path_counts():
-    paths = review_tier.parse_status("M\tdocs/a.md\nD\tsrc/heinzel/kernel/_installation.py\n")
-    assert paths == ["docs/a.md", "src/heinzel/kernel/_installation.py"]
+    paths = review_tier.parse_status("M\tdocs/a.md\nD\tsrc/heinzel/kernel/install/_installation.py\n")
+    assert paths == ["docs/a.md", "src/heinzel/kernel/install/_installation.py"]
     assert review_tier.tier_of(paths) == "full"
 
 

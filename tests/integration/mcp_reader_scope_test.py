@@ -13,7 +13,7 @@ from mcp.client.streamable_http import streamable_http_client
 
 from heinzel import Module
 from heinzel.heads import mcp
-from heinzel.heads._mcp_tokens import McpTokens
+from heinzel.modules.system.client._mcp_tokens import McpTokens
 
 pytestmark = pytest.mark.integration
 

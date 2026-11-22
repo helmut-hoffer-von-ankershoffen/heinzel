@@ -23,10 +23,11 @@ from typing import NoReturn
 import pytest
 
 from heinzel import HeinzelError, Progress
-from heinzel.kernel import Installation, ReleaseSource, _installation_continuity
-from heinzel.kernel._installation import _run
-from heinzel.modules.system._announced import Announcement, environment_versions
-from heinzel.modules.system._update import UpdateService
+from heinzel.kernel import Installation, ReleaseSource
+from heinzel.kernel.install import _installation_continuity
+from heinzel.kernel.install._installation import _run
+from heinzel.modules.system.updater._announced import Announcement, environment_versions
+from heinzel.modules.system.updater._update import UpdateService
 
 pytestmark = pytest.mark.integration
 
@@ -421,3 +422,58 @@ def test_real_uv_moves_a_tagged_git_plugin_to_exactly_the_announced_commit(tool,
         k: v for k, v in before.items() if k != "heinzel-maps"
     }  # hz, heinzel-clock and fakedep stay, though 2.0.0 of each is there
     assert second in (tool.prefix / "uv-receipt.toml").read_text()  # still pinned, now to the new commit
+
+
+# Standard-app plugins installed from hash-bound local wheels, then an announced core-only update --------------------
+
+
+@pytest.fixture
+def standard_app(tool, tmp_path, original_python):
+    """heinzel-clock as the standard app installs it: from a verified wheel in `app-artifacts`, by a transient
+    override that is taken out of the receipt again, so the receipt names it as a bare index requirement."""
+    artifacts = tmp_path / "data" / "app-artifacts"
+    artifacts.mkdir(parents=True)
+    wheel(artifacts, "heinzel-clock", "1.5.0", requires=("heinzel>=1",))
+    clock = artifacts / "heinzel_clock-1.5.0-py3-none-any.whl"
+    overrides = artifacts / ".verified-overrides"
+    overrides.write_text(f"heinzel-clock @ {clock.as_uri()}#sha256={hashlib.sha256(clock.read_bytes()).hexdigest()}\n")
+    later = tmp_path / "later"  # 2.0.0 is published only after this install, as in `tool`
+    later.mkdir()
+    for published in (tmp_path / "wheels").glob("*-2.0.0-*.whl"):
+        published.rename(later / published.name)
+    tool.run(
+        [
+            *tool.tool_install_command("heinzel", ["heinzel-clock"], reinstall=False),
+            "--override",
+            str(overrides),
+            "--reinstall-package",
+            "heinzel-clock",
+        ],
+        "uv couldn't install the standard-app plugin",
+        "Installing heinzel-clock",
+    )
+    overrides.unlink()
+    for published in later.iterdir():
+        published.rename(tmp_path / "wheels" / published.name)
+    generation = tool.remove_tool_overrides(expected=tool.startup_fingerprint(), overrides={"heinzel-clock": clock})
+    tool.record_startup_state(expected=generation)
+    receipt = (tool.prefix / "uv-receipt.toml").read_text()
+    assert "overrides" not in receipt
+    assert clock.as_uri() not in receipt  # the receipt names heinzel-clock bare, as an index requirement
+    return tool
+
+
+@pytest.mark.timeout(60)
+def test_real_uv_announced_core_only_update_keeps_standard_app_wheels(standard_app, tmp_path):
+    before = environment_versions(standard_app.prefix)
+    assert before["heinzel-clock"] == "1.5.0"
+    now = datetime.now(UTC)
+    announced = Announcement("2.0.0", {}, exclude_newer=now + timedelta(days=1))
+    service = UpdateService(standard_app, None)  # type: ignore[arg-type] - no release source is asked
+    result = service.apply_announced(announced, current="1.0.0", folder=tmp_path / "state", trial=lambda v: True)
+    assert result.updated, result.message
+    versions = environment_versions(standard_app.prefix)
+    assert versions["heinzel"] == "2.0.0"
+    assert versions["heinzel-clock"] == "1.5.0"  # still the verified wheel, though 1.0.0 and 2.0.0 are in the index
+    assert versions["fakedep"] == before["fakedep"]
+    assert "sha256=" not in (standard_app.prefix / "uv-receipt.toml").read_text()  # the transient sources went again

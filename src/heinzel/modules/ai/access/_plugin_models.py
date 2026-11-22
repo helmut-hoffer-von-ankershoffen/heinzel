@@ -14,7 +14,7 @@ from typing import Any
 
 from heinzel import AccessStatus, AccessTest, Config, HeinzelError
 from heinzel.kernel import AiModelOptions, AiModelsSource, clean_text
-from heinzel.kernel._ai_models import (
+from heinzel.kernel.ai._ai_models import (
     ModelOffer,
     ModelUnavailableError,
     build_model,

@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
+import type { ApplyOptions } from "@/features/runtime/lifecycle/controller";
+import { RestartAndApply } from "@/features/runtime/lifecycle/RestartAndApply";
 import { t } from "@/i18n";
-import type { ApplyOptions } from "@/lifecycle/controller";
-import { RestartAndApply } from "@/lifecycle/RestartAndApply";
 
 /** Restart only the authenticated server serving this window, and keep its open work mounted. */
 export function WebServerSettings({ options }: { options?: ApplyOptions }) {
