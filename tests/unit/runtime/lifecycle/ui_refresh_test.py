@@ -9,7 +9,9 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from heinzel import HeinzelError
-from heinzel.modules.system.lifecycle._service import READY_SECONDS, WebRestart, WebService, WebStatus
+from heinzel.modules.system.lifecycle._adapter_launchd import LaunchdWebCommands
+from heinzel.modules.system.lifecycle._adapter_systemd import SystemdWebCommands
+from heinzel.modules.system.lifecycle._service import LABEL, READY_SECONDS, UNIT, WebRestart, WebService, WebStatus
 from heinzel.modules.ui import _web_head_refresh
 
 pytestmark = pytest.mark.unit
@@ -536,3 +538,42 @@ def test_the_default_runner_runs_the_fixed_vector_with_a_timeout(monkeypatch):
     _service._run(["launchctl", "list"])
     assert seen["command"] == ["launchctl", "list"]
     assert seen["timeout"] == 10
+
+
+PLIST = "/Users/a/Library/LaunchAgents/job.plist"
+
+
+def test_launchd_spells_every_command_of_the_web_job() -> None:
+    """The web job's command lines live in the launchd adapter, spelled as the service ran them before."""
+    commands = LaunchdWebCommands("/bin/launchctl", 501, LABEL)
+    assert commands.base() == ["/bin/launchctl"]
+    assert commands.inspect() == ["/bin/launchctl", "print", f"gui/501/{LABEL}"]
+    assert commands.listing() == ["/bin/launchctl", "list"]
+    assert commands.session() == (["/bin/launchctl", "managername"], ["/bin/launchctl", "manageruid"])
+    assert commands.load(PLIST) == [["/bin/launchctl", "bootstrap", "gui/501", PLIST]]
+    assert commands.start(PLIST) == ["/bin/launchctl", "bootstrap", "gui/501", PLIST]
+    assert commands.unload() == ["/bin/launchctl", "bootout", f"gui/501/{LABEL}"]
+    assert (commands.reload(), commands.stop_state()) == (None, None)
+
+
+def test_systemd_spells_every_command_of_the_web_job() -> None:
+    """The same for systemd's user instance."""
+    commands = SystemdWebCommands("/usr/bin/systemctl", UNIT)
+    user = ["/usr/bin/systemctl", "--user"]
+    shown = "--property=LoadState,FragmentPath,DropInPaths,ExecStart,MainPID"
+    assert commands.base() == user
+    assert commands.inspect() == [*user, "show", UNIT, shown]
+    assert commands.load(PLIST) == [[*user, "daemon-reload"], [*user, "enable", "--now", UNIT]]
+    assert commands.start(PLIST) == [*user, "start", UNIT]
+    assert commands.unload() == [*user, "disable", "--now", UNIT]
+    assert commands.reload() == [*user, "daemon-reload"]
+    assert commands.stop_state() == [*user, "show", UNIT, "--property=ActiveState,MainPID"]
+
+
+def test_a_linux_login_without_systemctl_has_no_service_manager(tmp_path: Path) -> None:
+    def absent(_name: str) -> str | None:
+        return None
+
+    web = WebService(tmp_path, tmp_path, tmp_path / "hz", platform="linux", which=absent, uid=7)
+    with pytest.raises(HeinzelError, match="launchd or Linux systemd"):
+        web.service_manager()
