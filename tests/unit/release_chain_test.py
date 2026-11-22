@@ -369,9 +369,13 @@ def test_snapshot_waits_for_pypi_and_refuses_a_different_pypi_wheel(monkeypatch)
 
 
 def receipt(os_name, *, verdict="ACCEPTED", run_id="5", attempt="1", wheel=WHEEL):
+    shards = {"public": ["1"], "update": ["2"], "plugins": ["3"], "browser": ["4"]}
     return {
+        "schema": 2,
         "verdict": verdict,
         "public_path_proof": True,
+        "expectation_supplied": True,
+        "sharding": {"shards": shards, "proof_roots": {name: f"proof/{name}" for name in shards}},
         "ci": {"repository": chain.REPOSITORY, "run_id": run_id, "run_attempt": attempt, "runner_os": os_name},
         "published": {
             "expect_version": "0.9.54",
@@ -382,10 +386,12 @@ def receipt(os_name, *, verdict="ACCEPTED", run_id="5", attempt="1", wheel=WHEEL
     }
 
 
-def write_receipts(folder, **overrides):
+def write_receipts(folder, *, edit=None, **overrides):
     for os_name, artifact in chain.RECEIPTS.items():
         (folder / artifact).mkdir(parents=True)
         data = receipt(os_name, **overrides.get(os_name, {}))
+        if edit and os_name == "macOS":
+            edit(data)
         (folder / artifact / "result.json").write_text(json.dumps(data))
 
 
@@ -408,6 +414,23 @@ def test_both_first_attempt_receipts_accept(tmp_path):
 def test_one_bad_receipt_rejects(tmp_path, overrides):
     write_receipts(tmp_path, **overrides)
     assert chain.judge(tmp_path, SNAP, "5", "1")[0] is False
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        lambda r: r.pop("sharding"),  # a serial receipt: acceptance must be the sharded workflow
+        lambda r: r.update(schema=1),
+        lambda r: r["sharding"]["proof_roots"].pop("browser"),  # a shard without its own proof
+        lambda r: r.update(expectation_supplied=False),  # pinned to whatever was published, not the snapshot
+    ],
+    ids=["serial", "old-schema", "shard-without-proof", "unpinned"],
+)
+def test_only_a_pinned_sharded_reduction_counts(tmp_path, edit):
+    write_receipts(tmp_path, edit=edit)
+    good, lines = chain.judge(tmp_path, SNAP, "5", "1")
+    assert good is False
+    assert any(line.startswith("macOS:") and ("sharded" in line or "pinned" in line) for line in lines)
 
 
 def test_a_missing_receipt_is_incomplete_and_a_rerun_never_counts(tmp_path):
@@ -514,3 +537,128 @@ def test_audit_notes_reads_the_new_section(repo):
     (cwd / "CHANGELOG.md").write_text(f"## [0.9.54]\n\n- none\n\n## [0.9.53]\n- {later}\n")
     with pytest.raises(chain.ChainError, match="do not name"):
         chain.audit_notes(cwd, "0.9.53", later, "0.9.54")
+
+
+# ------------------------------------------------------------------------------------------------ dry runs
+
+CUT = "9" * 40
+
+
+def pinned_routes(**kwargs):
+    found = routes(**kwargs)
+    found[f"compare/{TIP}...main"] = {"status": "ahead"}
+    found[f"compare/{CUT}...main"] = {"status": "diverged"}
+    return found
+
+
+def test_a_pinned_plan_replans_the_cut_whatever_is_in_flight():
+    rels = [release("0.9.54", marker=False), release("0.9.53")]
+    read = reader(pinned_routes(rels=rels, prs=[pr(9, "release/v0.9.54")]))
+    result = chain.plan(read, "0.9.54", auto=False, tip=TIP, pinned=True)
+    assert (result["phase"], result["version"], result["base"], result["previous"]) == ("cut", "0.9.54", TIP, "0.9.53")
+
+
+@pytest.mark.parametrize(
+    ("version", "tip", "match"),
+    [("", TIP, "needs the version"), ("0.9.54", CUT, "not a commit of main"), ("0.9.54", "abc", "full commit SHA")],
+)
+def test_a_pinned_plan_needs_a_version_and_a_commit_of_main(version, tip, match):
+    with pytest.raises(chain.ChainError, match=match):
+        chain.plan(reader(pinned_routes()), version, auto=False, tip=tip, pinned=True)
+
+
+def test_a_real_plan_refuses_a_pinned_cut(capsys):
+    assert chain.main(["plan", "--tip", TIP, "--version", "0.9.54", "--pinned"]) == 1
+    assert "dry run only" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("rows", "expected"),
+    [
+        ([run_row()], "is green on the first attempt"),
+        ([run_row(status="queued", conclusion=None)], "would wait"),
+        ([run_row(attempt=2)], "would refuse"),
+    ],
+)
+def test_a_dry_plan_reports_the_gate_and_never_waits(rows, expected):
+    result, lines = chain.dry_plan(reader(pinned_routes(runs=rows)), "0.9.54", tip=TIP, pinned=True)
+    assert result["phase"] == "cut"
+    assert len(lines) == 1
+    assert expected in lines[0]
+
+
+def test_a_dry_plan_turns_a_refusal_into_its_phase():
+    rels = [release("0.9.53", marker=False), release("0.9.52")]
+    result, _ = chain.dry_plan(reader(pinned_routes(rels=rels)), "0.9.54", tip=TIP, pinned=True)
+    assert result["phase"] == "refused"
+    assert "no acceptance marker" in result["reason"]
+
+
+def test_the_release_pr_of_a_version_is_the_newest_same_repo_one():
+    rows = [
+        pr(9, "release/v0.9.54"),
+        pr(12, "release/v0.9.54", repo="someone/fork"),
+        pr(11, "release/v0.9.54", title="x"),
+        pr(10, "release/v0.9.54"),
+    ]
+    assert chain.release_pr_number(reader({"pulls": rows}), "0.9.54") == 10
+    assert chain.release_pr_number(reader({"pulls": []}), "0.9.54") is None
+
+
+def test_the_dry_candidate_verdict(monkeypatch):
+    rows = [pr(9, "release/v0.9.54")]
+    parents = {"parents": [{"sha": TIP}]}
+    read = reader({"pulls": rows, "pulls/9": rows[0] | {"state": "open"}, f"commits/{HEAD}": parents})
+    closed = reader({"pulls": rows, "pulls/9": rows[0] | {"state": "closed"}})
+    good, lines = chain.dry_candidate(closed, "0.9.54", TIP)
+    assert good is True
+    assert "only while its PR is open" in lines[0]
+    none = ["candidate: no release PR of v0.10.0; no candidate verdict"]
+    assert chain.dry_candidate(read, "0.10.0", "") == (True, none)
+
+    def finished(_read, number, version):
+        assert (number, version) == (9, "0.9.54")
+        return {"run_id": 77, "head": HEAD}
+
+    monkeypatch.setattr(chain, "verify_candidate", finished)
+    good, lines = chain.dry_candidate(read, "0.9.54", TIP)
+    assert good is True
+    assert "OK, run 77" in lines[0]
+    good, lines = chain.dry_candidate(read, "0.9.54", CUT)
+    assert good is False
+    assert "not on the cut SHA" in lines[-1]
+
+    def running(*_):
+        msg = "candidate CI is running"
+        raise chain.Wait(msg)
+
+    monkeypatch.setattr(chain, "verify_candidate", running)
+    assert chain.dry_candidate(read, "0.9.54", TIP)[0] is True
+
+    def refused(*_):
+        msg = "the candidate is refused: partial"
+        raise chain.ChainError(msg)
+
+    monkeypatch.setattr(chain, "verify_candidate", refused)
+    good, lines = chain.dry_candidate(read, "0.9.54", TIP)
+    assert good is False
+    assert "REFUSED" in lines[0]
+
+
+def test_the_dry_candidate_never_merges_or_writes(monkeypatch):
+    monkeypatch.setattr(chain, "run", lambda *_a, **_k: pytest.fail("a dry candidate ran a command"))
+    monkeypatch.setattr(chain, "post_check", lambda *_a: pytest.fail("a dry candidate posted a check"))
+    monkeypatch.setattr(chain, "get", reader({"pulls": []}))
+    assert chain.main(["candidate", "--dry-run", "--version", "0.9.54"]) == 0
+    assert chain.main(["candidate", "--version", "0.9.54"]) == 1  # a real candidate needs its PR
+
+
+def test_the_real_receipts_of_a_sharded_release_are_judged_by_the_same_rules():
+    """The workflow pins the sharded acceptance by workflow_call; the verdict reads its result artifacts."""
+    workflow = (ROOT / ".github/workflows/release-chain.yml").read_text()
+    assert "uses: ./.github/workflows/acceptance.yml" in workflow
+    acceptance = (ROOT / ".github/workflows/acceptance.yml").read_text()
+    assert "workflow_call:" in acceptance
+    assert "reduce.py --release" in acceptance
+    for artifact in chain.RECEIPTS.values():
+        assert artifact.removesuffix(artifact.rsplit("-", 1)[1]) + "${{ matrix.runner_os }}" in acceptance

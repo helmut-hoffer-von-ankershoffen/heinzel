@@ -40,10 +40,12 @@ Constraints per workflow:
   PRs trigger none). A maintainer reviews all checks before merging.
 - `release-chain.yml` ("Release", core only): the whole Core release in CI (`scripts/release_chain.py`): cut on a
   first-attempt green main tip, candidate CI (full, first attempt), merge as the owner (secret `RELEASE_TOKEN`) only
-  if main has not moved since the candidate base, tag and Publish, PyPI, compose, acceptance on both OSes, the
-  `acceptance.json` marker, then Latest. Publish creates a Core release with `--latest=false`; nothing is Latest
+  if main has not moved since the candidate base, tag and Publish, PyPI, compose, the sharded `acceptance.yml` on both
+  OSes (`workflow_call`), the `acceptance.json` marker, then Latest. Publish creates a Core release with `--latest=false`; nothing is Latest
   before its marker. Dispatch again to resume; a rerun of failed jobs never counts as acceptance. Auto-cut and resume
-  on a schedule only while `vars.AUTO_CUT` is `true`. A PR touching the chain runs it as a dry run.
+  on a schedule only while `vars.AUTO_CUT` is `true`. A PR touching the chain runs it as a dry run. A dispatch with
+  `dry_run`, `version` and `cut_sha` replans that cut from the given main commit and prints the plan, the gate and the
+  candidate verdict of the version's release PR, pushing, merging and publishing nothing.
 - `release-freeze.yml` (core only): the check "Release freeze", red on every PR while another PR is the open release
   candidate; the chain posts it on all open PRs at the cut and after the merge. Not required by the ruleset yet: it is
   added after this workflow has been dispatched once, so every open PR carries the check first.

@@ -19,6 +19,9 @@ Order and rules (they are the rules the local driver kept):
 - snapshot: after the GitHub release, PyPI and the composed app exist: the wheel and profile digests, with the
   GitHub and PyPI wheel equal.
 - verdict: both acceptance receipts of this run's first attempt prove those digests; then the marker; then Latest.
+  Each receipt is the reduction of the sharded acceptance (acceptance.yml, every shard of its OS, same attempt).
+- dry run: plan (optionally pinned to a given cut SHA on main) and the candidate verdict of that version's release
+  PR, read-only: nothing is pushed, merged or published (`plan --dry-run`, `candidate --dry-run`).
 
 Usage: uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py COMMAND ...
 """
@@ -48,6 +51,7 @@ CI = "ci.yml"
 MARKER = "acceptance.json"
 FREEZE_CHECK = "Release freeze"
 ACCEPTED = ("ACCEPTED", "ACCEPTED_EXCEPT_UNPROVABLE")
+RECEIPT_SCHEMA = 2  # the sharded acceptance reduction (scripts/acceptance/reduce.py --release)
 RECEIPTS = {"Linux": "acceptance-result-Linux", "macOS": "acceptance-result-macOS"}
 VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 SHA = re.compile(r"[0-9a-f]{40}")
@@ -373,7 +377,45 @@ def intro_from(subjects: list[str]) -> str:
 
 def step_plan(version: str, phase: str, reason: str, **extra: str) -> dict[str, str]:
     """One plan result; the fields a phase does not use are empty."""
-    return {"version": version, "phase": phase, "pr": "", "bump": "", "base": "", "intro": "", "reason": reason} | extra
+    empty = dict.fromkeys(("pr", "bump", "base", "intro", "previous"), "")
+    return {"version": version, "phase": phase, "reason": reason} | empty | extra
+
+
+def final_below(read: Callable[[str], Any], version: str) -> str:
+    """The newest published final release older than `version`: the previous release of a pinned (re)plan.
+
+    Raises:
+        ChainError: There is none.
+    """
+    tags = [
+        r["tag_name"][1:]
+        for r in releases(read)
+        if r.get("draft") is False
+        and r.get("prerelease") is False
+        and isinstance(r.get("tag_name"), str)
+        and r["tag_name"].startswith("v")
+        and VERSION.fullmatch(r["tag_name"][1:])
+        and vkey(r["tag_name"][1:]) < vkey(version)
+    ]
+    if not tags:
+        msg = f"no published final Core release before {version}"
+        raise ChainError(msg)
+    return max(tags, key=vkey)
+
+
+def on_main(read: Callable[[str], Any], sha: str) -> None:
+    """`sha` is a commit of main (main's tip or behind it).
+
+    Raises:
+        ChainError: It is not a full SHA, or main does not contain it.
+    """
+    if not SHA.fullmatch(sha):
+        msg = f"{sha!r} is not a full commit SHA"
+        raise ChainError(msg)
+    data = read(f"compare/{sha}...main")
+    if not isinstance(data, dict) or data.get("status") not in ("ahead", "identical"):
+        msg = f"{sha[:9]} is not a commit of main"
+        raise ChainError(msg)
 
 
 def in_flight(read: Callable[[str], Any], requested: str, current: str) -> dict[str, str] | None:
@@ -409,20 +451,39 @@ def in_flight(read: Callable[[str], Any], requested: str, current: str) -> dict[
     return found
 
 
-def plan(read: Callable[[str], Any], requested: str, *, auto: bool, tip: str) -> dict[str, str]:
+def plan(  # noqa: PLR0913 - the plan's inputs, all keyword-only beyond the version
+    read: Callable[[str], Any],
+    requested: str,
+    *,
+    auto: bool,
+    tip: str,
+    pinned: bool = False,
+    gate: bool = True,
+) -> dict[str, str]:
     """What this run does: resume the release in flight, or cut `requested` (or the next patch) from `tip`.
 
+    `pinned` (dry runs only) plans the cut of `requested` from the given main commit `tip` as the local driver did,
+    whatever is in flight now: the previous release is the newest final one before `requested`. `gate=False` leaves
+    main's CI gate to the caller (a dry run reports it instead of waiting for it).
+
     Returns:
-        version, phase (cut, candidate, tail, done, idle), pr, bump, base, intro and a reason line.
+        version, phase (cut, candidate, tail, done, idle), pr, bump, base, intro, previous and a reason line.
 
     Raises:
         ChainError: A cut is refused, or `requested` conflicts with the release in flight.
     """
     if requested:
         vkey(requested)
-    current = newest_final(read)
-    if found := in_flight(read, requested, current):
-        return found
+    if pinned:
+        if not requested:
+            msg = "a plan pinned to a cut SHA needs the version"
+            raise ChainError(msg)
+        on_main(read, tip)
+        current = final_below(read, requested)
+    else:
+        current = newest_final(read)
+        if found := in_flight(read, requested, current):
+            return found
     if requested and vkey(requested) <= vkey(current):
         if has_marker(release_of(read, requested)):
             return step_plan(requested, "done", f"v{requested} is published and has its acceptance marker")
@@ -439,9 +500,31 @@ def plan(read: Callable[[str], Any], requested: str, *, auto: bool, tip: str) ->
     releasable = [s for s in subjects if not NOT_RELEASABLE.match(s)]
     if not commits or (auto and not releasable):
         return step_plan("", "idle", f"nothing releasable on main since v{current} ({len(commits)} commits)")
-    main_gate(read, tip)
+    if gate:
+        main_gate(read, tip)
     reason = f"cut v{version} from {tip[:9]}: {len(releasable)} releasable of {len(commits)} commits"
-    return step_plan(version, "cut", reason, bump=bump, base=tip, intro=intro_from(releasable))
+    return step_plan(version, "cut", reason, bump=bump, base=tip, intro=intro_from(releasable), previous=current)
+
+
+def dry_plan(read: Callable[[str], Any], requested: str, *, tip: str, pinned: bool) -> tuple[dict[str, str], list[str]]:
+    """The plan a real run would make, and main's CI gate as a report line: it neither waits nor fails on the gate.
+
+    A refusal becomes the phase `refused`, so nothing after the plan runs. Returns the plan and the report lines.
+    """
+    try:
+        result = plan(read, requested, auto=False, tip=tip, pinned=pinned, gate=False)
+    except ChainError as exc:
+        return step_plan(requested, "refused", f"a release would refuse: {exc}"), []
+    lines = []
+    if result["phase"] == "cut":
+        try:
+            main_gate(read, tip)
+            lines.append(f"gate: main commit {tip[:9]} is green on the first attempt")
+        except Wait as exc:
+            lines.append(f"gate: a release would wait: {exc}")
+        except ChainError as exc:
+            lines.append(f"gate: a release would refuse: {exc}")
+    return result, lines
 
 
 # ------------------------------------------------------------------------------------------------ the release commit
@@ -727,6 +810,47 @@ def verify_candidate(read: Callable[[str], Any], number: int, version: str) -> d
     return {"run_id": run_id, "head": head} | ({"evidence": evidence} if isinstance(evidence, dict) else {})
 
 
+def release_pr_number(read: Callable[[str], Any], version: str) -> int | None:
+    """The newest same-repository release PR of `version` in any state, else None."""
+    rows = read(f"pulls?state=all&head={REPOSITORY.split('/', 1)[0]}:release/v{version}&per_page={PAGE}")
+    numbers = [
+        p["number"]
+        for p in (rows if isinstance(rows, list) else [])
+        if isinstance(p, dict)
+        and p.get("head", {}).get("ref") == f"release/v{version}"
+        and p.get("head", {}).get("repo", {}).get("full_name") == REPOSITORY
+        and p.get("title") == f"chore(release): v{version}"
+        and isinstance(p.get("number"), int)
+    ]
+    return max(numbers) if numbers else None
+
+
+def dry_candidate(read: Callable[[str], Any], version: str, cut: str) -> tuple[bool, list[str]]:
+    """The candidate verdict of `version`'s release PR, read once and never waited for; nothing is written.
+
+    Returns False only when the candidate is refused (or its base is not the given cut SHA), with the report lines.
+    """
+    number = release_pr_number(read, version) if version else None
+    if number is None:
+        return True, [f"candidate: no release PR of v{version or '(none planned)'}; no candidate verdict"]
+    state = (read(f"pulls/{number}") or {}).get("state")
+    if state != "open":
+        why = f"the release PR is {state}; the candidate is verified only while its PR is open"
+        return True, [f"candidate #{number}: {why}: dispatch the dry run between the candidate CI and the merge"]
+    try:
+        evidence = verify_candidate(read, number, version)
+    except Wait as exc:
+        return True, [f"candidate #{number}: not finished: {exc}"]
+    except ChainError as exc:
+        return False, [f"candidate #{number}: REFUSED: {exc}"]
+    lines = [f"candidate #{number}: OK, run {evidence['run_id']} on {evidence['head'][:9]}: full, first attempt"]
+    base = candidate_base(read, evidence["head"])
+    if cut and base != cut:
+        lines.append(f"candidate #{number}: REFUSED: it ran on {base[:9]}, not on the cut SHA {cut[:9]}")
+        return False, lines
+    return True, lines
+
+
 def merge(read: Callable[[str], Any], number: int, version: str, token: str) -> str:
     """Squash-merge the verified release PR as the release identity, pinned to its head, if main has not moved.
 
@@ -909,12 +1033,23 @@ def fetch(url: str) -> bytes:
     return run(["curl", "-fsSL", "--max-time", "60", "--max-filesize", str(1024 * 1024), url]).encode()
 
 
+def sharded(result: dict[str, Any]) -> bool:
+    """The receipt is the schema-2 reduction of the sharded acceptance: every shard has its own proof root."""
+    sharding = result.get("sharding")
+    if result.get("schema") != RECEIPT_SCHEMA or not isinstance(sharding, dict):
+        return False
+    shards, roots = sharding.get("shards"), sharding.get("proof_roots")
+    return isinstance(shards, dict) and len(shards) > 1 and isinstance(roots, dict) and set(roots) == set(shards)
+
+
 def receipt_ok(result: dict[str, Any], snap: dict[str, str], run_id: str, attempt: str, os_name: str) -> str | None:
     """None when the receipt proves the snapshot on `os_name` in run `run_id`, attempt `attempt`; else why not."""
     ci, published = result.get("ci", {}), result.get("published", {})
     checks = {
         "verdict": result.get("verdict") in ACCEPTED,
         "public path": result.get("public_path_proof") is True,
+        "pinned": result.get("expectation_supplied") is True,
+        "sharded": sharded(result),
         "repository": ci.get("repository") == REPOSITORY,
         "run": ci.get("run_id") == run_id and ci.get("run_attempt") == attempt,
         "runner": ci.get("runner_os") == os_name,
@@ -1070,6 +1205,8 @@ def parser() -> argparse.ArgumentParser:
             ("--auto", {"action": "store_true"}),
             ("--tip", {"required": True}),
             ("--wait", {"type": float, "default": 3600}),
+            ("--pinned", {"action": "store_true"}),
+            ("--dry-run", {"action": "store_true"}),
         ),
         "scope": (
             ("--repo", {"type": Path, "default": Path()}),
@@ -1081,9 +1218,11 @@ def parser() -> argparse.ArgumentParser:
         "need-token": (),
         "freeze-pr": (("--pr", {"type": int, "required": True}),),
         "candidate": (
-            ("--pr", {"type": int, "required": True}),
+            ("--pr", {"type": int}),
             ("--version", {"required": True}),
             ("--wait", {"type": float, "default": 4 * 3600}),
+            ("--dry-run", {"action": "store_true"}),
+            ("--cut-sha", {"default": ""}),
         ),
         "merge": (("--pr", {"type": int, "required": True}), ("--version", {"required": True})),
         "snapshot": (("--version", {"required": True}), ("--wait", {"type": float, "default": 3600})),
@@ -1105,10 +1244,19 @@ def parser() -> argparse.ArgumentParser:
 
 
 def cmd_plan(args: argparse.Namespace) -> int:
-    """Decide what this run does."""
-    result = poll("main tip CI", lambda: plan(get, args.version, auto=args.auto, tip=args.tip), args.wait)
-    say(result["reason"])
-    output({k: v for k, v in result.items() if k != "reason"} | {"previous": newest_final(get)})
+    """Decide what this run does; a dry run reports the gate instead of waiting for it."""
+    if args.dry_run:
+        result, lines = dry_plan(get, args.version, tip=args.tip, pinned=args.pinned)
+    elif args.pinned:
+        say("error: a plan pinned to a cut SHA is a dry run only")
+        return 1
+    else:
+        result = poll("main tip CI", lambda: plan(get, args.version, auto=args.auto, tip=args.tip), args.wait)
+        lines = []
+    say(("dry run: " if args.dry_run else "") + result["reason"])
+    for line in lines:
+        say("  " + line)
+    output({k: v for k, v in result.items() if k != "reason"} | {"previous": result["previous"] or newest_final(get)})
     return 0
 
 
@@ -1143,7 +1291,15 @@ def cmd_freeze_pr(args: argparse.Namespace) -> int:
 
 
 def cmd_candidate(args: argparse.Namespace) -> int:
-    """Wait for and verify the candidate CI."""
+    """Wait for and verify the candidate CI; a dry run reads the version's release PR once and writes nothing."""
+    if args.dry_run:
+        good, lines = dry_candidate(get, args.version, args.cut_sha)
+        for line in lines:
+            say(line)
+        return 0 if good else 1
+    if args.pr is None:
+        say("error: candidate needs --pr")
+        return 1
     evidence = poll("candidate CI", lambda: verify_candidate(get, args.pr, args.version), args.wait)
     say(f"ok   candidate run {evidence['run_id']} on {evidence['head'][:9]}: full, first attempt")
     output({"run_id": str(evidence["run_id"]), "head": evidence["head"]})

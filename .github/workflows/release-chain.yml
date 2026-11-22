@@ -13,6 +13,14 @@ run-name: "Release ${{ inputs.version || 'next' }}${{ (inputs.dry_run || github.
 # while the repository variable AUTO_CUT is `true` (default off); and a pull request that changes the chain, which runs
 # it as a dry run (cut prepared and checked, never pushed; the tail checks read the newest accepted release).
 #
+# A dry run on a given cut SHA (dispatch with dry_run, version and cut_sha, a commit of main) replans that cut as the
+# local driver made it: it prints the plan and main's CI gate on that commit, prepares and checks the release commit,
+# and prints the candidate verdict of that version's release PR (read once, its base must be the cut SHA). It pushes,
+# merges and publishes nothing and gets no release token:
+#   gh workflow run release-chain.yml --ref main -f dry_run=true -f version=X.Y.Z -f cut_sha=SHA
+#
+# Acceptance is the sharded acceptance.yml (workflow_call); the verdict counts only its schema-2 reductions.
+#
 # The release PR is opened and merged as the owner identity (secret RELEASE_TOKEN, a fine-grained token of the owner:
 # contents, pull requests and actions read and write here; actions write on heinzel-plugins to dispatch compose). The
 # ruleset needs that: CI OK, SonarCloud and resolved review threads; a bot-only PR merged by a bot is refused.
@@ -32,6 +40,10 @@ on:
         description: "Prepare and check the cut and read the tail checks; push, merge and publish nothing"
         type: boolean
         default: false
+      cut_sha:
+        description: "Dry run only: replan the cut of version from this main commit and print its candidate verdict"
+        type: string
+        default: ""
   schedule:
     - cron: "11,41 * * * *"
   pull_request:
@@ -73,6 +85,7 @@ jobs:
       intro: ${{ steps.plan.outputs.intro }}
       previous: ${{ steps.plan.outputs.previous }}
       dry: ${{ steps.mode.outputs.dry }}
+      cut_sha: ${{ steps.mode.outputs.cut_sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -86,12 +99,24 @@ jobs:
           EVENT: ${{ github.event_name }}
           DRY: ${{ inputs.dry_run }}
           VERSION: ${{ inputs.version }}
+          CUT_SHA: ${{ inputs.cut_sha }}
           REF: ${{ github.ref }}
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$EVENT" != pull_request ] && [ "$DRY" != true ] && [ "$REF" != refs/heads/main ]; then
             echo "error: a real release runs only from main (this run is on $REF); dispatch with --ref main or as a dry run" >&2
             exit 1
+          fi
+          if [ -n "$CUT_SHA" ]; then
+            if [ "$DRY" != true ]; then
+              echo "error: cut_sha replans a cut and is for a dry run only; a real release cuts main's gated tip" >&2
+              exit 1
+            fi
+            if ! [[ "$CUT_SHA" =~ ^[0-9a-f]{40}$ ]] || [ -z "$VERSION" ]; then
+              echo "error: a dry run on a cut SHA needs the full 40-character SHA and the version" >&2
+              exit 1
+            fi
+            echo "cut_sha=$CUT_SHA" >> "$GITHUB_OUTPUT"
           fi
           if [ "$EVENT" = pull_request ] || [ "$DRY" = true ]; then
             echo "dry=true" >> "$GITHUB_OUTPUT"
@@ -115,12 +140,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.mode.outputs.version }}
+          CUT_SHA: ${{ steps.mode.outputs.cut_sha }}
           AUTO: ${{ github.event_name == 'schedule' && '--auto' || '' }}
+          DRY: ${{ steps.mode.outputs.dry == 'true' && '--dry-run' || '' }}
         run: |
           tip="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
-          # shellcheck disable=SC2086 # AUTO is one flag or nothing
+          pinned=""
+          if [ -n "$CUT_SHA" ]; then
+            # A dry run replans the cut from the given main commit (release_chain.py checks it is on main).
+            tip="$CUT_SHA"
+            pinned=--pinned
+          fi
+          # shellcheck disable=SC2086 # AUTO, DRY and pinned are one flag or nothing
           uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py plan \
-            --version "$VERSION" --tip "$tip" $AUTO
+            --version "$VERSION" --tip "$tip" $AUTO $DRY $pinned
 
   cut:
     name: Cut v${{ needs.plan.outputs.version }}
@@ -425,6 +458,32 @@ jobs:
           uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py verdict \
             --version "$VERSION" --receipts receipts --run-id "$RUN_ID" --attempt "$ATTEMPT" \
             --wheel-sha256 "$WHEEL" --profile-sha256 "$PROFILE"
+
+  dry-candidate:
+    name: Dry run of the candidate verdict
+    needs: plan
+    if: needs.plan.outputs.dry == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - name: The candidate verdict of the planned version's release PR, read once, writing nothing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          CUT_SHA: ${{ needs.plan.outputs.cut_sha }}
+        run: |
+          uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py candidate --dry-run \
+            --version "$VERSION" --cut-sha "$CUT_SHA"
 
   dry-tail:
     name: Dry run of the tail checks on the newest accepted release
