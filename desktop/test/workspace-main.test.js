@@ -150,7 +150,7 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
   });
   await flush(); await flush();
   const openPicker = async () => {
-    menu[0].submenu.find((item) => item.label === "Connection…").click(); await flush();
+    menu[0].submenu.find((item) => item.label === "Switch Workspace…").click(); await flush();
     return Window.getAllWindows().find((window) => window.options.webPreferences.preload.endsWith("workspace-picker-preload.cjs"));
   };
   const request = (picker, value) => handlers.get("hz:workspace")({ sender: picker.webContents, senderFrame: picker.webContents.mainFrame }, value);
