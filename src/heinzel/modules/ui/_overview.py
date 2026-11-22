@@ -1,11 +1,11 @@
 """Fast local web server observation for the interactive CLI."""
 
 import sys
-import time
 from pathlib import Path
 
 from pydantic import JsonValue, TypeAdapter
 
+from heinzel._adapter_system import SYSTEM_CLOCK
 from heinzel.kernel import Config, HeinzelError, LocalObservation, Settings, WebOverview, private_read
 from heinzel.modules.system.daemon._overview import loaded
 from heinzel.modules.system.lifecycle._service import LABEL, UNIT
@@ -30,7 +30,7 @@ def observe(state_dir: Path, platform: str = sys.platform, *, deadline: float | 
     except (OSError, ValueError, HeinzelError):
         return LocalObservation("unknown", "run `hz ui status` for details")
     where = f"port {port}" if port else ""
-    state = loaded(platform, deadline if deadline is not None else time.monotonic() + 0.2, LABEL, UNIT)
+    state = loaded(platform, deadline if deadline is not None else SYSTEM_CLOCK.deadline(0.2), LABEL, UNIT)
     if state is None:
         return LocalObservation("unknown", "run `hz ui status` for details")
     return LocalObservation("running" if state else "stopped", where)

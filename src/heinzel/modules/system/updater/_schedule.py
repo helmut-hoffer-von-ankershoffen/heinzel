@@ -33,6 +33,7 @@ from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, Field
 
 from heinzel import HeinzelError, __version__
+from heinzel._adapter_system import SYSTEM_CLOCK
 from heinzel.kernel import (
     KERNEL_SECTION,
     CurrentUser,
@@ -593,7 +594,7 @@ def _unlock(handle: IO[str] | None) -> None:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return SYSTEM_CLOCK.now()
 
 
 class Schedule:
