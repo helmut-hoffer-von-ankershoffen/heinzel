@@ -11200,11 +11200,6 @@ export interface components {
              * @description Whether it is shown as a desktop notification at all; false: in the list only.
              */
             popup: boolean;
-            /**
-             * Replaces
-             * @description A kind of notice the producer sets so a newer one replaces the older: recording a notice with the same value resolves the earlier ones, so the list holds one (a rain warning for a later hour replaces the one for an earlier hour).
-             */
-            replaces?: string | null;
             /** @description When it resolves by itself and disappears; none: it stays until it ages out. */
             resolve_when?: components["schemas"]["ResolveWhen"] | null;
             /**

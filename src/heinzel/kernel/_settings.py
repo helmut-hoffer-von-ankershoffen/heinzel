@@ -94,20 +94,6 @@ class Settings(ModuleSettings):
         "and the done and error lines. Only on a colour terminal, never in JSON, a pipe or CI.",
         json_schema_extra={"x-live": True},  # each command reads it as it starts; the web app's server never uses it
     )
-    browser_start_page: str = Field(
-        default="https://heinzel.team",
-        title="Browser start page",
-        description="The page the built-in browser loads when it opens and in a new tab. A public https address.",
-        pattern=r"^https://[^\s/@]+(/\S*)?$",
-        max_length=ORIGIN_MAX_LENGTH,
-        json_schema_extra={"x-live": True},  # the web app reads it again as the browser opens a tab
-    )
-    browser_bookmarks_bar: bool = Field(
-        default=True,
-        title="Bookmarks bar in the browser",
-        description="Show your bookmarks in a bar under the address row of the built-in browser.",
-        json_schema_extra={"x-live": True},  # the web app reads it again as the browser draws
-    )
     plugins_enabled: bool = Field(
         default=True,
         title="Load plugins",
