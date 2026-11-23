@@ -3,16 +3,19 @@ import {
   ArrowRight,
   Bot,
   CornerDownLeft,
-  Ellipsis,
   ExternalLink,
+  Maximize2,
+  Minimize2,
   Plus,
   RefreshCw,
-  Settings,
+  Send,
+  Wrench,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { MENU_EVENT } from "@/about/menu";
 import { BookmarkBar } from "@/bookmarks/BookmarkStar";
+import { BookmarksStrip } from "@/bookmarks/BookmarksStrip";
 import { Favicon } from "@/bookmarks/Favicon";
 import { HeinzelFace } from "@/components/HeinzelFace";
 import { PaneAction } from "@/components/PaneActions";
@@ -107,6 +110,18 @@ export function addressUrl(value: string): string | null {
   return `https://${input}`;
 }
 
+/** An address split for display: the host, then the rest (path, query), which is shown dimmed. */
+export function urlParts(value: string): { host: string; rest: string } | null {
+  try {
+    const url = new URL(value);
+    if (!url.host) return null;
+    const rest = `${url.pathname === "/" ? "" : url.pathname}${url.search}${url.hash}`;
+    return { host: url.host, rest };
+  } catch {
+    return null;
+  }
+}
+
 export function externalBrowserUrl(value: string): string | null {
   try {
     const url = new URL(value);
@@ -115,6 +130,9 @@ export function externalBrowserUrl(value: string): string | null {
     return null;
   }
 }
+
+/** What the browser loads when it opens and in a new tab, until Settings says otherwise. */
+export const DEFAULT_START_PAGE = "https://heinzel.team";
 
 /**
  * The web view offers an external link; only the desktop owns an isolated native browsing surface.
@@ -126,13 +144,31 @@ export function BrowserPanel({
   onClose,
   onSettings,
   bookmarks = false,
+  startPage = DEFAULT_START_PAGE,
+  bookmarksBar = true,
+  full = false,
+  onToggleFull,
+  onAsk,
+  askName,
 }: Readonly<{
   active: boolean;
   onClose: () => void /** Show the bookmark star; needs the app's providers. */;
   onSettings?: () => void;
   bookmarks?: boolean;
+  /** The page a first open and every new tab load (Settings > Browser). */
+  startPage?: string;
+  /** Whether the bookmarks bar shows under the address row (Settings > Browser). */
+  bookmarksBar?: boolean;
+  /** The panel covers the whole workspace; `onToggleFull` expands or restores it. */
+  full?: boolean;
+  onToggleFull?: () => void;
+  /** Put a prefilled message about the page into the chat; the person reads it and sends it. */
+  onAsk?: (text: string) => void;
+  /** Who is asked: the default Heinzel's name. */
+  askName?: string;
 }>) {
-  const [address, setAddress] = useState("https://heinzel.team");
+  const [urlFocused, setUrlFocused] = useState(false);
+  const [address, setAddress] = useState(startPage);
   const [addressEdited, setAddressEdited] = useState(false);
   const addressRevision = useRef(0);
   const navigationRevision = useRef(0);
@@ -143,33 +179,6 @@ export function BrowserPanel({
   const addressInput = useRef<HTMLInputElement>(null);
   const selectedChip = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLElement>(null);
-  const overflowButton = useRef<HTMLButtonElement>(null);
-  const overflowContent = useRef<HTMLElement>(null);
-  const [toolsOpen, setToolsOpen] = useState(false);
-  useEffect(() => {
-    if (!active) setToolsOpen(false);
-  }, [active]);
-  useEffect(() => {
-    if (!toolsOpen) return;
-    overflowContent.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
-    const outside = (event: PointerEvent) => {
-      if (!(event.target instanceof Node)) return;
-      if (overflowButton.current?.contains(event.target) || overflowContent.current?.contains(event.target)) return;
-      setToolsOpen(false);
-    };
-    const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      event.preventDefault();
-      setToolsOpen(false);
-      overflowButton.current?.focus();
-    };
-    document.addEventListener("pointerdown", outside);
-    document.addEventListener("keydown", dismissOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", outside);
-      document.removeEventListener("keydown", dismissOnEscape);
-    };
-  }, [toolsOpen]);
   const native = bridge();
   const tabs = state.tabs ?? [];
   // Agents' tabs have their own limit: only the person's count against the person's.
@@ -193,6 +202,7 @@ export function BrowserPanel({
     };
   }, []);
   // Tabs live in the desktop, not in this panel: closing the panel only hides them, and reopening shows them again.
+  const [tabsKnown, setTabsKnown] = useState(false);
   useEffect(() => {
     void native
       ?.browser({ action: "tabs" })
@@ -200,9 +210,23 @@ export function BrowserPanel({
         setState(result);
         const current = result.tabs?.find((tab) => tab.selected);
         if (current?.url) setAddress(current.url);
+        setTabsKnown(true);
       })
       .catch(() => {});
   }, [native]);
+  // The first time the browser is open with no page, it loads the start page instead of only showing it.
+  const started = useRef(false);
+  useEffect(() => {
+    if (!native || !active || !tabsKnown || started.current) return;
+    started.current = true;
+    if (!(state.tabs ?? []).some((tab) => tab.url)) {
+      setAddress(startPage);
+      void native
+        .browser({ action: "navigate", url: startPage })
+        .then(setState)
+        .catch(() => {});
+    }
+  }, [native, active, tabsKnown, state.tabs, startPage]);
   const surfaceFailed = useNativeSurface(
     surface,
     active,
@@ -231,9 +255,9 @@ export function BrowserPanel({
   }, [selectedId, shownTab, state.tabs]);
   const newTab = () => {
     if (!native || ownTabs >= MAX_TABS) return;
-    setAddress("");
+    setAddress(startPage);
     setRefused(false);
-    void request({ action: "new-tab" }).then(() => addressInput.current?.focus());
+    void request({ action: "new-tab", url: startPage }).then(() => addressInput.current?.focus());
   };
   const closeTab = (id: string) => void request({ action: "close-tab", tab: id });
   // The selected tab when an agent opened it: the bar and the commit card are about this tab only.
@@ -284,6 +308,7 @@ export function BrowserPanel({
   // The bookmark bar draws its star into the tools row.
   const [starSlot, setStarSlot] = useState<HTMLElement | null>(null);
   const displayAddress = !addressEdited && state.status === "ready" && state.url ? state.url : address;
+  const shownParts = urlParts(displayAddress);
   const target = addressUrl(displayAddress);
   const external = target ? externalBrowserUrl(target) : null;
   // The desktop refuses local, private and non-HTTPS targets; say so instead of a silent failure.
@@ -321,7 +346,7 @@ export function BrowserPanel({
           <div
             role="tablist"
             aria-label={t("browser.tabs")}
-            className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+            className="flex min-w-0 items-center gap-1 overflow-x-auto"
           >
             {tabs.map((tab) => (
               <div
@@ -366,16 +391,55 @@ export function BrowserPanel({
           <Button
             type="button"
             variant="ghost"
-            size="sm"
-            className="h-10 shrink-0 px-2"
+            size="icon"
+            className="size-9 shrink-0"
             aria-label={t("browser.newTab")}
             title={t("browser.newTab")}
             disabled={ownTabs >= MAX_TABS}
             onClick={newTab}
           >
             <Plus aria-hidden />
-            {t("browser.newTab")}
           </Button>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {onToggleFull && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-9 shrink-0"
+                aria-pressed={full}
+                aria-label={full ? t("browser.collapse") : t("browser.expand")}
+                title={full ? t("browser.collapse") : t("browser.expand")}
+                onClick={onToggleFull}
+              >
+                {full ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
+              </Button>
+            )}
+            {onSettings && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-9 shrink-0"
+                aria-label={t("browser.settings")}
+                title={t("browser.settings")}
+                onClick={onSettings}
+              >
+                <Wrench aria-hidden />
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-9 shrink-0"
+              aria-label={t("browser.close")}
+              title={t("browser.close")}
+              onClick={onClose}
+            >
+              <X aria-hidden />
+            </Button>
+          </div>
         </div>
       )}
       <form
@@ -425,24 +489,38 @@ export function BrowserPanel({
             </Button>
           </>
         )}
-        <input
-          ref={addressInput}
-          aria-label={t("browser.address")}
-          // Text, not type=url: form validation would refuse "example.com" or a search before it is read.
-          type="text"
-          inputMode="url"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          value={displayAddress}
-          onChange={(event) => {
-            addressRevision.current += 1;
-            setAddress(event.target.value);
-            setAddressEdited(true);
-            setRefused(false);
-          }}
-          className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1 text-sm"
-        />
+        <div className="relative min-w-0 flex-1">
+          <input
+            ref={addressInput}
+            aria-label={t("browser.address")}
+            // Text, not type=url: form validation would refuse "example.com" or a search before it is read.
+            type="text"
+            inputMode="url"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            value={displayAddress}
+            onChange={(event) => {
+              addressRevision.current += 1;
+              setAddress(event.target.value);
+              setAddressEdited(true);
+              setRefused(false);
+            }}
+            onFocus={() => setUrlFocused(true)}
+            onBlur={() => setUrlFocused(false)}
+            className={`w-full rounded-full border border-border bg-background px-3 py-1 text-sm ${shownParts && !urlFocused ? "text-transparent" : ""}`}
+          />
+          {shownParts && !urlFocused && (
+            <span
+              aria-hidden
+              data-url-display=""
+              className="pointer-events-none absolute inset-y-0 right-3 left-3 flex items-center overflow-hidden text-sm whitespace-nowrap"
+            >
+              <span className="text-foreground">{shownParts.host}</span>
+              <span className="truncate text-muted-foreground">{shownParts.rest}</span>
+            </span>
+          )}
+        </div>
         {native ? (
           <Button
             type="submit"
@@ -463,19 +541,43 @@ export function BrowserPanel({
           )
         )}
         {native ? (
-          <Button
-            ref={overflowButton}
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-8 shrink-0 sm:size-9"
-            aria-label={t("browser.moreActions")}
-            title={t("browser.moreActions")}
-            aria-expanded={toolsOpen}
-            onClick={() => setToolsOpen((open) => !open)}
-          >
-            <Ellipsis aria-hidden />
-          </Button>
+          <>
+            {bookmarks && <span ref={setStarSlot} className="contents" />}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8 shrink-0 sm:size-9"
+              data-heinzel-browser-external=""
+              aria-label={t("browser.openInBrowser")}
+              title={t("browser.openInBrowser")}
+              disabled={!state.url}
+              onClick={() => void request({ action: "external" })}
+            >
+              <ExternalLink aria-hidden />
+            </Button>
+            {onAsk && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-8 shrink-0 sm:size-9"
+                data-heinzel-browser-ask=""
+                aria-label={t("browser.askAbout", { name: askName ?? "Heinzel" })}
+                title={t("browser.askAbout", { name: askName ?? "Heinzel" })}
+                disabled={!(current?.url || state.url)}
+                onClick={() =>
+                  onAsk(
+                    t("browser.askPrompt", { title: current?.title ?? "", url: current?.url || state.url || "" })
+                      .replace(/\s+/g, " ")
+                      .trim(),
+                  )
+                }
+              >
+                <Send aria-hidden />
+              </Button>
+            )}
+          </>
         ) : (
           <Button
             type="button"
@@ -489,52 +591,6 @@ export function BrowserPanel({
           </Button>
         )}
       </form>
-      {native && toolsOpen && (
-        <section
-          ref={overflowContent}
-          aria-label={t("browser.moreActions")}
-          className="flex shrink-0 flex-wrap items-center gap-1 px-2 py-1"
-        >
-          {bookmarks && <span ref={setStarSlot} className="contents" />}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            data-heinzel-browser-external=""
-            disabled={!state.url}
-            onClick={() => void request({ action: "external" })}
-          >
-            <ExternalLink aria-hidden />
-            {t("browser.openInBrowser")}
-          </Button>
-          {onSettings && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setToolsOpen(false);
-                onSettings();
-              }}
-            >
-              <Settings aria-hidden />
-              {t("browser.settings")}
-            </Button>
-          )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setToolsOpen(false);
-              onClose();
-            }}
-          >
-            <X aria-hidden />
-            {t("browser.close")}
-          </Button>
-        </section>
-      )}
       {native ? (
         <>
           <output
@@ -542,6 +598,7 @@ export function BrowserPanel({
           >
             {status}
           </output>
+          {bookmarks && bookmarksBar && <BookmarksStrip />}
           {bookmarks && (
             <BookmarkBar slot={starSlot} url={current?.url || state.url} title={current?.title ?? ""} tabs={tabs} />
           )}

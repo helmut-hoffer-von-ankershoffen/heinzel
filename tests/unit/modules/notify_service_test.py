@@ -226,6 +226,20 @@ def test_native_delivery_forwards_the_recorded_identity_and_selected_sound_setti
     }
 
 
+def test_a_notice_with_replaces_resolves_the_older_one_of_its_kind(make, clock):
+    service = make()
+    old = draft(service, key="rain:00", replaces="rain:berlin")
+    other = draft(service, key="rain:other", replaces="rain:paris")
+    clock.now += timedelta(minutes=5)
+    new = draft(service, key="rain:02", replaces="rain:berlin")
+    assert new is not None
+    assert new.replaces == "rain:berlin"
+    shown = service.listing(10).notices
+    assert {notice.id for notice in shown} == {new.id, other.id}  # one per kind; others stay
+    resolved = {notice.id: notice for notice in service.listing(10, resolved=True).notices}
+    assert resolved[old.id].resolved == "Replaced by a newer notice."
+
+
 def test_a_kind_that_is_off_records_nothing(make):
     assert draft(make(draft=False)) is None
     assert make(draft=False).recent() == []

@@ -23,6 +23,8 @@ does not inherit it.
 | `output_format` | `HZ_OUTPUT_FORMAT` | `'text'` | What every command prints unless it is asked for another format: text for people, or JSON for scripts and agents. Choices: text, json. |
 | `expert` | `HZ_EXPERT` | `False` | List every command in help, shell completion and the web app, not just the everyday ones. Hidden commands still work, and MCP and REST always list everything. Turn it on or off with hz system expert; a project's settings can't. |
 | `playful` | `HZ_PLAYFUL` | `True` | A small Heinzelmännchen in the terminal: in the start screen, the setup, the spinner of long work and the done and error lines. Only on a colour terminal, never in JSON, a pipe or CI. |
+| `browser_start_page` | `HZ_BROWSER_START_PAGE` | `'https://heinzel.team'` | The page the built-in browser loads when it opens and in a new tab. A public https address. |
+| `browser_bookmarks_bar` | `HZ_BROWSER_BOOKMARKS_BAR` | `True` | Show your bookmarks in a bar under the address row of the built-in browser. |
 | `plugins_enabled` | `HZ_PLUGINS_ENABLED` | `True` | Load the modules that installed plugins bring. Turn it off only to find a broken plugin. |
 | `update_check` | `HZ_UPDATE_CHECK` | `True` | Look for a newer release at most once an hour and mention it after a command's output. The check uses no personal data, and never runs in CI or in JSON, MCP or REST output. Never read from a project's hz.toml. |
 | `auto_update` | `HZ_AUTO_UPDATE` | `True` | Installs new versions of hz and its plugins by itself, after a 30-second warning you can postpone; never during a chat answer or a running job. Never read from a project's hz.toml. |

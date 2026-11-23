@@ -19,6 +19,8 @@ set of modules truly needs a restart.
 | `hz.output_format` | no | Only commands use it, and each reads it as it starts; the web server never does. |
 | `hz.expert` | no | Read again by the web app and by every command as it starts. Own switch in General, so it is not listed. |
 | `hz.playful` | no | Only commands in a terminal use it, and each reads it as it starts; the web server never does. |
+| `hz.browser_start_page` | no | The web app reads it again each time the browser opens or starts a new tab, so a change applies at once. |
+| `hz.browser_bookmarks_bar` | no | The web app reads it again each time the browser draws, so a change applies at once. |
 | `hz.plugins_enabled` | yes | Which modules exist is decided once, when the server starts. |
 | `hz.update_check` | no | The update status and the hourly check read it again; the command line reads it as each command starts. |
 | `hz.auto_update` | no | The web server reads it again before every update decision. |

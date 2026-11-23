@@ -5,8 +5,9 @@ import { createPortal } from "react-dom";
 import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router";
 import { AboutDialog } from "@/about/AboutDialog";
 import { type MenuAction, onMenuAction } from "@/about/menu";
-import { useConfig } from "@/api/queries";
+import { useBrowserBookmarksBar, useBrowserStartPage, useConfig } from "@/api/queries";
 import { AudioVisualizer } from "@/audio/AudioVisualizer";
+import { useAskHeinzel } from "@/chat/askHeinzel";
 import { AvatarThemeProvider } from "@/components/AvatarTheme";
 import { FOOTER_RELOCATED } from "@/components/FooterLayout";
 import { OperationDialog } from "@/components/OperationDialog";
@@ -113,6 +114,9 @@ function CloseNavigationOnOperation({ close }: { close: () => void }) {
 function Layout() {
   const nativeFooter = useNativeFooter();
   const config = useConfig();
+  const startPage = useBrowserStartPage();
+  const bookmarksBar = useBrowserBookmarksBar();
+  const ask = useAskHeinzel();
   const audioVisualizer = config.data?.settings.find(
     (setting) => setting.section === "system.ui" && setting.key === "audio_visualizer",
   );
@@ -133,6 +137,7 @@ function Layout() {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [terminalFull, setTerminalFull] = useState(false);
+  const [browserFull, setBrowserFull] = useState(false);
   const [activePanel, setActivePanel] = useState(() => (window.innerWidth < 1024 ? "page" : "chat"));
   const views = useViews();
   const panelViews = useMemo(() => (views.data ?? []).filter((view) => view.slot === "panel"), [views.data]);
@@ -268,6 +273,7 @@ function Layout() {
     if (durableChat && isDurableSession(durableChat)) {
       setChatOpen(true);
       setTerminalFull(false);
+      setBrowserFull(false);
     }
   }, [durableChat, setChatOpen]);
   const settings = params.get("settings");
@@ -277,8 +283,10 @@ function Layout() {
     () =>
       onMenuAction(["settings", "daemon", "changelog", "doctor", "updates"], (action) => {
         if (action === "doctor") navigate("/doctor");
-        else if (action === "updates") setTerminalFull(false);
-        else
+        else if (action === "updates") {
+          setTerminalFull(false);
+          setBrowserFull(false);
+        } else
           setParams((current) => {
             const next = new URLSearchParams(current);
             if (action === "changelog") next.set("panel", "changelog");
@@ -322,14 +330,16 @@ function Layout() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: each layout change requires a fresh footer measurement
   useLayoutEffect(() => {
     window.dispatchEvent(new Event(FOOTER_RELOCATED));
-  }, [beside, selectedPanel, terminalFull]);
+  }, [beside, selectedPanel, terminalFull, browserFull]);
   const route = location.pathname;
   const previousRoute = useRef(route);
   useEffect(() => {
     if (previousRoute.current !== route && !beside) setActivePanel("page");
     previousRoute.current = route;
   }, [route, beside]);
-  const full = terminalOpen && terminalFull && selectedPanel === "terminal";
+  const full =
+    (terminalOpen && terminalFull && selectedPanel === "terminal") ||
+    (browserEnabled && browserOpen && browserFull && selectedPanel === "browser");
   const flowingWorkspace = !beside && !full;
   const workspaceShown =
     chatOpen ||
@@ -462,6 +472,7 @@ function Layout() {
       setPageHold(hold);
       setActivePanel(id);
       setTerminalFull(false);
+      setBrowserFull(false);
       // A no-op navigation can overwrite a conversation selected before this router render has committed.
       const clearLink = newChat && hasChatLink;
       if (clearLink || requestedId || panelViews.some((view) => view.id === id)) {
@@ -796,8 +807,17 @@ function Layout() {
                           content: (
                             <BrowserPanel
                               bookmarks
+                              startPage={startPage}
+                              bookmarksBar={bookmarksBar}
+                              full={browserFull}
+                              onToggleFull={() => setBrowserFull((value) => !value)}
+                              onAsk={ask ? (text) => ask.ask(text) : undefined}
+                              askName={ask?.name}
                               active={selectedPanel === "browser"}
-                              onClose={() => setBrowserOpen(false)}
+                              onClose={() => {
+                                setBrowserOpen(false);
+                                setBrowserFull(false);
+                              }}
                               onSettings={() => setSettings("browser")}
                             />
                           ),

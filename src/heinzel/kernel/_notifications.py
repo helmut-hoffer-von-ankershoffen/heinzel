@@ -146,6 +146,12 @@ class Notice(BaseModel):
     route: str = Field(description="Where the web app shows it, a path such as `/doctor`.")
     command: str = Field(description="The command that shows it in a terminal, such as `hz system doctor`.")
     key: str = Field(description="What makes two notices the same, so a repeat within the window is dropped.")
+    replaces: str | None = Field(
+        default=None,
+        description="A kind of notice the producer sets so a newer one replaces the older: recording a notice with the "
+        "same value resolves the earlier ones, so the list holds one (a rain warning for a later hour replaces the "
+        "one for an earlier hour).",
+    )
     urgent: bool = Field(default=False, description="Whether it may interrupt outside working hours.")
     at: AwareDatetime = Field(description="When it was recorded.")
     due: AwareDatetime = Field(description="When it may pop up: `at`, or the next start of your working hours.")
@@ -187,8 +193,11 @@ class Notifications:
         urgent: bool = False,
         helper: NoticeHelper | None = None,
         resolve_when: ResolveWhen | None = None,
+        replaces: str | None = None,
     ) -> Notice | None:
         """Record a notice under the policy; the recorded one (or the earlier one it repeats), None if its kind is off.
+
+        With `replaces`, a notice recorded now resolves every shown notice of the same kind and `replaces` value.
 
         With `resolve_when`, a notice whose condition already holds is not recorded (None), and one that is recorded
         disappears once it holds. Never raises for a full or unwritable store: a lost notice must not fail the job

@@ -20,6 +20,7 @@ import { SoundSettings } from "@/sound/SoundControls";
 import { AiAccessSetting } from "./AiAccessSetting";
 import { AiSettings } from "./AiSettings";
 import { BrowserSettings } from "./BrowserSettings";
+import { BrowserStartPageRow } from "./BrowserStartPageRow";
 import { ConnectorsSection } from "./ConnectorsSection";
 import { DaemonSettings } from "./DaemonSettings";
 import { FROM_CLAUDE, FromClaudeSection } from "./FromClaudeSection";
@@ -284,7 +285,12 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
               </>
             )}
             {current === "notifications" && <NotificationSettings />}
-            {current === "browser" && <BrowserSettings />}
+            {current === "browser" && (
+              <>
+                <BrowserSettings />
+                <BrowserStartPageRow />
+              </>
+            )}
             {current === "web-server" && <WebServerSettings />}
             {current === "mcp" && <McpSettings />}
             {current === "daemon" && (

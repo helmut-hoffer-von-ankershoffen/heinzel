@@ -230,8 +230,11 @@ class NotifyService(Notifications):
         urgent: bool = False,
         helper: NoticeHelper | None = None,
         resolve_when: ResolveWhen | None = None,
+        replaces: str | None = None,
     ) -> Notice | None:
         """Record a notice under the policy; the earlier one when it repeats; None if its kind is off or it failed.
+
+        With `replaces`, shown notices of the same kind and `replaces` value are resolved: this one replaces them.
 
         A notice whose `resolve_when` already holds is not recorded: it would only disappear again.
         """
@@ -246,6 +249,12 @@ class NotifyService(Notifications):
             if (earlier := policy.repeated(notices, key, now, window)) is not None:
                 return earlier
             decision = policy.decide(self.settings, self.hours, now, urgent=urgent, recent=notices)
+            if replaces is not None:
+                for index, older in enumerate(notices):
+                    if older.kind == kind and older.replaces == replaces and older.resolved_at is None:
+                        notices[index] = older.model_copy(
+                            update={"resolved_at": now, "resolved": "Replaced by a newer notice."}
+                        )
             notice = Notice(
                 id=f"{now.astimezone(UTC):%Y%m%dT%H%M%S%fZ}-{secrets.token_hex(3)}",
                 kind=kind,
@@ -254,6 +263,7 @@ class NotifyService(Notifications):
                 route=route if ROUTE.fullmatch(route) else "/",
                 command=command,
                 key=key,
+                replaces=replaces,
                 urgent=urgent,
                 at=now,
                 due=decision.due,
