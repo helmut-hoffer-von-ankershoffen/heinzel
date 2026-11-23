@@ -218,7 +218,7 @@ jobs:
           if [ "$prose_push" = true ] || [ "$surface_only" = true ]; then
             echo "core=false" >> "$GITHUB_OUTPUT"
             core_work=false
-          elif [ "$full_release" = true ] || [ -n "${BATCH_BASE:-}" ] || [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ] \
+          elif [ "$full_release" = true ] || [ -n "${BATCH_BASE:-}" ] || [ "$EVENT" != pull_request ] \
             || [ -z "$changed" ] || grep -qvE '^plugins/' <<< "$changed"; then
             echo "core=true" >> "$GITHUB_OUTPUT"
             core_work=true
@@ -247,9 +247,10 @@ jobs:
           else
             echo "contracts=false" >> "$GITHUB_OUTPUT"
           fi
-          # A push to main needs Electron only for the paths a pull request needs it for; an unknown diff runs it.
-          if [ "$core_work" = true ] && [ -f desktop/package.json ] && { [ "$full_release" = true ] || [ "$EVENT" = schedule ] \
-            || [ "$EVENT" = workflow_dispatch ] || [ -z "$changed" ] \
+          # Every event but a pull request keeps Electron: CI OK requires it on push, schedule and dispatch. A pull request
+          # needs it only for the paths below; an unknown diff runs it.
+          if [ "$core_work" = true ] && [ -f desktop/package.json ] && { [ "$full_release" = true ] || [ "$EVENT" != pull_request ] \
+            || [ -z "$changed" ] \
             || { [ "$EVENT" = pull_request ] && [ "$macos_full" = true ] && [ "$site_only" = false ]; } \
             || grep -qE '^(desktop/|Makefile$|scripts/sync_template\.py$|\.github/workflows/ci\.yml$)' <<< "$changed"; }; then
             echo "electron=true" >> "$GITHUB_OUTPUT"
