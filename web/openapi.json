@@ -11241,18 +11241,6 @@
             "title": "Popup",
             "type": "boolean"
           },
-          "replaces": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "A kind of notice the producer sets so a newer one replaces the older: recording a notice with the same value resolves the earlier ones, so the list holds one (a rain warning for a later hour replaces the one for an earlier hour).",
-            "title": "Replaces"
-          },
           "resolve_when": {
             "anyOf": [
               {
