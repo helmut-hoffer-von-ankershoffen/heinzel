@@ -180,129 +180,54 @@ try {
     await replyActivity.hover();
     const box = await replyActivity.boundingBox();
     assert.ok(box);
-    const point = { x: box.x + box.width / 2, y: box.y + box.height - 10 };
-    await page.mouse.move(point.x, point.y);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height - 10);
     await page.exposeFunction("__hzPressOnSmoothScroll", () => page.mouse.down());
-    const setupDeadline = performance.now() + 30_000; // The original Playwright wait budget, shared by both setups.
-    let press;
-    let latePress;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      await replyActivity.evaluate((node, canRearm) => {
-        const scroller = node.closest(".workspace-scroll");
-        const origin = scroller.scrollTop;
-        const destination = origin - 120;
-        let first;
-        delete window.__hzSmoothDown;
-        let sampled;
-        window.addEventListener(
-          "pointerdown",
-          (event) => {
-            sampled = {
-              trusted: event.isTrusted,
-              primary: event.isPrimary && event.button === 0,
-              summary: event.target === node && node.tagName === "SUMMARY",
-              origin,
-              destination,
-              down: scroller.scrollTop,
-              top: node.getBoundingClientRect().top,
-            };
-            if (
-              canRearm &&
-              sampled.trusted &&
-              sampled.primary &&
-              sampled.summary &&
-              first > destination &&
-              first < origin &&
-              sampled.down === destination &&
-              event.cancelable
-            ) {
-              // The animation ended before input arrived. Only this setup miss is intercepted,
-              // before product document capture. A later in-flight press propagates normally.
-              event.preventDefault();
-              event.stopImmediatePropagation();
-              sampled.discarded = event.defaultPrevented;
-              const discard = new AbortController();
-              window.__hzSmoothDiscard = { controller: discard, summary: node, disclosure: node.parentElement };
-              window.addEventListener(
-                "click",
-                (click) => {
-                  if (click.isTrusted && click.composedPath().includes(node)) {
-                    click.preventDefault();
-                    click.stopImmediatePropagation();
-                  }
-                },
-                { capture: true, signal: discard.signal },
-              );
-            }
-          },
-          { capture: true, once: true },
-        );
-        // Request the physical press directly from the first native scroll update.
-        const pressOnProgress = () => {
-          const current = scroller.scrollTop;
-          if (current >= origin) return;
-          first = current;
-          scroller.removeEventListener("scroll", pressOnProgress);
-          window.__hzPressOnSmoothScroll().then(
-            () => (window.__hzSmoothDown = { first, press: sampled }),
-            (error) => (window.__hzSmoothDown = { error: String(error) }),
-          );
-        };
-        scroller.addEventListener("scroll", pressOnProgress, { passive: true });
-        scroller.scrollTo({ top: destination, behavior: "smooth" });
-      }, attempt === 0);
-      const timeout = setupDeadline - performance.now();
-      assert.ok(timeout > 0, "the smooth-scroll input setup must fit the original wait budget");
-      const down = await page.waitForFunction(() => window.__hzSmoothDown, undefined, { timeout });
-      const { first, press: observed, error } = await down.jsonValue();
-      assert.equal(error, undefined, "Playwright must deliver the physical press");
-      assert.equal(observed?.trusted, true, "scroll pressure must originate from a trusted physical press");
-      assert.equal(observed.primary, true, "scroll pressure must use the primary pointer and button");
-      assert.equal(observed.summary, true, "scroll pressure must press the current native summary");
-      assert.ok(observed.origin > 120, "the controlled press must have real workspace scroll distance");
-      assert.equal(observed.origin - observed.destination, 120);
-      assert.ok(observed.down < observed.origin, "native smooth scrolling must progress before the physical press");
-      if (observed.discarded) {
-        latePress = observed;
-        await page.mouse.up();
-        const reset = await replyActivity.evaluate(
-          async (node, { origin, point }) => {
-            const { controller, summary, disclosure } = window.__hzSmoothDiscard;
-            const sameDisclosure = () => node === summary && node.isConnected && node.parentElement === disclosure;
-            if (!sameDisclosure()) return { same: false };
-            const scroller = node.closest(".workspace-scroll");
-            scroller.scrollTo({ top: origin, behavior: "instant" });
-            // Keep canceling a queued native click until the release and scroll reset have rendered.
-            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-            const same = sameDisclosure();
-            const open = disclosure.open;
-            if (same && open === false) {
-              controller.abort();
-              delete window.__hzSmoothDiscard;
-            }
-            return {
-              same,
-              open,
-              scroll: scroller.scrollTop,
-              hit: document.elementFromPoint(point.x, point.y) === node,
-            };
-          },
-          { origin: observed.origin, point },
-        );
-        assert.equal(reset.same, true, "the discarded press must leave the original native disclosure in place");
-        assert.equal(reset.open, false, "releasing the discarded press must leave the native disclosure closed");
-        assert.equal(reset.scroll, observed.origin, "the re-armed scroll must start at the original position");
-        assert.equal(reset.hit, true, "the original physical pointer must still hit the summary");
-        continue;
-      }
-      assert.ok(
-        observed.down > observed.destination,
-        `native smooth scrolling must still be unfinished at the press (first: ${first}, press: ${observed.down}, destination: ${observed.destination})`,
+    await replyActivity.evaluate((node) => {
+      const scroller = node.closest(".workspace-scroll");
+      const origin = scroller.scrollTop;
+      const destination = origin - 120;
+      window.addEventListener(
+        "pointerdown",
+        (event) => {
+          window.__hzSmoothPress = {
+            trusted: event.isTrusted,
+            primary: event.isPrimary && event.button === 0,
+            summary: event.target === node && node.tagName === "SUMMARY",
+            origin,
+            destination,
+            down: scroller.scrollTop,
+            top: node.getBoundingClientRect().top,
+          };
+        },
+        { capture: true, passive: true, once: true },
       );
-      press = observed;
-      break;
-    }
-    assert.ok(press, "one physical press must arrive during native smooth scrolling");
+      // A controller round trip after polling for progress can use up the rest of the animation.
+      // Ask Playwright for the one physical press directly from the first native scroll update.
+      const pressOnProgress = () => {
+        const first = scroller.scrollTop;
+        if (first >= origin) return;
+        scroller.removeEventListener("scroll", pressOnProgress);
+        window.__hzPressOnSmoothScroll().then(
+          () => (window.__hzSmoothDown = { first, press: window.__hzSmoothPress }),
+          (error) => (window.__hzSmoothDown = { error: String(error) }),
+        );
+      };
+      scroller.addEventListener("scroll", pressOnProgress, { passive: true });
+      scroller.scrollTo({ top: destination, behavior: "smooth" });
+    });
+    const down = await page.waitForFunction(() => window.__hzSmoothDown);
+    const { first, press, error } = await down.jsonValue();
+    assert.equal(error, undefined, "Playwright must deliver the physical press");
+    assert.equal(press?.trusted, true, "scroll pressure must originate from a trusted physical press");
+    assert.equal(press.primary, true, "scroll pressure must use the primary pointer and button");
+    assert.equal(press.summary, true, "scroll pressure must press the current native summary");
+    assert.ok(press.origin > 120, "the controlled press must have real workspace scroll distance");
+    assert.equal(press.origin - press.destination, 120);
+    assert.ok(press.down < press.origin, "native smooth scrolling must progress before the physical press");
+    assert.ok(
+      press.down > press.destination,
+      `native smooth scrolling must still be unfinished at the press (first: ${first}, press: ${press.down}, destination: ${press.destination})`,
+    );
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     // Keep the real press held beyond the observed hosted 184ms interval; no retargeting or click replay.
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -311,7 +236,7 @@ try {
       top: node.getBoundingClientRect().top,
     }));
     if (process.argv[5])
-      writeFileSync(join(process.argv[5], "smooth-press.json"), JSON.stringify({ press, held, latePress }, null, 2));
+      writeFileSync(join(process.argv[5], "smooth-press.json"), JSON.stringify({ press, held }, null, 2));
     assert.equal(held.scroll, press.down, "native scroll must remain at the physical press position");
     assert.equal(held.top, press.top, "the pressed summary must remain at its physical press position");
     await page.mouse.up();
