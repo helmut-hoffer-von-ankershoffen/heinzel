@@ -13,6 +13,7 @@ from heinzel.kernel import CorePin, EdgeRelease, Installation, ReleaseCache, Rel
 from heinzel.modules.system._github import asset_host
 from heinzel.modules.system._models import UpdateResult
 from heinzel.modules.system._service import _edge_release, _published_version
+from heinzel.modules.system.updater import _update_install
 from heinzel.modules.system.updater._update import UpdateService
 from heinzel.modules.system.updater._update_rules import blocking_plugins
 
@@ -431,13 +432,34 @@ def test_plugin_revision_stays_independent_of_the_core_release(tmp_path):
     assert uv.commands[0][-1] == f"heinzel-clock @ git+{REPO}@v0.2.0#subdirectory=plugins/heinzel-clock"
 
 
-def test_a_private_git_plugin_is_fetched_with_the_gh_login(tmp_path, monkeypatch):
-    monkeypatch.setattr("shutil.which", lambda name, **_: "/usr/bin/gh" if name == "gh" else None)
+@pytest.fixture
+def gh_helper_environment(monkeypatch):
+    original_environment = _update_install.subprocess_environment
+
+    def environment():
+        return original_environment() | {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "color.ui",
+            "GIT_CONFIG_VALUE_0": "never",
+        }
+
+    # Supply the preceding slot only to fake-uv update calls. Real Git keeps the host's configuration.
+    monkeypatch.setattr(_update_install, "subprocess_environment", environment)
+    monkeypatch.setattr("shutil.which", lambda name, **_: "/fixture/gh" if name == "gh" else None)
+    return {
+        "GIT_CONFIG_COUNT": "2",
+        "GIT_CONFIG_KEY_1": "credential.https://github.com.helper",
+        "GIT_CONFIG_VALUE_1": "!/fixture/gh auth git-credential",
+    }
+
+
+def test_a_private_git_plugin_is_fetched_with_the_gh_login(tmp_path, gh_helper_environment):
     uv = FakeUv("0.2.0")
     UpdateService(installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv), FakeReleases("0.4.0")).update(
         current="0.2.0"
     )
-    assert uv.environments[0]["GIT_CONFIG_VALUE_0"].endswith("auth git-credential")
+    environment = uv.environments[0]
+    assert {key: value for key, value in environment.items() if key.startswith("GIT_CONFIG_")} == gh_helper_environment
 
 
 def test_a_floating_plugin_is_asked_again_when_hz_is_up_to_date(tmp_path):
@@ -704,8 +726,9 @@ def test_failed_plugin_refresh_restores_removed_tool_in_same_scope(tmp_path):
 
 
 @pytest.mark.parametrize("plugin_refresh", [False, True])
-def test_private_git_recovery_reuses_original_helper_environment(tmp_path, monkeypatch, plugin_refresh):
-    monkeypatch.setattr("shutil.which", lambda name, **_: "/fixture/gh" if name == "gh" else None)
+def test_private_git_recovery_reuses_original_helper_environment(
+    tmp_path, monkeypatch, plugin_refresh, gh_helper_environment
+):
     monkeypatch.setenv("HZ_CREDENTIAL_EXAMPLE_TOKEN", "fictional-token")
     uv = FakeUv("0.4.0" if plugin_refresh else "0.2.0")
     uv.failures, uv.hz_starts = ["network down"], False
@@ -728,7 +751,7 @@ def test_private_git_recovery_reuses_original_helper_environment(tmp_path, monke
     assert len(uv.environments) == 2
     first, restore = uv.environments
     assert first == restore
-    assert first["GIT_CONFIG_VALUE_0"] == "!/fixture/gh auth git-credential"
+    assert {key: value for key, value in first.items() if key.startswith("GIT_CONFIG_")} == gh_helper_environment
     assert "HZ_CREDENTIAL_EXAMPLE_TOKEN" not in first
 
 

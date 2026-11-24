@@ -124,7 +124,11 @@ def test_every_job_the_reduced_workload_requires_runs_when_surface_only_is_set()
     Each job's `if` is evaluated with the outputs of an Apple-only pull request: core false, surface_only true.
     """
     [complete] = [s for s in WORKFLOW["jobs"]["ci-ok"]["steps"] if s["name"].startswith("Require the complete direct")]
-    listed = next(line for line in complete["run"].splitlines() if 'SURFACE_ONLY:-false}" = true' in line)
+    listed = next(
+        line
+        for line in complete["run"].splitlines()
+        if line.strip().startswith("required=(admission changes lint secrets commits")
+    )
     required = listed.split("required=(")[1].split(")")[0].split()
     outputs = {
         "core": "false",
