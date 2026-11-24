@@ -16,7 +16,8 @@ permissions: {}
 jobs:
   freeze:
     name: Release freeze
-    if: github.event_name == 'pull_request'
+    # The protected freeze must have a single reviewed publisher before it can write checks.
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -37,7 +38,7 @@ jobs:
 
   sync:
     name: Post the freeze on every open PR
-    if: github.event_name == 'workflow_dispatch'
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

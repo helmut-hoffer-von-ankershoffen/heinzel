@@ -892,7 +892,9 @@ def verify_candidate(read: Callable[[str], Any], number: int, version: str) -> d
     except candidate.CandidateError as exc:
         msg = f"the candidate is refused: {exc}"
         raise ChainError(msg) from exc
-    return {"run_id": run_id, "head": head} | ({"evidence": evidence} if isinstance(evidence, dict) else {})
+    return {"run_id": run_id, "head": head, "tree": tree} | (
+        {"evidence": evidence} if isinstance(evidence, dict) else {}
+    )
 
 
 def release_pr_number(read: Callable[[str], Any], version: str) -> int | None:
@@ -1017,7 +1019,7 @@ def checks_pass(read: Callable[[str], Any], head: str, required: list[str]) -> N
         raise Wait(msg)
 
 
-def merge(read: Callable[[str], Any], number: int, version: str, token: str) -> str:
+def merge(read: Callable[[str], Any], number: int, version: str, token: str, proof: tuple[str, str, str]) -> str:
     """Squash-merge the verified release PR as the release identity, pinned to its head, if main has not moved.
 
     Returns:
@@ -1028,16 +1030,28 @@ def merge(read: Callable[[str], Any], number: int, version: str, token: str) -> 
         ChainError: Main moved, a required check failed, a review thread is open, or the merge did not land as the
             expected commit.
     """
+    head, tree, run_id = proof
+    if not (SHA.fullmatch(head) and SHA.fullmatch(tree) and run_id.isdecimal() and int(run_id) > 0):
+        msg = "missing or invalid verified candidate head, tree or run"
+        raise ChainError(msg)
     pr = read(f"pulls/{number}")
-    if isinstance(pr, dict) and pr.get("merged"):
-        return str(pr["merge_commit_sha"])
+    if (pr or {}).get("head", {}).get("sha") != head:
+        msg = "release PR head differs from the verified candidate"
+        raise ChainError(msg)
+    if (pr or {}).get("merged"):
+        return verified_merge(read, number, pr, candidate_base(read, head), tree)
     pr = pr_of(read, number, version)
     verify_pr_content(read, pr, version)
-    head = pr["head"]["sha"]
     if refusal := main_moved(read, head):
         raise ChainError(refusal)
     checks_pass(read, head, required_checks(read))
+    fresh = verify_candidate(read, number, version)
+    if (fresh["head"], fresh["tree"], str(fresh["run_id"])) != proof:
+        msg = "candidate head, tree or first-attempt run moved after verification"
+        raise ChainError(msg)
     base = candidate_base(read, head)
+    if refusal := main_moved(read, head):
+        raise ChainError(refusal)
     run(
         [
             "gh",
@@ -1056,10 +1070,21 @@ def merge(read: Callable[[str], Any], number: int, version: str, token: str) -> 
         ],
         env=gh_env(token),
     )
-    merged = read(f"pulls/{number}")
+    return verified_merge(read, number, read(f"pulls/{number}"), base, tree)
+
+
+def verified_merge(read: Callable[[str], Any], number: int, merged: dict[str, Any] | None, base: str, tree: str) -> str:
+    """A merge or retry may proceed only with the tested tree on its single validated parent.
+
+    Raises:
+        ChainError: The merge did not land as proven.
+    """
     sha = str((merged or {}).get("merge_commit_sha", ""))
     if not (merged or {}).get("merged") or not SHA.fullmatch(sha) or candidate_base(read, sha) != base:
         msg = f"release PR #{number} did not merge as one commit on {base[:9]}"
+        raise ChainError(msg)
+    if (read(f"commits/{sha}") or {}).get("commit", {}).get("tree", {}).get("sha") != tree:
+        msg = f"release PR #{number} merged with a different tree than the verified candidate"
         raise ChainError(msg)
     return sha
 
@@ -1492,6 +1517,9 @@ def parser() -> argparse.ArgumentParser:
         "merge": (
             ("--pr", {"type": int, "required": True}),
             ("--version", {"required": True}),
+            ("--candidate-head", {"required": True}),
+            ("--candidate-tree", {"required": True}),
+            ("--candidate-run", {"required": True}),
             ("--wait", {"type": float, "default": 1800}),
         ),
         "probe": (("--repo", {"type": Path, "default": Path()}),),
@@ -1573,7 +1601,7 @@ def cmd_candidate(args: argparse.Namespace) -> int:
         return 1
     evidence = poll("candidate CI", lambda: verify_candidate(get, args.pr, args.version), args.wait)
     say(f"ok   candidate run {evidence['run_id']} on {evidence['head'][:9]}: full, first attempt")
-    output({"run_id": str(evidence["run_id"]), "head": evidence["head"]})
+    output({"run_id": str(evidence["run_id"]), "head": evidence["head"], "tree": evidence["tree"]})
     return 0
 
 
@@ -1583,7 +1611,8 @@ def cmd_merge(args: argparse.Namespace) -> int:
     if not token:
         say(f"error: {NO_RELEASE_IDENTITY}")
         return 1
-    sha = poll("required checks", lambda: merge(get, args.pr, args.version, token), args.wait)
+    proof = (args.candidate_head, args.candidate_tree, args.candidate_run)
+    sha = poll("required checks", lambda: merge(get, args.pr, args.version, token, proof), args.wait)
     say(f"ok   merged release commit {sha[:9]}")
     output({"sha": sha})
     return 0

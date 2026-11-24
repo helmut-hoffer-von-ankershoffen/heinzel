@@ -86,6 +86,18 @@ it("says a failed check could not run, with the last good one, and offers a retr
   expect(JSON.stringify(view)).not.toMatch(/unavailable/i);
 });
 
+it("shows why a check or an update failed instead of saying nothing", () => {
+  const core = describe({
+    ...base,
+    status: { ...status, check_failed: true },
+    plan: { ...plan, core_checked: false, error: "hz: rate-limited" },
+  });
+  expect(core.rows[0]?.detail).toContain("hz: rate-limited");
+  const plugins = describe({ ...base, plan: { ...plan, plugins_checked: false, error: "plugins: offline" } });
+  expect(plugins.rows.find((row) => row.id === "plugins")?.detail).toBe("plugins: offline");
+  expect(plugins.tone).not.toBe("ok");
+});
+
 it("says there has been no successful check yet, and checks while the first answer is awaited", () => {
   const never = describe({ ...base, status: { ...status, last_ok_at: null, check_failed: true } });
   expect(never.rows[0]).toMatchObject({

@@ -112,7 +112,7 @@ def test_an_app_that_will_not_quit_ends_the_install_with_the_deferred_code_and_s
 def install_with(monkeypatch, *, restart: bool, was_open: bool):
     """Run `_install_app` where the installer succeeds; whether the app was opened again."""
     opened = []
-    monkeypatch.setattr(_app, "_quit_for_update", lambda error: was_open)
+    monkeypatch.setattr(_app, "_quit_for_update", lambda error, flavor=None: was_open)
     monkeypatch.setattr(_app, "desktop_executable", lambda kernel: Path("/hz"))
     monkeypatch.setattr(
         _app, "_plan", lambda error, keep_quarantine: (SimpleNamespace(close=lambda complete: None), BUNDLE.parent)

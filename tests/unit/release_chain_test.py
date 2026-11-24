@@ -306,7 +306,7 @@ def test_merge_checks_the_pr_content_before_anything_else(monkeypatch):
         }
     )
     with pytest.raises(chain.ChainError, match="more than the release files"):
-        chain.merge(read, 9, "0.9.54", "token")
+        chain.merge(read, 9, "0.9.54", "token", CANDIDATE_PROOF)
 
 
 def test_a_real_release_needs_the_owner_token(monkeypatch, capsys):
@@ -329,7 +329,7 @@ def test_merge_never_runs_gh_when_main_moved(monkeypatch):
         }
     )
     with pytest.raises(chain.ChainError, match="main moved"):
-        chain.merge(read, 9, "0.9.54", "token")
+        chain.merge(read, 9, "0.9.54", "token", CANDIDATE_PROOF)
     assert calls == []
 
 
@@ -384,9 +384,18 @@ def test_rules_without_required_checks_refuse_the_merge():
         chain.required_checks(reader({}))
 
 
-def test_merge_is_pinned_to_the_verified_head(monkeypatch):
+@pytest.mark.parametrize(
+    ("changed", "refusal"),
+    [
+        (None, None),
+        ("head", "head differs"),
+        ("run", "first-attempt run moved"),
+        ("tree", "merged with a different tree"),
+    ],
+)
+def test_merge_is_pinned_to_the_verified_candidate(monkeypatch, changed, refusal):
     calls = []
-    state = {"merged": False}
+    state = {"merged": changed == "tree"}
 
     def fake_run(argv, **_):
         calls.append(argv)
@@ -394,21 +403,37 @@ def test_merge_is_pinned_to_the_verified_head(monkeypatch):
         return ""
 
     monkeypatch.setattr(chain, "run", fake_run)
+    monkeypatch.setattr(
+        chain,
+        "verify_candidate",
+        lambda *_: {"head": HEAD, "tree": TREE, "run_id": 78 if changed == "run" else 77},
+    )
 
     def read(path):
         if path == "pulls/9":
-            return {**pr(9, "release/v0.9.54"), "merged": state["merged"], "merge_commit_sha": TIP}
+            pull = pr(9, "release/v0.9.54")
+            if changed == "head":
+                pull["head"]["sha"] = OTHER
+            return {**pull, "merged": state["merged"], "merge_commit_sha": TIP}
         return {
             f"commits/{HEAD}": {"parents": [{"sha": BASE}]},
             "commits/main": {"sha": BASE},
-            f"commits/{TIP}": {"parents": [{"sha": BASE}]},
+            f"commits/{TIP}": {
+                "parents": [{"sha": BASE}],
+                "commit": {"tree": {"sha": OTHER if changed == "tree" else TREE}},
+            },
             f"compare/{BASE}...{HEAD}": content(),
             "rules/branches/main": RULES,
             f"commits/{HEAD}/check-runs?per_page=100&page=1": {"check_runs": [check("CI OK")]},
             f"commits/{HEAD}/status": {"statuses": [{"context": "SonarCloud", "state": "success"}]},
         }.get(path)
 
-    assert chain.merge(read, 9, "0.9.54", "token") == TIP
+    if refusal:
+        with pytest.raises(chain.ChainError, match=refusal):
+            chain.merge(read, 9, "0.9.54", "token", CANDIDATE_PROOF)
+        assert calls == []
+        return
+    assert chain.merge(read, 9, "0.9.54", "token", CANDIDATE_PROOF) == TIP
     assert "--match-head-commit" in calls[0]
     assert calls[0][calls[0].index("--match-head-commit") + 1] == HEAD
 
@@ -765,6 +790,7 @@ def test_the_real_receipts_of_a_sharded_release_are_judged_by_the_same_rules():
 # ------------------------------------------------------------------------------------------------ R3, R4, probe
 
 TREE, PRHEAD = "7" * 40, "8" * 40
+CANDIDATE_PROOF = (HEAD, TREE, "77")
 
 
 def tree_routes(*, pr_runs=None, pr_tree=TREE, merged=True, push=()):
@@ -827,6 +853,18 @@ def test_the_token_reaches_the_probe_only_on_a_dispatched_dry_run_from_main():
     assert "github.ref == 'refs/heads/main'" in probe
     assert "inputs.probe" in probe
     assert "inputs.dry_run" in probe
+
+
+def test_hosted_release_writes_stay_inactive_until_queue_and_freeze_are_protected():
+    workflows = ROOT / ".github/workflows"
+    chain_source = (workflows / "release-chain.yml").read_text()
+    mode = chain_source.split("id: mode", 1)[1].split("id: plan", 1)[0]
+    assert "token probes are disabled" in mode
+    assert "hosted release writes require the protected freeze and queue integration" in mode
+    assert "dry=false" not in mode
+    assert (workflows / "release-freeze.yml").read_text().count("if: ${{ false }}") == 2
+    assert "if: ${{ false }}" in (workflows / "release-tail.yml").read_text()
+    assert "--latest=false" not in (workflows / "publish.yml").read_text()
 
 
 class FakeShell:

@@ -118,6 +118,7 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           DRY: ${{ inputs.dry_run }}
+          PROBE: ${{ inputs.probe }}
           VERSION: ${{ inputs.version }}
           CUT_SHA: ${{ inputs.cut_sha }}
           REF: ${{ github.ref }}
@@ -125,6 +126,10 @@ jobs:
         run: |
           if [ "$EVENT" != pull_request ] && [ "$DRY" != true ] && [ "$REF" != refs/heads/main ]; then
             echo "error: a real release runs only from main (this run is on $REF); dispatch with --ref main or as a dry run" >&2
+            exit 1
+          fi
+          if [ "$PROBE" = true ]; then
+            echo "error: token probes are disabled while hosted release writes are inactive" >&2
             exit 1
           fi
           if [ -n "$CUT_SHA" ]; then
@@ -147,7 +152,8 @@ jobs:
               VERSION="$major.$((minor + 1)).0"
             fi
           else
-            echo "dry=false" >> "$GITHUB_OUTPUT"
+            echo "error: hosted release writes require the protected freeze and queue integration; use dry_run to check the plan" >&2
+            exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - name: Require the owner's release token for a real release
@@ -293,6 +299,10 @@ jobs:
       contents: read
       actions: read
       pull-requests: read
+    outputs:
+      head: ${{ steps.proof.outputs.head }}
+      tree: ${{ steps.proof.outputs.tree }}
+      run_id: ${{ steps.proof.outputs.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -300,7 +310,8 @@ jobs:
       - uses: ./.github/actions/setup-uv
         with:
           enable-cache: false
-      - name: Wait for the full first-attempt candidate run and verify it
+      - id: proof
+        name: Wait for the full first-attempt candidate run and verify it
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ needs.cut.outputs.pr || needs.plan.outputs.pr }}
@@ -317,6 +328,7 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
+      actions: read
       checks: write
       pull-requests: read
     outputs:
@@ -335,9 +347,13 @@ jobs:
           RELEASE_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.RELEASE_TOKEN || '' }}
           PR: ${{ needs.cut.outputs.pr || needs.plan.outputs.pr }}
           VERSION: ${{ needs.plan.outputs.version }}
+          CANDIDATE_HEAD: ${{ needs.candidate.outputs.head }}
+          CANDIDATE_TREE: ${{ needs.candidate.outputs.tree }}
+          CANDIDATE_RUN: ${{ needs.candidate.outputs.run_id }}
         run: |
           uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py merge \
-            --pr "$PR" --version "$VERSION" --wait 1800
+            --pr "$PR" --version "$VERSION" --wait 1800 \
+            --candidate-head "$CANDIDATE_HEAD" --candidate-tree "$CANDIDATE_TREE" --candidate-run "$CANDIDATE_RUN"
       - name: Lift the freeze
         env:
           GH_TOKEN: ${{ github.token }}

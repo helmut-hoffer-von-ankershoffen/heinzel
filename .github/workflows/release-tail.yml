@@ -27,6 +27,8 @@ concurrency:
 jobs:
   publish:
     name: Compose and PyPI v${{ inputs.version }}
+    # The protected queue integration must land before hosted release writes are enabled.
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:

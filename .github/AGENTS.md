@@ -30,14 +30,17 @@ Constraints per workflow:
 - Merge policy: require `CI OK` from GitHub Actions and `SonarCloud Code Analysis` from the Sonar integration.
   Independently review the exact head before merging, especially workflow and gate changes. This uses conventional
   reviewed-PR trust: PR jobs execute the reviewed repository code; job names alone do not authenticate that code.
-  The old custom `merge-gate` and `coverage-floor` checks remain diagnostic during migration and are not admission
-  requirements. Their registry and project-wide Sonar dependency must not prevent corrective PRs from merging.
+  The coverage floor is the `Coverage floor` job of `ci.yml` (`scripts/coverage_floor.py`), which `CI OK` requires on
+  pull requests: it judges the total this run measured at its own merge commit, so it has no stale base, and its
+  verdict names measured vs required percent, the scope and the least covered files (`TOOL ERROR` when the judge
+  broke). There is no `merge-gate` workflow and no separate `merge-gate` or `coverage-floor` check.
 - `update-prs.yml`: core keeps tested PR heads for the merge queue; plugin repositories update behind branches and
   approve the resulting CI runs. Closed code-scanning threads are resolved in both.
 - `acceptance.yml`: `contents: read`, no secrets, publishes nothing; uploads `result.json`, which promotion reads. A
   candidate run (release wheel URL + sha256 + profile URL) is labelled `CANDIDATE_*`, never a public-path pass.
 - `prepare-release.yml` (`make release`): opens the release PR `chore(release): vX.Y.Z` and dispatches CI on it (token-made
-  PRs trigger none). A maintainer reviews all checks before merging.
+   PRs trigger none). A maintainer reviews all checks before merging. The owner decisions of 2026-11-22 in the root
+   AGENTS.md allow replacing this review and the macOS PR lanes once #907 and #933 merge and the hosted chain is active.
 - `release-chain.yml` ("Release", core only): the whole Core release in CI (`scripts/release_chain.py`): cut on a
   first-attempt green main tip, candidate CI (full, first attempt), merge as the owner (secret `RELEASE_TOKEN`) only
   if main has not moved since the candidate base, tag and Publish, PyPI, compose, the sharded `acceptance.yml` on both
@@ -49,6 +52,8 @@ Constraints per workflow:
   only) the one token-bearing dry-run job pushes `release-probe/<sha7>`, opens a draft PR, checks the freeze post and
   main's required checks, then removes both. Main's tip is proven by its push run or, before that, by the merged PR's
   first-attempt run on the same tree; the merge waits for main's required checks; compose starts at the wheel asset.
+  Only read-only dry runs are enabled initially. Enabling release writes, token probes, the freeze and the tail
+  requires the protected freeze publisher and queue integration. Enable the producer's Latest change with the tail.
 - `release-tail.yml` ("Release tail", core only): one release's tail after its tag, started by the chain: compose at
   the wheel asset, PyPI, the sharded acceptance, the verdict, the marker, Latest. One concurrency group per version,
   apart from the chain, so releases pipeline: N's tail runs while N+1 is cut and runs its candidate (at most two in
