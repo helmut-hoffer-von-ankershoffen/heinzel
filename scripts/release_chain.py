@@ -536,6 +536,48 @@ def in_flight(read: Callable[[str], Any], requested: str, current: str) -> dict[
     return found
 
 
+def check_unpublished_merge(read: Callable[[str], Any], commits: list[dict[str, Any]], current: str) -> None:
+    """Refuse a new cut while main contains an unresolved unpublished release merge.
+
+    Raises:
+        ChainError: The release is awaiting publication, or its source cannot be proved uniquely.
+    """
+    candidates = []
+    for commit in commits:
+        subject = str(commit.get("commit", {}).get("message", "")).partition("\n")[0]
+        match = re.fullmatch(r"chore\(release\): v([0-9.]+)(?: \(#([1-9][0-9]*)\))?", subject)
+        if match and VERSION.fullmatch(match[1]) and vkey(match[1]) > vkey(current):
+            candidates.append((match[1], match[2], str(commit.get("sha", ""))))
+    if not candidates:
+        return
+    if len(candidates) != 1 or not candidates[0][1]:
+        msg = "ambiguous unpublished release history on main; reconcile it before cutting"
+        raise ChainError(msg)
+
+    version, number, sha = candidates[0]
+    pr = pr_of(read, int(number), version)
+    base = pr.get("base", {})
+    if base.get("ref") != "main" or base.get("repo", {}).get("full_name") != REPOSITORY:
+        msg = f"release PR #{number} does not target this repository's main"
+        raise ChainError(msg)
+    if not pr.get("merged") or pr.get("merge_commit_sha") != sha:
+        msg = f"release PR #{number} does not match the unpublished merge on main"
+        raise ChainError(msg)
+    on_main(read, sha)
+    verify_pr_content(read, pr, version)
+    head = pr["head"]["sha"]
+    tree = (read(f"commits/{head}") or {}).get("commit", {}).get("tree", {}).get("sha", "")
+    if not SHA.fullmatch(str(tree)):
+        msg = f"release PR #{number} has no verifiable source tree"
+        raise ChainError(msg)
+    verified_merge(read, int(number), pr, candidate_base(read, head), tree)
+    msg = (
+        f"v{version} already merged as {sha} (PR #{number}) and publication is pending; "
+        "recover publication for that exact commit before cutting"
+    )
+    raise ChainError(msg)
+
+
 def plan(  # noqa: PLR0913 - the plan's inputs, all keyword-only beyond the version
     read: Callable[[str], Any],
     requested: str,
@@ -580,8 +622,10 @@ def plan(  # noqa: PLR0913 - the plan's inputs, all keyword-only beyond the vers
         raise ChainError(msg)
     major, minor, patch = vkey(current)
     version = requested or f"{major}.{minor}.{patch + 1}"
-    bump = bump_kind(current, version)
     commits = compare_commits(read, f"v{current}", tip)
+    if not pinned:
+        check_unpublished_merge(read, commits, current)
+    bump = bump_kind(current, version)
     subjects = [s for c in commits for s in commit_subjects(c.get("commit", {}).get("message", ""))]
     releasable = [s for s in subjects if not NOT_RELEASABLE.match(s)]
     if not commits or (auto and not releasable):

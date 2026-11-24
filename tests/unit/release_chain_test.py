@@ -793,6 +793,55 @@ TREE, PRHEAD = "7" * 40, "8" * 40
 CANDIDATE_PROOF = (HEAD, TREE, "77")
 
 
+@pytest.mark.parametrize(
+    ("variant", "expected"),
+    [
+        ("exact", "publication is pending"),
+        ("other-tree", "different tree"),
+        ("other-parent", "did not merge as one commit"),
+        ("unrelated-pr", "is not the release PR"),
+        ("ambiguous", "ambiguous unpublished"),
+        ("unnumbered", "ambiguous unpublished"),
+    ],
+)
+def test_plan_refuses_a_second_cut_after_an_unpublished_merge(variant, expected):
+    subject = "chore(release): v0.9.54" if variant == "unnumbered" else "chore(release): v0.9.54 (#9)"
+    commits = [{"sha": TIP, "commit": {"message": subject}}]
+    if variant == "ambiguous":
+        commits.append({"sha": OTHER, "commit": {"message": "chore(release): v0.9.55 (#10)"}})
+    data = routes()
+    pull = pr(9, "fix/other", title="fix: other") if variant == "unrelated-pr" else pr(9, "release/v0.9.54")
+    data.update(
+        {
+            f"compare/v0.9.53...{TIP}": {"total_commits": len(commits), "commits": commits},
+            "pulls/9": pull
+            | {
+                "base": {"ref": "main", "repo": {"full_name": chain.REPOSITORY}},
+                "merged": True,
+                "merge_commit_sha": TIP,
+            },
+            f"compare/{TIP}...main": {"status": "identical"},
+            f"compare/{BASE}...{HEAD}": content(),
+            f"commits/{HEAD}": {"parents": [{"sha": BASE}], "commit": {"tree": {"sha": TREE}}},
+            f"commits/{TIP}": {
+                "parents": [{"sha": OTHER if variant == "other-parent" else BASE}],
+                "commit": {"tree": {"sha": OTHER if variant == "other-tree" else TREE}},
+            },
+        }
+    )
+    for requested in ("", "0.9.54", "0.9.55"):
+        result, _ = chain.dry_plan(reader(data), requested, tip=TIP, pinned=False)
+        assert result["phase"] == "refused"
+        assert expected in result["reason"]
+        if variant == "exact":
+            assert TIP in result["reason"]
+
+
+def test_a_release_title_in_an_unrelated_commit_body_does_not_block_a_cut():
+    data = routes(commits=["fix: keep a release note\n\nchore(release): v0.9.54 (#9)"])
+    assert chain.plan(reader(data), "", auto=False, tip=TIP)["phase"] == "cut"
+
+
 def tree_routes(*, pr_runs=None, pr_tree=TREE, merged=True, push=()):
     found = routes(runs=list(push))
     found[f"commits/{TIP}/pulls"] = [
