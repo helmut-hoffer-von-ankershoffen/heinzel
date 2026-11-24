@@ -234,7 +234,8 @@ def test_changelog_newer_shows_what_newer_releases_bring(app, monkeypatch):
     result = runner.invoke(app, ["system", "changelog", "--newer"], env={"COLUMNS": "200"})
     assert result.exit_code == 0
     assert "You're on hz" not in result.stdout  # the header is for the installed changelog
-    assert "hz 9.0.0 (2026-10-20)" in result.stdout
+    local_release = datetime(2026, 10, 20, 8, tzinfo=UTC).astimezone().strftime("%Y-%m-%d %H:%M %Z")
+    assert f"hz 9.0.0 ({local_release})" in result.stdout
     assert "brand new things" in result.stdout
     assert "\u202e" not in result.stdout
     assert "what you have" not in result.stdout
@@ -245,6 +246,7 @@ def test_changelog_newer_shows_what_newer_releases_bring(app, monkeypatch):
         {
             "version": "9.0.0",
             "date": "2026-10-20",
+            "published_at": "2026-10-20T08:00:00Z",
             "notes": "### Features\n\n- brand new things",
             "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v9.0.0",
         }
