@@ -47,8 +47,11 @@ if [[ "$cloud_sign_in" == YES ]]; then
         "HEINZEL_MAC_WIDGET_PROFILE=$HEINZEL_MAC_WIDGET_PROFILE")
 fi
 out="$PWD/.build/package"
-stage="$(mktemp -d)"
+mkdir -p "$out"
+archive="$out/heinzel-desktop-swift-$version-darwin-arm64.tar.gz"
+stage="$(mktemp -d "$out/.package.XXXXXXXX")"
 trap 'rm -rf -- "$stage"' EXIT
+candidate="$stage/${archive##*/}"
 xcodebuild -scheme Heinzel -configuration Release -destination 'generic/platform=macOS' \
     -derivedDataPath "$out" ARCHS=arm64 MARKETING_VERSION="$version" HEINZEL_MANAGED_INSTALL=YES \
     HEINZEL_SOURCE_REVISION="$(git rev-parse HEAD)" \
@@ -56,10 +59,10 @@ xcodebuild -scheme Heinzel -configuration Release -destination 'generic/platform
 app="$stage/Heinzelmaennchen.app"
 /usr/bin/ditto "$out/Build/Products/Release/Heinzel.app" "$app"
 /usr/bin/codesign --verify --strict --deep "$app"
-COPYFILE_DISABLE=1 /usr/bin/tar --format=pax --no-mac-metadata --no-xattrs --no-acls --no-fflags -czf "$out/heinzel-desktop-swift-$version-darwin-arm64.tar.gz" \
+COPYFILE_DISABLE=1 /usr/bin/tar --format=pax --no-mac-metadata --no-xattrs --no-acls --no-fflags -czf "$candidate" \
     -C "$stage" Heinzelmaennchen.app
 mkdir "$stage/verified"
-/usr/bin/tar -xzf "$out/heinzel-desktop-swift-$version-darwin-arm64.tar.gz" -C "$stage/verified"
+/usr/bin/tar -xzf "$candidate" -C "$stage/verified"
 /usr/bin/codesign --verify --strict --deep "$stage/verified/Heinzelmaennchen.app"
 archived_links=$(/usr/bin/plutil -extract HeinzelHTTPSLinks raw -o - \
     "$stage/verified/Heinzelmaennchen.app/Contents/Info.plist")
@@ -80,4 +83,5 @@ if [[ "$cloud_sign_in" == YES ]] && {
     printf '%s\n' 'The archived app or widget has no embedded provisioning profile.' >&2
     exit 1
 fi
-printf '%s\n' "$out/heinzel-desktop-swift-$version-darwin-arm64.tar.gz"
+mv -f -- "$candidate" "$archive"
+printf '%s\n' "$archive"

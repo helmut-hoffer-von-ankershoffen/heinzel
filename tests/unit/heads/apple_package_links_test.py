@@ -3,6 +3,7 @@
 import os
 import re
 import subprocess
+import tarfile
 import tomllib
 from pathlib import Path
 
@@ -94,3 +95,70 @@ def test_icloud_mac_packaging_requires_separate_profiles_and_passes_them_to_xcod
         "HEINZEL_MAC_PROFILE=Fixture Mac app",
         "HEINZEL_MAC_WIDGET_PROFILE=Fixture widget",
     } <= set(args.read_text().splitlines())
+
+
+@pytest.mark.parametrize(
+    ("widget_profile", "existing"),
+    [(False, None), (False, b"previous verified package"), (True, b"previous verified package")],
+    ids=["rejected-empty", "rejected-preserves-old", "verified-replaces-old"],
+)
+def test_mac_packaging_promotes_only_the_verified_archive(tmp_path, widget_profile, existing):
+    apple = tmp_path / "apple"
+    scripts = apple / "scripts"
+    scripts.mkdir(parents=True)
+    (tmp_path / "pyproject.toml").write_text(f'version = "{VERSION}"\n')
+    package = scripts / SCRIPT.name
+    source = SCRIPT.read_text()
+    for tool in ("ditto", "codesign", "tar", "plutil"):
+        source = source.replace(f"/usr/bin/{tool}", f"fixture-{tool}")
+    package.write_text(source)
+    out = apple / ".build" / "package"
+    app = out / "Build" / "Products" / "Release" / "Heinzel.app"
+    widget = app / "Contents" / "PlugIns" / "HeinzelWidgets.appex" / "Contents"
+    widget.mkdir(parents=True)
+    (app / "Contents" / "embedded.provisionprofile").write_bytes(b"fixture app profile")
+    if widget_profile:
+        (widget / "embedded.provisionprofile").write_bytes(b"fixture widget profile")
+    final = out / f"heinzel-desktop-swift-{VERSION}-darwin-arm64.tar.gz"
+    previous = tmp_path / "previous"
+    if existing is not None:
+        previous.write_bytes(existing)
+        final.write_bytes(existing)
+    commands = {
+        "xcodebuild": "exit 0",
+        "git": "printf '%040d\\n' 1",
+        "fixture-ditto": 'cp -R "$1" "$2"',
+        "fixture-codesign": 'if [ -f "$PREVIOUS" ]; then cmp "$PREVIOUS" "$FINAL"; else test ! -e "$FINAL"; fi',
+        "fixture-tar": 'if [ "$1" = --format=pax ]; then shift 5; fi\nexec /usr/bin/tar "$@"',
+        "fixture-plutil": (
+            'case "$2" in HeinzelHTTPSLinks) echo NO ;; HeinzelCloudSignIn) echo YES ;; *) exit 2 ;; esac'
+        ),
+    }
+    for name, command in commands.items():
+        stub = tmp_path / name
+        stub.write_text(f"#!/bin/sh\n{command}\n")
+        stub.chmod(0o700)
+    env = {
+        **os.environ,
+        "PATH": f"{tmp_path}:{os.environ['PATH']}",
+        "FINAL": str(final),
+        "PREVIOUS": str(previous),
+        "HEINZEL_HTTPS_LINKS": "NO",
+        "HEINZEL_ICLOUD_SIGN_IN": "YES",
+        "HEINZEL_MAC_SIGNING_TEAM": "ABCDEFGHIJ",
+        "HEINZEL_MAC_PROFILE": "Fixture app",
+        "HEINZEL_MAC_WIDGET_PROFILE": "Fixture widget",
+    }
+    result = subprocess.run(["bash", str(package)], env=env, capture_output=True, check=False, timeout=30)
+    assert not list(out.glob(".package.*"))
+    if not widget_profile:
+        assert result.returncode == 1
+        assert b"no embedded provisioning profile" in result.stderr
+        assert result.stdout == b""
+        assert (final.read_bytes() if final.exists() else None) == existing
+        return
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.decode().strip() == str(final)
+    with tarfile.open(final) as archive:
+        profile = "Heinzelmaennchen.app/Contents/PlugIns/HeinzelWidgets.appex/Contents/embedded.provisionprofile"
+        assert profile in archive.getnames()
