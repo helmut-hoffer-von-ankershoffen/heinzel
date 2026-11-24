@@ -1,5 +1,7 @@
 """Owner-catalog search exercises real journals, not fabricated index rows."""
 
+import os
+
 import pytest
 
 from heinzel import CurrentUser, HeinzelError, Settings
@@ -11,6 +13,12 @@ from heinzel.modules.heinzel._session_repository import PersonalSessionRepositor
 from tests.integration.chat_test import AUTH, web_client
 
 pytestmark = pytest.mark.integration
+
+
+@pytest.fixture(autouse=True)
+def no_disk_flush(monkeypatch):
+    """These tests check journal logic, not the disk: hundreds of `fsync` calls took over 15 s on a loaded CI disk."""
+    monkeypatch.setattr(os, "fsync", lambda _fd: None)
 
 
 def test_owner_catalog_progress_append_and_reopen(make_kernel, tmp_path, monkeypatch):  # noqa: PLR0915

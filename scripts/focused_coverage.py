@@ -203,8 +203,12 @@ def coverage_counts(
     total = sum(count for row in counts.values() for _, count in row.values())
     require(total > 0, "scoped production inventory has no executable opportunities")
     if enforce:
-        require(100 * covered >= FLOOR * total, f"PR scoped coverage below the {FLOOR}% floor")
-        require(100 * covered >= THRESHOLD * total, f"PR scoped coverage below the {THRESHOLD}% report threshold")
+        measured = f"measured {100 * covered / total:.2f}% ({covered}/{total} statements and branches)"
+        require(100 * covered >= FLOOR * total, f"PR scoped coverage below the {FLOOR}% floor: {measured}")
+        require(
+            100 * covered >= THRESHOLD * total,
+            f"PR scoped coverage below the {THRESHOLD}% report threshold: {measured}",
+        )
     return {"files": counts, "covered": covered, "total": total, "threshold": THRESHOLD, "floor": FLOOR}
 
 

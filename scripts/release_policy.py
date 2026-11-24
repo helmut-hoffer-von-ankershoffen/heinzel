@@ -23,7 +23,6 @@ if __name__ == "__main__":
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.ci_paths import not_ci
-from scripts.focused_gate import API_CHECKS
 from scripts.focused_plan import LANES
 from scripts.release_candidate import (
     QUARANTINE_IDLE,
@@ -43,11 +42,8 @@ EVENTS = ("pull_request", "workflow_dispatch")
 AGGREGATE_JOB = "ci-ok"
 FOCUSED_JOB = "focused-tests"
 LANE_EXPRESSION = "${{ matrix.lane }}"
-# The status-check contexts the `main` ruleset requires: the workflow's aggregate job, and the checks that
-# .github/workflows/merge-gate.yml reports (scripts/focused_gate.py API_CHECKS). Change them with the ruleset.
-GATE_CONTEXTS = tuple(sorted(API_CHECKS))
-# The judge workflow is the one workflow that runs the merge-gate judge, which reports GATE_CONTEXTS.
-JUDGE = "scripts/merge_gate.py"
+# The status-check context of this workflow that the `main` ruleset requires: its aggregate job. The coverage floor is
+# a job of the workflow that the aggregate needs (scripts/coverage_floor.py), so no separate gate context exists.
 LANE_NAME = re.compile(r"[a-z0-9-]+")
 TEST_JOB = re.compile(r"Test \(.+\)")
 
@@ -86,35 +82,6 @@ def focused_job(workflow: str) -> str:
     return name.replace(LANE_EXPRESSION, "{lane}")
 
 
-def judge_workflow(root: Path, tracked: list[str]) -> str:
-    """The workflow file that runs the merge-gate judge: exactly one, and not the CI workflow."""
-    found = [
-        path
-        for path in tracked
-        if re.fullmatch(r"\.github/workflows/[^/]+\.ya?ml", path) and JUDGE in (root / path).read_text(encoding="utf-8")
-    ]
-    require(len(found) == 1 and found[0] != WORKFLOW, f"expected one workflow that runs {JUDGE}, found {found}")
-    return found[0]
-
-
-def gate_checks(judge: str) -> dict[str, str]:
-    """Which posted check reports which gate, read from the judge workflow's verdict step.
-
-    The judge posts each check of GATE_CONTEXTS and reports it with the outcome of one step:
-    `MERGE_GATE_OUTCOME: ${{ steps.sonar.outcome }}` names the Sonar gate's check, and so on.
-    """
-    found = {}
-    for check in GATE_CONTEXTS:
-        variable = check.replace("-", "_").upper()
-        step = re.findall(rf"^ +{variable}_OUTCOME: \$\{{\{{ steps\.([a-z_]+)\.outcome \}}\}}$", judge, re.MULTILINE)
-        require(len(step) == 1, f"the judge workflow reports {check} with {len(step)} step outcomes")
-        found[step[0]] = check
-    require(
-        sorted(found) == ["coverage", "sonar"], f"the judge's gate steps are {sorted(found)}, not coverage and sonar"
-    )
-    return dict(sorted(found.items()))
-
-
 def tracked(root: Path) -> list[str]:
     """Every path Git tracks in this checkout."""
     listing = subprocess.run(
@@ -131,7 +98,6 @@ def policy(root: Path = ROOT, listing: list[str] | None = None) -> dict[str, obj
     """Derive the manifest from the recorder, the workflow, the focused lanes and the tracked test files."""
     paths = tracked(root) if listing is None else listing
     rule = not_ci(root, paths)
-    judge = judge_workflow(root, paths)
     workflow = (root / WORKFLOW).read_text(encoding="utf-8")
     jobs = {event: expected_jobs(event) for event in EVENTS}
     split = {
@@ -151,8 +117,6 @@ def policy(root: Path = ROOT, listing: list[str] | None = None) -> dict[str, obj
         "aggregate": name,
         "expected_jobs": split,
         "focused_job": focused_job(workflow),
-        "gate_checks": gate_checks((root / judge).read_text(encoding="utf-8")),
-        "judge_workflow": judge,
         "not_ci": rule,
         "lanes": {
             lane: {"kind": kind, "python": python, "runner": runner} for lane, (runner, python, kind) in LANES.items()
@@ -166,7 +130,7 @@ def policy(root: Path = ROOT, listing: list[str] | None = None) -> dict[str, obj
         },
         "recorder": RECORDER,
         "repository": REPOSITORY,
-        "required_contexts": sorted({name, *GATE_CONTEXTS}),
+        "required_contexts": [name],
         "test_jobs": tests,
         "workflow": WORKFLOW,
     }

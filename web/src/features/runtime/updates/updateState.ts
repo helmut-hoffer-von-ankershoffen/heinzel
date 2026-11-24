@@ -105,7 +105,8 @@ export function describe(input: Inputs): View {
   } else if (loading || neverAsked) {
     rows.push({ id: "core", tone: "off", text: t("updates.checking"), busy: true });
   } else if (coreUnknown) {
-    const detail = lastOk ? t("updates.lastGood", { when: whenText(lastOk, now) }) : t("updates.neverChecked");
+    const known = lastOk ? t("updates.lastGood", { when: whenText(lastOk, now) }) : t("updates.neverChecked");
+    const detail = plan?.error ? `${plan.error} ${known}` : known;
     rows.push({ id: "core", tone: "off", text: t("updates.coreUnknown"), detail });
   } else if (status) {
     rows.push({
@@ -146,7 +147,7 @@ export function describe(input: Inputs): View {
       });
   } else if (plan.plugins_checked === false) {
     pluginsUnknown = true;
-    rows.push({ id: "plugins", tone: "off", text: t("updates.pluginsUnknown") });
+    rows.push({ id: "plugins", tone: "off", text: t("updates.pluginsUnknown"), detail: plan.error ?? undefined });
   } else if (plan.plugins_checked == null) {
     pluginsUnknown = true;
     if (!loading) rows.push({ id: "plugins", tone: "off", text: t("updates.pluginsChecking"), busy: true });

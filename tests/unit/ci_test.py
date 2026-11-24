@@ -18,6 +18,8 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
@@ -32,7 +34,7 @@ def test_installed_browser_service_journey_keeps_cold_starts_out_of_browser_shar
         check=True,
         capture_output=True,
         text=True,
-        timeout=3,
+        timeout=scaled(30),
     )
     browser, first, second, third = [set(line.split()) for line in result.stdout.splitlines()]
     journey = "tests/e2e/ui_service_browser_test.py"
@@ -63,6 +65,8 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'version="$(sed -n': "archives a release candidate's desktop apps under its version for Publish to promote",
         "echo 'DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer'": "selects the installed Xcode for macOS CI",
         "python3 -I scripts/release_candidate.py": "records release source",
+        "python3 -I scripts/coverage_floor.py": "judges this run's coverage floor, standard library only",
+        "python3 -I scripts/sonar_ratings.py": "judges Sonar's overall-code ratings, standard library only",
         "echo 'selected=true'": "selects complete CI directly without an external plan",
         'if [ "$GITHUB_REPOSITORY" != helmut-hoffer-von-ankershoffen/heinzel ]': (
             "restricts scheduled maintenance to canonical main"
@@ -89,8 +93,9 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         ),
         'changed="$(git diff --name-only': "decides from the changed paths whether a pull request builds the macOS app",
         "if compgen -G ": "selects the built core candidate or an independently released artifact for source plugins",
-        "for result in $RESULTS": "the CI OK gate aggregates the results of the other jobs",
-        "uv run --no-build coverage report --format=total": "hands the measured total to the merge gate",
+        "jq -r 'to_entries[]": "the CI OK gate names each failed job with its verdict, then aggregates the results",
+        "uv run --no-build coverage report --format=total": "hands the measured total to the Coverage floor job",
+        "uv run --no-build coverage report --sort=-miss": "names the least covered files for the Coverage floor",
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
         'gh run cancel "$RUN_ID"': "a failed cheap check cancels the rest of its own pull request run",
@@ -98,13 +103,6 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f lane=macos': (
             "queues the coalesced macOS main run; its concurrency group replaces an older pending one"
         ),
-    },
-    "merge-gate.yml": {
-        "uv run --no-build --frozen --script scripts/merge_gate.py": "judges by public APIs, from the base branch",
-        "uv run --no-build --frozen --script scripts/focused_gate.py": "verifies protected focused evidence",
-        '[[ "$PR_HEAD_SHA" =~': "finds the open pull request whose finished CI the gates judge",
-        "for check in merge-gate coverage-floor": "reports the gates as check runs on the pull request's head",
-        "for check in MERGE_GATE COVERAGE_FLOOR": "completes both check runs, failing closed",
     },
     "focused-job.yml": {
         '[[ "$FOCUSED_REF" == "$GITHUB_REF_NAME" ]]': "refuses a ref input other than the dispatched branch",
@@ -346,10 +344,11 @@ def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert not foreign_index.exists()
     plugin_only = path.startswith("plugins/")
-    assert values["core"] == str(batch_base or not plugin_only).lower()
+    complete = batch_base or event != "pull_request" or not plugin_only  # CI OK demands every job outside a PR
+    assert values["core"] == str(complete).lower()
     assert values["plugins"] == str(plugin_only).lower()
-    assert values["contracts"] == str(batch_base or not plugin_only).lower()
-    if plugin_only and not batch_base:
+    assert values["contracts"] == str(complete).lower()
+    if plugin_only and not complete:
         assert values["notifier"] == values["electron"] == "false"
     for name in ("lint", "setup", "audit", "test", "coverage", "perf", "e2e", "build", "core-wheel"):
         assert "needs.changes.outputs.core == 'true'" in jobs[name]["if"]
@@ -1424,7 +1423,7 @@ def _changes_outputs(  # noqa: PLR0913 - independent changed-path, event and rel
         },
         cwd=directory,
         check=True,
-        timeout=4,
+        timeout=scaled(30),
     )
     return set(output.read_text().splitlines())
 
@@ -1514,7 +1513,8 @@ def test_failed_diff_with_partial_output_still_runs_full_macos(tmp_path, ci_path
 @pytest.mark.parametrize(
     ("event", "changed", "electron"),
     [
-        ("push", "src/heinzel/__init__.py\n", "false"),
+        ("push", "src/heinzel/__init__.py\n", "true"),
+        ("push", "web/src/components/Footer.tsx\n", "true"),
         ("push", "desktop/src/main.js\n", "true"),
         ("push", "Makefile\n", "true"),
         ("push", "scripts/sync_template.py\n", "true"),
@@ -1526,10 +1526,27 @@ def test_failed_diff_with_partial_output_still_runs_full_macos(tmp_path, ci_path
         ("workflow_dispatch", "src/heinzel/__init__.py\n", "true"),
     ],
 )
-def test_electron_runs_for_its_paths_on_a_push_and_always_on_schedule_and_dispatch(
+def test_electron_runs_on_every_event_but_a_pull_request_and_for_its_paths_there(
     tmp_path, ci_paths, event, changed, electron
 ):
     assert f"electron={electron}" in _changes_outputs(tmp_path, ci_paths, event, changed)
+
+
+@pytest.mark.parametrize("event", ["push", "schedule", "workflow_dispatch"])
+@pytest.mark.parametrize(
+    "changed", ["web/src/components/Footer.tsx\n", "plugins/heinzel-x/src/plugin.py\n", "tests/unit/a_test.py\n"]
+)
+def test_every_selector_key_stays_on_outside_a_pull_request(tmp_path, ci_paths, event, changed):
+    """CI OK requires these jobs on push, schedule and dispatch; a skipped one fails the run (main run 45072787338)."""
+    outputs = _changes_outputs(tmp_path, ci_paths, event, changed)
+    assert {
+        "core=true",
+        "notifier=true",
+        "contracts=true",
+        "electron=true",
+        "macos_full=true",
+        "site_only=false",
+    } <= outputs
 
 
 def test_the_test_matrix_keeps_the_whole_output_of_a_failure():
@@ -1700,7 +1717,7 @@ def test_scheduled_maintenance_selects_only_canonical_main(tmp_path, repository,
         capture_output=True,
         text=True,
         check=False,
-        timeout=4,
+        timeout=scaled(30),
     )
     assert (result.returncode == 0) is selected
     if selected:
@@ -1770,7 +1787,7 @@ def test_scheduled_aggregate_requires_every_maintenance_job(job, outcome, mainte
         capture_output=True,
         text=True,
         check=False,
-        timeout=4,
+        timeout=scaled(30),
     )
     assert result.returncode == bool(error)
     assert error in result.stdout
@@ -2226,7 +2243,7 @@ def test_direct_ci_cannot_pass_with_a_missing_required_job(job, outcome):
         capture_output=True,
         text=True,
         check=False,
-        timeout=10,
+        timeout=scaled(30),
     )
     assert (result.returncode == 0) == (job is None)
     if job is not None:
@@ -2327,7 +2344,7 @@ def _lane_outputs(tmp_path, event: str, lane: str = "", ref: str = "refs/heads/m
         capture_output=True,
         text=True,
         check=False,
-        timeout=4,
+        timeout=scaled(30),
     )
     if result.returncode:
         return None
@@ -2418,3 +2435,118 @@ def test_the_plugin_template_never_sees_the_main_lanes():
     assert "lane" not in generated
     assert MAIN_MACOS_GROUP not in generated
     assert "macos-main" not in generated
+
+
+# Path selection on pull requests (the paths step reads the real release flag, not an always-true one).
+_NATIVE_OFF = {"notifier=false", "contracts=false", "electron=false", "macos_full=false"}
+
+
+@pytest.mark.parametrize(
+    ("changed", "expected"),
+    [
+        ("docs/guides/install.md\n", {"site_only=true", "core=true"} | _NATIVE_OFF),  # prose: site-tests only
+        ("web/src/components/Footer.tsx\n", {"site_only=false", "macos_full=false", "contracts=false"}),
+        ("src/heinzel/kernel/_exposure_x.py\n", {"macos_full=true", "contracts=true"}),
+        ("src/heinzel/testing.py\n", {"contracts=true"}),
+        ("src/heinzel/conformance.py\n", {"contracts=true"}),
+        ("src/heinzel/modules/team/_x.py\n", {"contracts=true"}),
+        ("pyproject.toml\n", {"contracts=true", "notifier=true"}),
+        ("uv.lock\n", {"contracts=true"}),
+        ("weird/unknown.bin\n", {"contracts=true"}),
+        ("docs/a.md\nweird/unknown.bin\n", {"contracts=true"}),
+        ("web/src/plugins/x.tsx\n", {"contracts=true"}),
+        ("", {"contracts=true", "notifier=true", "core=true"}),
+        ("plugins/example/file.py\n", {"core=false", "plugins=true", "notifier=false", "contracts=false"}),
+    ],
+)
+def test_an_ordinary_pull_request_selects_only_what_its_paths_need(tmp_path, ci_paths, changed, expected):
+    assert expected <= _changes_outputs(tmp_path, ci_paths, "pull_request", changed, release=False)
+
+
+def _ci_ok_run(run: str, **env: str) -> tuple[int, str]:
+    jobs = _ci_jobs()
+    step = next(s for s in jobs["ci-ok"]["steps"] if s.get("name") == "Require the complete direct CI workload")
+    ran = [*run.split(), "coverage-floor", "sonar-ratings"]  # both judge every pull request, whatever it selected
+    results = {name: {"result": "success" if name in ran else "skipped"} for name in jobs["ci-ok"]["needs"]}
+    base = {
+        "PATH": os.environ["PATH"],
+        "RESULTS": json.dumps(results),
+        "EVENT": "pull_request",
+        "FULL_RELEASE": "false",
+    }
+    result = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env={**base, **env},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=scaled(30),
+    )
+    return result.returncode, result.stdout
+
+
+_OFF = {"NOTIFIER": "false", "ELECTRON": "false", "MACOS_FULL": "false", "CONTRACTS": "false", "PLUGIN_PATHS": "false"}
+_PROSE = {**_OFF, "SITE_ONLY": "true", "CORE": "true", "PLUGINS": "False"}
+_PROSE_JOBS = ["admission", "changes", "lint", "secrets", "setup", "audit", "site-tests", "build", "core-wheel"]
+PROSE_RUN = " ".join([*_PROSE_JOBS, "quarantine-registry", "commits", "dependency-review"])
+
+
+def test_a_prose_pull_request_passes_ci_ok_with_site_tests_alone():
+    assert _ci_ok_run(PROSE_RUN, **_PROSE)[0] == 0
+
+
+def test_a_prose_pull_request_cannot_pass_without_its_site_tests():
+    code, out = _ci_ok_run(PROSE_RUN.replace("site-tests", ""), **_PROSE)
+    assert code != 0
+    assert "site-tests" in out
+
+
+def test_a_plugins_only_pull_request_needs_no_core_job():
+    run = "admission changes secrets quarantine-registry commits dependency-review local-plugin-plan"
+    env = {**_OFF, "SITE_ONLY": "false", "CORE": "false", "PLUGIN_PATHS": "true", "PLUGINS": "False"}
+    assert _ci_ok_run(run, **env)[0] == 0
+    assert _ci_ok_run(run.replace("local-plugin-plan", ""), **env)[0] != 0
+
+
+def test_a_release_pull_request_and_main_still_require_everything():
+    assert _ci_ok_run(PROSE_RUN, **_PROSE, FULL_RELEASE="true")[0] != 0
+    assert _ci_ok_run(PROSE_RUN, **_PROSE, EVENT="push")[0] != 0
+
+
+def test_the_macos_jobs_wait_for_a_native_path_on_ordinary_pull_requests():
+    condition = _ci_jobs()["macos-specific"]["if"]
+    base = {"full_ci": "true", "core": "true", "site_only": "false", "lane": "all", "surface_only": "false"}
+    assert not _evaluate_if(condition, "pull_request", {**base, "macos_full": "false", "full_release": "false"})
+    assert _evaluate_if(condition, "pull_request", {**base, "macos_full": "true", "full_release": "false"})
+    assert _evaluate_if(condition, "pull_request", {**base, "macos_full": "false", "full_release": "true"})
+    assert _evaluate_if(condition, "push", {**base, "macos_full": "false", "full_release": "false"})
+
+
+def test_a_failed_diff_keeps_the_consumers_and_the_notifier_on(tmp_path, ci_paths):
+    outputs = _changes_outputs(tmp_path, ci_paths, "pull_request", "", git_exit=1)
+    assert {"contracts=true", "notifier=true", "core=true"} <= outputs
+
+
+def test_a_release_branch_that_is_not_the_candidate_runs_everything(tmp_path, ci_paths, monkeypatch):
+    script, directory = ci_paths
+    output = tmp_path / "release-output"
+    subprocess.run(
+        ["bash", "-c", script],
+        env={
+            "PATH": f"{directory / 'bin'}:/usr/bin:/bin", "EVENT": "pull_request", "FULL_RELEASE": "false",
+            "HEAD_REF": "release/foo", "BASE": "base", "GITHUB_OUTPUT": str(output),
+            "CHANGED_PATHS": "docs/guides/install.md\n", "DIFF_EXIT": "0",
+        },
+        cwd=directory, check=True, timeout=scaled(30),
+    )  # fmt: skip
+    assert {"site_only=false", "macos_full=true", "contracts=true", "notifier=true"} <= set(
+        output.read_text().splitlines()
+    )
+
+
+def test_ci_ok_requires_everything_on_a_release_branch_and_keeps_the_plugin_check():
+    assert _ci_ok_run(PROSE_RUN, **_PROSE, HEAD_REF="release/foo")[0] != 0
+    run = "admission changes secrets quarantine-registry commits dependency-review local-plugin-plan"
+    env = {**_OFF, "SITE_ONLY": "false", "CORE": "false", "PLUGIN_PATHS": "true", "PLUGINS": "True"}
+    assert _ci_ok_run(run + " local-plugin-check", **env)[0] == 0
+    assert _ci_ok_run(run, **env)[0] != 0

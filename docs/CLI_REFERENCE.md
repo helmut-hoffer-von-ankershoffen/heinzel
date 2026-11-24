@@ -253,7 +253,7 @@ $ hz app install [OPTIONS]
 * `-y, --yes`: Forget an earlier install whose app is gone, without asking.
 * `--details`: Also print the installer&#x27;s full diagnosis (paths and internal state) when something fails.
 * `--flavor <native|electron>`: Which desktop app: native (the default for a new install on macOS) or electron (the only one on Linux). An installed app keeps its flavor unless you name the other one.
-* `--restart`: If the app is open and needs the update, quit it, install, and open it again. It waits up to 20 seconds for the quit and never forces it: an app still open then is left open and the command ends with exit code 75.
+* `--restart`: If the app is open and needs the update, quit it, install, and open it again. It waits up to 20 seconds for the quit and never forces it: an app still open then is left open and the command ends with exit code 75. Switching to the other --flavor always does this.
 * `--help`: Show this message and exit.
 
 ### `hz app open`
@@ -321,7 +321,7 @@ $ hz app update [OPTIONS]
 * `-y, --yes`: Forget an earlier install whose app is gone, without asking.
 * `--details`: Also print the installer&#x27;s full diagnosis (paths and internal state) when something fails.
 * `--flavor <native|electron>`: Which desktop app: native (the default for a new install on macOS) or electron (the only one on Linux). An installed app keeps its flavor unless you name the other one.
-* `--restart`: If the app is open and needs the update, quit it, install, and open it again. It waits up to 20 seconds for the quit and never forces it: an app still open then is left open and the command ends with exit code 75.
+* `--restart`: If the app is open and needs the update, quit it, install, and open it again. It waits up to 20 seconds for the quit and never forces it: an app still open then is left open and the command ends with exit code 75. Switching to the other --flavor always does this.
 * `--help`: Show this message and exit.
 
 ## `hz chat`

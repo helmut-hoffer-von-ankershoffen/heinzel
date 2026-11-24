@@ -82,14 +82,16 @@ describe("About dialog", () => {
     expect(screen.getByRole("cell", { name: long })).toHaveClass("break-all");
   });
 
-  it("keeps the header mascot inside its head-sized slot", () => {
+  it("shows the team of Heinzelmännchen as the logo, not a single one", () => {
     show();
     act(() => requestMenuAction("about"));
     const dialog = screen.getByRole("dialog", { name: "Heinzelmännchen" });
-    const mascot = within(dialog).getByRole("img", { name: "Heinzelmännchen" });
-    expect(mascot).toHaveAttribute("data-view", "head");
-    expect(mascot).toHaveClass("size-12", "overflow-hidden");
-    expect(mascot).not.toHaveClass("overflow-visible");
+    const logo = within(dialog).getByRole("img", { name: "Heinzelmännchen" });
+    expect(within(logo).getByTestId("heinzel-swarm")).toHaveClass("size-12");
+    // The swarm draws `overflow-visible`; the header slot clips it to its 48px, as the single mascot was.
+    expect(logo).toHaveClass("size-12", "overflow-hidden");
+    expect(logo).not.toHaveClass("overflow-visible");
+    expect(logo.querySelector("[data-view]")).toBeNull();
   });
 
   it("names the installed desktop app's variant, Native or Electron, with its version and path", () => {

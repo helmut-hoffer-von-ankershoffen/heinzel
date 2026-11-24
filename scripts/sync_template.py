@@ -277,6 +277,13 @@ def _without_focused_admission(text: str) -> str:
     )
 
 
+def _without_core_coverage_floor(text: str) -> str:
+    """Keep Core's in-run coverage floor and Sonar ratings jobs out of the plugin workflow."""
+    text = re.sub(r"\n  # The coverage floor, judged inside.*?(?=\n  ci-ok:)", "", text, flags=re.DOTALL)
+    text = re.sub(r"(?m)^[^\n]*# Core coverage floor\n", "", text)
+    return text.replace(", coverage-floor, sonar-ratings, macos-main]", ", macos-main]")
+
+
 def _plugin_coverage(text: str) -> str:
     """Preserve plugins' coverage badge and merge-gate protocol during Core migration."""
     start, end = text.index("  coverage:\n"), text.index("  perf:\n")
@@ -306,7 +313,9 @@ def _without_main_lanes(text: str) -> str:
 def ci_workflow() -> str:
     """The CI workflow without the template job; the build check looks for the plugin package."""
     text = _without_focused_admission(
-        _without_main_lanes((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+        _without_main_lanes(
+            _without_core_coverage_floor((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+        )
     )
     # Batch admission is core queue coordination; plugins retain their complete workflow.
     text = _without_batch_admission(text)
