@@ -102,6 +102,13 @@ class UpdateService(UpdateChannels):
         with self._across_processes():
             return self._apply_announced(announced, current=current, folder=folder, trial=trial)
 
+    def recover_announced(self, folder: Path) -> bool:
+        """Recover an interrupted automatic update under the same lock used for all updates."""
+        if next(folder.glob("before-update*"), None) is None:
+            return False
+        with self._across_processes():
+            return ToolSnapshot.recover_interrupted(self._installation, folder)
+
     def _apply_announced(
         self, announced: Announcement, *, current: str, folder: Path | None, trial: Callable[[str], bool]
     ) -> AnnouncedUpdate:
@@ -112,6 +119,7 @@ class UpdateService(UpdateChannels):
             OSError: If the copy can't be taken; nothing was installed.
         """
         folder = folder or self._state_folder()
+        ToolSnapshot.recover_interrupted(self._installation, folder)
         target = announced.core or current
         selection = self._announced_selection(target, announced)
         if isinstance(selection, AnnouncedUpdate):
@@ -128,18 +136,22 @@ class UpdateService(UpdateChannels):
                 original_receipt = self._installation.receipt()
                 untouched = {name: installed_identity(prefix, name) for name in selection.by_hand}
                 moving = (["heinzel"] if announced.core else []) + list(announced.plugins)
+                snapshot = None
                 try:
                     # A standard-app wheel the receipt names bare stays the verified wheel it is (ADR 0116).
                     sources = self._installation.unchanged_wheel_sources([core_requirement, *specs], moving)
                     transient = (*guards, *sources)
                     constraints = (*self._installation.tool_constraints(), *transient)
                     self._installation.validate_install_constraints([core_requirement, *specs], constraints)
-                    snapshot = ToolSnapshot.take(self._installation.prefix.resolve(strict=True), folder)
+                    before = self._fingerprints(include_content=True)
+                    snapshot = ToolSnapshot.take(prefix, folder, content=before.content if before.matched else None)
+                    self._require_generation(current, before.generation)
                 except (HeinzelError, OSError):
+                    if snapshot is not None:
+                        snapshot.discard()
                     if scope is not None:
                         self._abort_or_leave_pending(scope)
                     raise
-                before = self._fingerprints()
                 try:
                     generation = self._install_announced(
                         [core_requirement, *specs], (guards, sources, constraints), expected, announced
@@ -160,7 +172,6 @@ class UpdateService(UpdateChannels):
                     return self._put_back(snapshot, (scope, plan), before, current, f"{exc}", refused=False)
                 if not trial(target):
                     return self._put_back(snapshot, (scope, plan), before, current, None, refused=target)
-                snapshot.discard()
                 result = UpdateResult(
                     before=current,
                     after=target,
@@ -171,7 +182,9 @@ class UpdateService(UpdateChannels):
                     next=[],
                 )
                 if scope is not None and plan is not None:
-                    self._finish_mutation(scope, plan, generation, result)
+                    self._finish_mutation(scope, plan, generation, result, before_handover=snapshot.discard)
+                else:
+                    snapshot.discard()
         heads = self._refresh_heads(target)
         return AnnouncedUpdate(
             updated=True,
@@ -314,7 +327,7 @@ class UpdateService(UpdateChannels):
         """
         scope, plan = lifecycle
         try:
-            snapshot.restore()
+            snapshot.restore(discard=False)
         except OSError as exc:
             msg = (
                 f"The update didn't work and hz {current} couldn't be put back ({exc}). It keeps running until you "
@@ -322,23 +335,21 @@ class UpdateService(UpdateChannels):
             )
             raise HeinzelError(msg) from exc
         generation = self._installation.startup_fingerprint()
-        if generation != before.generation:
-            if before.content is None or self._installation.content_fingerprint() != before.content:
-                msg = "The installation isn't as it was after putting it back; explicit recovery is required."
-                raise HeinzelError(msg)
-            # The same files, in the folder uv made anew for the other interpreter: a record that held before
-            # holds again, so it is renewed for this folder.
-            if before.matched:
-                self._installation.record_startup_state(expected=generation)
+        if generation != before.generation and (
+            before.content is None or self._installation.content_fingerprint() != before.content
+        ):
+            msg = "The installation isn't as it was after putting it back; explicit recovery is required."
+            raise HeinzelError(msg)
         # A change that failed half way left the marker; the folder matches its record again. If it can't go, it stays
         # and says so: the next update or `hz ui restart` tries again.
         with suppress(OSError, HeinzelError):
             self._installation.clear_stale_startup_pending()
+        if before.matched and not self._installation.startup_state_matches():
+            self._installation.record_startup_state(expected=generation)
+        snapshot.discard()
         if scope is not None and plan is not None:
             # The folder is as it was, byte for byte, but not inode for inode: the mutation completes with the
             # original generation, its record stays valid, and the daemon is handed over to the same code.
-            if scope.checkpoint_matched:
-                self._installation.record_startup_state(expected=generation)
             scope.verified_complete(generation)
             scope.request(plan)
         if refused:

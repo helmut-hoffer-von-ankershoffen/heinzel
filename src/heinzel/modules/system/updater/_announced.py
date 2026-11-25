@@ -1,10 +1,9 @@
 """What an automatic update needs around `uv tool install` (ADR 0116): a copy to go back to, and a trial start.
 
 The copy is of the whole uv tool environment, taken before anything is installed, on the same file system. Putting it
-back moves each entry of the copy into the tool folder, whose own directory is never replaced: hz, every plugin, their
-dependencies and the receipt come back byte for byte, and the installation's continuity fingerprint (ADR 0108), which
-binds the folder itself and the content of everything in it, is the one recorded before the update. Each move is an
-atomic rename; an interrupted put-back is finished by `ToolSnapshot.recover` from what is left on disk.
+back moves each entry of the copy into the tool folder. If uv recreated that directory, the old startup record no
+longer matches its identity. For a previously verified installation, the content fingerprint captured before the
+update proves the put-back restored its files, and continuity can be recorded for the new directory (ADR 0108).
 
 The trial start runs the newly installed `hz ui serve` on throwaway folders before anything restarts into it.
 """
@@ -31,7 +30,7 @@ from typing import cast
 from packaging.requirements import InvalidRequirement, Requirement
 
 from heinzel._adapter_system import SYSTEM_RUNNER
-from heinzel.kernel import HeinzelError, user_config_dir
+from heinzel.kernel import HeinzelError, Installation, private_read, private_write, user_config_dir
 from heinzel.ports import ProcessRunner
 
 MOVED_ASIDE = ".everything-the-update-left-is-here"
@@ -153,9 +152,23 @@ class ToolSnapshot:
     copy: Path
     aside: Path
 
+    @property
+    def _proof(self) -> Path:
+        return self.copy.parent / ".rollback" / "continuity"
+
+    @property
+    def _partial(self) -> Path:
+        return self.copy.with_suffix(".partial")
+
+    @property
+    def _retired(self) -> Path:
+        return self.copy.with_suffix(".retired")
+
     @classmethod
-    def take(cls, prefix: Path, folder: Path) -> "ToolSnapshot":
+    def take(cls, prefix: Path, folder: Path, *, content: str | None = None) -> "ToolSnapshot":
         """Copy the tool folder into `folder`, which must be on its file system so putting it back is a rename.
+
+        `content` is supplied only after the existing continuity record has been verified.
 
         Raises:
             HeinzelError: If `folder` is on another file system; nothing may be installed then.
@@ -163,10 +176,8 @@ class ToolSnapshot:
         """
         snapshot = cls(prefix, folder / "before-update", folder / "after-update")
         snapshot.recover()  # a copy left by a process that died during its update is the truth: put it back first
-        partial = folder / "before-update.partial"
-        for stale in (snapshot.aside, partial):
-            if stale.exists():
-                shutil.rmtree(stale)
+        snapshot._clean_discarded()
+        partial = snapshot._partial
         folder.mkdir(parents=True, exist_ok=True)
         if folder.stat().st_dev != prefix.stat().st_dev:
             msg = "The state folder is on another disk than hz, so an update couldn't be put back; nothing installed."
@@ -180,21 +191,27 @@ class ToolSnapshot:
                 shutil.copytree(source, target, symlinks=True)
             else:
                 shutil.copy2(source, target, follow_symlinks=False)
+        if content is not None:
+            proof = snapshot._proof
+            private_write(proof, f"{content}\n{prefix}")
+            _sync_directory(proof.parent)
         partial.rename(snapshot.copy)  # only a complete copy is ever put back
+        if content is not None:
+            _sync_directory(folder)
         return snapshot
 
-    def restore(self) -> None:
+    def restore(self, *, discard: bool = True) -> None:
         """Put the copy back into the tool folder, entry by entry, each an atomic rename; the folder itself stays.
 
         First everything the update left goes aside, then a marker says so, then the copy moves in.
 
         Raises:
+            HeinzelError: If the copy must be verified before its gate can be removed.
             OSError: If an entry can't be moved; `recover` finishes the put-back from what is left.
         """
-        self.aside.mkdir(exist_ok=True)
-        self.recover()
+        self.recover(discard=discard)
 
-    def recover(self) -> None:
+    def recover(self, *, discard: bool = True) -> None:
         """Put the copy back if one is left; the copy is the truth, and nothing happens without one.
 
         A copy is left after a put-back that stopped half way, or by a process that died between taking the copy and
@@ -203,10 +220,14 @@ class ToolSnapshot:
         Only the process that holds the update (the apply lock, or none running) may call it.
 
         Raises:
+            HeinzelError: If the copy must be verified before its gate can be removed.
             OSError: If an entry can't be moved.
         """
         if not self.copy.is_dir():
             return
+        if discard and os.path.lexists(self._proof):
+            msg = "An unfinished automatic update needs verified recovery."
+            raise HeinzelError(msg)
         self.aside.mkdir(exist_ok=True)
         moved_in = self.aside / MOVED_ASIDE
         if not moved_in.exists():
@@ -216,13 +237,76 @@ class ToolSnapshot:
             moved_in.touch()
         for entry in sorted(self.copy.iterdir()):
             entry.rename(self.prefix / entry.name)
-        self.discard()
+        if discard:
+            self.discard()
+
+    @classmethod
+    def recover_interrupted(cls, installation: Installation, folder: Path) -> bool:
+        """Restore a dead updater's copy and verify continuity before removing its durable gate.
+
+        Raises:
+            HeinzelError: If restored files cannot be independently verified against pre-update evidence.
+            OSError: If recovery cannot finish safely; the copy's gate remains in place.
+        """
+        copy = folder / "before-update"
+        if not folder.is_dir():
+            return False
+        snapshot = cls(installation.prefix.resolve(strict=True), copy, folder / "after-update")
+        if not os.path.lexists(copy):
+            if snapshot._retired.is_dir() or (snapshot._partial.is_dir() and installation.startup_state_matches()):
+                snapshot._clean_discarded()
+            return False
+        if copy.is_symlink() or not copy.is_dir() or snapshot.aside.is_symlink():
+            msg = "The automatic update snapshot is unsafe; explicit recovery is required."
+            raise HeinzelError(msg)
+        content = snapshot._recovery_content(installation.prefix)
+        if content is None and not installation.is_tool:
+            return False  # an old snapshot cannot identify a tool with an absent uv receipt
+        snapshot.restore(discard=False)
+        if content is not None:
+            generation = installation.startup_fingerprint()
+            if installation.content_fingerprint() != content:
+                msg = "The restored installation does not match its pre-update copy; explicit recovery is required."
+                raise HeinzelError(msg)
+            if not installation.repaired_startup_state_matches():
+                installation.record_startup_state(expected=generation)
+        if not installation.repaired_startup_state_matches():
+            msg = "The restored installation has no matching continuity record; explicit recovery is required."
+            raise HeinzelError(msg)
+        snapshot.discard()
+        return True
+
+    def _recovery_content(self, prefix: Path) -> str | None:
+        try:
+            proof = private_read(self._proof)
+        except FileNotFoundError:
+            return None
+        content, _, recorded_prefix = proof.partition("\n")
+        if not re.fullmatch(r"[0-9a-f]{64}", content) or prefix != self.prefix or recorded_prefix != str(self.prefix):
+            msg = "Automatic update recovery evidence is invalid; explicit recovery is required."
+            raise HeinzelError(msg)
+        return content
 
     def discard(self) -> None:
         """Delete the copy and what an update left."""
-        for folder in (self.copy, self.aside):
-            with contextlib.suppress(OSError):
+        # Disarm rollback atomically. A process killed while deleting an obsolete copy must not leave a partial
+        # before-update that the next process mistakes for a complete rollback.
+        self.copy.rename(self._retired)
+        _sync_directory(self.copy.parent)
+        self._clean_discarded()
+
+    def _clean_discarded(self) -> None:
+        for folder in (self.aside, self._proof.parent, self._partial, self._retired):
+            with contextlib.suppress(FileNotFoundError):
                 shutil.rmtree(folder)
+
+
+def _sync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 TRIAL_SECONDS = 90.0

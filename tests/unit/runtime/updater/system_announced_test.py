@@ -7,16 +7,25 @@ folder, and continuity is the real fingerprint of that folder (ADR 0108).
 import errno
 import json
 import os
+import signal
+import subprocess
+import sys
 from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from heinzel import HeinzelError, Progress
 from heinzel.kernel import DaemonHandoverPlan, DaemonHandoverRequest, Installation
 from heinzel.kernel.install._installation import _core_by_tag
+from heinzel.kernel.install._installation_mutations import installation_mutation_pending
+from heinzel.modules.system import recover_announced
+from heinzel.modules.system.daemon._abandoned_mutation import Evidence, mutation_record, recover_abandoned_mutation
+from heinzel.modules.system.daemon._runtime import write_private
 from heinzel.modules.system.updater import _announced as announced
+from heinzel.modules.system.updater._adapter_state import FileInstallationState
 from heinzel.modules.system.updater._announced import Announcement, ToolSnapshot, environment_versions
 from heinzel.modules.system.updater._update import UpdateService
 
@@ -274,6 +283,144 @@ def service(tmp_path, monkeypatch, *, moves=None, crm=None, **folder):
 
 def news(core="9.9.9", plugins=None, commit=None):
     return Announcement(core, plugins or {}, commit, exclude_newer=CUTOFF, exclude_newer_core=CORE_CUTOFF)
+
+
+class UpdateInterrupted(BaseException):
+    """Stop before the update process handles a rollback."""
+
+
+def replace_tool_prefix(tool):
+    """Model uv replacing the tool directory when switching interpreters."""
+    prefix = tool.prefix
+    original = prefix.rename(prefix.with_name("original"))
+    (prefix / "bin").mkdir(parents=True)
+    (prefix / "bin/hz").write_text("new entrypoint")
+    (prefix / "uv-receipt.toml").write_bytes((original / "uv-receipt.toml").read_bytes())
+    install(prefix, {"heinzel": "9.9.9", "heinzel-clock": "1.0.0", "urllib3": "2.0.0"})
+    (prefix / ".heinzel-startup-pending").touch(mode=0o600)
+
+
+def interrupt_after_prefix_replacement(update, tool, state, monkeypatch):
+    def replace_prefix(*args, **kwargs):
+        replace_tool_prefix(tool)
+        raise UpdateInterrupted
+
+    monkeypatch.setattr(tool, "run", replace_prefix)
+    with pytest.raises(UpdateInterrupted):
+        update.apply_announced(news(), current="1.0.0", folder=state / "auto-update", trial=lambda _: True)
+
+
+def _kill_at_update_phase(tmp_path, phase):
+    """Subprocess entry point for process death, including the absence of finally handlers."""
+    state = tmp_path / "state"
+    state_port = FileInstallationState(state)
+    with pytest.MonkeyPatch.context() as patch:
+        if phase == "recovery":
+            tool = Installation(Progress(), prefix=tmp_path / "tools/heinzel", uv="unused")
+            patch.setattr(tool, "record_startup_state", lambda **kw: os.kill(os.getpid(), signal.SIGKILL))
+            UpdateService(tool, Releases(), state=state_port).recover_announced(state / "auto-update")
+            return
+
+        update, tool, _, _ = service(tmp_path, patch)
+        update._state = state_port
+        owner = mutation_record("a" * 64, os.getpid(), None)
+        write_private(state / "daemon/mutation-pending.json", json.dumps(owner, indent=2) + "\n")
+        (tmp_path / "before.json").write_text(json.dumps([tool.startup_fingerprint(), tool.content_fingerprint()]))
+
+        if phase == "partial":
+            copytree = announced.shutil.copytree
+
+            def die_during_copy(src, dst, **kwargs):
+                copytree(src, dst, **kwargs)
+                os.kill(os.getpid(), signal.SIGKILL)
+
+            patch.setattr(announced.shutil, "copytree", die_during_copy)
+        elif phase == "commit":
+            patch.setattr(tool, "record_startup_state", lambda **kw: os.kill(os.getpid(), signal.SIGKILL))
+
+        def die_during_update(*args, **kwargs):
+            if phase in {"commit", "install"}:
+                replace_tool_prefix(tool)
+            if phase != "commit":
+                os.kill(os.getpid(), signal.SIGKILL)
+
+        patch.setattr(tool, "run", die_during_update)
+        update.apply_announced(news(), current="1.0.0", folder=state / "auto-update", trial=lambda _: True)
+
+
+def kill_at_update_phase(tmp_path, phase):
+    child = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import runpy, sys; from pathlib import Path; "
+                "runpy.run_path(sys.argv[1])['_kill_at_update_phase'](Path(sys.argv[2]), sys.argv[3])"
+            ),
+            __file__,
+            str(tmp_path),
+            phase,
+        ],
+        check=False,
+        timeout=20,
+    )
+    assert child.returncode == -signal.SIGKILL
+
+
+@pytest.mark.parametrize("phase", ["partial", "snapshot", "install", "commit", "recovery"])
+def test_killed_updater_restores_verified_continuity(tmp_path, phase):
+    kill_at_update_phase(tmp_path, "install" if phase == "recovery" else phase)
+    state = tmp_path / "state"
+    kernel = SimpleNamespace(settings=SimpleNamespace(state_dir=state))
+    tool = Installation(Progress(), prefix=tmp_path / "tools/heinzel", uv="unused")
+    update = UpdateService(tool, Releases(), state=FileInstallationState(state))
+    original_generation, original_content = json.loads((tmp_path / "before.json").read_text())
+    snapshot = state / "auto-update/before-update"
+    partial = snapshot.with_suffix(".partial")
+    assert partial.is_dir() == (phase == "partial")
+    assert snapshot.is_dir() == (phase != "partial")
+    assert installation_mutation_pending(tool.prefix, state)
+
+    def recover_daemon():
+        return recover_abandoned_mutation(state, tool, lambda: Evidence(None, 1), lambda: datetime.now(UTC))
+
+    assert recover_daemon() is None
+    if phase == "recovery":
+        kill_at_update_phase(tmp_path, "recovery")
+        assert snapshot.is_dir()
+        assert not list(snapshot.iterdir())
+        assert installation_mutation_pending(tool.prefix, state)
+
+    assert recover_announced(update, kernel) == (phase != "partial")
+    assert tool.content_fingerprint() == original_content
+    assert (tool.startup_fingerprint() == original_generation) == (phase in {"partial", "snapshot"})
+    assert tool.startup_state_matches()
+    receipt = recover_daemon()
+    assert receipt is not None
+    assert json.loads(receipt.read_text())["status"] == "archived"
+    assert not installation_mutation_pending(tool.prefix, state)
+    assert not snapshot.exists()
+    assert not partial.exists()
+
+
+@pytest.mark.parametrize("unverified", ["legacy", "modified before update", "modified copy"])
+def test_interrupted_update_does_not_record_unverified_continuity(tmp_path, monkeypatch, unverified):
+    update, tool, _, _ = service(tmp_path, monkeypatch)
+    state = tmp_path / "state"
+    kernel = SimpleNamespace(settings=SimpleNamespace(state_dir=state))
+    snapshot = state / "auto-update/before-update"
+    if unverified == "modified before update":
+        (tool.prefix / "bin/hz").write_text("changed outside the updater")
+    interrupt_after_prefix_replacement(update, tool, state, monkeypatch)
+    if unverified == "legacy":
+        (state / "auto-update/.rollback/continuity").unlink()
+    if unverified == "modified copy":
+        (snapshot / "bin/hz").write_text("changed after the copy")
+
+    with pytest.raises(HeinzelError, match="explicit recovery is required"):
+        recover_announced(update, kernel)
+    assert not tool.startup_state_matches()
+    assert snapshot.is_dir()
 
 
 def test_everything_is_held_but_the_announced_versions_and_nothing_installed_runs(tmp_path, monkeypatch):

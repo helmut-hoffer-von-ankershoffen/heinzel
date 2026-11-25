@@ -178,7 +178,8 @@ def apply(installation, tmp_path, *, starts, releases=None):
         exclude_newer_core=now + timedelta(days=1),
     )
     service = UpdateService(installation, releases)  # type: ignore[arg-type] - None: no release source is asked
-    return service.apply_announced(announced, current="1.0.0", folder=tmp_path / "state", trial=lambda v: starts)
+    trial = starts if callable(starts) else lambda v: starts
+    return service.apply_announced(announced, current="1.0.0", folder=tmp_path / "state", trial=trial)
 
 
 @pytest.mark.timeout(60)  # two real uv installs: the first on a cold macOS runner took 15.25 s, past the 15 s level
@@ -274,6 +275,27 @@ def test_real_uv_keeps_the_continuity_record_across_a_successful_move(newer_rele
     assert result.updated, result.message
     assert (newer_release.prefix / ".heinzel-startup-state").read_bytes() == record  # as after a same-Python update
     assert not (newer_release.prefix / ".heinzel-startup-pending").exists()
+
+
+def test_real_uv_interrupted_after_replacing_python_restores_verified_continuity(newer_release, tmp_path):
+    managed_python_or_skip()
+    original = (newer_release.prefix / "bin/python").resolve(), newer_release.content_fingerprint()
+
+    def interrupted(version):
+        assert version == "2.0.0"
+        assert (newer_release.prefix / "bin/python").resolve() != original[0]
+        raise InterruptedError
+
+    with pytest.raises(InterruptedError):
+        apply(newer_release, tmp_path, starts=interrupted, releases=NeedsNewerPython())
+
+    state = tmp_path / "state"
+    fresh = Installation(Progress(), prefix=newer_release.prefix, uv=shutil.which("uv"))
+    assert UpdateService(fresh, NeedsNewerPython()).recover_announced(state)
+    assert (fresh.prefix / "bin/python").resolve() == original[0]
+    assert fresh.content_fingerprint() == original[1]
+    assert fresh.startup_state_matches()
+    assert not list(state.iterdir())
 
 
 def test_real_uv_without_the_newer_python_stops_before_installing(newer_release, tmp_path, monkeypatch):
