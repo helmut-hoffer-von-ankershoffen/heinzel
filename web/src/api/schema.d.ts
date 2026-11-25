@@ -11204,10 +11204,7 @@ export interface components {
              * Producer
              * @description The registered distribution and module for a replacement group, assigned by the kernel.
              */
-            producer?: [
-                string,
-                string
-            ] | null;
+            producer?: string | null;
             /**
              * Replaces
              * @description The replacement group within the registered producer, notice kind, route and command.

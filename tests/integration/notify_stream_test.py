@@ -121,6 +121,8 @@ def test_plugin_sdk_replaces_only_its_own_notices(make_kernel, monkeypatch, tmp_
     another_producer = record(kernel, "reports", "00")
     watch = next(let for owner, let in kernel.lets(JobLet) if owner.qualname == "forecasts")
     new = kernel.call(watch.func)
+    assert new.producer.endswith(":forecasts")
+    assert another_producer.producer.endswith(":reports")
     assert record(kernel, "forecasts", "00").id == old.id
     assert record(kernel, "reports", "00").id == another_producer.id
     assert other_profile.resolve(Notifications).recent() == [another_user]

@@ -164,6 +164,7 @@ from heinzel.kernel._notifications import (
     NoticeKind,
     Notifications,
     ResolveWhen,
+    current_notice_producer,
 )
 from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind, TeamPromise, TeamPromises
 from heinzel.kernel._paths import collapses, operation_path, owns_path, public_parameters
@@ -916,6 +917,7 @@ __all__ = [
     "collapses",
     "command_words",
     "current_caller",
+    "current_notice_producer",
     "daypart",
     "declared_agent_writes",
     "declared_unsupported",

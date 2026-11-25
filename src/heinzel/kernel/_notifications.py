@@ -11,7 +11,8 @@ holds, the notice is resolved and disappears from the list, Today and the unread
 history. Resolution never marks anything read: only the person does that (ADR 0043, amendment 2026-11-07).
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Generator, Sequence
+from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime
 from enum import StrEnum
@@ -19,7 +20,22 @@ from typing import Annotated, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-_notice_producer: ContextVar[tuple[str, str] | None] = ContextVar("heinzel_notice_producer", default=None)
+_notice_producer: ContextVar[str | None] = ContextVar("heinzel_notice_producer", default=None)
+
+
+@contextmanager
+def notice_producer_scope(producer: str | None) -> Generator[None]:
+    """Bind a registered notice producer for a kernel dispatch."""
+    token = _notice_producer.set(producer)
+    try:
+        yield
+    finally:
+        _notice_producer.reset(token)
+
+
+def current_notice_producer() -> str | None:
+    """Return the registered producer for the current dispatch, if known."""
+    return _notice_producer.get()
 
 
 class NoticeKind(StrEnum):
@@ -153,7 +169,7 @@ class Notice(BaseModel):
         default=None,
         description="The replacement group within the registered producer, notice kind, route and command.",
     )
-    producer: tuple[str, str] | None = Field(
+    producer: str | None = Field(
         default=None,
         description="The registered distribution and module for a replacement group, assigned by the kernel.",
     )
