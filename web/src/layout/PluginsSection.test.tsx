@@ -778,7 +778,7 @@ describe("PluginsSection", () => {
     phaseEvents = [
       phase("install", "Installing heinzel-crm", "pending"),
       phase("install", "Installing heinzel-crm", "done"),
-      phase("verify", "Checking that exactly it is installed", "done"),
+      phase("verify", "Verifying the plugin installation", "done"),
       phase("needs:heinzel-auth", "Plugin heinzel-auth, which heinzel-crm needs", "done", "Installed with it: 1.0.0"),
       phase("record", "Recording the add", "done"),
     ].join("");
@@ -1132,7 +1132,7 @@ describe("PluginsSection", () => {
       "Restarting hz",
       "Waiting for hz to come back",
       "Reloading the page",
-      "Checking that exactly it is installed",
+      "Verifying the plugin installation",
     ];
     expect(steps).toHaveLength(plan.length);
     expect(steps.map((step, index) => step.textContent?.startsWith(plan[index] ?? "-"))).toEqual(plan.map(() => true));
@@ -1171,7 +1171,7 @@ describe("PluginsSection", () => {
     async (action) => {
       confirmedStreamDelay = 4_250;
       phaseEvents = [
-        'event: phase\ndata: {"id":"verify","label":"Checking that exactly it is installed","state":"done"}\n\n',
+        'event: phase\ndata: {"id":"verify","label":"Verifying the plugin installation","state":"done"}\n\n',
         'event: phase\ndata: {"id":"record","label":"Recording the add","state":"running"}\n\n',
       ].join("");
       const calls = serve((url) => {
