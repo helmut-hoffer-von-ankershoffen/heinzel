@@ -12,9 +12,31 @@ final class RejectWorkspaceNavigation: NSObject, WKNavigationDelegate {
     }
 }
 
+@MainActor
+final class LoadWorkspace: NSObject, WKNavigationDelegate {
+    private var loaded: CheckedContinuation<Void, Never>?
+
+    func run(in view: WKWebView, url: URL) async {
+        view.navigationDelegate = self
+        await withCheckedContinuation { continuation in
+            loaded = continuation
+            view.load(URLRequest(url: url))
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        loaded?.resume()
+        loaded = nil
+    }
+}
+
 @main
 struct BrowserClearProbe {
-    @MainActor static func main() async {
+    @MainActor static func main() async throws {
+        if CommandLine.arguments.count == 2 {
+            try await authenticatedNavigation(origin: CommandLine.arguments[1])
+            return
+        }
         let endpoint = Endpoint("https://workspace.example.com")!
         func target(_ value: String, revision: Int = 1, ready: Bool = true) -> IntegratedBrowser.ExternalTarget? {
             IntegratedBrowser.externalTarget(url: URL(string: value), revision: revision, ready: ready, endpoint: endpoint)
@@ -71,6 +93,45 @@ struct BrowserClearProbe {
         precondition(retried && !clear.clearing && workspace == "workspace-token")
         let empty = await clear.run { nil } erase: { _ in fatalError("empty store") }
         precondition(empty && !clear.clearing)
+    }
+
+    @MainActor
+    static func authenticatedNavigation(origin: String) async throws {
+        let endpoint = Endpoint(origin + "/#token=" + String(repeating: "x", count: 32), loopback: true)!
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let workspace = WKWebView(frame: .zero, configuration: configuration)
+        let load = LoadWorkspace()
+        await load.run(in: workspace, url: endpoint.origin)
+
+        let browser = IntegratedBrowser()
+        func navigate(_ target: String, excluding endpoint: Endpoint) async -> [String: Any] {
+            await browser.handle(["action": "navigate", "url": target], in: workspace, excluding: endpoint)
+        }
+        func guestViews() -> [WKWebView] { workspace.subviews.compactMap { $0 as? WKWebView } }
+
+        let target = "https://example.com/"
+        let missing = await navigate(target, excluding: endpoint)
+        precondition(missing["status"] as? String == "unavailable" && guestViews().isEmpty)
+        _ = try await workspace.evaluateJavaScript("sessionStorage.setItem('hz.token', 'wrong')")
+        let rejected = await navigate(target, excluding: endpoint)
+        precondition(rejected["status"] as? String == "unavailable" && guestViews().isEmpty)
+        _ = try await workspace.evaluateJavaScript("sessionStorage.setItem('hz.token', 'fallback')")
+        let fallback = await navigate(target, excluding: endpoint)
+        precondition(fallback["status"] as? String == "unavailable" && guestViews().isEmpty)
+        _ = try await workspace.evaluateJavaScript("sessionStorage.setItem('hz.token', 'fixture')")
+        let wrongOrigin = Endpoint("https://workspace.example.com")!
+        let obsolete = await navigate(target, excluding: wrongOrigin)
+        precondition(obsolete["status"] as? String == "unavailable" && guestViews().isEmpty)
+
+        let blocked = await navigate("https://127.0.0.1/", excluding: endpoint)
+        precondition(blocked["status"] as? String == "unavailable" && guestViews().isEmpty)
+        _ = await navigate(target, excluding: endpoint)
+        precondition(guestViews().count == 1, "The authenticated flagless workspace should start a guest")
+        let guest = guestViews()[0]
+        precondition(!guest.configuration.websiteDataStore.isPersistent)
+        precondition(guest.configuration.websiteDataStore !== workspace.configuration.websiteDataStore)
+        browser.reset()
     }
 
     @MainActor
