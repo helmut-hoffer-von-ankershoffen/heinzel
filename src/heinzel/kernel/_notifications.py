@@ -33,11 +33,6 @@ def notice_producer_scope(producer: str | None) -> Generator[None]:
         _notice_producer.reset(token)
 
 
-def current_notice_producer() -> str | None:
-    """Return the registered producer for the current dispatch, if known."""
-    return _notice_producer.get()
-
-
 class NoticeKind(StrEnum):
     """What a notice is about; each kind can be switched off in `[system.notify]`."""
 
@@ -197,6 +192,11 @@ class Notifications:
     A base class rather than a protocol, so that the kernel can inject it by type like any other service. Every
     method raises `NotImplementedError` here.
     """
+
+    @staticmethod
+    def _current_producer() -> str | None:
+        """Return the registered producer to the SDK service implementation."""
+        return _notice_producer.get()
 
     def enabled(self, kind: NoticeKind) -> bool:
         """Whether a user has enabled recording this kind of notice."""

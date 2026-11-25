@@ -36,7 +36,7 @@ from heinzel import (
     Status,
     clean_text,
 )
-from heinzel.kernel import KERNEL_SECTION, current_notice_producer
+from heinzel.kernel import KERNEL_SECTION
 from heinzel.kernel._calendar_reminders import agenda_plan
 from heinzel.kernel._logging import get_logger, log_event
 from heinzel.kernel.session._self_chat import STATE, SelfChat
@@ -243,7 +243,7 @@ class NotifyService(Notifications):
         now = self._clock()
         window = timedelta(hours=self.settings.repeat_hours)
         notice_route = route if ROUTE.fullmatch(route) else "/"
-        producer = current_notice_producer() if replaces else None
+        producer = self._current_producer() if replaces else None
         replacement = replaces if producer else None
 
         def record(notices: list[Notice]) -> Notice:
