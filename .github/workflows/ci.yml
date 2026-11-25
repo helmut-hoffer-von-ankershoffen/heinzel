@@ -108,6 +108,7 @@ jobs:
       site_only: ${{ steps.paths.outputs.site_only }}
       surface_only: ${{ steps.paths.outputs.surface_only }}
       macos_full: ${{ steps.paths.outputs.macos_full }}
+      upgrade: ${{ steps.paths.outputs.upgrade }} # Core upgrade lane
       scheduled_maintenance: ${{ steps.maintenance.outputs.selected }}
       full_release: ${{ steps.release.outputs.full_release }}
       full_ci: ${{ steps.full.outputs.selected }}
@@ -215,6 +216,13 @@ jobs:
             surface_only=true
           fi
           echo "surface_only=$surface_only" >> "$GITHUB_OUTPUT"
+          # Core upgrade lane: this selector controls the macOS unit and integration cells on ordinary pull requests.
+          # Core upgrade lane: non-PR runs, release PRs and an unknown selector answer keep both cells.
+          # Core upgrade lane: the separate Linux in-place upgrade workload is required independently.
+          selected="$(printf '%s\n' "$changed" | python3 -I scripts/contexts.py upgrade 2>/dev/null)" || selected="" # Core upgrade lane
+          upgrade=true # Core upgrade lane
+          [ "$EVENT" != pull_request ] || [ "${RELEASE_FULL:-false}" = true ] || [[ "${HEAD_REF:-}" == release/* ]] || [ "$selected" != upgrade=false ] || upgrade=false # Core upgrade lane
+          echo "upgrade=$upgrade" >> "$GITHUB_OUTPUT" # Core upgrade lane
           if [ "$prose_push" = true ] || [ "$surface_only" = true ]; then
             echo "core=false" >> "$GITHUB_OUTPUT"
             core_work=false
@@ -258,7 +266,7 @@ jobs:
             echo "electron=false" >> "$GITHUB_OUTPUT"
           fi
           # The merge gate derives the jobs this run must have from this selection (focused_gate.py in scripts).
-          sed 's/^/selector-output: /' "$GITHUB_OUTPUT" | grep -E '^selector-output: (core|site_only|surface_only|macos_full|notifier|contracts|electron|plugins)=(true|false)$'
+          sed 's/^/selector-output: /' "$GITHUB_OUTPUT" | grep -E '^selector-output: (core|site_only|surface_only|macos_full|notifier|contracts|electron|plugins|upgrade)=(true|false)$'
           echo "selector-output: release=${FULL_RELEASE:-false}"
 
   macos-main: # main lanes
@@ -440,8 +448,9 @@ jobs:
         levels: [unit, integration]
         # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
         # under that same cap. PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.
+        # Core upgrade lane: a pull request gets the macOS cells when it touches update, lifecycle or kernel.
         include:
-          ${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
+          ${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.upgrade != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
     env:
       HZ_TEST_TIMEOUT_SCALE: "${{ contains(matrix.os, 'macos') && '3' || '1' }}" # hosted macOS runners are slower; Linux stays at 1
       # Unit-bearing cells need locked Node; integration-only dependency groups stay unchanged.
@@ -846,12 +855,47 @@ jobs:
           name: dist
           path: dist/
 
+  upgrade:
+    permissions:
+      contents: read
+    name: Upgrade in place (published to candidate, Linux)
+    needs: [changes, core-wheel]
+    # Lane B (scripts/acceptance/scenario.py --candidate-wheel): the published release, installed
+    # with user state in a private home, updates itself in place to this change's wheel with its own updater, then the
+    # updated app serves and answers a chat. Reuse the exact workflow run's SDK wheel. Linux executes the upgrade
+    # once for each PR and main/release cut; the coalesced macOS lane does not duplicate it.
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.lane != 'macos' # Core candidate-only
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: plugin-core
+          path: dist
+      - name: The published release updates in place to this wheel
+        timeout-minutes: 20
+        env:
+          TMPDIR: /tmp
+        run: make test-upgrade
+      - name: Upload the receipt, logs and the updater plan
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: upgrade-in-place
+          path: reports/acceptance/
+          if-no-files-found: warn
+          retention-days: 7
+
   core-wheel:
     permissions:
       contents: read
     name: Plugin SDK candidate
     needs: changes
-    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true') && needs.changes.outputs.lane != 'macos' # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.lane != 'macos' # Core candidate-only
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -1345,7 +1389,7 @@ jobs:
       contents: read
     name: CI OK
     if: always() && (github.event_name != 'push' || needs.admission.outputs.full != 'false')
-    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check, release-candidate-source, quarantine-registry, focused-tests, coverage-floor, sonar-ratings, macos-main]
+    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, upgrade, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check, release-candidate-source, quarantine-registry, focused-tests, coverage-floor, sonar-ratings, macos-main]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -1433,6 +1477,8 @@ jobs:
             [ "${CONTRACTS:-true}" = true ] || drop consumer-plan consumer-check
             [ "${PLUGIN_PATHS:-true}" = true ] || [ "${CONTRACTS:-true}" = true ] || drop local-plugin-plan
           fi
+          # Core upgrade lane: require both even when core or site selectors reset the ordinary inventory.
+          if [ "${LANE:-all}" != macos ]; then drop core-wheel; required+=(core-wheel upgrade); fi # Core upgrade lane
           # The coverage floor: on every pull request, and on a dispatched run outside the macOS main lane.
           if [ "$EVENT" = pull_request ] || { [ "$EVENT" = workflow_dispatch ] && [ "${LANE:-all}" != macos ]; }; then required+=(coverage-floor); fi # Core coverage floor
           if [ "$EVENT" = pull_request ]; then required+=(sonar-ratings); fi # Core coverage floor

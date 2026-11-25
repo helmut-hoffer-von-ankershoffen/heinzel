@@ -576,6 +576,7 @@ SELECTOR_KEYS = frozenset(
         "contracts",
         "electron",
         "plugins",
+        "upgrade",
         "release",
     }
 )
@@ -634,6 +635,9 @@ def selected_pr_inventory(selected: dict[str, bool]) -> dict[str, str]:
 
     rule("make setup", core, SKIPPED_TEMPLATES["setup"])
     rule("Test (", tested, SKIPPED_TEMPLATES["test"])
+    if tested and not selected["upgrade"]:  # the macOS Python cells belong to the upgrade lane (ci.yml `test` matrix)
+        for name in [n for n in inventory if n.startswith("Test (macos")]:
+            del inventory[name]
     rule("End-to-end ", tested, SKIPPED_TEMPLATES["e2e"])
     rule("Electron (", selected["electron"], SKIPPED_TEMPLATES["electron"])
     rule("Consumer (heinzel-", selected["contracts"], SKIPPED_TEMPLATES["consumer"])
@@ -646,7 +650,8 @@ def selected_pr_inventory(selected: dict[str, bool]) -> dict[str, str]:
         "Heinzel Notifier (macOS app)": selected["notifier"],
         "macOS-specific tests": (selected["macos_full"] or surface) and (core or surface) and not site,
         "Build": core,
-        "Plugin SDK candidate": core,
+        "Upgrade in place (published to candidate, Linux)": True,
+        "Plugin SDK candidate": True,
         "Optional source plugins": selected["plugins"] or selected["contracts"],
         "Public contract consumers": selected["contracts"],
         "Site tests": site,
