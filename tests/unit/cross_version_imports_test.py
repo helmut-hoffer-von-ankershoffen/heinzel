@@ -440,6 +440,7 @@ def test_the_kept_mcp_tokens_path_answers_with_the_client_context() -> None:
     [
         ("heinzel.modules.system.updater._phases", "heinzel._phases"),
         ("heinzel.heads.cli._serve", "heinzel.heads._compose"),
+        ("heinzel.kernel._signals", "heinzel.spec._signals"),
     ],
 )
 def test_a_moved_module_keeps_its_old_path_with_the_same_objects(old: str, new: str) -> None:
