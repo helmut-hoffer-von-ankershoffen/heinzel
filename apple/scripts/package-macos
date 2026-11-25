@@ -76,12 +76,8 @@ if [[ "$archived_cloud" != "$cloud_sign_in" ]]; then
     printf '%s\n' 'The archived app does not match HEINZEL_ICLOUD_SIGN_IN.' >&2
     exit 1
 fi
-if [[ "$cloud_sign_in" == YES ]] && {
-    [[ ! -s "$archived_app/Contents/embedded.provisionprofile" ]] ||
-    [[ ! -s "$archived_app/Contents/PlugIns/HeinzelWidgets.appex/Contents/embedded.provisionprofile" ]];
-}; then
-    printf '%s\n' 'The archived app or widget has no embedded provisioning profile.' >&2
-    exit 1
+if [[ "$cloud_sign_in" == YES ]]; then
+    python3 scripts/verify-macos-cloud.py "$archived_app" "$HEINZEL_MAC_SIGNING_TEAM"
 fi
 mv -f -- "$candidate" "$archive"
 printf '%s\n' "$archive"

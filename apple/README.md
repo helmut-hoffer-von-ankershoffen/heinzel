@@ -32,7 +32,8 @@ Add **Workspace**, **Active Heinzels**, **Heinzel Status**, **Heinzel Picker**, 
 
 On Mac, the app starts and signs in to its local workspace automatically. To open a remote workspace, choose **Heinzel → Connection → Switch Workspace**. The activity widgets show the local workspace while the app is running. Shared widget data requires an app and extension signed by the same Apple Developer team. For a signed local package, run `HEINZEL_MAC_SIGNING_TEAM=TEAM_ID apple/scripts/package-macos VERSION`. The teamless package supports the workspace and help launchers.
 
-For an iCloud-enabled Mac development package, also set `HEINZEL_ICLOUD_SIGN_IN=YES`, `HEINZEL_MAC_PROFILE` to the installed app profile specifier, and `HEINZEL_MAC_WIDGET_PROFILE` to the separate installed widget profile specifier. The build uses an Apple Development signing identity and requires profiles for the target Mac and corresponding bundle identifiers.
+For an iCloud-enabled Mac development package, also set `HEINZEL_ICLOUD_SIGN_IN=YES`, `HEINZEL_MAC_PROFILE` to the installed app profile specifier, and `HEINZEL_MAC_WIDGET_PROFILE` to the separate installed widget profile specifier. The build uses an Apple Development signing identity and requires profiles for the target Mac and corresponding bundle identifiers. Before promoting the package, the script checks both extracted products against
+their signing team, profile, certificate, bundle identifier and required entitlements.
 
 In notification settings, choose **Notify me on this device**. Heinzel confirms the workspace and asks for system permission. Notifications come from the connected workspace while the app is open. Tapping an alert opens the notice when its workspace is connected. On iPhone and iPad, keep Heinzel active to receive new notices.
 
