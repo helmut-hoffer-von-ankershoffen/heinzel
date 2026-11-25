@@ -45,6 +45,7 @@ from heinzel.modules.system.updater._announced import (
     plugin_commit,
 )
 from heinzel.modules.system.updater._plugin_releases import PinnedPlugins
+from heinzel.modules.system.updater._recovery_worker import supervised_recovery
 from heinzel.modules.system.updater._update_channels import UpdateChannels
 from heinzel.modules.system.updater._update_heads import recorded_flavor
 from heinzel.modules.system.updater._update_rules import (
@@ -126,7 +127,11 @@ class UpdateService(UpdateChannels):
             return selection
         pin, core_requirement, plugin_pins, names = selection.pin, selection.core, selection.plugins, selection.names
         prefix = self._installation.prefix.resolve(strict=True)
-        with self._interpreter_for(announced.core), self._mutation() as scope:
+        with (
+            supervised_recovery(self._installation, folder),
+            self._interpreter_for(announced.core),
+            self._mutation() as scope,
+        ):
             plan = scope.capture() if scope is not None else None
             with self._installation.tool_transaction():
                 expected, guards, policy = self._prepare_announced(

@@ -80,10 +80,12 @@ installed program still matches its verified startup checkpoint. The marker is m
 `abandoned-mutation-DIGEST.json` beside a `.receipt.json` that records this evidence. No settings, data, sign-ins or
 services are changed. The web service starts by itself within seconds afterwards; `hz ui status --json` confirms it.
 
-When any of that evidence is missing, the marker stays and the commands keep refusing. That includes a web server
-that ran the update and is still running: its marker is recovered once that process has ended, for example after a
-restart of the computer. An update that stopped while it still held its rollback copy (`auto-update/before-update`),
-or after it asked the daemon to take over, is not covered by this recovery. Check
+The supervised web launcher checks the recovery runtime that the automatic updater staged outside the tool.
+It restores and verifies an armed rollback copy, then archives the abandoned mutation before it starts the
+web server. Any verified handover request from the same transaction stays available for the daemon.
+Older owned web launchers need migration with `hz ui install` at their recorded port before automatic updates can apply.
+
+If the updater is still running or the recovery evidence is incomplete, the marker stays. For unresolved updates, check
 `hz system daemon status --json` and `hz ui status --json`, and the web server's own errors in `web.err.log` in the
 log folder (`hz system config get hz.log_dir`).
 

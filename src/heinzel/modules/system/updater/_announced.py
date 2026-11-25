@@ -280,7 +280,7 @@ class ToolSnapshot:
         ):
             msg = "The automatic update snapshot is unsafe; explicit recovery is required."
             raise HeinzelError(msg)
-        content = snapshot._recovery_content()
+        content = snapshot.recovery_content()
         if content is None and not installation.is_tool:
             return False  # an old snapshot cannot identify a tool with an absent uv receipt
         snapshot.restore(discard=False)
@@ -297,7 +297,12 @@ class ToolSnapshot:
         snapshot.discard()
         return True
 
-    def _recovery_content(self) -> str | None:
+    def recovery_content(self) -> str | None:
+        """Read the owned pre-update fingerprint for this exact prefix.
+
+        Raises:
+            HeinzelError: If the existing recovery evidence is invalid.
+        """
         try:
             proof = private_read(self._proof)
         except FileNotFoundError:
