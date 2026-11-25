@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -180,6 +181,7 @@ class ToolSnapshot:
         snapshot._clean_discarded()
         partial = snapshot._partial
         folder.mkdir(parents=True, exist_ok=True)
+        _sync_directory(folder.parent)
         if folder.stat().st_dev != prefix.stat().st_dev:
             msg = "The state folder is on another disk than hz, so an update couldn't be put back; nothing installed."
             raise HeinzelError(msg)
@@ -192,13 +194,13 @@ class ToolSnapshot:
                 shutil.copytree(source, target, symlinks=True)
             else:
                 shutil.copy2(source, target, follow_symlinks=False)
+        _sync_tree(partial)
         if content is not None:
             proof = snapshot._proof
             private_write(proof, f"{content}\n{prefix}")
             _sync_directory(proof.parent)
         partial.rename(snapshot.copy)  # only a complete copy is ever put back
-        if content is not None:
-            _sync_directory(folder)
+        _sync_directory(folder)
         return snapshot
 
     def restore(self, *, discard: bool = True) -> None:
@@ -230,14 +232,25 @@ class ToolSnapshot:
             msg = "An unfinished automatic update needs verified recovery."
             raise HeinzelError(msg)
         self.aside.mkdir(exist_ok=True)
+        _sync_directory(self.aside.parent)
         moved_in = self.aside / MOVED_ASIDE
         if not moved_in.exists():
+            if os.path.lexists(self.prefix / MOVED_ASIDE):
+                msg = "The installed tool contains the reserved automatic update phase name."
+                raise HeinzelError(msg)
             for entry in sorted(self.prefix.iterdir()):
                 if entry.name not in KEPT:
                     entry.rename(self.aside / entry.name)
-            moved_in.touch()
+            _sync_directory(self.aside)
+            _sync_directory(self.prefix)
+            moved_in.touch(exist_ok=False)
+        _sync_file(moved_in)
+        _sync_directory(self.aside)
         for entry in sorted(self.copy.iterdir()):
             entry.rename(self.prefix / entry.name)
+        _sync_directory(self.prefix)
+        _sync_directory(self.prefix.parent)
+        _sync_directory(self.copy)
         if discard:
             self.discard()
 
@@ -304,9 +317,13 @@ class ToolSnapshot:
         self._clean_discarded()
 
     def _clean_discarded(self) -> None:
-        for folder in (self.aside, self._proof.parent, self._partial, self._retired):
+        for folder in (self.aside, self._proof.parent, self._partial):
             with contextlib.suppress(FileNotFoundError):
                 shutil.rmtree(folder)
+        if self._retired.is_dir():
+            _sync_directory(self.copy.parent)
+            shutil.rmtree(self._retired)
+            _sync_directory(self.copy.parent)
 
 
 def _sync_directory(path: Path) -> None:
@@ -315,6 +332,36 @@ def _sync_directory(path: Path) -> None:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
+
+
+def _sync_file(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            msg = "The automatic update snapshot contains an unsafe file."
+            raise HeinzelError(msg)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _raise_walk_error(error: OSError) -> None:
+    raise error
+
+
+def _sync_tree(root: Path) -> None:
+    """Make the staged bytes and directory entries durable before publishing the copy.
+
+    Raises:
+        HeinzelError: The staged copy contains an unsupported file type.
+        OSError: The staged copy cannot be inspected or synchronized.
+    """
+    for directory, _, files in os.walk(root, topdown=False, onerror=_raise_walk_error):
+        for name in files:
+            path = Path(directory, name)
+            if not stat.S_ISLNK(path.lstat().st_mode):
+                _sync_file(path)
+        _sync_directory(Path(directory))
 
 
 TRIAL_SECONDS = 90.0

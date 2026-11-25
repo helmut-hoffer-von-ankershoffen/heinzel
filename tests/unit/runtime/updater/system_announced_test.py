@@ -9,6 +9,7 @@ import fcntl
 import json
 import os
 import signal
+import stat
 import subprocess
 import sys
 from contextlib import contextmanager, nullcontext
@@ -318,6 +319,71 @@ def interrupt_after_prefix_replacement(update, tool, state, monkeypatch):
         update.apply_announced(news(), current="1.0.0", folder=state / "auto-update", trial=lambda _: True)
 
 
+def test_snapshot_file_sync_failure_never_exposes_a_rollback_copy_or_runs_uv(tmp_path, monkeypatch):
+    update, tool, _, runs = service(tmp_path, monkeypatch)
+    folder = tmp_path / "state/auto-update"
+    fsync = os.fsync
+
+    def refuse_file(descriptor):
+        if stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OSError(errno.EIO, "could not sync staged file")
+        fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", refuse_file)
+    with pytest.raises(OSError, match="could not sync staged file"):
+        update.apply_announced(news(), current="1.0.0", folder=folder, trial=lambda _: True)
+
+    assert runs == []
+    assert (folder / "before-update.partial").is_dir()
+    assert not (folder / "before-update").exists()
+    assert tool.startup_state_matches()
+
+
+@pytest.mark.parametrize("phase", ["before phase marker", "phase marker", "after restoring"])
+def test_restore_sync_failure_keeps_the_gate_and_resumes_verification(tmp_path, monkeypatch, phase):
+    update, tool, _, _ = service(tmp_path, monkeypatch)
+    state = tmp_path / "state"
+    folder = state / "auto-update"
+    expected = tool.content_fingerprint()
+    interrupt_after_prefix_replacement(update, tool, state, monkeypatch)
+    snapshot = folder / "before-update"
+    marker = folder / "after-update" / announced.MOVED_ASIDE
+    method, fail_at = {
+        "before phase marker": ("_sync_directory", tool.prefix),
+        "phase marker": ("_sync_file", marker),
+        "after restoring": ("_sync_directory", snapshot),
+    }[phase]
+    sync = getattr(announced, method)
+
+    def refuse_barrier(path):
+        if path == fail_at:
+            raise OSError(errno.EIO, "could not sync restore phase")
+        sync(path)
+
+    with monkeypatch.context() as fault:
+        fault.setattr(announced, method, refuse_barrier)
+        with pytest.raises(OSError, match="could not sync restore phase"):
+            update.recover_announced(folder)
+
+    assert marker.exists() == (phase != "before phase marker")
+    assert installation_mutation_pending(tool.prefix, state)
+    assert not tool.startup_state_matches()
+    synced = []
+
+    def observe_sync(path):
+        sync(path)
+        synced.append(path)
+
+    with monkeypatch.context() as retry:
+        retry.setattr(announced, method, observe_sync)
+        assert update.recover_announced(folder)
+
+    assert fail_at in synced
+    assert tool.content_fingerprint() == expected
+    assert tool.startup_state_matches()
+    assert not installation_mutation_pending(tool.prefix, state)
+
+
 def _kill_after_scope_verification(update, tool, marker, token, monkeypatch):
     lifecycle = update._lifecycle
 
@@ -327,7 +393,7 @@ def _kill_after_scope_verification(update, tool, marker, token, monkeypatch):
             pending_path=marker,
             token_matches=lambda token: marker_token_matches(marker.read_bytes(), token),
             capture=lifecycle.capture,
-            request=lifecycle.request,
+            request=lambda plan, binding: lifecycle.request(plan),
             fingerprint=tool.startup_fingerprint,
             checkpoint=checkpoint,
             had_checkpoint=checkpoint(),

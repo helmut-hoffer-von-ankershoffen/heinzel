@@ -1,5 +1,7 @@
 """One lock-held daemon mutation and the held plan of an owned daemon's removal."""
 
+import hmac
+import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -11,11 +13,45 @@ from heinzel.kernel.install._tool_uninstall import OwnedFile
 
 
 @dataclass(frozen=True, slots=True)
+class MutationHandover:
+    """Bind one handover request to this mutation and its verified installation generation."""
+
+    token: str
+    generation: str
+
+    def binding(self, request: dict[str, str | int]) -> str:
+        """Bind every request field, including its identity and manager ordering evidence."""
+        envelope = json.dumps(request).encode()
+        message = b"heinzel-mutation-handover-v1\0" + self.generation.encode("ascii") + b"\0" + envelope
+        return hmac.digest(bytes.fromhex(self.token), message, "sha256").hex()
+
+    def matches(self, raw: bytes) -> bool:
+        """Check the exact writer's format and binding for a request captured from disk."""
+        try:
+            request = json.loads(raw)
+            if not isinstance(request, dict) or not all(type(value) in (str, int) for value in request.values()):
+                return False
+            if raw != (json.dumps(request, indent=2) + "\n").encode():
+                return False
+            binding = request.pop("mutation_binding", None)
+            request_id = request.get("request_id")
+            return (
+                isinstance(request_id, str)
+                and re.fullmatch(r"[a-f0-9]{64}", request_id) is not None
+                and isinstance(binding, str)
+                and re.fullmatch(r"[a-f0-9]{64}", binding) is not None
+                and hmac.compare_digest(binding, self.binding(request))
+            )
+        except (ValueError, RecursionError):
+            return False
+
+
+@dataclass(frozen=True, slots=True)
 class MutationAuthority:
     pending_path: Path
     token_matches: Callable[[str], bool]
     capture: Callable[[], DaemonHandoverPlan]
-    request: Callable[[DaemonHandoverPlan], DaemonHandoverRequest]
+    request: Callable[[DaemonHandoverPlan, MutationHandover | None], DaemonHandoverRequest]
     fingerprint: Callable[[], str | None] | None
     checkpoint: Callable[[], bool]
     had_checkpoint: bool
@@ -94,7 +130,8 @@ class MutationScope:
             msg = "The daemon handover does not match this verified mutation."
             raise HeinzelError(msg)
         self._verify(self.expected)
-        result = self.authority.request(plan)
+        binding = MutationHandover(self.token, self.expected) if self.authority.had_checkpoint else None
+        result = self.authority.request(plan, binding)
         if plan.active and not result.requested:
             msg = "The captured active daemon could not be handed over; mutation recovery is required."
             raise HeinzelError(msg)
