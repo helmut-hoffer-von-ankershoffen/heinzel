@@ -81,14 +81,24 @@ def jobs_for(run_id, runner):
             "run_attempt": 1,
             "status": "completed",
             "name": name,
-            "conclusion": "skipped" if name == candidate.QUARANTINE_IDLE else "success",
+            "conclusion": "skipped"
+            if name in (candidate.QUARANTINE_IDLE, "Source plugin (${{ matrix.name }})")
+            else "success",
             "runner_id": 123,
             "steps": [
                 {"name": step, "status": "completed", "conclusion": "success"}
                 for step in (required.get(name) or ("Run workload",))
             ],
         }
-        for index, name in enumerate([*required, candidate.QUARANTINE_PLAN, candidate.QUARANTINE_IDLE], 1)
+        for index, name in enumerate(
+            [
+                *required,
+                candidate.QUARANTINE_PLAN,
+                candidate.QUARANTINE_IDLE,
+                "Source plugin (${{ matrix.name }})",
+            ],
+            1,
+        )
     ]
     return {"total_count": len(jobs), "jobs": jobs}
 
@@ -195,6 +205,28 @@ def test_main_refuses_incomplete_or_nonexecuting_jobs(damage):
 @pytest.mark.parametrize(
     ("run_id", "job_name", "step_name"),
     [
+        (9, "Heinzel Notifier (macOS app)", "Real launches leave no process behind (ADR 0043)"),
+        (9, "Build", "Check the wheel ships Heinzel Notifier"),
+        (9, "make setup (macos-latest)", "Run make doctor"),
+        (7, "make setup (ubuntu-24.04)", "Run make setup"),
+        (7, "make setup (ubuntu-24.04-arm)", "Run make doctor"),
+        (7, "Dependency audit", "Run make audit"),
+        (7, "Lint, contracts and types", "Run make managed-backend-check"),
+        (7, "Build", "Run make build"),
+        (7, "Plugin SDK candidate", "Build core artifacts for isolated consumer checks"),
+        (
+            7,
+            "Secret scan",
+            "Scan the history for credentials (gitleaks pinned in scripts/tools.toml, checksum verified)",
+        ),
+        (7, "Quarantine registry", "Run make quarantine-check"),
+        (7, "Main batch admission", "Resolve the aggregate base and any explicit batch delegation"),
+        (7, "Changed paths", "Run the complete CI workload without an external admission plan"),
+        (
+            7,
+            "Optional source plugins",
+            'Run make --no-print-directory -C .plugin-tooling plan BASE="$BASE" CONTRACT="$CONTRACT" > plan.json',
+        ),
         (9, "macOS-specific tests", "Run make notifier"),
         (9, "macOS-specific tests", "Tests that only exercise macOS behaviour (marker macos_specific)"),
         (9, "macOS-specific tests", "Run Apple fixtures without skips"),
@@ -220,6 +252,36 @@ def test_required_workload_cannot_pass_on_setup_alone(run_id, job_name, step_nam
         job["steps"].remove(step)
     with pytest.raises(chain.ChainError, match=f"main workload step did not pass: {job_name.split(' (')[0]}"):
         chain.main_gate(reader(data), TIP)
+
+
+@pytest.mark.parametrize("result", ["success", "skip", "remove", "mixed"])
+def test_selected_source_plugin_requires_its_workload(result):
+    data = routes()
+    page = data["actions/runs/7/attempts/1/jobs"]
+    idle = next(job for job in page["jobs"] if job["name"] == "Source plugin (${{ matrix.name }})")
+    selected = idle | {
+        "id": 1000,
+        "name": "Source plugin (example)",
+        "conclusion": "success",
+        "steps": [
+            {"name": "Set up job", "status": "completed", "conclusion": "success"},
+            {"name": "Check, audit, build and accept only this plugin", "status": "completed", "conclusion": "success"},
+        ],
+    }
+    if result == "skip":
+        selected["steps"][1]["conclusion"] = "skipped"
+    if result == "remove":
+        selected["steps"].pop()
+    if result != "mixed":
+        page["jobs"].remove(idle)
+        page["total_count"] -= 1
+    page["jobs"].append(selected)
+    page["total_count"] += 1
+    if result == "success":
+        assert chain.main_gate(reader(data), TIP) == chain.MainCIProof(TIP, 7, 9)
+    else:
+        with pytest.raises(chain.ChainError, match=r"source plugin selection|main workload step did not pass"):
+            chain.main_gate(reader(data), TIP)
 
 
 def test_plan_cuts_the_next_patch_from_a_green_tip_with_an_intro():

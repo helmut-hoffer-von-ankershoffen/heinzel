@@ -358,29 +358,51 @@ def main_run(rows: list[dict[str, Any]], tip: str, event: str) -> int:
 
 def main_workload(candidate: Any, runner: str) -> dict[str, tuple[str, ...]]:  # noqa: ANN401 - reviewed dynamic module
     """Require the main workload, including executed test steps from the reviewed CI layout."""
+    # Admission, path selection and the two plugin plans produce inputs for other jobs.
+    # They must execute their selectors, but only the test/build jobs witness substantive workload.
     required = {
-        "Main batch admission": (),
-        "Changed paths": (),
-        "Secret scan": (),
-        "Quarantine registry": (),
-        "Build": (),
+        "Main batch admission": ("Resolve the aggregate base and any explicit batch delegation",),
+        "Changed paths": (
+            "Select the lane, Linux for a push to main and macOS for its coalesced dispatch",
+            "Recognize the canonical open release candidate",
+            "Run the complete CI workload without an external admission plan",
+            "Heinzel Notifier is built always, except on a pull request that leaves its sources alone",
+        ),
+        "Secret scan": ("Scan the history for credentials (gitleaks pinned in scripts/tools.toml, checksum verified)",),
+        "Quarantine registry": ("Run make quarantine-check",),
+        "Build": (
+            "Run make build",
+            "Check the wheel ships the changelog",
+            "Check the wheel ships the attributions",
+            "Check the wheel ships the web app",
+        ),
         "CI OK": (
             "Fail if any required job failed, naming each with its verdict",
             "Require the complete direct CI workload",
         ),
+        f"make setup ({runner})": ("Run make setup", "Run make doctor"),
         **{
             name: ("Unit and integration tests (unit first, 4 workers, stop at the first failure)",)
-            if name.startswith("Test (")
-            else (f"Run make test-e2e SUITE={name.split()[1]}",)
-            if name.startswith("End-to-end ")
-            else ()
-            for name, conclusion in candidate.expected_jobs("workflow_dispatch").items()
-            if name.endswith(f"({runner})") or (conclusion == "success" and name.startswith(f"Test ({runner},"))
+            for name in candidate.expected_jobs("workflow_dispatch")
+            if name.startswith(f"Test ({runner},")
+        },
+        **{
+            name: (f"Run make test-e2e SUITE={name.split()[1]}",)
+            for name in candidate.expected_jobs("workflow_dispatch")
+            if name.startswith("End-to-end ") and name.endswith(f"({runner})")
         },
     }
     if runner == "macos-latest":
-        required[f"Electron ({runner})"] = ("macOS Electron native window smoke test",)
-        required["Heinzel Notifier (macOS app)"] = ()
+        required[f"Electron ({runner})"] = (
+            "Build and verify unsigned native package",
+            "macOS Electron native window smoke test",
+        )
+        required["Build"] += ("Unpack Heinzel Notifier into the package", "Check the wheel ships Heinzel Notifier")
+        required["Heinzel Notifier (macOS app)"] = (
+            "Run make notifier",
+            "Real launches leave no process behind (ADR 0043)",
+            "Pack the app, keeping its executable bit and signature",
+        )
         required["macOS-specific tests"] = (
             "Run make notifier",
             "Tests that only exercise macOS behaviour (marker macos_specific)",
@@ -388,18 +410,26 @@ def main_workload(candidate: Any, runner: str) -> dict[str, tuple[str, ...]]:  #
             "Compile the unsigned Swift Mac Release target",
         )
     else:
-        required[f"Electron ({runner})"] = ("Linux Electron native window smoke test",)
-        required.update(
-            dict.fromkeys(
-                (
-                    "Dependency audit",
-                    "Lint, contracts and types",
-                    "make setup (ubuntu-24.04-arm)",
-                    "Plugin SDK candidate",
-                    "Optional source plugins",
-                ),
-                (),
-            )
+        required[f"Electron ({runner})"] = (
+            "Build and verify unsigned native package",
+            "Linux Electron native window smoke test",
+        )
+        required[f"make setup ({runner})"] += (
+            "Every pinned tool, for every platform, still downloads and matches its checksum",
+        )
+        required["make setup (ubuntu-24.04-arm)"] = ("Run make setup", "Run make doctor")
+        required["Dependency audit"] = ("Run make audit",)
+        required["Lint, contracts and types"] = (
+            "Require the confidential terms",
+            "Run make lint",
+            "Run make managed-backend-setup",
+            "Run make managed-backend-check",
+            "Run make typecheck",
+            "Run make test-web",
+        )
+        required["Plugin SDK candidate"] = ("Build core artifacts for isolated consumer checks",)
+        required["Optional source plugins"] = (
+            'Run make --no-print-directory -C .plugin-tooling plan BASE="$BASE" CONTRACT="$CONTRACT" > plan.json',
         )
         required["Performance tests"] = ("Run make test-perf",)
         required["Plugin template"] = ("Run make template-test AUDIT=1",)
@@ -448,6 +478,29 @@ def verify_main_jobs(read: Callable[[str], Any], tip: str, run_id: int, runner: 
             all(job.get("conclusion") in ("success", "skipped") for job in regular_jobs),
             "main job ended without success or an expected skip",
         )
+        if runner == "ubuntu-24.04":
+            # The plan may yield no source plugins. The aggregate enforces the selected matrix's result.
+            source_jobs = [job for job in jobs if job["name"].startswith("Source plugin (")]
+            idle = "Source plugin (${{ matrix.name }})"
+            if len(source_jobs) == 1 and source_jobs[0]["name"] == idle:
+                candidate.require(
+                    source_jobs[0].get("conclusion") == "skipped", "unexpected source plugin placeholder result"
+                )
+            else:
+                candidate.require(
+                    source_jobs
+                    and all(
+                        job["name"] != idle and re.fullmatch(r"Source plugin \([^)]+\)", job["name"])
+                        for job in source_jobs
+                    ),
+                    "missing or ambiguous source plugin selection",
+                )
+                required.update(
+                    dict.fromkeys(
+                        (job["name"] for job in source_jobs),
+                        ("Check, audit, build and accept only this plugin",),
+                    )
+                )
         for name, steps in required.items():
             matches = [job for job in jobs if job["name"] == name]
             candidate.require(len(matches) == 1, f"missing or ambiguous main job: {name}")
