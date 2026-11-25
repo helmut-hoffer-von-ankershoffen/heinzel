@@ -22,8 +22,10 @@ type Info = NonNullable<ReturnType<typeof useInfo>["data"]>;
 export type Client = "native" | "electron" | "browser";
 
 /** The older Native bridge advertised no workspace audio, even when it offered local About details. */
-export const clientHere = (bridge: Bridge | undefined = desktopBridge()): Client =>
-  bridge ? (bridge.clientFlavor ?? (bridge.workspaceAudio === false || !bridge.about ? "native" : "electron")) : "browser";
+export const clientHere = (bridge: Bridge | undefined = desktopBridge()): Client => {
+  if (!bridge) return "browser";
+  return bridge.clientFlavor ?? (bridge.workspaceAudio === false || !bridge.about ? "native" : "electron");
+};
 
 const clientLabel = (client: Client) =>
   t(client === "native" ? "about.nativeApp" : client === "electron" ? "about.electronApp" : "about.browser");
