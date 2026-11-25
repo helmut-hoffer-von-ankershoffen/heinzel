@@ -51,7 +51,46 @@ def pr(number, ref, title=None, sha=HEAD, repo=chain.REPOSITORY):
 
 
 def run_row(event="push", status="completed", conclusion="success", attempt=1, run_id=7):
-    return {"id": run_id, "event": event, "status": status, "conclusion": conclusion, "run_attempt": attempt}
+    return {
+        "id": run_id,
+        "event": event,
+        "status": status,
+        "conclusion": conclusion,
+        "run_attempt": attempt,
+        "head_sha": TIP,
+        "head_branch": "main",
+        "path": ".github/workflows/ci.yml",
+        "repository": {"full_name": chain.REPOSITORY},
+        "head_repository": {"full_name": chain.REPOSITORY},
+        "display_title": f"CI macOS main {TIP}" if event == "workflow_dispatch" else "CI",
+    }
+
+
+def macos_run(**kwargs):
+    return run_row(event="workflow_dispatch", run_id=9, **kwargs)
+
+
+def jobs_for(run_id, runner):
+    candidate = chain.load_candidate_module()
+    required = chain.main_workload(candidate, runner)
+    jobs = [
+        {
+            "id": index,
+            "run_id": run_id,
+            "head_sha": TIP,
+            "run_attempt": 1,
+            "status": "completed",
+            "name": name,
+            "conclusion": "skipped" if name == candidate.QUARANTINE_IDLE else "success",
+            "runner_id": 123,
+            "steps": [
+                {"name": step, "status": "completed", "conclusion": "success"}
+                for step in (required.get(name) or ("Run workload",))
+            ],
+        }
+        for index, name in enumerate([*required, candidate.QUARANTINE_PLAN, candidate.QUARANTINE_IDLE], 1)
+    ]
+    return {"total_count": len(jobs), "jobs": jobs}
 
 
 def tail_run(version, status="in_progress"):
@@ -60,13 +99,14 @@ def tail_run(version, status="in_progress"):
 
 def routes(*, prs=(), rels=None, runs=None, commits=None, tails=()):
     rels = rels if rels is not None else [release("0.9.53"), release("0.9.52")]
+    runs = runs if runs is not None else [run_row(), macos_run()]
     found = {
         "pulls": list(prs),
         "actions/workflows/release-tail.yml/runs?per_page=100": {"workflow_runs": list(tails)},
         "releases": rels,
-        f"actions/workflows/ci.yml/runs?head_sha={TIP}&per_page=100": {
-            "workflow_runs": runs if runs is not None else [run_row()]
-        },
+        f"actions/workflows/ci.yml/runs?head_sha={TIP}&per_page=100": {"workflow_runs": runs, "total_count": len(runs)},
+        "actions/runs/7/attempts/1/jobs": jobs_for(7, "ubuntu-24.04"),
+        "actions/runs/9/attempts/1/jobs": jobs_for(9, "macos-latest"),
         f"compare/v0.9.53...{TIP}": {
             "total_commits": len(commits if commits is not None else [1]),
             "commits": [{"commit": {"message": m}} for m in (commits if commits is not None else ["fix(web): a (#1)"])],
@@ -103,9 +143,52 @@ def test_the_cut_needs_main_green_on_the_first_attempt(rows, error):
         chain.main_gate(reader(routes(runs=rows)), TIP)
 
 
-def test_a_green_tip_with_a_running_macos_lane_may_be_cut():
-    lane = run_row(event="workflow_dispatch", status="in_progress", conclusion=None, run_id=9)
-    chain.main_gate(reader(routes(runs=[run_row(), lane])), TIP)
+def test_a_green_tip_with_a_running_macos_lane_waits():
+    lane = macos_run(status="in_progress", conclusion=None)
+    with pytest.raises(chain.Wait, match="macOS dispatch"):
+        chain.main_gate(reader(routes(runs=[run_row(), lane])), TIP)
+
+
+def test_main_proof_names_the_exact_two_original_runs():
+    assert chain.main_gate(reader(routes()), TIP) == chain.MainCIProof(TIP, 7, 9)
+
+
+@pytest.mark.parametrize(
+    ("rows", "error"),
+    [
+        ([run_row()], chain.Wait),
+        ([run_row(), macos_run() | {"head_sha": OTHER}], chain.ChainError),
+        ([run_row(), macos_run(attempt=2)], chain.ChainError),
+        ([run_row(), macos_run(conclusion="cancelled")], chain.ChainError),
+        ([run_row(), macos_run() | {"display_title": "CI"}], chain.Wait),
+        ([run_row(), macos_run(), macos_run() | {"id": 10}], chain.ChainError),
+    ],
+)
+def test_main_requires_exact_coalesced_original_dispatch(rows, error):
+    with pytest.raises(error):
+        chain.main_gate(reader(routes(runs=rows)), TIP)
+
+
+@pytest.mark.parametrize("damage", ["run-pages", "job-pages", "runnerless", "skipped-step", "wrong-attempt", "missing"])
+def test_main_refuses_incomplete_or_nonexecuting_jobs(damage):
+    data = routes()
+    page = data["actions/runs/9/attempts/1/jobs"]
+    job = next(j for j in page["jobs"] if j["name"] == "End-to-end web-3 (macos-latest)")
+    if damage == "run-pages":
+        data[f"actions/workflows/ci.yml/runs?head_sha={TIP}&per_page=100"]["total_count"] += 1
+    elif damage == "job-pages":
+        page["total_count"] += 1
+    elif damage == "runnerless":
+        job.update(runner_id=0, steps=[], conclusion="cancelled")
+    elif damage == "skipped-step":
+        job["steps"][0]["conclusion"] = "skipped"
+    elif damage == "wrong-attempt":
+        job["run_attempt"] = 2
+    else:
+        page["jobs"].remove(job)
+        page["total_count"] -= 1
+    with pytest.raises(chain.ChainError):
+        chain.main_gate(reader(data), TIP)
 
 
 def test_plan_cuts_the_next_patch_from_a_green_tip_with_an_intro():
@@ -698,7 +781,7 @@ def test_a_real_plan_refuses_a_pinned_cut(capsys):
 @pytest.mark.parametrize(
     ("rows", "expected"),
     [
-        ([run_row()], "proven by the push run 7"),
+        ([run_row(), macos_run()], "Linux push 7 and macOS dispatch 9"),
         ([run_row(status="queued", conclusion=None)], "would wait"),
         ([run_row(attempt=2)], "would refuse"),
     ],
@@ -840,50 +923,6 @@ def test_plan_refuses_a_second_cut_after_an_unpublished_merge(variant, expected)
 def test_a_release_title_in_an_unrelated_commit_body_does_not_block_a_cut():
     data = routes(commits=["fix: keep a release note\n\nchore(release): v0.9.54 (#9)"])
     assert chain.plan(reader(data), "", auto=False, tip=TIP)["phase"] == "cut"
-
-
-def tree_routes(*, pr_runs=None, pr_tree=TREE, merged=True, push=()):
-    found = routes(runs=list(push))
-    found[f"commits/{TIP}/pulls"] = [
-        {
-            "number": 5,
-            "merged_at": "2026-11-22T00:00:00Z" if merged else None,
-            "base": {"ref": "main"},
-            "head": {"sha": PRHEAD},
-        }
-    ]
-    found[f"commits/{TIP}"] = {"commit": {"tree": {"sha": TREE}}}
-    found[f"commits/{PRHEAD}"] = {"commit": {"tree": {"sha": pr_tree}}}
-    rows = pr_runs if pr_runs is not None else [run_row(event="pull_request") | {"head_sha": PRHEAD}]
-    found[f"actions/workflows/ci.yml/runs?head_sha={PRHEAD}&per_page=100"] = {"workflow_runs": rows}
-    return found
-
-
-def test_main_is_proven_by_the_merged_pr_run_on_the_same_tree():
-    running = run_row(status="in_progress", conclusion=None)
-    for push in ((), (running,)):
-        assert "PR #5 run 7" in chain.main_gate(reader(tree_routes(push=push)), TIP)
-
-
-@pytest.mark.parametrize(
-    "kwargs",
-    [
-        {"pr_tree": OTHER},  # not an up-to-date squash: another tree
-        {"merged": False},
-        {"pr_runs": []},
-        {"pr_runs": [run_row(event="pull_request", attempt=2) | {"head_sha": PRHEAD}]},
-        {"pr_runs": [run_row(event="pull_request", conclusion="failure") | {"head_sha": PRHEAD}]},
-    ],
-    ids=["other-tree", "not-merged", "no-run", "rerun", "red"],
-)
-def test_no_tree_proof_means_waiting_for_mains_own_run(kwargs):
-    with pytest.raises(chain.Wait):
-        chain.main_gate(reader(tree_routes(**kwargs)), TIP)
-
-
-def test_a_red_push_run_refuses_even_with_a_green_pr_on_the_same_tree():
-    with pytest.raises(chain.ChainError, match="fix main first"):
-        chain.main_gate(reader(tree_routes(push=[run_row(conclusion="failure")])), TIP)
 
 
 def test_compose_starts_at_the_wheel_asset_beside_pypi_and_the_snapshot_waits_for_both():

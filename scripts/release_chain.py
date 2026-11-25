@@ -8,10 +8,9 @@ Every step reads GitHub state first, so a new run of the workflow continues wher
 release completes with no machine of ours awake.
 
 Order and rules (they are the rules the local driver kept):
-- plan: the version, and what is done already. A cut needs main's tip green on the FIRST attempt of its push run
-  (no known-flake exception: CI cannot read beads), or while that run is not finished the first-attempt green run of
-  the merged PR whose head has the same tree; no red macOS lane on that tip, the previous release terminal (its
-  `acceptance.json` exists), releasable commits since the last tag. The intro, unless given, is drafted from the
+- plan: the version, and what is done already. A cut needs first-attempt Linux push and macOS dispatch workload
+  on the exact main tip, the previous release terminal (its `acceptance.json` exists), and releasable commits
+  since the last tag. The intro, unless given, is drafted from the
   same commits the notes list.
 - scope: the release commit is one commit on that tip and changes only the release files.
 - notes: the new CHANGELOG.md section names every commit since the last tag (a combine by all its members).
@@ -43,6 +42,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -75,7 +75,6 @@ NOT_RELEASABLE = re.compile(r"^(chore\(release\)|docs|test|ci|style)(\([^)]*\))?
 USER_FACING = re.compile(r"^(feat|fix|perf|revert)(\([^)]*\))?!?:\s*")
 COMBINES = re.compile(r"^Combines #(?P<number>\d+) (?P<subject>\S.*)$")
 MEMBERS = re.compile(r"^(?:Combines #(\d+)\b.*|Merged via this PR:\s*(.*))$", re.MULTILINE)
-RED = ("failure", "timed_out", "startup_failure")
 TAIL = "release-tail.yml"
 MAX_IN_FLIGHT = 2  # releases at once: one in its tail, one at its front (cut, candidate, merge, tag)
 PASSING = ("success", "neutral", "skipped")
@@ -301,81 +300,193 @@ def ci_runs(read: Callable[[str], Any], sha: str) -> list[dict[str, Any]]:
     return data["workflow_runs"]
 
 
-def tree_of(read: Callable[[str], Any], sha: str) -> str:
-    """The git tree of commit `sha`, or empty when unreadable."""
-    data = read(f"commits/{sha}")
-    tree = (data or {}).get("commit", {}).get("tree", {}).get("sha", "") if isinstance(data, dict) else ""
-    return str(tree) if SHA.fullmatch(str(tree)) else ""
+@dataclass(frozen=True, slots=True)
+class MainCIProof:
+    """Exact source and both successful original main runs."""
+
+    head: str
+    linux_run: int
+    macos_run: int
+
+    def __str__(self) -> str:
+        """Name both runs and their shared source in the release plan."""
+        return f"Linux push {self.linux_run} and macOS dispatch {self.macos_run} on {self.head}, first attempts"
 
 
-def same_tree_proof(read: Callable[[str], Any], tip: str) -> str | None:
-    """The PR run that proves `tip` by tree identity, else None.
-
-    `tip` is the merge of exactly one PR into main whose head has the same git tree (a squash of an up-to-date head),
-    and every CI run of that head is complete and green on its first attempt: that run tested exactly main's tree.
-    """
-    prs = read(f"commits/{tip}/pulls")
-    merged = [
-        p
-        for p in (prs if isinstance(prs, list) else [])
-        if isinstance(p, dict) and p.get("merged_at") and p.get("base", {}).get("ref") == "main"
-    ]
-    if len(merged) != 1:
-        return None
-    head = str(merged[0].get("head", {}).get("sha", ""))
-    tree = tree_of(read, tip)
-    if not SHA.fullmatch(head) or not tree or tree_of(read, head) != tree:
-        return None
-    runs = [r for r in ci_runs(read, head) if r.get("event") == "pull_request" and r.get("head_sha") == head]
-    if not runs or any(
-        r.get("status") != "completed" or r.get("conclusion") != "success" or r.get("run_attempt") != 1 for r in runs
-    ):
-        return None
-    run_id = max(int(r.get("id", 0)) for r in runs)
-    return f"PR #{merged[0].get('number')} run {run_id} on {head[:9]}, the same tree as main tip {tip[:9]}"
-
-
-def main_gate(read: Callable[[str], Any], tip: str) -> str:
-    """Main's tip may be cut: it is proven green on a first attempt and no macOS lane run of it is red.
-
-    The proof is its push run, green on attempt 1; or, while that run is missing or running, the first-attempt green
-    run of the merged PR whose head has main's tree (main's own run then only confirms). A finished red push run
-    always refuses.
-
-    Returns:
-        Which run proves the tip.
+def main_run(rows: list[dict[str, Any]], tip: str, event: str) -> int:
+    """Select one original lane run from the canonical workflow listing.
 
     Raises:
-        Wait: Neither proof exists yet.
-        ChainError: The push run is red, green only on a rerun or ambiguous; or a macOS lane run is red.
+        Wait: The lane is missing or running.
+        ChainError: The lane is ambiguous, invalid or failed.
     """
-    rows = ci_runs(read, tip)
-    pushed = [r for r in rows if r.get("event") == "push"]
-    if len(pushed) > 1:
-        msg = f"main tip {tip[:9]} has {len(pushed)} CI push runs; refusing to pick one"
-        raise ChainError(msg)
-    push = pushed[0] if pushed else None
-    where = f"main tip {tip[:9]} (run {push.get('id')})" if push else f"main tip {tip[:9]}"
-    if push and push.get("status") == "completed":
-        if push.get("conclusion") != "success":
-            msg = f"{where}: CI ended {push.get('conclusion')}; fix main first"
-            raise ChainError(msg)
-        if push.get("run_attempt") != 1:
-            msg = f"{where}: green only on attempt {push.get('run_attempt')}; a release needs a first-attempt green run"
-            raise ChainError(msg)
-        proof = f"push run {push.get('id')} of main tip {tip[:9]}, first attempt"
-    elif not (proof := same_tree_proof(read, tip) or ""):
-        msg = f"{where}: CI is {push.get('status')}" if push else f"main tip {tip[:9]} has no CI push run yet"
+    lane = "Linux push" if event == "push" else "macOS dispatch"
+    matches = [row for row in rows if row.get("event") == event]
+    if event == "workflow_dispatch":
+        matches = [row for row in matches if row.get("display_title") == f"CI macOS main {tip}"]
+    if not matches:
+        msg = f"main tip {tip[:9]} has no {lane} yet"
         raise Wait(msg)
-    for lane in rows:
-        if (
-            lane.get("event") == "workflow_dispatch"
-            and lane.get("status") == "completed"
-            and lane.get("conclusion") in RED
-        ):
-            msg = f"main tip {tip[:9]}: the macOS lane run {lane.get('id')} is {lane.get('conclusion')}; fix main first"
-            raise ChainError(msg)
-    return proof
+    if len(matches) != 1:
+        msg = f"main tip {tip[:9]} has ambiguous {lane} runs"
+        raise ChainError(msg)
+    row = matches[0]
+    run_id = row.get("id")
+    if (
+        type(run_id) is not int
+        or run_id <= 0
+        or row.get("head_sha") != tip
+        or row.get("head_branch") != "main"
+        or row.get("path") != ".github/workflows/ci.yml"
+        or any(
+            not isinstance(row.get(key), dict) or row[key].get("full_name") != REPOSITORY
+            for key in ("repository", "head_repository")
+        )
+        or type(row.get("run_attempt")) is not int
+        or row["run_attempt"] != 1
+    ):
+        msg = f"main tip {tip[:9]}: invalid original {lane} identity"
+        raise ChainError(msg)
+    if row.get("status") in {"queued", "requested", "waiting", "pending", "in_progress"}:
+        msg = f"main tip {tip[:9]}: {lane} {run_id} is {row['status']}"
+        raise Wait(msg)
+    if row.get("status") != "completed" or row.get("conclusion") != "success":
+        msg = f"main tip {tip[:9]}: {lane} {run_id} ended {row.get('conclusion')}; fix main first"
+        raise ChainError(msg)
+    return run_id
+
+
+def main_workload(candidate: Any, runner: str) -> dict[str, tuple[str, ...]]:  # noqa: ANN401 - reviewed dynamic module
+    """Require the main workload, including executed test steps from the reviewed CI layout."""
+    required = {
+        "Main batch admission": (),
+        "Changed paths": (),
+        "Secret scan": (),
+        "Quarantine registry": (),
+        "Build": (),
+        "CI OK": (
+            "Fail if any required job failed, naming each with its verdict",
+            "Require the complete direct CI workload",
+        ),
+        **{
+            name: ("Unit and integration tests (unit first, 4 workers, stop at the first failure)",)
+            if name.startswith("Test (")
+            else (f"Run make test-e2e SUITE={name.split()[1]}",)
+            if name.startswith("End-to-end ")
+            else ()
+            for name, conclusion in candidate.expected_jobs("workflow_dispatch").items()
+            if name.endswith(f"({runner})") or (conclusion == "success" and name.startswith(f"Test ({runner},"))
+        },
+    }
+    if runner == "macos-latest":
+        required[f"Electron ({runner})"] = ("macOS Electron native window smoke test",)
+        required.update(dict.fromkeys(("macOS-specific tests", "Heinzel Notifier (macOS app)"), ()))
+    else:
+        required[f"Electron ({runner})"] = ("Linux Electron native window smoke test",)
+        required.update(
+            dict.fromkeys(
+                (
+                    "Dependency audit",
+                    "Lint, contracts and types",
+                    "make setup (ubuntu-24.04-arm)",
+                    "Performance tests",
+                    "Plugin template",
+                    "Plugin SDK candidate",
+                    "Optional source plugins",
+                    "Public contract consumers",
+                    *(f"Consumer (heinzel-{name})" for name in candidate.CONSUMERS),
+                ),
+                (),
+            )
+        )
+        required["Coverage"] = ("Run make test", "Enforce coverage and record the measured total")
+        required["Dispatch the coalesced macOS main run"] = (
+            "Queue lane macos on main in group ci-main-macos (it replaces an older pending run)",
+        )
+    return required
+
+
+def verify_main_jobs(read: Callable[[str], Any], tip: str, run_id: int, runner: str) -> None:
+    """Check first-attempt completeness, exact binding and successful required workload.
+
+    Raises:
+        ChainError: The job inventory is incomplete, unbound or did not execute successfully.
+    """
+    candidate = load_candidate_module()
+    try:
+        jobs = candidate.job_inventory(read, run_id)
+        required = main_workload(candidate, runner)
+        for job in jobs:
+            candidate.require(
+                type(job.get("run_id")) is int
+                and job["run_id"] == run_id
+                and type(job.get("run_attempt")) is int
+                and job["run_attempt"] == 1
+                and job.get("head_sha") == tip
+                and job.get("status") == "completed"
+                and isinstance(job.get("name"), str),
+                "unbound or incomplete main job",
+            )
+        candidate.require(
+            any(job["name"] == candidate.QUARANTINE_REGISTRY for job in jobs), "missing quarantine registry"
+        )
+        regular_jobs = candidate.quarantine_lane(jobs, run_id, tip)
+        candidate.require(
+            all(job.get("conclusion") in ("success", "skipped") for job in regular_jobs),
+            "main job ended without success or an expected skip",
+        )
+        for name, steps in required.items():
+            matches = [job for job in jobs if job["name"] == name]
+            candidate.require(len(matches) == 1, f"missing or ambiguous main job: {name}")
+            job = matches[0]
+            candidate.require(
+                job.get("conclusion") == "success"
+                and type(job.get("runner_id")) is int
+                and job["runner_id"] > 0
+                and isinstance(job.get("steps"), list)
+                and job["steps"]
+                and all(isinstance(step, dict) for step in job["steps"]),
+                f"main job did not execute successfully: {name}",
+            )
+            for step_name in steps:
+                found = [step for step in job["steps"] if step.get("name") == step_name]
+                candidate.require(
+                    len(found) == 1
+                    and found[0].get("status") == "completed"
+                    and found[0].get("conclusion") == "success",
+                    f"main workload step did not pass: {name} / {step_name}",
+                )
+    except candidate.CandidateError as exc:
+        msg = f"main run {run_id} ({runner}): {exc}"
+        raise ChainError(msg) from exc
+
+
+def main_gate(read: Callable[[str], Any], tip: str) -> MainCIProof:
+    """Require both original full main lanes on the exact cut SHA.
+
+    Raises:
+        ChainError: The run listing or its evidence is invalid.
+    """
+    data = read(f"actions/workflows/{CI}/runs?head_sha={tip}&per_page={PAGE}")
+    if (
+        not SHA.fullmatch(tip)
+        or not isinstance(data, dict)
+        or type(data.get("total_count")) is not int
+        or not isinstance(data.get("workflow_runs"), list)
+        or len(data["workflow_runs"]) != data["total_count"]
+        or not all(isinstance(row, dict) and row.get("head_sha") == tip for row in data["workflow_runs"])
+    ):
+        msg = f"main tip {tip[:9]}: incomplete or inconsistent CI run listing"
+        raise ChainError(msg)
+    rows = data["workflow_runs"]
+    linux = main_run(rows, tip, "push")
+    macos = main_run(rows, tip, "workflow_dispatch")
+    if linux == macos:
+        msg = "main lanes share a run ID"
+        raise ChainError(msg)
+    verify_main_jobs(read, tip, linux, "ubuntu-24.04")
+    verify_main_jobs(read, tip, macos, "macos-latest")
+    return MainCIProof(tip, linux, macos)
 
 
 def compare_commits(read: Callable[[str], Any], base: str, head: str) -> list[dict[str, Any]]:
