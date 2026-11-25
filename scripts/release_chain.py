@@ -380,7 +380,13 @@ def main_workload(candidate: Any, runner: str) -> dict[str, tuple[str, ...]]:  #
     }
     if runner == "macos-latest":
         required[f"Electron ({runner})"] = ("macOS Electron native window smoke test",)
-        required.update(dict.fromkeys(("macOS-specific tests", "Heinzel Notifier (macOS app)"), ()))
+        required["Heinzel Notifier (macOS app)"] = ()
+        required["macOS-specific tests"] = (
+            "Run make notifier",
+            "Tests that only exercise macOS behaviour (marker macos_specific)",
+            "Run Apple fixtures without skips",
+            "Compile the unsigned Swift Mac Release target",
+        )
     else:
         required[f"Electron ({runner})"] = ("Linux Electron native window smoke test",)
         required.update(
@@ -389,14 +395,21 @@ def main_workload(candidate: Any, runner: str) -> dict[str, tuple[str, ...]]:  #
                     "Dependency audit",
                     "Lint, contracts and types",
                     "make setup (ubuntu-24.04-arm)",
-                    "Performance tests",
-                    "Plugin template",
                     "Plugin SDK candidate",
                     "Optional source plugins",
-                    "Public contract consumers",
-                    *(f"Consumer (heinzel-{name})" for name in candidate.CONSUMERS),
                 ),
                 (),
+            )
+        )
+        required["Performance tests"] = ("Run make test-perf",)
+        required["Plugin template"] = ("Run make template-test AUDIT=1",)
+        required["Public contract consumers"] = (
+            'Run make plan CONTRACT=core:plugin-api@1 CORE="$(realpath candidate/*.whl)" > plan.json',
+        )
+        required.update(
+            dict.fromkeys(
+                (f"Consumer (heinzel-{name})" for name in candidate.CONSUMERS),
+                ("Test one consumer against the built public contract",),
             )
         )
         required["Coverage"] = ("Run make test", "Enforce coverage and record the measured total")

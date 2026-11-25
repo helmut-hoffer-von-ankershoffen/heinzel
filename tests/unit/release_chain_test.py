@@ -191,6 +191,37 @@ def test_main_refuses_incomplete_or_nonexecuting_jobs(damage):
         chain.main_gate(reader(data), TIP)
 
 
+@pytest.mark.parametrize("damage", ["skip", "remove"])
+@pytest.mark.parametrize(
+    ("run_id", "job_name", "step_name"),
+    [
+        (9, "macOS-specific tests", "Run make notifier"),
+        (9, "macOS-specific tests", "Tests that only exercise macOS behaviour (marker macos_specific)"),
+        (9, "macOS-specific tests", "Run Apple fixtures without skips"),
+        (9, "macOS-specific tests", "Compile the unsigned Swift Mac Release target"),
+        (7, "Performance tests", "Run make test-perf"),
+        (7, "Plugin template", "Run make template-test AUDIT=1"),
+        (
+            7,
+            "Public contract consumers",
+            'Run make plan CONTRACT=core:plugin-api@1 CORE="$(realpath candidate/*.whl)" > plan.json',
+        ),
+        (7, "Consumer (heinzel-resource)", "Test one consumer against the built public contract"),
+    ],
+)
+def test_required_workload_cannot_pass_on_setup_alone(run_id, job_name, step_name, damage):
+    data = routes()
+    job = next(j for j in data[f"actions/runs/{run_id}/attempts/1/jobs"]["jobs"] if j["name"] == job_name)
+    job["steps"].append({"name": "Set up job", "status": "completed", "conclusion": "success"})
+    step = next(step for step in job["steps"] if step["name"] == step_name)
+    if damage == "skip":
+        step["conclusion"] = "skipped"
+    else:
+        job["steps"].remove(step)
+    with pytest.raises(chain.ChainError, match=f"main workload step did not pass: {job_name.split(' (')[0]}"):
+        chain.main_gate(reader(data), TIP)
+
+
 def test_plan_cuts_the_next_patch_from_a_green_tip_with_an_intro():
     result = chain.plan(reader(routes()), "", auto=False, tip=TIP)
     assert result["phase"] == "cut"
