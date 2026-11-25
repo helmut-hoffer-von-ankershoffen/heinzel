@@ -593,6 +593,9 @@ jobs:
           fetch-depth: 0 # the install-from-git tests clone this repository
           persist-credentials: false
       - uses: ./.github/actions/setup-uv
+        env:
+          # Create the CLI test venv from uv-managed Python on macOS so xdist can copy the exact patch without a download.
+          UV_PYTHON_PREFERENCE: ${{ matrix.os == 'macos-latest' && matrix.suite == 'cli' && 'only-managed' || 'managed' }}
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
