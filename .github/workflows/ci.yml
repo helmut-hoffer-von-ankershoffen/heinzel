@@ -108,7 +108,6 @@ jobs:
       site_only: ${{ steps.paths.outputs.site_only }}
       surface_only: ${{ steps.paths.outputs.surface_only }}
       macos_full: ${{ steps.paths.outputs.macos_full }}
-      upgrade: ${{ steps.paths.outputs.upgrade }} # Core upgrade lane
       scheduled_maintenance: ${{ steps.maintenance.outputs.selected }}
       full_release: ${{ steps.release.outputs.full_release }}
       full_ci: ${{ steps.full.outputs.selected }}
@@ -216,13 +215,6 @@ jobs:
             surface_only=true
           fi
           echo "surface_only=$surface_only" >> "$GITHUB_OUTPUT"
-          # Core upgrade lane: this selector controls the macOS unit and integration cells on ordinary pull requests.
-          # Core upgrade lane: non-PR runs, release PRs and an unknown selector answer keep both cells.
-          # Core upgrade lane: the separate Linux in-place upgrade workload is required independently.
-          selected="$(printf '%s\n' "$changed" | python3 -I scripts/contexts.py upgrade 2>/dev/null)" || selected="" # Core upgrade lane
-          upgrade=true # Core upgrade lane
-          [ "$EVENT" != pull_request ] || [ "${RELEASE_FULL:-false}" = true ] || [[ "${HEAD_REF:-}" == release/* ]] || [ "$selected" != upgrade=false ] || upgrade=false # Core upgrade lane
-          echo "upgrade=$upgrade" >> "$GITHUB_OUTPUT" # Core upgrade lane
           if [ "$prose_push" = true ] || [ "$surface_only" = true ]; then
             echo "core=false" >> "$GITHUB_OUTPUT"
             core_work=false
@@ -266,7 +258,7 @@ jobs:
             echo "electron=false" >> "$GITHUB_OUTPUT"
           fi
           # The merge gate derives the jobs this run must have from this selection (focused_gate.py in scripts).
-          sed 's/^/selector-output: /' "$GITHUB_OUTPUT" | grep -E '^selector-output: (core|site_only|surface_only|macos_full|notifier|contracts|electron|plugins|upgrade)=(true|false)$'
+          sed 's/^/selector-output: /' "$GITHUB_OUTPUT" | grep -E '^selector-output: (core|site_only|surface_only|macos_full|notifier|contracts|electron|plugins)=(true|false)$'
           echo "selector-output: release=${FULL_RELEASE:-false}"
 
   macos-main: # main lanes
@@ -448,9 +440,8 @@ jobs:
         levels: [unit, integration]
         # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
         # under that same cap. PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.
-        # Core upgrade lane: a pull request gets the macOS cells when it touches update, lifecycle or kernel.
         include:
-          ${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.upgrade != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
+          ${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
     env:
       HZ_TEST_TIMEOUT_SCALE: "${{ contains(matrix.os, 'macos') && '3' || '1' }}" # hosted macOS runners are slower; Linux stays at 1
       # Unit-bearing cells need locked Node; integration-only dependency groups stay unchanged.

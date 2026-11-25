@@ -52,11 +52,7 @@ def _without_upgrade_lane(text: str) -> str:
     text = text.replace(" test-upgrade", "")
     text = re.sub(r"\nUPGRADE_RECEIPT :=[^\n]*\ntest-upgrade:.*?\n(?:\t.*\n)+", "\n", text)
     text = re.sub(r"\n  upgrade:\n.*?(?=\n  [a-z-]+:)", "", text, flags=re.DOTALL)
-    text = re.sub(r"(?m)^[^\n]*# Core upgrade lane(?::[^\n]*)?\n", "", text)
-    text = text.replace(
-        " || github.event_name == 'pull_request' && needs.changes.outputs.upgrade != 'true' && '[]'", ""
-    )
-    return text.replace(" && needs.changes.outputs.upgrade != 'true'", "")
+    return re.sub(r"(?m)^[^\n]*# Core upgrade lane(?::[^\n]*)?\n", "", text)
 
 
 def makefile() -> str:

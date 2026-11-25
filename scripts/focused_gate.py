@@ -576,7 +576,6 @@ SELECTOR_KEYS = frozenset(
         "contracts",
         "electron",
         "plugins",
-        "upgrade",
         "release",
     }
 )
@@ -635,9 +634,6 @@ def selected_pr_inventory(selected: dict[str, bool]) -> dict[str, str]:
 
     rule("make setup", core, SKIPPED_TEMPLATES["setup"])
     rule("Test (", tested, SKIPPED_TEMPLATES["test"])
-    if tested and not selected["upgrade"]:  # the macOS Python cells belong to the upgrade lane (ci.yml `test` matrix)
-        for name in [n for n in inventory if n.startswith("Test (macos")]:
-            del inventory[name]
     rule("End-to-end ", tested, SKIPPED_TEMPLATES["e2e"])
     rule("Electron (", selected["electron"], SKIPPED_TEMPLATES["electron"])
     rule("Consumer (heinzel-", selected["contracts"], SKIPPED_TEMPLATES["consumer"])

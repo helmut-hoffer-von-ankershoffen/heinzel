@@ -1226,20 +1226,13 @@ def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
     assert '"os":"macos-latest","python":"3.15"' in jobs["test"]["strategy"]["matrix"]["include"]
 
 
-def _macos_include(  # noqa: PLR0913 - one keyword per changes output the matrix expression reads
-    matrix: dict, event: str, full: bool, *, release: bool = False, lane: str = "", upgrade: bool | None = None
-) -> list[dict]:
+def _macos_include(matrix: dict, event: str, *, full_ci: bool = True, lane: str = "") -> list[dict]:
     expression = re.fullmatch(r"\$\{\{ fromJSON\((.*)\) \}\}", matrix["include"].strip())
     assert expression
     context = {
         "github.event_name": event,
         "needs.changes.outputs.lane": lane or ("linux" if event == "push" else "all"),
-        "needs.changes.outputs.macos_full": str(full).lower(),
-        "needs.changes.outputs.full_ci": str(release).lower(),
-        # a release PR and every non-PR run select the upgrade lane (changes job); a PR only for its contexts
-        "needs.changes.outputs.upgrade": str(
-            release or event != "pull_request" if upgrade is None else upgrade
-        ).lower(),
+        "needs.changes.outputs.full_ci": str(full_ci).lower(),
     }
     for branch in expression[1].split(" || "):
         value = None
@@ -1261,10 +1254,10 @@ def _macos_include(  # noqa: PLR0913 - one keyword per changes output the matrix
 
 
 @pytest.mark.parametrize(
-    ("event", "full", "pythons"),
+    ("event", "full_ci", "pythons"),
     [
         ("pull_request", False, []),
-        ("pull_request", True, []),
+        ("pull_request", True, ["3.15"]),
         ("push", False, []),  # a push to main runs Linux; its dispatched macOS lane runs the macOS cells
         ("push", True, []),
         ("schedule", False, ["3.15"]),
@@ -1273,9 +1266,9 @@ def _macos_include(  # noqa: PLR0913 - one keyword per changes output the matrix
         ("workflow_dispatch", True, ["3.15"]),
     ],
 )
-def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes(event, full, pythons):
-    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
-    cells = _macos_include(jobs["test"]["strategy"]["matrix"], event, full)
+def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes(event, full_ci, pythons):
+    jobs = _ci_jobs()
+    cells = _macos_include(jobs["test"]["strategy"]["matrix"], event, full_ci=full_ci)
     assert cells == [
         {"os": "macos-latest", "python": python, "levels": level}
         for python in pythons
@@ -1285,14 +1278,6 @@ def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes(event, full, pyt
     assert "-m '($(TEST_LEVELS)) and not perf'" in recipe
     assert "--session-timeout=420" in recipe  # each shard has the cap the whole suite had
     assert {"changes", "notifier", "build"} <= set(jobs["ci-ok"]["needs"])
-
-
-def test_a_pull_request_gets_the_macos_cells_only_when_it_touches_update_lifecycle_or_kernel():
-    matrix = _ci_jobs()["test"]["strategy"]["matrix"]
-    cells = [{"os": "macos-latest", "python": "3.15", "levels": level} for level in ("unit", "integration")]
-    assert _macos_include(matrix, "pull_request", full=True, release=True, upgrade=True) == cells
-    assert _macos_include(matrix, "pull_request", full=True, release=True, upgrade=False) == []
-    assert _macos_include(matrix, "schedule", full=False, upgrade=False) == cells  # a non-PR run keeps both cells
 
 
 def test_electron_ci_runs_when_its_trigger_or_make_target_changes():
@@ -1987,7 +1972,7 @@ def test_every_event_tests_only_python_3_15(event, expected):
     ],
 )
 def test_plugin_macos_matrix_preserves_its_existing_python_coverage(event, expected):
-    cells = _macos_include(_generated_plugin_ci()["jobs"]["test"]["strategy"]["matrix"], event, full=False)
+    cells = _macos_include(_generated_plugin_ci()["jobs"]["test"]["strategy"]["matrix"], event)
     assert cells == [
         {"os": "macos-latest", "python": version, "levels": level}
         for version in expected
@@ -2079,7 +2064,7 @@ def test_release_candidates_force_the_whole_existing_matrix_for_every_changed_sc
     assert _oses(jobs["test"]["strategy"]["matrix"]["python"], "pull_request", release=True) == [
         "3.15",
     ]
-    assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "pull_request", full=True, release=True)) == 2
+    assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "pull_request")) == 2
     assert _oses(jobs["e2e"]["strategy"]["matrix"]["os"], "pull_request", release=True) == [
         "ubuntu-24.04",
         "macos-latest",
@@ -2097,7 +2082,7 @@ def test_release_candidate_source_and_selector_never_reach_plugin_templates():
     assert "release-candidate-source" not in generated
     assert "full_release" not in generated
     assert (
-        "github.event_name == 'pull_request' && needs.changes.outputs.upgrade != 'true'"
+        "github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true'"
         in (_ci_jobs()["test"]["strategy"]["matrix"]["include"])
     )
     assert "upgrade" not in generated
@@ -2403,7 +2388,7 @@ def test_the_nightly_selects_and_runs_the_full_macos_matrix_end_to_end(tmp_path,
         assert _evaluate_if(jobs[name]["if"], "schedule", outputs), name
     for name in ("setup", "e2e", "electron"):
         assert "macos-latest" in _oses(jobs[name]["strategy"]["matrix"]["os"], "schedule")
-    assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "schedule", full=True)) == 2
+    assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "schedule")) == 2
     complete = next(step for step in jobs["ci-ok"]["steps"] if step.get("name", "").startswith("Require the complete"))
     assert "if" not in complete  # the nightly requires the whole direct workload, macOS lanes included
     for name in ("setup", "test", "e2e", "notifier", "macos-specific", "electron"):
@@ -2475,7 +2460,7 @@ def test_main_lanes_gate_every_platform_job():
     assert jobs["test"]["strategy"]["matrix"]["include"].startswith(
         "${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || "
     )
-    assert _macos_include(jobs["test"]["strategy"]["matrix"], "workflow_dispatch", full=True, lane="macos") == [
+    assert _macos_include(jobs["test"]["strategy"]["matrix"], "workflow_dispatch", lane="macos") == [
         {"os": "macos-latest", "python": "3.15", "levels": level} for level in ("unit", "integration")
     ]
     assert "lane" not in jobs["build"]["if"]  # the macOS lane builds the wheel with the notifier it just built
@@ -2620,6 +2605,29 @@ def test_the_macos_jobs_wait_for_a_native_path_on_ordinary_pull_requests():
     assert _evaluate_if(condition, "pull_request", {**base, "macos_full": "true", "full_release": "false"})
     assert _evaluate_if(condition, "pull_request", {**base, "macos_full": "false", "full_release": "true"})
     assert _evaluate_if(condition, "push", {**base, "macos_full": "false", "full_release": "false"})
+
+
+def test_an_ordinary_core_pr_keeps_both_macos_shards_without_native_paths(tmp_path, ci_contexts_paths):
+    jobs = _ci_jobs()
+    full = next(step for step in jobs["changes"]["steps"] if step.get("id") == "full")
+    assert "if" not in full
+    full_output = tmp_path / "full-output"
+    subprocess.run(
+        ["bash", "-e", "-c", full["run"]], env={"GITHUB_OUTPUT": str(full_output)}, check=True, timeout=scaled(30)
+    )
+    assert full_output.read_text() == "selected=true\n"
+    changed = "src/heinzel/modules/team/_render.py\n"
+    outputs = dict(
+        line.split("=", 1) for line in _changes_outputs(tmp_path, ci_contexts_paths, "pull_request", changed)
+    )
+    assert outputs["macos_full"] == "false"
+    assert _evaluate_if(jobs["test"]["if"], "pull_request", {**outputs, "full_ci": "true"})
+    matrix = jobs["test"]["strategy"]["matrix"]
+    assert matrix["os"] == ["ubuntu-24.04"]
+    assert matrix["levels"] == ["unit", "integration"]
+    assert _macos_include(matrix, "pull_request") == [
+        {"os": "macos-latest", "python": "3.15", "levels": level} for level in matrix["levels"]
+    ]
 
 
 def test_a_failed_diff_keeps_the_consumers_and_the_notifier_on(tmp_path, ci_paths):
