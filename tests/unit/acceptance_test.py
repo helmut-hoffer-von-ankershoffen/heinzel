@@ -1369,3 +1369,179 @@ def test_full_acceptance_quota_window_does_not_change_sharded_budget():
     assert "timeout-minutes: 240" in workflow
     assert "--bridge-quota-wait-seconds" not in shard
     assert "timeout-minutes: 15" in shard
+
+
+@pytest.mark.parametrize("current", [False, True])
+def test_historical_reconciliation_only_moves_the_exact_stale_plugin(tmp_path, monkeypatch, current):
+    before = {
+        "heinzel-example": {"version": "0.5.3" if current else "0.5.2", "enabled": True},
+        "heinzel-resource": {"version": "0.1.7", "enabled": False},
+    }
+    after = {**before, "heinzel-example": {"version": "0.5.3", "enabled": True}}
+    calls = []
+    case = SimpleNamespace(root=tmp_path, prefix=tmp_path, notes={}, plugins_expected={})
+    monkeypatch.setattr(
+        harness, "plugin_map", lambda _case, label: before if label == "plugins-before-reconciliation" else after
+    )
+    monkeypatch.setattr(harness, "unchanged_distribution_files", lambda prefix, names: {"files": "same"})
+    monkeypatch.setattr(harness, "snapshot_files", lambda root: {"config": "same"})
+    monkeypatch.setattr(harness, "installed_interpreter", lambda case: "private/python3.15")
+    monkeypatch.setattr(harness, "site_packages", lambda prefix: prefix)
+    monkeypatch.setattr(harness, "compare_wheel", lambda *args: 6)
+    monkeypatch.setattr(harness, "verify_state", lambda *args: None)
+
+    def update(_case, *args, **kwargs):
+        calls.append(args)
+        return {
+            "updated": True,
+            "before": "0.9.55",
+            "after": "0.9.55",
+            "plugins": [
+                {
+                    "distribution": name,
+                    "before": old["version"],
+                    "after": after[name]["version"],
+                    "status": "upgraded" if name == "heinzel-example" else "unchanged",
+                }
+                for name, old in before.items()
+            ],
+        }
+
+    monkeypatch.setattr(harness, "hz", update)
+    result = harness.reconcile_historical_plugin(
+        case, {"version": "0.9.55"}, {"version": "0.5.3", "sha256": "a" * 64, "wheel": str(tmp_path / "target.whl")}
+    )
+    assert result["changed"] is not current
+    assert calls == ([] if current else [("system", "update")])
+    assert case.plugins_expected["heinzel-example"] == {"enabled": True, "version": "0.5.3"}
+
+
+@pytest.mark.parametrize(
+    "defect", ["core", "other-plugin", "disabled", "plugin-target", "config", "files", "python", "not-updated"]
+)
+def test_historical_reconciliation_refuses_unrelated_or_incomplete_changes(tmp_path, monkeypatch, defect):
+    before = {
+        "heinzel-example": {"version": "0.5.2", "enabled": True},
+        "heinzel-resource": {"version": "0.1.7", "enabled": False},
+    }
+    after = {
+        "heinzel-example": {"version": "0.5.3", "enabled": True},
+        "heinzel-resource": {"version": "0.1.7", "enabled": False},
+    }
+    if defect == "other-plugin":
+        after["heinzel-resource"]["version"] = "0.1.8"
+    if defect == "disabled":
+        after["heinzel-resource"]["enabled"] = True
+    if defect == "plugin-target":
+        after["heinzel-example"]["version"] = "0.5.4"
+    case = SimpleNamespace(root=tmp_path, prefix=tmp_path, notes={}, plugins_expected={})
+    monkeypatch.setattr(
+        harness, "plugin_map", lambda _case, label: before if label == "plugins-before-reconciliation" else after
+    )
+    counts = {"files": 0, "config": 0, "python": 0}
+
+    def observation(kind):
+        counts[kind] += 1
+        return "changed" if defect == kind and counts[kind] > 1 else "same"
+
+    monkeypatch.setattr(harness, "unchanged_distribution_files", lambda *args: observation("files"))
+    monkeypatch.setattr(harness, "snapshot_files", lambda *args: observation("config"))
+    monkeypatch.setattr(harness, "installed_interpreter", lambda *args: observation("python"))
+    monkeypatch.setattr(
+        harness,
+        "hz",
+        lambda *args, **kwargs: {
+            "updated": defect != "not-updated",
+            "before": "0.9.55",
+            "after": "0.9.56" if defect == "core" else "0.9.55",
+            "plugins": [
+                {
+                    "distribution": name,
+                    "before": old["version"],
+                    "after": after[name]["version"],
+                    "status": "upgraded" if name == "heinzel-example" else "unchanged",
+                }
+                for name, old in before.items()
+            ],
+        },
+    )
+    with pytest.raises(harness.StepFailed):
+        harness.reconcile_historical_plugin(
+            case, {"version": "0.9.55"}, {"version": "0.5.3", "sha256": "a" * 64, "wheel": str(tmp_path / "target.whl")}
+        )
+
+
+def test_distribution_fingerprints_detect_changed_bytes_and_refuse_escape(tmp_path):
+    prefix = tmp_path / "tool"
+    site = prefix / "lib/python3.15/site-packages"
+    metadata = site / "example-1.0.dist-info"
+    metadata.mkdir(parents=True)
+    runtime = site / "example.py"
+    runtime.write_text("original")
+    record = metadata / "RECORD"
+    record.write_text("example.py,,\nexample-1.0.dist-info/RECORD,,\n")
+    before = harness.unchanged_distribution_files(prefix, {"example"})
+    runtime.write_text("changed")
+    assert harness.unchanged_distribution_files(prefix, {"example"}) != before
+    outside = tmp_path / "outside"
+    outside.write_text("outside")
+    record.write_text("../../../../outside,,\n")
+    with pytest.raises(harness.StepFailed, match="outside this installation"):
+        harness.unchanged_distribution_files(prefix, {"example"})
+
+
+@pytest.mark.parametrize("updated", [False, True])
+def test_final_ordinary_update_remains_strictly_noop(updated):
+    def run(args, label, timeout):
+        assert args == ["private/hz", "system", "update", "--json"]
+        return 0, json.dumps({"updated": updated, "after": "0.9.55", "message": "plugin changed"}), ""
+
+    case = SimpleNamespace(bin=Path("private"), run=run)
+    if updated:
+        with pytest.raises(harness.StepFailed, match="repeated update changed"):
+            harness._second_update(case, {"version": "0.9.55"})
+    else:
+        assert harness._second_update(case, {"version": "0.9.55"}) == {"repeat": "plugin changed"}
+
+
+@pytest.mark.parametrize("defect", [None, "metadata-version", "registry-hash", "payload", "host"])
+def test_historical_plugin_target_is_bound_to_exact_public_wheel(tmp_path, monkeypatch, defect):
+    payload = b"independently served wheel bytes"
+    digest = harness.sha256(payload)
+    case = SimpleNamespace(root=tmp_path, notes={})
+
+    def latest(case):
+        case.notes["example_install_target"] = {"version": "0.5.3", "sha256": digest}
+        return "0.5.3"
+
+    def fetch(url, *_args):
+        if url.endswith("/json"):
+            assert url == "https://pypi.org/pypi/heinzel-example/0.5.3/json"
+            return json.dumps(
+                {
+                    "info": {"version": "0.5.4" if defect == "metadata-version" else "0.5.3"},
+                    "urls": [
+                        {
+                            "packagetype": "bdist_wheel",
+                            "yanked": False,
+                            "url": "https://wrong.test/example.whl"
+                            if defect == "host"
+                            else "https://files.pythonhosted.org/example.whl",
+                            "digests": {"sha256": "0" * 64 if defect == "registry-hash" else digest},
+                        }
+                    ],
+                }
+            ).encode()
+        assert url == "https://files.pythonhosted.org/example.whl"
+        return b"different bytes" if defect == "payload" else payload
+
+    monkeypatch.setattr(harness, "example_plugin_version", latest)
+    monkeypatch.setattr(harness, "fetch", fetch)
+    if defect:
+        with pytest.raises(harness.StepFailed):
+            harness.historical_plugin_target(case)
+        assert not (tmp_path / "historical-plugin-target.whl").exists()
+    else:
+        bound = harness.historical_plugin_target(case)
+        assert bound == {"version": "0.5.3", "sha256": digest, "wheel": str(tmp_path / "historical-plugin-target.whl")}
+        assert Path(bound["wheel"]).read_bytes() == payload
