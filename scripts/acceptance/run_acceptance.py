@@ -2023,12 +2023,20 @@ def historical_plugin_target(case):
     return {**expected, "wheel": str(path)}
 
 
+
+def installed_distribution_names(prefix):
+    """Read distribution identity from installed metadata, without importing package code."""
+    return {
+        re.sub(r"[-_.]+", "-", BytesParser().parsebytes(path.read_bytes())["Name"]).lower()
+        for path in site_packages(prefix).glob("*.dist-info/METADATA")
+    }
+
 def unchanged_distribution_files(prefix, names):
     """Fingerprint every recorded file of Core and the other plugins, excluding volatile bytecode."""
     site = site_packages(prefix)
     result = {}
     for name in sorted(names):
-        records = list(site.glob(f"{name.replace('-', '_')}-*.dist-info/RECORD"))
+        records = list(site.glob(f"{name.lower().replace('-', '_')}-*.dist-info/RECORD"))
         check(len(records) == 1, f"{name}: no unique installed file inventory")
         files = {}
         for row in csv.reader(records[0].read_text().splitlines()):
@@ -2048,8 +2056,10 @@ def reconcile_historical_plugin(case, target, plugin_target):
     baseline = before[EXAMPLE_PLUGIN]["version"]
     latest = plugin_target["version"]
     check(release_key(baseline) <= release_key(latest), "The historical plugin is newer than the bound stable release")
-    unchanged = {"heinzel", *set(before) - {EXAMPLE_PLUGIN}}
     prefix = case.prefix.resolve(strict=True)
+    installed = installed_distribution_names(prefix)
+    check({"heinzel", *before} <= installed, "Installed distribution inventory is incomplete")
+    unchanged = installed - {EXAMPLE_PLUGIN}
     files = unchanged_distribution_files(prefix, unchanged)
     config = snapshot_files(case.root / "config_home")
     python = installed_interpreter(case)
@@ -2071,7 +2081,8 @@ def reconcile_historical_plugin(case, target, plugin_target):
     for name, old in before.items():
         expected = {**old, "version": latest} if name == EXAMPLE_PLUGIN else old
         check(found[name] == expected, f"Reconciliation changed unexpected plugin state: {name}")
-    check(unchanged_distribution_files(prefix, unchanged) == files, "Reconciliation changed Core or another plugin's files")
+    check(installed_distribution_names(prefix) == installed, "Reconciliation changed the dependency set")
+    check(unchanged_distribution_files(prefix, unchanged) == files, "Reconciliation changed Core or another package's files")
     check(snapshot_files(case.root / "config_home") == config, "Reconciliation changed user configuration")
     check(installed_interpreter(case) == python, "Reconciliation changed the managed interpreter")
     check_installed_version(case, EXAMPLE_PLUGIN, latest, "reconciled-user-plugin")

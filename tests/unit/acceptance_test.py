@@ -1383,6 +1383,11 @@ def test_historical_reconciliation_only_moves_the_exact_stale_plugin(tmp_path, m
     monkeypatch.setattr(
         harness, "plugin_map", lambda _case, label: before if label == "plugins-before-reconciliation" else after
     )
+    monkeypatch.setattr(
+        harness,
+        "installed_distribution_names",
+        lambda prefix: {"heinzel", "heinzel-example", "heinzel-resource", "dependency"},
+    )
     monkeypatch.setattr(harness, "unchanged_distribution_files", lambda prefix, names: {"files": "same"})
     monkeypatch.setattr(harness, "snapshot_files", lambda root: {"config": "same"})
     monkeypatch.setattr(harness, "installed_interpreter", lambda case: "private/python3.15")
@@ -1444,6 +1449,11 @@ def test_historical_reconciliation_refuses_unrelated_or_incomplete_changes(tmp_p
         counts[kind] += 1
         return "changed" if defect == kind and counts[kind] > 1 else "same"
 
+    monkeypatch.setattr(
+        harness,
+        "installed_distribution_names",
+        lambda prefix: {"heinzel", "heinzel-example", "heinzel-resource", "dependency"},
+    )
     monkeypatch.setattr(harness, "unchanged_distribution_files", lambda *args: observation("files"))
     monkeypatch.setattr(harness, "snapshot_files", lambda *args: observation("config"))
     monkeypatch.setattr(harness, "installed_interpreter", lambda *args: observation("python"))
@@ -1476,6 +1486,8 @@ def test_distribution_fingerprints_detect_changed_bytes_and_refuse_escape(tmp_pa
     site = prefix / "lib/python3.15/site-packages"
     metadata = site / "example-1.0.dist-info"
     metadata.mkdir(parents=True)
+    (metadata / "METADATA").write_text("Name: Example\nVersion: 1.0\n")
+    assert harness.installed_distribution_names(prefix) == {"example"}
     runtime = site / "example.py"
     runtime.write_text("original")
     record = metadata / "RECORD"
