@@ -872,7 +872,6 @@ SELECTED = {
     "contracts": True,
     "electron": True,
     "plugins": False,
-    "upgrade": True,
     "release": False,
 }
 
@@ -932,11 +931,14 @@ def test_selected_inventory_follows_each_selector(focused_gate):
     )
     assert surface["Lint, contracts and types"] == surface["macOS-specific tests"] == "success"
     assert {surface[n] for n in ("Build", "Coverage", "Dependency audit")} == {"skipped"}
-    quiet = focused_gate.selected_pr_inventory({**SELECTED, "upgrade": False})
     assert surface["Plugin SDK candidate"] == surface["Upgrade in place (published to candidate, Linux)"] == "success"
-    assert quiet["Upgrade in place (published to candidate, Linux)"] == "success"
-    assert not [n for n in quiet if n.startswith("Test (macos")]
-    assert focused_gate.selected_pr_inventory(SELECTED)["Upgrade in place (published to candidate, Linux)"] == "success"
+    ordinary = focused_gate.selected_pr_inventory(SELECTED)
+    assert ordinary["Upgrade in place (published to candidate, Linux)"] == "success"
+    assert {name: result for name, result in ordinary.items() if name.startswith("Test (")} == {
+        f"Test ({os}, Python 3.15, {level})": "success"
+        for os in ("ubuntu-24.04", "macos-latest")
+        for level in ("unit", "integration")
+    }
     release = focused_gate.selected_pr_inventory({**SELECTED, "release": True})
     assert release == {**focused_gate.expected_jobs("pull_request"), "Release candidate source": "skipped"}
 
