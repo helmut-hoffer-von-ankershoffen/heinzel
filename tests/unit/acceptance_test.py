@@ -1557,3 +1557,15 @@ def test_historical_plugin_target_is_bound_to_exact_public_wheel(tmp_path, monke
         bound = harness.historical_plugin_target(case)
         assert bound == {"version": "0.5.3", "sha256": digest, "wheel": str(tmp_path / "historical-plugin-target.whl")}
         assert Path(bound["wheel"]).read_bytes() == payload
+
+
+@pytest.mark.parametrize("spelling", ["jaraco.classes", "jaraco_classes", "jaraco-classes"])
+def test_distribution_records_use_metadata_identity_not_directory_spelling(tmp_path, spelling):
+    prefix = tmp_path / "tool"
+    site = prefix / "lib/python3.15/site-packages"
+    metadata = site / f"{spelling}-3.4.0.dist-info"
+    metadata.mkdir(parents=True)
+    (metadata / "METADATA").write_text("Name: jaraco.classes\nVersion: 3.4.0\n")
+    (metadata / "RECORD").write_text(f"{spelling}-3.4.0.dist-info/METADATA,,\n")
+    assert harness.installed_distribution_names(prefix) == {"jaraco-classes"}
+    assert set(harness.unchanged_distribution_files(prefix, {"jaraco-classes"})) == {"jaraco-classes"}

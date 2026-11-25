@@ -2024,20 +2024,28 @@ def historical_plugin_target(case):
 
 
 
+def installed_distribution_records(prefix):
+    """Read canonical identity from metadata rather than guessing wheel directory spelling."""
+    records = {}
+    for path in site_packages(prefix).glob("*.dist-info/METADATA"):
+        name = re.sub(r"[-_.]+", "-", BytesParser().parsebytes(path.read_bytes())["Name"]).lower()
+        records.setdefault(name, []).append(path.parent / "RECORD")
+    return records
+
+
 def installed_distribution_names(prefix):
     """Read distribution identity from installed metadata, without importing package code."""
-    return {
-        re.sub(r"[-_.]+", "-", BytesParser().parsebytes(path.read_bytes())["Name"]).lower()
-        for path in site_packages(prefix).glob("*.dist-info/METADATA")
-    }
+    return set(installed_distribution_records(prefix))
+
 
 def unchanged_distribution_files(prefix, names):
-    """Fingerprint every recorded file of Core and the other plugins, excluding volatile bytecode."""
+    """Fingerprint every recorded file of Core and the other packages, excluding volatile bytecode."""
     site = site_packages(prefix)
+    inventory = installed_distribution_records(prefix)
     result = {}
     for name in sorted(names):
-        records = list(site.glob(f"{name.lower().replace('-', '_')}-*.dist-info/RECORD"))
-        check(len(records) == 1, f"{name}: no unique installed file inventory")
+        records = inventory.get(name, [])
+        check(len(records) == 1 and records[0].is_file(), f"{name}: no unique installed file inventory")
         files = {}
         for row in csv.reader(records[0].read_text().splitlines()):
             path = (site / row[0]).resolve()
