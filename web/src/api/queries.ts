@@ -355,8 +355,8 @@ export const usePluginOperation = (operationId: string | null) =>
     retry: false,
   });
 
-export const readPluginOperation = async (operationId: string) =>
-  unwrap(api.GET("/system/plugin/operation", { params: { query: { operation_id: operationId } } }));
+export const readPluginOperation = async (operationId: string, signal?: AbortSignal) =>
+  unwrap(api.GET("/system/plugin/operation", { params: { query: { operation_id: operationId } }, signal }));
 
 export type PluginChangeRequest = (
   | { add: string; operationId: string }

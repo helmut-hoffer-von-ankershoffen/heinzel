@@ -12,6 +12,7 @@ from heinzel import HeinzelError, Progress
 from heinzel.kernel import Installation
 from heinzel.modules.system.daemon import _installation_lifecycle
 from heinzel.modules.system.daemon._models import DaemonSettings
+from heinzel.modules.system.daemon._runtime import lock
 from heinzel.modules.system.daemon._service import DaemonService
 from heinzel.modules.system.plugin._models import PluginCandidate, PluginChange, PluginSettings
 from heinzel.modules.system.plugin._service import PluginService
@@ -116,6 +117,24 @@ entrypoints = [{{name="hz", install-path={str(binary / "hz")!r}}}]
 
     monkeypatch.setattr(service, "_changed", changed)
     return service, installation, daemon, events, wrong
+
+
+def test_plugin_receipt_can_observe_a_busy_tick_before_claiming(guarded):
+    service, _installation, daemon, events, _wrong = guarded
+    preview = service.add("heinzel-demo")
+    operation_id = preview.operation_id
+    assert operation_id is not None
+    with lock(daemon.state_dir / "lifecycle.lock") as lifecycle, lock(daemon.state_dir / "tick.lock") as tick:
+        assert lifecycle
+        assert tick
+        receipt = service.operation(operation_id)
+        assert receipt.lifecycle_busy
+        assert receipt.status == "previewed"
+        assert not events
+    assert not service.operation(operation_id).lifecycle_busy
+    assert service.add("heinzel-demo", confirm=True, operation_id=operation_id).done
+    assert service.add("heinzel-demo", confirm=True, operation_id=operation_id).done
+    assert events == ["uv", "target-probe"]
 
 
 @pytest.mark.parametrize("checkpoint", [False, True])

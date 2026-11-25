@@ -29,8 +29,10 @@ export type DrivenOperation = {
   /** The committing button is red: the change removes something. */
   destructive?: boolean;
   /** Run it, telling the whole list of steps each time one changes. A failed run may be started again. */
-  run: (report: (phases: Phase[]) => void) => Promise<unknown>;
+  run: (report: (phases: Phase[]) => void, cancellable: (cancel?: () => void) => void) => Promise<unknown>;
 };
+/** The person cancelled while the operation was still read-only. */
+export class OperationCancelled extends Error {}
 /** A failed write that needs a person to reconcile its outcome before they can confirm it again. */
 export class OperationRecoveryRequired extends Error {
   constructor(
@@ -53,7 +55,14 @@ type FailedRun = {
 export type OperationRun =
   | { stage: "idle" }
   | ({ stage: "confirm"; call: SchemaOperationCall } & Driven)
-  | ({ stage: "running"; call: SchemaOperationCall; phases: Phase[]; task: string | null; tracked?: true } & Driven)
+  | ({
+      stage: "running";
+      call: SchemaOperationCall;
+      phases: Phase[];
+      task: string | null;
+      tracked?: true;
+      cancel?: () => void;
+    } & Driven)
   | ({ stage: "done"; call: SchemaOperationCall; phases: Phase[]; result: unknown; tracked?: true } & Driven)
   | FailedRun
   | ({ stage: "attention"; call: SchemaOperationCall; phases: Phase[]; error: string; tracked: true } & Driven);
@@ -188,11 +197,16 @@ async function startDriven(): Promise<void> {
   const { call, driven } = current;
   if (!driven) return;
   let phases: Phase[] = [];
+  let cancel: (() => void) | undefined;
+  const report = (next: Phase[]) => {
+    phases = next;
+    if (stillRunning(call)) set({ stage: "running", call, phases, task: null, tracked: true, driven, cancel });
+  };
   set({ stage: "running", call, phases, task: null, tracked: true, driven });
   try {
-    const result = await driven.run((next) => {
-      phases = next;
-      if (stillRunning(call)) set({ stage: "running", call, phases, task: null, tracked: true, driven });
+    const result = await driven.run(report, (action) => {
+      cancel = action;
+      report(phases);
     });
     if (stillRunning(call)) set({ stage: "done", call, phases: settle(phases), result, tracked: true, driven });
   } catch (error) {
@@ -201,7 +215,10 @@ async function startDriven(): Promise<void> {
     const attention = error instanceof Error && (error as { attention?: boolean }).attention === true;
     if (stillRunning(call)) {
       const outcome = { call, phases, error: message, tracked: true as const, driven };
-      if (error instanceof OperationRecoveryRequired) set({ stage: "failed", ...outcome, recovery: error.recovery });
+      if (error instanceof OperationCancelled) {
+        set({ stage: "confirm", call, driven });
+        dismissOperation();
+      } else if (error instanceof OperationRecoveryRequired) set({ stage: "failed", ...outcome, recovery: error.recovery });
       else set({ stage: attention ? "attention" : "failed", ...outcome });
     }
   }

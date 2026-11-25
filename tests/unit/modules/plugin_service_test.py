@@ -2055,6 +2055,7 @@ def test_a_confirmed_add_tells_its_steps_with_each_plugin_it_needs(make_kernel, 
         ("verify", "done", None),
         ("needs:heinzel-auth", "done", "Installed with it: 1.0.0"),
         ("needs:heinzel-base", "done", "Already installed: 2.0.0"),
+        ("dependencies", "done", None),
         ("record", "done", None),
         ("bind", "skipped", "No playbook recommends a connector"),
     ]

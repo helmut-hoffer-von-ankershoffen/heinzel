@@ -87,6 +87,7 @@ def _installation_lifecycle(service: DaemonService) -> DaemonInstallationLifecyc
         quiescent=service.quiescence_guard,
         recover_quiescent=service.recover_quiescent_install,
         mutation=service.mutation_guard,
+        busy=service.lifecycle_busy,
     )
 
 

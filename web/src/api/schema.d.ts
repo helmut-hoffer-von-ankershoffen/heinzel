@@ -12220,6 +12220,12 @@ export interface components {
             /** @description The exact candidate shown before confirmation. */
             candidate: components["schemas"]["PluginCandidate"];
             /**
+             * Lifecycle Busy
+             * @description Whether a previewed install is waiting for a daemon job or another change.
+             * @default false
+             */
+            lifecycle_busy: boolean;
+            /**
              * Operation Id
              * @description Opaque id returned by the preview; it contains no candidate details.
              */

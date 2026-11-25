@@ -3,7 +3,7 @@
 // sidebar entry and setup button, so a footer that lays itself out again cannot hide a running install.
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, CircleAlert, Loader2, Play, RotateCw, TriangleAlert, X } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { daemonStatusKey } from "@/api/daemon";
 import { useExpert } from "@/api/queries";
@@ -201,7 +201,7 @@ export function OperationDialog() {
   const client = useQueryClient();
   const primary = usePrimaryHost();
   const heading = useId();
-  const box = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLElement | null>(null);
   const title = useRef<HTMLParagraphElement>(null);
   const [armedRecovery, setArmedRecovery] = useState<OperationRun | null>(null);
   const stage = run.stage;
@@ -209,6 +209,13 @@ export function OperationDialog() {
   // dialog never asks the server itself, so an unknown mode keeps the plain words.
   const expert = useExpert(true).data?.expert === true;
   const driven = run.stage !== "idle" && run.driven !== undefined;
+  const modal = primary && run.stage !== "idle" && run.call.path === "/system/plugin/add";
+  useLayoutEffect(() => {
+    const element = box.current;
+    if (!modal || !(element instanceof HTMLDialogElement)) return;
+    element.showModal();
+    return () => element.close();
+  }, [modal]);
   // Focus is never lost when a stage swaps the buttons: a driven run's progress lands on its title, its outcome on
   // the primary button (autoFocus); any other write's outcome on the dialog, the confirmation on Cancel.
   useEffect(() => {
@@ -240,9 +247,13 @@ export function OperationDialog() {
   const copy = copyOf(run.call.path);
   const plain = (kind: "running" | "failed") => t(`op.daemon.restart.${kind}` as MessageKey);
   const restartResult = quick && run.stage === "done" ? daemonRestartResult(run.result) : null;
+  const Container = modal ? "dialog" : "div";
+  const cancel = run.stage === "running" ? run.cancel : undefined;
   return createPortal(
-    <div
-      ref={box}
+    <Container
+      ref={(node) => {
+        box.current = node;
+      }}
       tabIndex={-1}
       role="dialog"
       aria-modal="true"
@@ -250,12 +261,16 @@ export function OperationDialog() {
       data-operation={run.call.path}
       data-tracked={run.stage !== "confirm" && run.tracked ? "" : undefined}
       data-stage={run.stage}
+      onCancel={(event) => event.preventDefault()}
       onKeyDown={(event) => {
         // A dialog it covers (the setup wizard) must not close, or move the focus away, because of what is typed here.
         event.stopPropagation();
-        if (event.key === "Escape" && run.stage !== "running") close();
+        if (event.key === "Escape") {
+          event.preventDefault();
+          if (run.stage !== "running") close();
+        }
       }}
-      className="confirmation-dialog fixed z-(--layer-modal) max-h-[calc(var(--hz-viewport-height,100dvh)-2rem)] w-[min(28rem,calc(var(--hz-viewport-width,100vw)-2rem))] overflow-y-auto rounded-xl border border-border bg-popover p-4 text-sm shadow-xl outline-none"
+      className="confirmation-dialog fixed z-(--layer-modal) max-h-[calc(var(--hz-viewport-height,100dvh)-2rem)] w-[min(28rem,calc(var(--hz-viewport-width,100vw)-2rem))] overflow-y-auto rounded-xl border border-border bg-popover p-4 text-sm text-foreground shadow-xl outline-none backdrop:bg-black/25"
     >
       <div className="flex items-start gap-2">
         <p
@@ -335,8 +350,15 @@ export function OperationDialog() {
             </output>
           )}
           <Steps phases={run.phases} active />
-          <p className="mt-3 text-xs text-muted-foreground">{t("op.noStop")}</p>
+          {!cancel && (
+            <p className="mt-3 text-xs text-muted-foreground">{t(modal ? "plugins.installInProgress" : "op.noStop")}</p>
+          )}
           <PaneActions align="end" words="all">
+            {cancel && (
+              <PaneAction icon={X} onClick={cancel}>
+                {t("contrib.cancel")}
+              </PaneAction>
+            )}
             <PaneAction
               key="working"
               icon={Loader2}
@@ -451,7 +473,7 @@ export function OperationDialog() {
           </PaneActions>
         </>
       )}
-    </div>,
+    </Container>,
     document.body,
   );
 }

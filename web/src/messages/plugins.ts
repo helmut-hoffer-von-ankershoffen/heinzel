@@ -58,6 +58,10 @@ export const plugins = {
   "plugins.resultUnknown": "The request result is unknown. Refresh plugin status before trying again.",
   "plugins.receiptStorageUnavailable": "This tab cannot save the server receipt, so no installation request was sent.",
   "plugins.operationRunning": "The server is still working on this installation. Check its status before continuing.",
+  "plugins.waitingForLifecycle": "Waiting for the background service or another change to finish",
+  "plugins.lifecycleWaitExpired": "The background service is still busy. The installation hasn’t started.",
+  "plugins.checkingReceipt": "Checking the installation receipt after losing the result",
+  "plugins.installInProgress": "Installation can take a few minutes. Keep this window open.",
   "plugins.operationUnknown": "The server cannot confirm how this installation ended. Do not retry it yet.",
   "plugins.operationUnavailable":
     "This tab can’t verify the previous installation or restart. Check the plugin before trying again.",

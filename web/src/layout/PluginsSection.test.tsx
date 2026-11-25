@@ -664,6 +664,70 @@ describe("PluginsSection", () => {
     ).toBeGreaterThan(0);
   });
 
+  it.each([false, true])("waits for the daemon before sending the same install receipt (cancel=%s)", async (cancel) => {
+    const operationId = "1".padStart(43, "0");
+    let busy = true;
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/operation") {
+        return { body: { operation_id: operationId, status: "previewed", candidate, lifecycle_busy: busy } };
+      }
+      if (url.pathname === "/api/system/plugin/add") return { body: change("add", false) };
+      if (url.pathname === "/api/stream/system/plugin/add") return { body: change("add", true) };
+      return base(url);
+    });
+    const writes = () => calls.filter((request) => new URL(request.url).pathname === "/api/stream/system/plugin/add");
+    const reload = vi.fn();
+    const user = userEvent.setup();
+    show({ reload, restartInterval: 1 });
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
+    await user.click(screen.getByRole("button", { name: "Install" }));
+    await choose(user, /Install heinzel-crm/, "Install");
+
+    const running = await dialog(/Installing heinzel-crm/);
+    expect(running).toHaveAttribute("open");
+    await within(running).findByText("Waiting for the background service or another change to finish");
+    expect(writes()).toHaveLength(0);
+    if (cancel) {
+      await user.click(within(running).getByRole("button", { name: "Cancel" }));
+      busy = false;
+      await waitFor(() => expect(getRun().stage).toBe("idle"), { timeout: 2000 });
+      expect(writes()).toHaveLength(0);
+      expect(sessionStorage.getItem("hz.plugin-add-operation.v1")).toBeNull();
+      return;
+    }
+    busy = false;
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 2000 });
+    expect(writes()).toHaveLength(1);
+    expect(new URL(writes()[0].url).searchParams.get("operation_id")).toBe(operationId);
+  });
+
+  it("checks the server receipt after losing the stream result and restarts without posting the install again", async () => {
+    let writes = 0;
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/add") return { body: change("add", false) };
+      if (url.pathname === "/api/stream/system/plugin/add") {
+        writes += 1;
+        throw new Error("stream lost");
+      }
+      if (url.pathname === "/api/system/plugin/operation" && writes) {
+        const operation_id = url.searchParams.get("operation_id");
+        return { body: { operation_id, status: "completed", candidate, result: change("add", true, { operation_id }) } };
+      }
+      return base(url);
+    });
+    const reload = vi.fn();
+    const user = userEvent.setup();
+    show({ reload, restartInterval: 1 });
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
+    await user.click(screen.getByRole("button", { name: "Install" }));
+    await choose(user, /Install heinzel-crm/, "Install");
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(writes).toBe(1);
+    expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(1);
+  });
+
   it("shows a server-confirmed running receipt after reload without offering another install request", async () => {
     const operationId = "y".repeat(43);
     const calls = serve((url) =>

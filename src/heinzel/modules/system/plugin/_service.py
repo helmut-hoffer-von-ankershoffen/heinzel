@@ -1232,7 +1232,10 @@ class PluginService:
 
     def operation(self, operation_id: str) -> PluginOperation:
         """Read the durable status of a preview receipt without repeating its mutation."""
-        return self._receipts.get(operation_id)
+        receipt = self._receipts.get(operation_id)
+        if receipt.status == "previewed" and self._installation.is_tool and self._lifecycle is not None:
+            receipt.lifecycle_busy = self._lifecycle.busy()
+        return receipt
 
     def _confirm_receipt(self, operation_id: str, candidate: PluginCandidate, *, bind: bool = True) -> PluginChange:
         claimed = False
@@ -1275,7 +1278,8 @@ class PluginService:
             installed = self._verify_added(candidate, before)
             self._verify_candidate_generation(mutation)
         if phases is not None:
-            self._tell_dependencies(phases, installed.distribution, versions)
+            with phases.step("dependencies", "Checking installed plugin dependencies"):
+                self._tell_dependencies(phases, installed.distribution, versions)
         with _step(phases, "record", "Recording the add"):
             change = self._changed("add", installed.distribution, candidate)
             self._verify_candidate_generation(mutation)

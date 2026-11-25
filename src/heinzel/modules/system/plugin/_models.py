@@ -371,6 +371,9 @@ class PluginOperation(BaseModel):
     )
     candidate: PluginCandidate = Field(description="The exact candidate shown before confirmation.")
     result: PluginChange | None = Field(default=None, description="The authoritative result after a completed add.")
+    lifecycle_busy: bool = Field(
+        default=False, description="Whether a previewed install is waiting for a daemon job or another change."
+    )
 
 
 class PluginEvent(BaseModel):

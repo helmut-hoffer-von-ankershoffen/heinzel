@@ -2,6 +2,7 @@
 // and community plugins), "Add" installs from a name or a git URL. Installing runs code, so it takes two steps: the
 // backend first answers what a spec would install (source, version, publisher, pinned), and only the confirm sends
 // that pinned requirement with `confirm=true` (ADR 0047). The app then restarts `hz ui` itself and reloads.
+import { useQueryClient } from "@tanstack/react-query";
 import {
   BookOpen,
   Download,
@@ -21,7 +22,7 @@ import {
   Users,
 } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
-import type { SchemaPluginCandidate, SchemaPluginChange, SchemaPluginInfo } from "@/api/client";
+import type { SchemaPluginCandidate, SchemaPluginChange, SchemaPluginInfo, SchemaPluginOperation } from "@/api/client";
 import { api, unwrap } from "@/api/client";
 import {
   type PluginChangeRequest,
@@ -47,6 +48,7 @@ import { type MessageKey, t } from "@/i18n";
 import {
   type DrivenOperation,
   getRun,
+  OperationCancelled,
   type Phase,
   requestDrivenOperation,
   resumeDrivenOperation,
@@ -68,6 +70,22 @@ import {
   validRestartObservation,
 } from "./pluginActivation";
 import { displayName } from "./settingsSections";
+
+const LIFECYCLE_WAIT_MS = 3 * 60_000;
+
+async function pollPluginReceipt(
+  id: string,
+  signal: AbortSignal,
+  keepWaiting: (receipt: SchemaPluginOperation) => boolean,
+) {
+  for (;;) {
+    signal.throwIfAborted();
+    const receipt = await readPluginOperation(id, signal);
+    signal.throwIfAborted();
+    if (!keepWaiting(receipt)) return receipt;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+}
 
 /** A plugin change as the operation dialog shows it: its title and the command it runs. */
 function callOf(pending: Pending) {
@@ -467,6 +485,7 @@ function InlineSlot({ children }: { children: ReactNode }) {
 }
 
 export function PluginsSection({ reload, restartInterval }: { reload?: () => void; restartInterval?: number } = {}) {
+  const client = useQueryClient();
   const [tab, setTabState] = useState<"yours" | "discover">(() =>
     new URLSearchParams(window.location.search).get("plugins") === "discover" ? "discover" : "yours",
   );
@@ -484,7 +503,6 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   const [spec, setSpec] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
   const [anchor, setAnchor] = useState<string | null>(null);
-  const [, setPluginProgress] = useState<string | null>(null);
   const [restored] = useState(restoredPluginFlow);
   const [receiptId, setReceiptId] = useState<string | null>(restored.receiptId);
   const [restartObservation, setRestartObservation] = useState<RestartObservation | null>(restored.restartObservation);
@@ -535,7 +553,6 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     change.reset();
     completed.current = null;
     attempted.current = false;
-    setPluginProgress(null);
     try {
       window.sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
       window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
@@ -560,16 +577,20 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     change.reset();
     completed.current = null;
     attempted.current = false;
-    setPluginProgress(null);
     preview.reset();
     setPending(value);
   };
-  const confirm = async (value: Pending, signal: AbortSignal, heard: (phase: Phase) => void) => {
+  const confirm = async (
+    value: Pending,
+    signal: AbortSignal,
+    heard: (phase: Phase) => void,
+    cancellable: (cancel?: () => void) => void,
+  ) => {
     if (pluginActivationBlocksChanges()) throw new Error(t("pluginsPending.restartRequired"));
     if (completed.current) return completed.current.restart_required;
     if (attempted.current) throw new Error(t("plugins.resultUnknown"));
-    setPluginProgress(null);
     const operation = request(value);
+    let answer: SchemaPluginChange | undefined;
     if ("add" in operation) {
       if (!operation.operationId) throw new Error(t("plugins.receiptStorageUnavailable"));
       try {
@@ -578,21 +599,66 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
         throw new Error(t("plugins.receiptStorageUnavailable"));
       }
       if (receiptId !== operation.operationId) setReceiptId(operation.operationId);
-      const status = await readPluginOperation(operation.operationId);
-      if (status.status === "running") throw new Error(t("plugins.operationRunning"));
-      if (status.status === "unknown") throw new Error(t("plugins.operationUnknown"));
+      const cancel = new AbortController();
+      const deadline = AbortSignal.timeout(LIFECYCLE_WAIT_MS);
+      const waitSignal = AbortSignal.any([signal, cancel.signal, deadline]);
+      const setDetail = (id: string, label: MessageKey) => heard({ id, label: t(label), state: "running" });
+      cancellable(() => cancel.abort(new OperationCancelled()));
+      let status: SchemaPluginOperation;
+      try {
+        status = await pollPluginReceipt(operation.operationId, waitSignal, (receipt) => {
+          if (receipt.status !== "previewed" || !receipt.lifecycle_busy) return false;
+          setDetail("lifecycle", "plugins.waitingForLifecycle");
+          return true;
+        });
+      } catch (error) {
+        if (cancel.signal.aborted) {
+          window.sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
+          throw cancel.signal.reason;
+        }
+        if (deadline.aborted) throw new Error(t("plugins.lifecycleWaitExpired"));
+        throw error;
+      } finally {
+        cancellable();
+      }
+      if (status.status === "running" || status.status === "unknown") {
+        attempted.current = true;
+        client.setQueryData(["system", "plugin", "operation", operation.operationId], status);
+        throw new Error(t(status.status === "running" ? "plugins.operationRunning" : "plugins.operationUnknown"));
+      }
       if (status.status === "completed" && status.result) {
         completed.current = status.result;
         pluginRestartRequired.current = status.result.restart_required;
         return status.result.restart_required;
       }
       attempted.current = true;
+      try {
+        answer = await change.mutateAsync({ ...operation, signal, onPhase: heard });
+      } catch (error) {
+        setDetail("receipt", "plugins.checkingReceipt");
+        let lastStatus: SchemaPluginOperation["status"] | undefined;
+        const observation = await pollPluginReceipt(
+          operation.operationId,
+          AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+          (receipt) => {
+            lastStatus = receipt.status;
+            client.setQueryData(["system", "plugin", "operation", operation.operationId], receipt);
+            return receipt.status === "running";
+          },
+        ).catch(() => null);
+        if (observation?.status === "completed" && observation.result) answer = observation.result;
+        else {
+          if (lastStatus === "running") throw new Error(t("plugins.operationRunning"));
+          if (lastStatus !== "unknown") setRestartBlocked(true);
+          throw error;
+        }
+      }
     }
     // A lost removal response is also uncertain. Require a fresh, explicit choice after status reconciliation.
     if ("remove" in operation) attempted.current = true;
     // The change's own steps (installing, checking, each plugin it needs, recording) join the dialog's list.
-    const answer = await change.mutateAsync({ ...operation, signal, onProgress: setPluginProgress, onPhase: heard });
-    if (!answer.done) throw new Error(t("plugins.notCompleted"));
+    if (!("add" in operation)) answer = await change.mutateAsync({ ...operation, signal, onPhase: heard });
+    if (!answer?.done) throw new Error(t("plugins.notCompleted"));
     completed.current = answer;
     pluginRestartRequired.current = answer.restart_required;
     return answer.restart_required;
@@ -616,7 +682,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     details: value.action === "add" ? <CandidateDetails candidate={value.candidate} /> : undefined,
     action: actionText(value.action),
     destructive: value.action === "remove",
-    run: async (report) => {
+    run: async (report, cancellable) => {
       const steps = new ApplySteps(report, labelsOf(value));
       const resume = value.action === "add" ? (restartRef.current ?? undefined) : undefined;
       const release = acquirePluginChange(resume);
@@ -624,7 +690,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       try {
         await applyWithSteps(
           {
-            change: (signal, heard) => confirm(value, signal, heard),
+            change: (signal, heard) => confirm(value, signal, heard, cancellable),
             resume,
             options: {
               ...(value.action === "add" || value.action === "remove" ? { preserveTimeout: 20 * 60_000 } : {}),
@@ -656,6 +722,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
         }
         throw error;
       } finally {
+        steps.stop();
         release();
       }
       finished.current = true;
@@ -768,6 +835,10 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     if (run.stage !== "idle" || getRun().stage !== "idle" || !opened.current) return;
     const value = opened.current;
     if (finished.current) return;
+    if (value.action === "add" && attempted.current && !completed.current) {
+      opened.current = null;
+      return;
+    }
     if (value.action === "add") {
       setReceiptId(null);
       setRestartObservation(null);
