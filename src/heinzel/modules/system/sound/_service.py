@@ -186,7 +186,7 @@ class SoundService(SoundAssets):
         try:
             settings = config.settings(SoundSettings, SECTION)
         except ValidationError as exc:
-            settings = SoundSettings()
+            settings = SoundSettings(name=OFF)
             problems = "; ".join(
                 f"{'.'.join(map(str, error['loc'])) or 'the table'}: {error['msg']}" for error in exc.errors()
             )

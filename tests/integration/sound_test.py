@@ -141,16 +141,23 @@ def test_sound_use_writes_the_user_setting_refuses_an_unknown_name_and_off_switc
     assert hz(hzk, "system", "sound", "use", "off")[1]["effective"] == "off"
 
 
-def test_a_soundscape_whose_plugin_is_gone_or_an_invalid_value_falls_back_to_off_and_says_so(kernel):
+def test_a_soundscape_whose_plugin_is_gone_falls_back_to_off_and_says_so(kernel):
     configure('[system.sound]\nname = "rain"\n')
     listed = hz(kernel(), "system", "sound", "list")[1]
     assert listed["effective"] == "off"
     assert "No installed plugin offers the soundscape 'rain'" in listed["note"]
     assert listed["next"] == ["hz system sound use off"]
-    configure("[system.sound]\nvolume = 400\n")
-    listed = hz(kernel(), "system", "sound", "list")[1]
-    assert (listed["effective"], listed["volume"]) == ("off", 50)
+
+
+@pytest.mark.parametrize("invalid", ["volume = 400", 'name = "Invalid Name"'])
+def test_invalid_sound_settings_fall_back_to_off_even_with_singularity_installed(kernel, static, invalid):
+    configure(f"[system.sound]\n{invalid}\n")
+    hzk = kernel(extra=(paired("singularity"),))
+    listed = hz(hzk, "system", "sound", "list")[1]
+    assert (listed["selected"], listed["effective"], listed["volume"]) == ("off", "off", 50)
     assert "isn't valid" in listed["note"]
+    assert listed["next"] == ["hz system config reveal user"]
+    assert client(hzk, static).get("/").headers["content-security-policy"] == web.CSP
 
 
 def test_a_project_file_cannot_pick_a_soundscape_or_its_settings(kernel, tmp_path, monkeypatch):
