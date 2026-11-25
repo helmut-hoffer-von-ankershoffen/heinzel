@@ -18,7 +18,7 @@ Order and rules (they are the rules the local driver kept):
 - candidate: the release PR's one CI run, first attempt, full job inventory (scripts/release_candidate.py).
 - merge: only when main has not moved since the candidate base and every check main's rules require has passed on
   the head (the merge state is never read); squash, pinned to the verified head.
-- compose: dispatched once the tag's wheel asset answers, beside PyPI.
+- compose: dispatched once PyPI and the tag agree on the published Core wheel.
 - snapshot: after the GitHub release, PyPI and the composed app exist: the wheel and profile digests, with the
   GitHub and PyPI wheel equal.
 - verdict: both acceptance receipts of this run's first attempt prove those digests; then the marker; then Latest.
@@ -1416,9 +1416,13 @@ def pypi_wheel_digest(version: str) -> str | None:
         return None
     if done.returncode:
         return None
+    metadata = json.loads(done.stdout)
+    if metadata.get("info", {}).get("version") != version:
+        return None
     name = f"heinzel-{version}-py3-none-any.whl"
-    files = [f for f in json.loads(done.stdout).get("urls", []) if f.get("filename") == name and not f.get("yanked")]
-    return files[0]["digests"]["sha256"] if len(files) == 1 else None
+    files = [f for f in metadata.get("urls", []) if f.get("filename") == name and f.get("yanked") is False]
+    digest = files[0].get("digests", {}).get("sha256") if len(files) == 1 else None
+    return digest if isinstance(digest, str) and DIGEST.fullmatch(digest) else None
 
 
 def validate_profile(content: bytes, version: str, wheel: str, app: dict[str, Any]) -> str:
@@ -1470,9 +1474,31 @@ def snapshot(
         Wait: The release, PyPI or the app is not there yet.
         ChainError: They disagree.
     """
+    wheel = published_core_wheel(read, version)
+    app = read_app(version)
+    if not app or app.get("draft") is not False or app.get("prerelease") is not False:
+        msg = f"app-v{version} is not composed and final yet"
+        raise Wait(msg)
+    profile = validate_profile(
+        fetch(f"https://github.com/{PLUGINS}/releases/download/app-v{version}/standard.json"), version, wheel, app
+    )
+    commit = (read(f"commits/v{version}") or {}).get("sha", "")
+    return {"version": version, "commit": str(commit), "wheel_sha256": wheel, "profile_sha256": profile}
+
+
+def published_core_wheel(read: Callable[[str], Any], version: str) -> str:
+    """Return the Core wheel digest shared by the GitHub release and PyPI.
+
+    Raises:
+        Wait: The release or wheel evidence is pending.
+        ChainError: The version is invalid or the published digests differ.
+    """
+    if not VERSION.fullmatch(version):
+        msg = "Core publication proof needs an exact X.Y.Z version"
+        raise ChainError(msg)
     release = release_of(read, version)
-    if not release:
-        msg = f"v{version} is not published on GitHub yet"
+    if not release or release.get("prerelease") is not False:
+        msg = f"v{version} is not a final GitHub release yet"
         raise Wait(msg)
     wheel = asset_digest(release, f"heinzel-{version}-py3-none-any.whl")
     if not wheel or not asset_digest(release, "artifact-manifest.json"):
@@ -1485,15 +1511,7 @@ def snapshot(
     if pypi != wheel:
         msg = f"the PyPI wheel {pypi[:12]} differs from the GitHub wheel {wheel[:12]}"
         raise ChainError(msg)
-    app = read_app(version)
-    if not app or app.get("draft") is not False or app.get("prerelease") is not False:
-        msg = f"app-v{version} is not composed and final yet"
-        raise Wait(msg)
-    profile = validate_profile(
-        fetch(f"https://github.com/{PLUGINS}/releases/download/app-v{version}/standard.json"), version, wheel, app
-    )
-    commit = (read(f"commits/v{version}") or {}).get("sha", "")
-    return {"version": version, "commit": str(commit), "wheel_sha256": wheel, "profile_sha256": profile}
+    return wheel
 
 
 def get_app(version: str) -> dict[str, Any] | None:
@@ -1747,6 +1765,7 @@ def parser() -> argparse.ArgumentParser:
             ("--wait", {"type": float, "default": 1800}),
         ),
         "probe": (("--repo", {"type": Path, "default": Path()}),),
+        "core-published": (("--version", {"required": True}), ("--wait", {"type": float, "default": 300})),
         "snapshot": (("--version", {"required": True}), ("--wait", {"type": float, "default": 3600})),
         "verdict": (
             ("--version", {"required": True}),
@@ -1854,6 +1873,18 @@ def cmd_probe(args: argparse.Namespace) -> int:
     return 0 if good else 1
 
 
+def cmd_core_published(args: argparse.Namespace) -> int:
+    """Supply the exact tag wheel URL after PyPI publication has been verified."""
+    version = args.version
+    poll("Core publication", lambda: published_core_wheel(get, version), args.wait)
+    output(
+        {
+            "wheel_url": f"https://github.com/{REPOSITORY}/releases/download/v{version}/heinzel-{version}-py3-none-any.whl"
+        }
+    )
+    return 0
+
+
 def cmd_snapshot(args: argparse.Namespace) -> int:
     """Wait for and bind the published bytes."""
     output(poll("release bytes", lambda: snapshot(get, get_app, args.version, fetch), args.wait))
@@ -1891,6 +1922,7 @@ COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "freeze-pr": cmd_freeze_pr,
     "candidate": cmd_candidate,
     "merge": cmd_merge,
+    "core-published": cmd_core_published,
     "snapshot": cmd_snapshot,
     "probe": cmd_probe,
     "verdict": cmd_verdict,

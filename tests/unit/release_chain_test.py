@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -683,6 +684,39 @@ def test_snapshot_waits_for_pypi_and_refuses_a_different_pypi_wheel(monkeypatch)
     assert snap["commit"] == TIP
 
 
+@pytest.mark.parametrize("digest", [None, "0" * 64, WHEEL])
+@pytest.mark.parametrize("held", [False, True])
+def test_compose_wheel_output_requires_matching_pypi_publication(monkeypatch, tmp_path, digest, held):
+    core = release("0.9.54", marker=False, prerelease=held)
+    monkeypatch.setattr(chain, "get", reader({"releases/tags/v0.9.54": core}))
+    monkeypatch.setattr(chain, "pypi_wheel_digest", lambda _: digest)
+    output = tmp_path / "step-output"
+    monkeypatch.setenv(chain.RUN_OUTPUT, str(output))
+    result = chain.main(["core-published", "--version", "0.9.54", "--wait=-1"])
+    if digest == WHEEL and not held:
+        assert result == 0
+        assert output.read_text() == (
+            f"wheel_url=https://github.com/{chain.REPOSITORY}/releases/download/v0.9.54/heinzel-0.9.54-py3-none-any.whl\n"
+        )
+    else:
+        assert result == 1
+        assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("version", "yanked", "expected"),
+    [("0.9.54", False, WHEEL), ("0.9.53", False, None), ("0.9.54", True, None)],
+)
+def test_pypi_metadata_must_name_the_exact_version_and_active_wheel(monkeypatch, version, yanked, expected):
+    metadata = {
+        "info": {"version": version},
+        "urls": [{"filename": "heinzel-0.9.54-py3-none-any.whl", "digests": {"sha256": WHEEL}, "yanked": yanked}],
+    }
+    reply = SimpleNamespace(returncode=0, stdout=json.dumps(metadata))
+    monkeypatch.setattr(chain.subprocess, "run", lambda *_args, **_kwargs: reply)
+    assert chain.pypi_wheel_digest("0.9.54") == expected
+
+
 def receipt(os_name, *, verdict="ACCEPTED", run_id="5", attempt="1", wheel=WHEEL):
     shards = {"public": ["1"], "update": ["2"], "plugins": ["3"], "browser": ["4"]}
     return {
@@ -1034,13 +1068,16 @@ def test_a_release_title_in_an_unrelated_commit_body_does_not_block_a_cut():
     assert chain.plan(reader(data), "", auto=False, tip=TIP)["phase"] == "cut"
 
 
-def test_compose_starts_at_the_wheel_asset_beside_pypi_and_the_snapshot_waits_for_both():
+def test_compose_runs_only_after_core_publication_is_proven_and_snapshot_waits_for_both():
     workflow = (ROOT / ".github/workflows/release-tail.yml").read_text()
     publish = workflow[workflow.index("\n  publish:") : workflow.index("\n  acceptance:")]
+    upload = publish.index("Publish the exact GitHub release bytes to PyPI")
+    proof = publish.index("id: core-published")
     compose = publish.index("Compose the standard app")
-    assert compose < publish.index("Publish the exact GitHub release bytes to PyPI") < publish.index("id: snapshot")
+    assert upload < proof < compose < publish.index("id: snapshot")
+    assert "scripts/release_chain.py core-published" in publish[proof:compose]
+    assert "steps.core-published.outputs.wheel_url" in publish[compose:]
     assert "curl -fsSIL" in publish[compose : publish.index("gh workflow run compose.yml")]
-    assert "pypi_wheel_digest" in (ROOT / "scripts/release_chain.py").read_text().split("def snapshot(")[1]
 
 
 def test_the_token_reaches_the_probe_only_on_a_dispatched_dry_run_from_main():
