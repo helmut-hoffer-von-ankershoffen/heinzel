@@ -214,12 +214,13 @@ def docs_steps(tooling: list[str]) -> list[str]:
             *(str(path.relative_to(ROOT)) for path in ROOT.glob("tests/unit/site_*_test.py")),
         }
     )
-    tests = " ".join([*MARKDOWN_TESTS, "tests/unit/ci_test.py", *own])
+    # Keep the Markdown and tooling selections disjoint, with the same deadline for each.
+    tooling_tests = " ".join(["tests/unit/ci_test.py", *(path for path in own if path not in MARKDOWN_TESTS)])
     return [
         f"format=uv run ruff format --check {files}",
         f"&ruff=uv run ruff check --no-fix {files}",
-        *DOCS_STEPS[:-1],
-        f"tests=uv run pytest {tests} -n 2 -x -q --session-timeout=120",
+        *DOCS_STEPS,
+        f"tooling-tests=uv run pytest {tooling_tests} -n 2 -x -q --session-timeout=120",
     ]
 
 

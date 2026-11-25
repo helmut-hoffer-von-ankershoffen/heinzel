@@ -296,13 +296,22 @@ def test_only_changes_that_touch_the_web_app_run_its_tests(changed, web):
 
 
 def test_docs_tooling_and_its_tests_run_the_documentation_checks_not_the_full_gate():
-    changed = ["docs/TEAMS.md", "scripts/site_pages.py", "scripts/sync_template.py", "tests/unit/site_catalog_test.py"]
+    changed = [
+        "docs/TEAMS.md",
+        "scripts/site_pages.py",
+        "scripts/sync_template.py",
+        "tests/unit/site_catalog_test.py",
+        "tests/unit/documentation_test.py",
+    ]
     steps = scoped.scoped_steps(changed)
-    assert names(steps) == ["format", "ruff", "template", "docs", "demo", "typos", "tests"]
-    tests = steps[-1]
-    assert "tests/unit/site_catalog_test.py" in tests
-    assert "tests/unit/documentation_test.py" in tests
-    assert "tests/unit/ci_test.py" in tests
+    assert names(steps) == ["format", "ruff", "template", "docs", "demo", "typos", "tests", "tooling-tests"]
+    assert steps[-2] == scoped.DOCS_STEPS[-1]
+    tooling_tests = steps[-1].split()
+    assert tooling_tests[3:-5] == [
+        "tests/unit/ci_test.py",
+        *sorted(str(path.relative_to(REPO)) for path in (REPO / "tests/unit").glob("site_*_test.py")),
+    ]
+    assert tooling_tests[-5:] == steps[-2].split()[-5:]
     assert "scripts/site_pages.py" in steps[0]
     assert "--check" in steps[0]
 
