@@ -2,23 +2,26 @@
 // happen, then how it ended with the next step when it failed (ADR 0056). One dialog serves every status item,
 // sidebar entry and setup button, so a footer that lays itself out again cannot hide a running install.
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, CircleAlert, Loader2, Play, RotateCw, TriangleAlert, X } from "lucide-react";
+import { Check, CircleAlert, EyeOff, Loader2, Play, RotateCw, TriangleAlert, X } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { daemonStatusKey } from "@/api/daemon";
 import { useExpert } from "@/api/queries";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { Progress } from "@/components/Progress";
+import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import { daemonRestartResult } from "@/lib/daemonRestart";
 import {
   dismissOperation,
   getRun,
+  isOperationProgressHidden,
   LONG_FORM_VALUE,
   type OperationRun,
   type Phase,
   type PhaseState,
   recoverOperation,
+  setOperationProgressHidden,
   startOperation,
   useOperationRun,
   usePrimaryHost,
@@ -203,26 +206,34 @@ export function OperationDialog() {
   const heading = useId();
   const box = useRef<HTMLElement | null>(null);
   const title = useRef<HTMLParagraphElement>(null);
+  const preferredFocus = useRef<HTMLButtonElement>(null);
   const [armedRecovery, setArmedRecovery] = useState<OperationRun | null>(null);
   const stage = run.stage;
   // The exact daemon call is for experts alone. Expert mode as the app already loaded it (the sidebar reads it); the
   // dialog never asks the server itself, so an unknown mode keeps the plain words.
   const expert = useExpert(true).data?.expert === true;
   const driven = run.stage !== "idle" && run.driven !== undefined;
-  const modal = primary && run.stage !== "idle" && run.call.path === "/system/plugin/add";
+  const pluginInstall = run.stage !== "idle" && run.call.path === "/system/plugin/add";
+  const hidden = pluginInstall && isOperationProgressHidden(run);
+  const modal = primary && pluginInstall && !hidden;
+  const showProgress = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
     const element = box.current;
     if (!modal || !(element instanceof HTMLDialogElement)) return;
     element.showModal();
+    preferredFocus.current?.focus();
     return () => element.close();
   }, [modal]);
   // Focus is never lost when a stage swaps the buttons: a driven run's progress lands on its title, its outcome on
   // the primary button (autoFocus); any other write's outcome on the dialog, the confirmation on Cancel.
   useEffect(() => {
-    if (!primary) return;
+    if (!primary || hidden) return;
     if (driven && stage === "running") title.current?.focus();
     else if (!driven && (stage === "done" || stage === "failed")) box.current?.focus();
-  }, [primary, stage, driven]);
+  }, [primary, stage, driven, hidden]);
+  useEffect(() => {
+    if (primary && hidden) showProgress.current?.focus();
+  }, [primary, hidden]);
   const quick = run.stage !== "idle" && QUICK.has(run.call.path);
   const settled = () =>
     Promise.all([
@@ -243,6 +254,20 @@ export function OperationDialog() {
     if (primary && stage === "confirm" && quick) go();
   });
   if (!primary || run.stage === "idle" || (quick && run.stage === "confirm")) return null;
+  if (hidden) {
+    return createPortal(
+      <Button
+        ref={showProgress}
+        type="button"
+        variant="outline"
+        className="fixed right-4 bottom-[calc(4.75rem+var(--hz-viewport-safe-bottom,0px))] z-(--layer-modal) shadow-md"
+        onClick={() => setOperationProgressHidden(run, false)}
+      >
+        {t("plugins.showProgress")}
+      </Button>,
+      document.body,
+    );
+  }
   const persistent = PERSISTENT.has(run.call.path);
   const copy = copyOf(run.call.path);
   const plain = (kind: "running" | "failed") => t(`op.daemon.restart.${kind}` as MessageKey);
@@ -251,7 +276,7 @@ export function OperationDialog() {
   const cancel = run.stage === "running" ? run.cancel : undefined;
   return createPortal(
     <Container
-      ref={(node) => {
+      ref={(node: HTMLElement | null) => {
         box.current = node;
       }}
       tabIndex={-1}
@@ -303,7 +328,7 @@ export function OperationDialog() {
           ))}
           {run.driven.details}
           <PaneActions align="end" words="all">
-            <PaneAction key="cancel" icon={X} autoFocus onClick={close}>
+            <PaneAction key="cancel" ref={preferredFocus} icon={X} autoFocus onClick={close}>
               {t("contrib.cancel")}
             </PaneAction>
             <PaneAction key="go" icon={Play} primary destructive={run.driven.destructive} onClick={go}>
@@ -328,7 +353,7 @@ export function OperationDialog() {
           )}
           <ShowAll values={shortenedValues(run)} />
           <PaneActions align="end" words="all">
-            <PaneAction key="cancel" icon={X} autoFocus onClick={close}>
+            <PaneAction key="cancel" ref={preferredFocus} icon={X} autoFocus onClick={close}>
               {t("contrib.cancel")}
             </PaneAction>
             <PaneAction key="go" icon={Play} primary onClick={go}>
@@ -354,6 +379,11 @@ export function OperationDialog() {
             <p className="mt-3 text-xs text-muted-foreground">{t(modal ? "plugins.installInProgress" : "op.noStop")}</p>
           )}
           <PaneActions align="end" words="all">
+            {modal && (
+              <PaneAction icon={EyeOff} onClick={() => setOperationProgressHidden(run, true)}>
+                {t("plugins.hideProgress")}
+              </PaneAction>
+            )}
             {cancel && (
               <PaneAction icon={X} onClick={cancel}>
                 {t("contrib.cancel")}
@@ -400,7 +430,7 @@ export function OperationDialog() {
           </p>
           <Steps phases={run.phases} active={false} />
           <PaneActions align="end" words="all">
-            <PaneAction key="close" icon={Check} primary autoFocus onClick={close}>
+            <PaneAction key="close" ref={preferredFocus} icon={Check} primary autoFocus onClick={close}>
               {t("op.finish")}
             </PaneAction>
           </PaneActions>

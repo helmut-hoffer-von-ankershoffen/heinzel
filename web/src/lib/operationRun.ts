@@ -83,10 +83,12 @@ export function mergePhase(phases: Phase[], phase: Phase): Phase[] {
 }
 
 let current: OperationRun = { stage: "idle" };
+let hiddenProgress: SchemaOperationCall | undefined;
 const dismissedDrivenIdentities = new Set<string>();
 let opener: HTMLElement | null = null;
 const listeners = new Set<() => void>();
 const set = (next: OperationRun) => {
+  if (next.stage === "idle" || next.call !== hiddenProgress) hiddenProgress = undefined;
   current = next;
   for (const listener of listeners) listener();
 };
@@ -98,6 +100,17 @@ const subscribe = (listener: () => void) => {
 };
 
 export const useOperationRun = (): OperationRun => useSyncExternalStore(subscribe, () => current);
+
+/** Hiding progress changes its presentation only, across route changes and operation-dialog hosts. */
+export const isOperationProgressHidden = (run: OperationRun): boolean =>
+  run.stage !== "idle" && run.call === hiddenProgress;
+
+export function setOperationProgressHidden(run: OperationRun, hidden: boolean) {
+  if (run.stage === "idle" || current.stage === "idle" || current.call !== run.call) return;
+  if (hidden && current.stage !== "running") return;
+  hiddenProgress = hidden ? run.call : undefined;
+  set({ ...current });
+}
 
 /** A dismissed receipt must not be reoffered by a component remount in the same page. */
 export const wasDrivenOperationDismissed = (identity: string): boolean => dismissedDrivenIdentities.has(identity);
@@ -218,7 +231,8 @@ async function startDriven(): Promise<void> {
       if (error instanceof OperationCancelled) {
         set({ stage: "confirm", call, driven });
         dismissOperation();
-      } else if (error instanceof OperationRecoveryRequired) set({ stage: "failed", ...outcome, recovery: error.recovery });
+      } else if (error instanceof OperationRecoveryRequired)
+        set({ stage: "failed", ...outcome, recovery: error.recovery });
       else set({ stage: attention ? "attention" : "failed", ...outcome });
     }
   }

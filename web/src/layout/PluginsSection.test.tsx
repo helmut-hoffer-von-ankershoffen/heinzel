@@ -238,6 +238,7 @@ function serve(answer: Answer) {
               start(controller) {
                 const encoder = new TextEncoder();
                 controller.enqueue(encoder.encode(task));
+                if (url.searchParams.get("confirm") === "true") controller.enqueue(encoder.encode(phaseEvents));
                 timer = setTimeout(() => {
                   controller.enqueue(encoder.encode(result));
                   controller.close();
@@ -698,8 +699,7 @@ describe("PluginsSection", () => {
     }
     busy = false;
     await waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 2000 });
-    expect(writes()).toHaveLength(1);
-    expect(new URL(writes()[0].url).searchParams.get("operation_id")).toBe(operationId);
+    expect(writes().map((request) => new URL(request.url).searchParams.get("operation_id"))).toEqual([operationId]);
   });
 
   it("checks the server receipt after losing the stream result and restarts without posting the install again", async () => {
@@ -712,7 +712,9 @@ describe("PluginsSection", () => {
       }
       if (url.pathname === "/api/system/plugin/operation" && writes) {
         const operation_id = url.searchParams.get("operation_id");
-        return { body: { operation_id, status: "completed", candidate, result: change("add", true, { operation_id }) } };
+        return {
+          body: { operation_id, status: "completed", candidate, result: change("add", true, { operation_id }) },
+        };
       }
       return base(url);
     });
@@ -1168,6 +1170,10 @@ describe("PluginsSection", () => {
     { timeout: 15_000 },
     async (action) => {
       confirmedStreamDelay = 4_250;
+      phaseEvents = [
+        'event: phase\ndata: {"id":"verify","label":"Checking that exactly it is installed","state":"done"}\n\n',
+        'event: phase\ndata: {"id":"record","label":"Recording the add","state":"running"}\n\n',
+      ].join("");
       const calls = serve((url) => {
         if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
           return { body: change("add", url.searchParams.get("confirm") === "true") };
@@ -1200,6 +1206,19 @@ describe("PluginsSection", () => {
           `Step 2 of 6: ${action === "add" ? "Installing heinzel-crm" : "Removing heinzel-clock"}`,
         ),
       ).toBeInTheDocument();
+      if (action === "add") {
+        await within(running).findByText("Recording the add");
+        expect(within(running).queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+        expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(0);
+        await user.keyboard("{Escape}");
+        expect(running).toHaveAttribute("open");
+        await user.click(within(running).getByRole("button", { name: "Hide progress" }));
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Show installation progress" }));
+        const reopened = await dialog(/Installing heinzel-crm/);
+        expect(reopened).toHaveAttribute("open");
+        expect(within(reopened).getByText("Recording the add")).toBeInTheDocument();
+      }
       await waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 10_000 });
       const paths = calls.map((request) => new URL(request.url).pathname);
       expect(paths.filter((path) => path === `/api/stream/system/plugin/${action}`)).toHaveLength(1);

@@ -61,7 +61,9 @@ export const plugins = {
   "plugins.waitingForLifecycle": "Waiting for the background service or another change to finish",
   "plugins.lifecycleWaitExpired": "The background service is still busy. The installation hasn’t started.",
   "plugins.checkingReceipt": "Checking the installation receipt after losing the result",
-  "plugins.installInProgress": "Installation can take a few minutes. Keep this window open.",
+  "plugins.installInProgress": "Installation can take a few minutes.",
+  "plugins.hideProgress": "Hide progress",
+  "plugins.showProgress": "Show installation progress",
   "plugins.operationUnknown": "The server cannot confirm how this installation ended. Do not retry it yet.",
   "plugins.operationUnavailable":
     "This tab can’t verify the previous installation or restart. Check the plugin before trying again.",
