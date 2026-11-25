@@ -174,6 +174,7 @@ class ToolSnapshot:
             HeinzelError: If `folder` is on another file system; nothing may be installed then.
             OSError: If it can't be copied, for example for lack of space; nothing may be installed then.
         """
+        folder = folder.parent.resolve() / folder.name
         snapshot = cls(prefix, folder / "before-update", folder / "after-update")
         snapshot.recover()  # a copy left by a process that died during its update is the truth: put it back first
         snapshot._clean_discarded()
@@ -248,18 +249,25 @@ class ToolSnapshot:
             HeinzelError: If restored files cannot be independently verified against pre-update evidence.
             OSError: If recovery cannot finish safely; the copy's gate remains in place.
         """
+        folder = folder.parent.resolve() / folder.name
         copy = folder / "before-update"
         if not folder.is_dir():
             return False
-        snapshot = cls(installation.prefix.resolve(strict=True), copy, folder / "after-update")
+        installation = installation.for_interrupted_update()
+        snapshot = cls(installation.prefix, copy, folder / "after-update")
         if not os.path.lexists(copy):
             if snapshot._retired.is_dir() or (snapshot._partial.is_dir() and installation.startup_state_matches()):
                 snapshot._clean_discarded()
             return False
-        if copy.is_symlink() or not copy.is_dir() or snapshot.aside.is_symlink():
+        if (
+            snapshot.prefix.resolve(strict=True) != snapshot.prefix
+            or copy.is_symlink()
+            or not copy.is_dir()
+            or snapshot.aside.is_symlink()
+        ):
             msg = "The automatic update snapshot is unsafe; explicit recovery is required."
             raise HeinzelError(msg)
-        content = snapshot._recovery_content(installation.prefix)
+        content = snapshot._recovery_content()
         if content is None and not installation.is_tool:
             return False  # an old snapshot cannot identify a tool with an absent uv receipt
         snapshot.restore(discard=False)
@@ -276,13 +284,13 @@ class ToolSnapshot:
         snapshot.discard()
         return True
 
-    def _recovery_content(self, prefix: Path) -> str | None:
+    def _recovery_content(self) -> str | None:
         try:
             proof = private_read(self._proof)
         except FileNotFoundError:
             return None
         content, _, recorded_prefix = proof.partition("\n")
-        if not re.fullmatch(r"[0-9a-f]{64}", content) or prefix != self.prefix or recorded_prefix != str(self.prefix):
+        if not re.fullmatch(r"[0-9a-f]{64}", content) or recorded_prefix != str(self.prefix):
             msg = "Automatic update recovery evidence is invalid; explicit recovery is required."
             raise HeinzelError(msg)
         return content

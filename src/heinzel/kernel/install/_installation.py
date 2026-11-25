@@ -718,7 +718,9 @@ class Installation:
             uv: Path to the uv executable; defaults to the one on `PATH` or in uv's standard install directories.
         """
         self._progress = progress
-        self.prefix = prefix or Path(sys.prefix)
+        running = Path(sys.prefix)
+        # The running interpreter may have been reached through a home-directory alias.
+        self.prefix = prefix or running.parent.resolve() / running.name
         self._runner = runner
         self._exact_runner: Runner = _run_exact
         self._uv = uv or find_uv()
@@ -1055,6 +1057,13 @@ class Installation:
         except (OSError, HeinzelError):
             return False
         return self.startup_state_matches()
+
+    def for_interrupted_update(self) -> "Installation":
+        """Resolve parent aliases for snapshot recovery while retaining the tool directory itself."""
+        prefix = self.prefix.parent.resolve() / self.prefix.name
+        if prefix == self.prefix:
+            return self
+        return Installation(self._progress, prefix=prefix, runner=self._runner, uv=self._uv)
 
     def verify_tool_destination(self, store: Path, binary: Path) -> None:
         """Verify requested uv store and executable directory against this tool's receipt.

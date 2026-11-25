@@ -261,6 +261,8 @@ class UpdateCore:
     ) -> UpdateResult:
         if scope.checkpoint_matched:
             self._installation.record_startup_state(expected=candidate)
+        # Verification is in memory. Keep the rollback until this succeeds, then retire it before any durable
+        # handover request or completion of the daemon mutation.
         scope.verified_complete(candidate)
         if before_handover is not None:
             before_handover()
