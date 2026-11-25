@@ -622,6 +622,7 @@ export function AudioVisualizer({
   const workspaceAudio = workspaceAudioCapability() === true;
   const sharedWord = workspaceAudio ? "Workspace audio" : "Shared audio";
   const looped = session?.label === "System audio";
+  const canPromptForSource = (listenable || sharing || systemOffered) && remembered !== "off";
   const listening: Source = session ? (microphone ? "mic" : looped ? "system" : "tab") : "off";
   const listeningTo = microphone ? "the microphone" : looped ? "system audio" : sharedWord.toLowerCase();
   // The selected source stays visible while its capture is active or permission is pending.
@@ -891,9 +892,10 @@ export function AudioVisualizer({
           </div>,
           stageElement,
         )}
-      {settings.master && framed && !session && !requesting && (listenable || sharing) && remembered !== "off" && (
+      {settings.master && framed && !session && !requesting && canPromptForSource && (
         <SourcePrompt
           remembered={remembered}
+          onSystem={systemOffered ? () => choose("system") : null}
           onTab={sharing ? () => choose("tab") : null}
           onMic={listenable ? () => choose("mic") : null}
         />
@@ -904,16 +906,18 @@ export function AudioVisualizer({
 
 /** The one compact question, once music plays in a frame: browsers require the person's own yes. On a phone or a short
  * landscape screen a floating card would cover the player it asks about, so there the question stays in the Audio
- * pane (its trigger reads "Share", with Share audio and Use microphone). */
+ * pane. */
 function SourcePrompt({
   remembered,
+  onSystem,
   onTab,
   onMic,
 }: {
   remembered: Remembered;
-  /** Null where the browser cannot share a tab's audio (every iPhone browser): only the microphone is offered. */
+  onSystem: (() => void) | null;
+  /** Null where the browser cannot share a tab's audio (every iPhone browser). */
   onTab: (() => void) | null;
-  /** Null when the microphone API is unavailable. System audio is never offered here: it is an opt-in in the pane. */
+  /** Null when the microphone API is unavailable. */
   onMic: (() => void) | null;
 }) {
   const [dismissed, setDismissed] = useState(false);
@@ -924,14 +928,23 @@ function SourcePrompt({
       className="fixed right-12 bottom-14 z-(--layer-popover) w-64 max-sm:hidden [@media(max-height:40rem)]:hidden rounded-xl border border-border bg-popover p-3 text-xs text-foreground shadow-lg"
     >
       <p className="mb-2 font-medium">Let Heinzel see the music?</p>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
+        {onSystem && (
+          <Button size="sm" onClick={onSystem}>
+            Use system audio
+          </Button>
+        )}
         {onTab && (
-          <Button size="sm" variant={remembered === "mic" ? "outline" : "default"} onClick={onTab}>
+          <Button size="sm" variant={onSystem || remembered === "mic" ? "outline" : "default"} onClick={onTab}>
             Share this tab
           </Button>
         )}
         {onMic && (
-          <Button size="sm" variant={remembered === "mic" || !onTab ? "default" : "outline"} onClick={onMic}>
+          <Button
+            size="sm"
+            variant={!onSystem && (remembered === "mic" || !onTab) ? "default" : "outline"}
+            onClick={onMic}
+          >
             Use microphone
           </Button>
         )}
