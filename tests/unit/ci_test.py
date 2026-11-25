@@ -1290,7 +1290,7 @@ def test_candidate_and_linux_matrices_fit_without_parallel_throttling():
     matrix = test["strategy"]["matrix"]
     assert matrix["os"] == ["ubuntu-24.04"]
     assert matrix["levels"] == ["unit", "integration"]
-    macos = _macos_include(matrix, "pull_request", full=True, release=True, lane="all")
+    macos = _macos_include(matrix, "pull_request", full_ci=True, lane="all")
     assert macos == [{"os": "macos-latest", "python": "3.15", "levels": level} for level in ("unit", "integration")]
     assert e2e["strategy"]["matrix"]["suite"] == ["cli", "supervised", "web-1", "web-2", "web-3"]
     assert '\'["ubuntu-24.04","macos-latest"]\'' in e2e["strategy"]["matrix"]["os"]
