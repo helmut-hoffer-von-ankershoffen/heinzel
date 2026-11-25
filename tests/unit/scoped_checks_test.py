@@ -540,15 +540,37 @@ def test_direct_make_guards_include_branch_and_uncommitted_inputs(monkeypatch, m
 
 
 def test_early_ci_guards_use_whole_owning_files_so_test_renames_do_not_break_preflight():
-    command, partition = scoped.early_guard_commands([".github/workflows/ci.yml"])
-    assert {argument for argument in command if argument.startswith("tests/")} == {
-        "tests/unit/browser_runtime_setup_test.py",
-        "tests/unit/ci_supervised_test.py",
-        "tests/unit/ci_test.py",
-        "tests/unit/web_build_test.py",
-    }
-    assert "tests/e2e" in partition
-    assert partition[partition.index("-m") + 1] == "integration"
+    commands = scoped.early_guard_commands([".github/workflows/ci.yml", "src/heinzel/kernel/example.py"])
+    assert [command[3:-5] for command in commands] == [
+        ["tests/unit/standards_test.py::test_tests_and_template_use_only_variables_something_reads"],
+        ["tests/integration/guides_test.py"],
+        ["tests/unit/ci_test.py"],
+        [
+            "tests/unit/browser_runtime_setup_test.py",
+            "tests/unit/ci_supervised_test.py",
+            "tests/unit/web_build_test.py",
+        ],
+        ["tests/integration/e2e_lane_partition_test.py", "tests/e2e", "-m", "integration"],
+    ]
+    assert all(command[-5:] == ["-n", "2", "-x", "-q", "--session-timeout=120"] for command in commands)
+
+
+@pytest.mark.parametrize("failed_group", [0, 1, 2])
+def test_early_ci_guard_propagates_failure_from_any_group(monkeypatch, failed_group):
+    changed = [".github/workflows/ci.yml"]
+    commands = scoped.early_guard_commands(changed)
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        assert kwargs == {"timeout": 180, "light": False}
+        if command == commands[failed_group]:
+            raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(scoped, "run_check", run)
+    with pytest.raises(subprocess.CalledProcessError):
+        scoped.run_early_guards(changed)
+    assert calls == commands[: failed_group + 1]
 
 
 @pytest.fixture

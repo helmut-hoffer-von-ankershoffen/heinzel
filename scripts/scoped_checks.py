@@ -678,33 +678,25 @@ def early_guard_commands(changed: list[str]) -> list[list[str]]:
         }
         for path in changed
     )
-    targets = []
+    groups = []
     if fixture:
-        targets.append("tests/unit/standards_test.py::test_tests_and_template_use_only_variables_something_reads")
+        groups.append(["tests/unit/standards_test.py::test_tests_and_template_use_only_variables_something_reads"])
     if guides:
-        targets.append("tests/integration/guides_test.py")
+        groups.append(["tests/integration/guides_test.py"])
     if ci:
-        targets += ["tests/unit/browser_runtime_setup_test.py", "tests/unit/ci_supervised_test.py"]
-        targets += ["tests/unit/ci_test.py", "tests/unit/web_build_test.py"]
-    commands = [["uv", "run", "pytest", *targets, "-n", "2", "-x", "-q", "--session-timeout=120"]] if targets else []
-    if ci:
-        commands.append(
+        # Give the larger workflow contract suite its own session budget.
+        groups.extend(
             [
-                "uv",
-                "run",
-                "pytest",
-                "tests/integration/e2e_lane_partition_test.py",
-                E2E_DIRECTORY,
-                "-m",
-                "integration",
-                "-n",
-                "2",
-                "-x",
-                "-q",
-                "--session-timeout=120",
+                ["tests/unit/ci_test.py"],
+                [
+                    "tests/unit/browser_runtime_setup_test.py",
+                    "tests/unit/ci_supervised_test.py",
+                    "tests/unit/web_build_test.py",
+                ],
+                ["tests/integration/e2e_lane_partition_test.py", E2E_DIRECTORY, "-m", "integration"],
             ]
         )
-    return commands
+    return [["uv", "run", "pytest", *group, "-n", "2", "-x", "-q", "--session-timeout=120"] for group in groups]
 
 
 MODES = ("fast", "preflight", "push", "early-fast", "early-preflight")
