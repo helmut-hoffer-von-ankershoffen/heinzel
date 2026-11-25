@@ -214,12 +214,13 @@ def docs_steps(tooling: list[str]) -> list[str]:
             *(str(path.relative_to(ROOT)) for path in ROOT.glob("tests/unit/site_*_test.py")),
         }
     )
-    tests = " ".join([*MARKDOWN_TESTS, "tests/unit/ci_test.py", *own])
+    # Keep the Markdown and tooling selections disjoint, with the same deadline for each.
+    tooling_tests = " ".join(["tests/unit/ci_test.py", *(path for path in own if path not in MARKDOWN_TESTS)])
     return [
         f"format=uv run ruff format --check {files}",
         f"&ruff=uv run ruff check --no-fix {files}",
-        *DOCS_STEPS[:-1],
-        f"tests=uv run pytest {tests} -n 2 -x -q --session-timeout=120",
+        *DOCS_STEPS,
+        f"tooling-tests=uv run pytest {tooling_tests} -n 2 -x -q --session-timeout=120",
     ]
 
 
@@ -677,33 +678,26 @@ def early_guard_commands(changed: list[str]) -> list[list[str]]:
         }
         for path in changed
     )
-    targets = []
+    groups = []
+    if ci:
+        # Run the owning workflow tests first, in their own session.
+        groups.append(["tests/unit/ci_test.py"])
     if fixture:
-        targets.append("tests/unit/standards_test.py::test_tests_and_template_use_only_variables_something_reads")
+        groups.append(["tests/unit/standards_test.py::test_tests_and_template_use_only_variables_something_reads"])
     if guides:
-        targets.append("tests/integration/guides_test.py")
+        groups.append(["tests/integration/guides_test.py"])
     if ci:
-        targets += ["tests/unit/browser_runtime_setup_test.py", "tests/unit/ci_supervised_test.py"]
-        targets += ["tests/unit/ci_test.py", "tests/unit/web_build_test.py"]
-    commands = [["uv", "run", "pytest", *targets, "-n", "2", "-x", "-q", "--session-timeout=120"]] if targets else []
-    if ci:
-        commands.append(
+        groups.extend(
             [
-                "uv",
-                "run",
-                "pytest",
-                "tests/integration/e2e_lane_partition_test.py",
-                E2E_DIRECTORY,
-                "-m",
-                "integration",
-                "-n",
-                "2",
-                "-x",
-                "-q",
-                "--session-timeout=120",
+                [
+                    "tests/unit/browser_runtime_setup_test.py",
+                    "tests/unit/ci_supervised_test.py",
+                    "tests/unit/web_build_test.py",
+                ],
+                ["tests/integration/e2e_lane_partition_test.py", E2E_DIRECTORY, "-m", "integration"],
             ]
         )
-    return commands
+    return [["uv", "run", "pytest", *group, "-n", "2", "-x", "-q", "--session-timeout=120"] for group in groups]
 
 
 MODES = ("fast", "preflight", "push", "early-fast", "early-preflight")
