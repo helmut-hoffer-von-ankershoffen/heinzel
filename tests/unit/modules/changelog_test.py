@@ -1,6 +1,9 @@
 import json
+import time
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import SecretStr
@@ -277,8 +280,6 @@ def test_changelog_header_time_is_read_with_or_without_a_time():
 
 
 def test_release_time_prefers_github_caches_it_and_falls_back_offline(monkeypatch, tmp_path):
-    from datetime import UTC, datetime
-
     from heinzel.modules.system import _github as github
     from heinzel.modules.system._service import release_time
 
@@ -307,13 +308,43 @@ def test_release_time_prefers_github_caches_it_and_falls_back_offline(monkeypatc
     assert cut.published_at == datetime(2026, 11, 22, 7, 41, tzinfo=UTC)
 
 
-def test_newer_release_shows_publish_time_with_zone(monkeypatch):
-    from datetime import UTC, datetime
+@contextmanager
+def local_zone(monkeypatch, zone):
+    """Set the process timezone and restore it after the environment is restored."""
+    try:
+        with monkeypatch.context() as local:
+            local.setenv("TZ", zone)
+            time.tzset()
+            yield
+    finally:
+        time.tzset()
 
-    monkeypatch.setenv("TZ", "Europe/Berlin")
-    import time
 
-    time.tzset()
+@pytest.fixture
+def berlin(monkeypatch):
+    with local_zone(monkeypatch, "Europe/Berlin"):
+        yield
+
+
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="time.tzset is Unix only")
+@pytest.mark.parametrize("raises", [False, True])
+def test_local_zone_restores_process_timezone(monkeypatch, raises):
+    moment = datetime(2026, 11, 22, 7, 41, tzinfo=UTC)
+    with local_zone(monkeypatch, "UTC"):
+        assert moment.astimezone().strftime("%H:%M %Z") == "07:41 UTC"
+        if raises:
+            message = "timezone fixture probe"
+            with pytest.raises(RuntimeError, match=message), local_zone(monkeypatch, "Europe/Berlin"):
+                raise RuntimeError(message)
+        else:
+            with local_zone(monkeypatch, "Europe/Berlin"):
+                assert moment.astimezone().strftime("%H:%M %Z") == "08:41 CET"
+        assert moment.astimezone().strftime("%H:%M %Z") == "07:41 UTC"
+
+
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="time.tzset is Unix only")
+@pytest.mark.usefixtures("berlin")
+def test_newer_release_shows_publish_time_with_zone():
     moment = datetime(2026, 11, 22, 7, 41, tzinfo=UTC)
     note = ReleaseNotes(version="1.0.0", date=moment.date(), published_at=moment, notes="n", url=None)
     console = Console(width=200, force_terminal=False)
