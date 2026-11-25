@@ -916,6 +916,49 @@ def test_hosted_release_writes_stay_inactive_until_queue_and_freeze_are_protecte
     assert "--latest=false" not in (workflows / "publish.yml").read_text()
 
 
+@pytest.mark.parametrize(
+    ("inputs", "accepted"),
+    [
+        (("workflow_dispatch", False, False, "refs/heads/main"), False),
+        (("schedule", False, False, "refs/heads/main"), False),
+        (("workflow_dispatch", True, True, "refs/heads/main"), False),
+        (("workflow_dispatch", False, False, "refs/heads/old-release-workflow"), False),
+        (("workflow_dispatch", True, False, "refs/heads/main"), True),
+        (("pull_request", False, False, "refs/pull/1/merge"), True),
+    ],
+)
+def test_release_mode_never_grants_a_hosted_writer(tmp_path, inputs, accepted):
+    """Execute the shipped admission step, including scheduled and stale-ref inputs."""
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/release-chain.yml").read_text())
+    mode = next(step for step in workflow["jobs"]["plan"]["steps"] if step.get("id") == "mode")
+    output = tmp_path / "output"
+    event, dry, probe, ref = inputs
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", mode["run"]],
+        env={
+            "EVENT": event,
+            "DRY": "true" if dry else "false",
+            "PROBE": "true" if probe else "false",
+            "VERSION": "0.9.56",
+            "CUT_SHA": "",
+            "REF": ref,
+            "GITHUB_OUTPUT": str(output),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
+    if accepted:
+        assert result.returncode == 0, result.stderr
+        assert output.read_text().splitlines() == ["dry=true", "version=0.9.56"]
+    else:
+        assert result.returncode == 1
+        assert not output.exists()
+
+
 class FakeShell:
     def __init__(self, fail=None):
         self.calls = []
