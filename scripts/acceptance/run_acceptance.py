@@ -1973,11 +1973,6 @@ def case_update(case):
         return evidence
 
     case.step("installed Core bytes, interpreter, configuration and inventory after the update", after)
-    plugin_target = case.step("bind the current user-plugin release independently", lambda: historical_plugin_target(case))
-    case.step(
-        "the current updater reconciles the historical user plugin",
-        lambda: reconcile_historical_plugin(case, target, plugin_target),
-    )
 
     def serve():
         session = ui_app(case, "updated-ui")
@@ -2001,6 +1996,11 @@ def case_update(case):
         return {"offline_continuity": True}
 
     case.step("updated app runs offline without any profile", offline)
+    plugin_target = case.step("bind the current user-plugin release independently", lambda: historical_plugin_target(case))
+    case.step(
+        "the current updater reconciles the historical user plugin",
+        lambda: reconcile_historical_plugin(case, target, plugin_target),
+    )
     case.step("a repeated update is a no-op", lambda: _second_update(case, target))
 
 
@@ -2029,7 +2029,8 @@ def installed_distribution_records(prefix):
     records = {}
     for path in site_packages(prefix).glob("*.dist-info/METADATA"):
         name = re.sub(r"[-_.]+", "-", BytesParser().parsebytes(path.read_bytes())["Name"]).lower()
-        records.setdefault(name, []).append(path.parent / "RECORD")
+        check(name not in records, f"{name}: duplicate installed distribution identity")
+        records[name] = path.parent / "RECORD"
     return records
 
 
@@ -2044,10 +2045,11 @@ def unchanged_distribution_files(prefix, names):
     inventory = installed_distribution_records(prefix)
     result = {}
     for name in sorted(names):
-        records = inventory.get(name, [])
-        check(len(records) == 1 and records[0].is_file(), f"{name}: no unique installed file inventory")
+        record = inventory.get(name)
+        check(record is not None and record.is_file(), f"{name}: no unique installed file inventory")
         files = {}
-        for row in csv.reader(records[0].read_text().splitlines()):
+        for row in csv.reader(record.read_text().splitlines()):
+            check(row and row[0], f"{name}: invalid installed file inventory row")
             path = (site / row[0]).resolve()
             if path.suffix == ".pyc" or "__pycache__" in path.parts:
                 continue
@@ -2073,6 +2075,11 @@ def reconcile_historical_plugin(case, target, plugin_target):
     python = installed_interpreter(case)
     moved = baseline != latest
     if moved:
+        _, version, _ = case.run(
+            [str(prefix / "bin/python"), "-I", "-c", "import sys; print('%d.%d' % sys.version_info[:2])"],
+            "historical-plugin-python", SHORT_DEADLINE,
+        )
+        check(version.strip() == "3.15", "Historical plugin reconciliation requires managed Python 3.15")
         result = hz(case, "system", "update", label="historical-plugin-reconciliation")
         check(result["updated"] is True, "The stale user plugin was not reconciled")
         check(result["before"] == result["after"] == target["version"], "Plugin reconciliation changed Core")
@@ -2084,6 +2091,10 @@ def reconcile_historical_plugin(case, target, plugin_target):
             status = "upgraded" if name == EXAMPLE_PLUGIN else "unchanged"
             check(row["status"] == status and row["before"] == old["version"] and row["after"] == wanted,
                   f"Unexpected reconciliation result for {name}")
+            check(row.get("disabled") is False and row.get("reason") is None, f"Reconciliation failed or disabled {name}")
+            if name == EXAMPLE_PLUGIN:
+                check(row.get("pinned") is None and row.get("checked") is True,
+                      "The user plugin did not make the documented checked pin transition")
     found = plugin_map(case, "plugins-after-reconciliation")
     check(set(found) == set(before), "Reconciliation changed the installed plugin set")
     for name, old in before.items():

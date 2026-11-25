@@ -1379,7 +1379,9 @@ def test_historical_reconciliation_only_moves_the_exact_stale_plugin(tmp_path, m
     }
     after = {**before, "heinzel-example": {"version": "0.5.3", "enabled": True}}
     calls = []
-    case = SimpleNamespace(root=tmp_path, prefix=tmp_path, notes={}, plugins_expected={})
+    case = SimpleNamespace(
+        root=tmp_path, prefix=tmp_path, notes={}, plugins_expected={}, run=lambda *args: (0, "3.15\n", "")
+    )
     monkeypatch.setattr(
         harness, "plugin_map", lambda _case, label: before if label == "plugins-before-reconciliation" else after
     )
@@ -1392,7 +1394,8 @@ def test_historical_reconciliation_only_moves_the_exact_stale_plugin(tmp_path, m
     monkeypatch.setattr(harness, "snapshot_files", lambda root: {"config": "same"})
     monkeypatch.setattr(harness, "installed_interpreter", lambda case: "private/python3.15")
     monkeypatch.setattr(harness, "site_packages", lambda prefix: prefix)
-    monkeypatch.setattr(harness, "compare_wheel", lambda *args: 6)
+    verified = []
+    monkeypatch.setattr(harness, "compare_wheel", lambda *args: verified.append(args) or 6)
     monkeypatch.setattr(harness, "verify_state", lambda *args: None)
 
     def update(_case, *args, **kwargs):
@@ -1407,6 +1410,10 @@ def test_historical_reconciliation_only_moves_the_exact_stale_plugin(tmp_path, m
                     "before": old["version"],
                     "after": after[name]["version"],
                     "status": "upgraded" if name == "heinzel-example" else "unchanged",
+                    "checked": True,
+                    "pinned": None,
+                    "disabled": False,
+                    "reason": None,
                 }
                 for name, old in before.items()
             ],
@@ -1417,12 +1424,30 @@ def test_historical_reconciliation_only_moves_the_exact_stale_plugin(tmp_path, m
         case, {"version": "0.9.55"}, {"version": "0.5.3", "sha256": "a" * 64, "wheel": str(tmp_path / "target.whl")}
     )
     assert result["changed"] is not current
+    assert len(verified) == 1  # even an already current plugin must match the independently bound bytes
     assert calls == ([] if current else [("system", "update")])
     assert case.plugins_expected["heinzel-example"] == {"enabled": True, "version": "0.5.3"}
 
 
 @pytest.mark.parametrize(
-    "defect", ["core", "other-plugin", "disabled", "plugin-target", "config", "files", "python", "not-updated"]
+    "defect",
+    [
+        "core",
+        "core-before",
+        "other-plugin",
+        "disabled",
+        "plugin-target",
+        "config",
+        "files",
+        "python",
+        "not-updated",
+        "unagreed",
+        "unchecked",
+        "disabled-row",
+        "reason-row",
+        "old-python",
+        "ahead",
+    ],
 )
 def test_historical_reconciliation_refuses_unrelated_or_incomplete_changes(tmp_path, monkeypatch, defect):
     before = {
@@ -1433,13 +1458,21 @@ def test_historical_reconciliation_refuses_unrelated_or_incomplete_changes(tmp_p
         "heinzel-example": {"version": "0.5.3", "enabled": True},
         "heinzel-resource": {"version": "0.1.7", "enabled": False},
     }
+    if defect == "ahead":
+        before["heinzel-example"]["version"] = "0.5.4"
     if defect == "other-plugin":
         after["heinzel-resource"]["version"] = "0.1.8"
     if defect == "disabled":
         after["heinzel-resource"]["enabled"] = True
     if defect == "plugin-target":
         after["heinzel-example"]["version"] = "0.5.4"
-    case = SimpleNamespace(root=tmp_path, prefix=tmp_path, notes={}, plugins_expected={})
+    case = SimpleNamespace(
+        root=tmp_path,
+        prefix=tmp_path,
+        notes={},
+        plugins_expected={},
+        run=lambda *args: (0, "3.12\n" if defect == "old-python" else "3.15\n", ""),
+    )
     monkeypatch.setattr(
         harness, "plugin_map", lambda _case, label: before if label == "plugins-before-reconciliation" else after
     )
@@ -1462,7 +1495,7 @@ def test_historical_reconciliation_refuses_unrelated_or_incomplete_changes(tmp_p
         "hz",
         lambda *args, **kwargs: {
             "updated": defect != "not-updated",
-            "before": "0.9.55",
+            "before": "0.9.54" if defect == "core-before" else "0.9.55",
             "after": "0.9.56" if defect == "core" else "0.9.55",
             "plugins": [
                 {
@@ -1470,12 +1503,33 @@ def test_historical_reconciliation_refuses_unrelated_or_incomplete_changes(tmp_p
                     "before": old["version"],
                     "after": after[name]["version"],
                     "status": "upgraded" if name == "heinzel-example" else "unchanged",
+                    "checked": defect != "unchecked",
+                    "pinned": "==0.5.2" if defect == "unagreed" else None,
+                    "disabled": defect == "disabled-row",
+                    "reason": "failed" if defect == "reason-row" else None,
                 }
                 for name, old in before.items()
             ],
         },
     )
-    with pytest.raises(harness.StepFailed):
+    expected = {
+        "core": "changed Core",
+        "core-before": "changed Core",
+        "other-plugin": "Unexpected reconciliation result for heinzel-resource",
+        "disabled": "unexpected plugin state: heinzel-resource",
+        "plugin-target": "Unexpected reconciliation result for heinzel-example",
+        "config": "user configuration",
+        "files": "another package",
+        "python": "managed interpreter",
+        "not-updated": "not reconciled",
+        "unagreed": "checked pin transition",
+        "unchecked": "checked pin transition",
+        "disabled-row": "failed or disabled",
+        "reason-row": "failed or disabled",
+        "old-python": "requires managed Python 3.15",
+        "ahead": "newer than the bound stable release",
+    }
+    with pytest.raises(harness.StepFailed, match=re.escape(expected[defect])):
         harness.reconcile_historical_plugin(
             case, {"version": "0.9.55"}, {"version": "0.5.3", "sha256": "a" * 64, "wheel": str(tmp_path / "target.whl")}
         )
@@ -1569,3 +1623,47 @@ def test_distribution_records_use_metadata_identity_not_directory_spelling(tmp_p
     (metadata / "RECORD").write_text(f"{spelling}-3.4.0.dist-info/METADATA,,\n")
     assert harness.installed_distribution_names(prefix) == {"jaraco-classes"}
     assert set(harness.unchanged_distribution_files(prefix, {"jaraco-classes"})) == {"jaraco-classes"}
+
+
+def test_migration_serves_and_runs_offline_before_reconciliation_and_strict_noop(monkeypatch):
+    steps = []
+
+    def step(name, action):
+        steps.append(name)
+        return {"after": "0.9.55"} if name == "the update the user runs" else {}
+
+    case = SimpleNamespace(
+        ctx={
+            "from_app": {"version": "0.9.8", "profile": {}, "accepted": {}, "url": "public"},
+            "update_target": {"version": "0.9.55"},
+        },
+        env={},
+        provide_uv=lambda: None,
+        step=step,
+    )
+    monkeypatch.setattr(harness, "app_cycle", lambda *args: None)
+    harness.case_update(case)
+    expected = [
+        "installed Core bytes, interpreter, configuration and inventory after the update",
+        "updated app serves the target Core's identity and frontend",
+        "updated app runs offline without any profile",
+        "bind the current user-plugin release independently",
+        "the current updater reconciles the historical user plugin",
+        "a repeated update is a no-op",
+    ]
+    assert steps[-len(expected) :] == expected
+
+
+def test_duplicate_distribution_identity_and_blank_record_are_refused(tmp_path):
+    site = tmp_path / "lib/python3.15/site-packages"
+    first = site / "first-1.dist-info"
+    first.mkdir(parents=True)
+    (first / "METADATA").write_text("Name: same.package\n")
+    (first / "RECORD").write_text("\n")
+    with pytest.raises(harness.StepFailed, match="invalid installed file inventory row"):
+        harness.unchanged_distribution_files(tmp_path, {"same-package"})
+    other = site / "other-1.dist-info"
+    other.mkdir()
+    (other / "METADATA").write_text("Name: Same_Package\n")
+    with pytest.raises(harness.StepFailed, match="duplicate installed distribution identity"):
+        harness.installed_distribution_names(tmp_path)
