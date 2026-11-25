@@ -8,10 +8,7 @@ name: Gate review
 #     review is posted as a pull request comment;
 #   - gate paths touched but the review cannot run (bot sender such as Dependabot or the update-prs merge, fork, draft,
 #     CLAUDE_REVIEW not "true"): the check fails with "needs a human or agent review". A review that did not run never
-#     passes;
-#   - gate paths touched but no Claude credential is set, or the API rejects it before any model call (the result is
-#     an error with zero cost and no model usage): the check fails like any review that did not run, with one line
-#     that names the credential as the cause, so nobody looks for a fault in the pull request.
+#     passes.
 # It runs on pull_request_target, so the workflow and its gate-path list are the base branch's: a pull request cannot
 # edit them to pass its own review. The pull request head is data only: the file list comes from the API, and the
 # reviewer works in a checkout of the base branch (its CLAUDE.md, settings and hooks are the base's) and reads the head
@@ -98,11 +95,6 @@ jobs:
       verdict_line: ${{ steps.result.outputs.verdict_line }}
       result: ${{ steps.result.outputs.result }}
     steps:
-      - name: Is a Claude credential set?
-        id: credential
-        env:
-          PRESENT: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
-        run: echo "present=$PRESENT" >> "$GITHUB_OUTPUT"
       # The base branch, never the head: the reviewer's CLAUDE.md, settings and hooks are the trusted ones.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -119,7 +111,6 @@ jobs:
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}" fetch --no-tags origin "+refs/pull/${PR}/head:refs/review/head"
           git rev-parse --verify "refs/review/head^{commit}"
       - id: review
-        if: steps.credential.outputs.present == 'true'
         continue-on-error: true # judged by the next step
         uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc # v1.0.276
         with:
@@ -144,18 +135,9 @@ jobs:
       - id: result
         name: Collect the result
         env:
-          PRESENT: ${{ steps.credential.outputs.present }}
           OUTCOME: ${{ steps.review.outcome }}
           EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
         run: |
-          not_run() { echo "::error title=Gate review not run::$1: nothing was reviewed; fix the repository secret, then rerun"; exit 1; }
-          if [[ "$PRESENT" != true ]]; then not_run "No Claude credential is set (CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY)"; fi
-          # The API refused the credential before any model call: an error result with zero cost and no model usage.
-          if [[ -f "$EXECUTION_FILE" ]] && jq -e 'map(select(.type == "result")) | last | . != null and .is_error == true
-              and (.total_cost_usd // 0) == 0 and (.num_turns // 0) <= 1 and ((.modelUsage // {}) | length) == 0' \
-              "$EXECUTION_FILE" >/dev/null; then
-            not_run "The Claude API rejected the credential before any model call"
-          fi
           if [[ "$OUTCOME" != success || ! -f "$EXECUTION_FILE" ]]; then
             echo "::error::Gate review failed, nothing was reviewed (review step: $OUTCOME)"
             exit 1

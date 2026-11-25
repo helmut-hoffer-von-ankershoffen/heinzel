@@ -386,7 +386,10 @@ def ci_workflow() -> str:
     # Core supervised/browser partitions do not exist in plugins: keep one complete E2E job per OS.
     text = text.replace("End-to-end ${{ matrix.suite }} (", "End-to-end (")
     text = re.sub(
-        r"(?m)^        # Core E2E lanes:[^\n]*\n        suite: \[cli, supervised, web-1, web-2, web-3\]\n", "", text
+        r"(?m)^        # Core E2E lanes:[^\n]*\n        suite: \[cli, supervised, web-1, web-2, web-3\]\n"
+        r"|^        env:\n          # Create the CLI test venv[^\n]*\n          UV_PYTHON_PREFERENCE: [^\n]*\n",
+        "",
+        text,
     )
     text = text.replace("        if: matrix.suite == 'supervised' || startsWith(matrix.suite, 'web')\n", "")
     text = text.replace("make test-e2e SUITE=${{ matrix.suite }}", "make test-e2e")
