@@ -18,6 +18,7 @@ import {
   readUpdateStatus,
   startUpdate,
   type UpdateAnswers,
+  updateDesktopApp,
 } from "@/features/runtime/updates/controller";
 import { UpdatePlanDetails } from "@/features/runtime/updates/UpdatePlanDetails";
 import { describe, partSegments } from "@/features/runtime/updates/updateState";
@@ -87,6 +88,12 @@ export function UpdateStatus() {
     onError: () => console.info(JSON.stringify({ event: "web.update.check", outcome: "failed" })),
   });
   const { mutate: runCheck } = check;
+  // The desktop app older than this server: the server quits, replaces and reopens it on its own.
+  const desktopUpdate = useMutation({
+    mutationFn: () => updateDesktopApp(AbortSignal.timeout(15_000)),
+    onSuccess: () => console.info(JSON.stringify({ event: "web.update.desktop", outcome: "started" })),
+    onError: () => console.info(JSON.stringify({ event: "web.update.desktop", outcome: "failed" })),
+  });
   // "Check for Updates…" in the desktop app menu opens this pane and does the same check.
   useEffect(
     () =>
@@ -265,13 +272,17 @@ export function UpdateStatus() {
       : null;
   const canUpdate = status?.supported && !busy && !planning && recovery === "none" && !installedCore;
   const canLoad = installedCore !== null && !busy && recovery === "none";
-  const label = view.available ? t("updates.availableLabel") : t("updates.title");
+  const desktop = status?.desktop?.behind ? status.desktop : null;
+  const canUpdateDesktop = desktop !== null && !busy && !desktopUpdate.isPending && !desktopUpdate.isSuccess;
+  const label = view.available || desktop ? t("updates.availableLabel") : t("updates.title");
   return (
     <FooterItem
       label={label}
       state={view.tone}
       icon={busy ? LoaderCircle : Download}
-      className={view.available && !problem ? "animate-pulse text-bad" : view.allCurrent ? "text-ok" : undefined}
+      className={
+        (view.available || desktop) && !problem ? "animate-pulse text-bad" : view.allCurrent ? "text-ok" : undefined
+      }
       disabled={busy}
       openRequest={openRequest}
       actions={
@@ -287,6 +298,11 @@ export function UpdateStatus() {
               {t("updates.loadInstalled", { version: installedCore })}
             </PaneAction>
           )}
+          {canUpdateDesktop && (
+            <PaneAction icon={Download} primary={view.count === 0} onClick={() => desktopUpdate.mutate()}>
+              {t("updates.desktopAction")}
+            </PaneAction>
+          )}
           {canUpdate && (
             <PaneAction icon={Download} primary={view.count > 0} onClick={() => void ask()}>
               {view.count > 1
@@ -297,7 +313,12 @@ export function UpdateStatus() {
             </PaneAction>
           )}
           {!busy && (
-            <PaneAction icon={RefreshCw} disabled={check.isPending} onClick={() => runCheck()}>
+            <PaneAction
+              icon={RefreshCw}
+              spinning={check.isPending}
+              disabled={check.isPending}
+              onClick={() => runCheck()}
+            >
               {t("updates.check")}
             </PaneAction>
           )}
@@ -326,6 +347,21 @@ export function UpdateStatus() {
             </div>
           </div>
         ))}
+        {desktop && status && (
+          <div>
+            <p role="status" className="text-bad">
+              {desktopUpdate.isSuccess
+                ? t("updates.desktopStarted")
+                : t("updates.desktopBehind", { app: desktop.version ?? "", version: status.current })}
+            </p>
+            {!desktopUpdate.isSuccess && <p className="text-xs text-muted-foreground">{t("updates.desktopHow")}</p>}
+            {desktopUpdate.error && (
+              <p role="alert" className="text-bad">
+                {desktopUpdate.error.message}
+              </p>
+            )}
+          </div>
+        )}
         {planning && <p role="status">{t("updates.planning")}</p>}
         <Progress label={t("updates.progress")} segments={segments} />
         {installedDate && (

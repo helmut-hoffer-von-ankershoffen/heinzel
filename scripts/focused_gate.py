@@ -17,7 +17,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from scripts.ci_workload import WorkloadSource
-from scripts.focused_coverage import MAX_FILE, REPORT, canonical, config_policy, evidence, parse
+from scripts.focused_coverage import (
+    FLOOR,
+    MAX_FILE,
+    MEASUREMENT,
+    REPORT,
+    THRESHOLD,
+    canonical,
+    config_policy,
+    evidence,
+    parse,
+)
 from scripts.focused_plan import (
     ARTIFACT_PREFIX,
     LANES,
@@ -367,11 +377,55 @@ def _artifact(
         return {entry.filename: archive.read(entry) for entry in files}
 
 
+TOP_FILES = 5
+TOP_LINES = 12
+
+
+def _ranges(lines: list[int]) -> str:
+    """Compress sorted line numbers into `3-5, 9` form, at most TOP_LINES groups."""
+    groups: list[list[int]] = []
+    for line in sorted(set(lines)):
+        if groups and line == groups[-1][1] + 1:
+            groups[-1][1] = line
+        else:
+            groups.append([line, line])
+    shown = [f"{a}" if a == b else f"{a}-{b}" for a, b in groups[:TOP_LINES]]
+    return ", ".join(shown) + (", ..." if len(groups) > TOP_LINES else "")
+
+
+def coverage_notes(lane: str, recorded: dict[str, Any], raw: bytes) -> list[str]:
+    """Name measured vs required percent and the least covered files, with their missing lines."""
+    coverage = recorded.get("coverage")
+    if not isinstance(coverage, dict):
+        return []
+    covered, total = coverage["covered"], coverage["total"]
+    measured = f"{100 * covered / total:.2f}% ({covered}/{total} statements and branches)"
+    notes = [f"Lane {lane}: measured {measured}, required {FLOOR}% floor and {THRESHOLD}% report threshold."]
+    missing = {}
+    try:
+        missing = {path: row.get("missing_lines", []) for path, row in json.loads(raw)["files"].items()}
+    except (ValueError, KeyError, AttributeError):
+        notes.append("(per-line misses unavailable: the coverage report could not be read)")
+    ranked = sorted(
+        (
+            (path, sum(c for c, _ in row.values()), sum(t for _, t in row.values()))
+            for path, row in coverage["files"].items()
+        ),
+        key=lambda item: (item[1] - item[2], item[0]),
+    )
+    for path, hit, count in ranked[:TOP_FILES]:
+        if hit < count:
+            lines = f"; missing lines {_ranges(missing[path])}" if missing.get(path) else ""
+            notes.append(f"  {path}: {hit}/{count} ({100 * hit / count:.1f}%), {count - hit} uncovered{lines}")
+    return notes
+
+
 def _verify_workload(
     gate: Gate,
     source: GateSource,
     scope: Scope,
     read: Callable[[str], bytes],
+    notes: list[str] | None = None,
 ) -> None:
     jobs = jobs_for(gate, source)
     expected = STATIC_JOBS | set(scope.workload.jobs)
@@ -394,6 +448,8 @@ def _verify_workload(
     for lane, name in by_lane.items():
         files = _artifact(read, names[f"Focused tests ({lane})"], artifacts[name], name)
         recorded = parse(files.pop(REPORT))
+        if notes is not None:
+            notes.extend(coverage_notes(lane, recorded, files.get(MEASUREMENT, b"")))
         require(
             canonical(recorded) == canonical(evidence(scope, lane, run, 1, files)),
             "focused typed evidence differs from exact source or recorded tests",
@@ -509,6 +565,96 @@ def selected_pr_registry(manifest: str, slots: tuple[str, ...], key: str) -> str
     return selected
 
 
+MAIN_ONLY_MACOS = ("make setup", "End-to-end", "Electron")
+SELECTOR_KEYS = frozenset(
+    {
+        "core",
+        "site_only",
+        "surface_only",
+        "macos_full",
+        "notifier",
+        "contracts",
+        "electron",
+        "plugins",
+        "release",
+    }
+)
+# What GitHub names a matrix job that was skipped: the unexpanded template of its `name:` in ci.yml.
+SKIPPED_TEMPLATES = {
+    "setup": "make setup (${{ matrix.os }})",
+    "test": (
+        "Test (${{ matrix.os }}, Python ${{ matrix.python }}"
+        "${{ matrix.levels && format(', {0}', matrix.levels) || '' }})"
+    ),
+    "e2e": "End-to-end ${{ matrix.suite }} (${{ matrix.os }})",
+    "electron": "Electron (${{ matrix.os }})",
+    "consumer": "Consumer (${{ matrix.name }})",
+}
+
+
+def selector_output(log: bytes) -> dict[str, bool]:
+    """Read the selection the `Changed paths` job printed, each key exactly once as true or false.
+
+    Raises:
+        CandidateError: The log is oversized or a key is missing, repeated, unknown or not a boolean.
+    """
+    require(len(log) <= 1024 * 1024, "oversized selector log")
+    found = re.findall(rb"(?m)^\d{4}-[^ \r\n]+ selector-output: ([a-z_]+)=(true|false)\r?$", log)
+    keys = [key.decode() for key, _ in found]
+    require(len(keys) == len(set(keys)) and set(keys) == SELECTOR_KEYS, "missing or ambiguous selector output")
+    return {key.decode(): value == b"true" for key, value in found}
+
+
+def selected_pr_inventory(selected: dict[str, bool]) -> dict[str, str]:
+    """Name every job of an ordinary pull request run: what the selector chose succeeds, the rest is skipped.
+
+    The rules mirror the `if:` of each job in ci.yml (and its `Require the complete direct CI workload` step), so a
+    selected job that was skipped, and a job that ran without being selected, both differ from the inventory.
+    A release candidate run (the release step's flag) keeps the complete inventory.
+    """
+    inventory = expected_jobs("pull_request")
+    inventory["Release candidate source"] = "skipped"  # ordinary full PRs are not release candidates
+    if selected["release"]:
+        return inventory
+    core, site, surface = selected["core"], selected["site_only"], selected["surface_only"]
+    tested = core and not site
+    for name in [n for n in inventory if n.endswith("(macos-latest)") and n.startswith(MAIN_ONLY_MACOS)]:
+        del inventory[name]  # a pull request that is not a release candidate runs these on Linux only
+
+    def rule(prefix: str, on: bool, template: str | None = None) -> None:
+        names = [name for name in inventory if name.startswith(prefix)]
+        for name in names:
+            del inventory[name]
+        if on:
+            inventory.update(dict.fromkeys(names, "success"))
+        elif template:
+            inventory[template] = "skipped"
+        else:
+            inventory.update(dict.fromkeys(names, "skipped"))
+
+    rule("make setup", core, SKIPPED_TEMPLATES["setup"])
+    rule("Test (", tested, SKIPPED_TEMPLATES["test"])
+    rule("End-to-end ", tested, SKIPPED_TEMPLATES["e2e"])
+    rule("Electron (", selected["electron"], SKIPPED_TEMPLATES["electron"])
+    rule("Consumer (heinzel-", selected["contracts"], SKIPPED_TEMPLATES["consumer"])
+    for name, on in {
+        "Lint, contracts and types": core or surface,
+        "Dependency audit": core,
+        "Coverage": tested,
+        "Performance tests": tested,
+        "Plugin template": not site,
+        "Heinzel Notifier (macOS app)": selected["notifier"],
+        "macOS-specific tests": (selected["macos_full"] or surface) and (core or surface) and not site,
+        "Build": core,
+        "Plugin SDK candidate": core,
+        "Optional source plugins": selected["plugins"] or selected["contracts"],
+        "Public contract consumers": selected["contracts"],
+        "Site tests": site,
+    }.items():
+        inventory[name] = "success" if on else "skipped"
+    return inventory
+
+
 def full_pr_jobs(
     gate: Gate,
     source: GateSource,
@@ -533,8 +679,10 @@ def full_pr_jobs(
         "full CI merge parents differ from the exact base and head",
     )
     jobs = quarantine_lane(jobs_for(gate, source), source.run["id"], source.source.head)
-    inventory = expected_jobs("pull_request")
-    inventory["Release candidate source"] = "skipped"  # ordinary full PRs are not release candidates
+    changed_jobs = [job for job in jobs if job["name"] == "Changed paths"]
+    require(len(changed_jobs) == 1 and changed_jobs[0]["conclusion"] == "success", "full PR selector job is missing")
+    log = read(f"actions/jobs/{changed_jobs[0]['id']}/logs")
+    inventory = selected_pr_inventory(selector_output(log))
     require(
         len(jobs) == len(inventory) and {job["name"] for job in jobs} == set(inventory), "full PR job inventory differs"
     )
@@ -542,14 +690,24 @@ def full_pr_jobs(
         require(job["conclusion"] == inventory[job["name"]], "full PR job did not meet its required conclusion")
         if job["conclusion"] == "success":
             _check(gate, source, job)
-    changed = next(job for job in jobs if job["name"] == "Changed paths")
-    log = read(f"actions/jobs/{changed['id']}/logs")
     require(full_checkout(log) == source.commit, "full CI tested another merge commit")
     return jobs
 
 
-def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes], *, slots: tuple[str, ...] = ()) -> str:
-    """Return a typed verdict for the completed original CI attempt, without publishing checks."""
+def verify(  # noqa: PLR0913 - one linear verdict; the notes only describe it
+    gate: Gate,
+    run_id: int,
+    manifest: str,
+    read: Callable[[str], bytes],
+    *,
+    slots: tuple[str, ...] = (),
+    notes: list[str] | None = None,
+) -> str:
+    """Return a typed verdict for the completed original CI attempt, without publishing checks.
+
+    `notes` collects what a reader of the check run needs: the scope and the measured and required coverage.
+    """
+    notes = [] if notes is None else notes
     snapshot = pull_identity(gate, gate.head)
     candidate = bool(release_version("pull_request", REPOSITORY, "", {"pull_request": snapshot[0]}))
     if not candidate:
@@ -596,7 +754,9 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes],
             "candidate needs one coverage artifact from its own attempt",
         )
         total = whole_total(_verified_archive(read, jobs[0], artifacts[0], ARTIFACT, CANDIDATE_UPLOAD_NAME))
-        require(total >= red_below(Path(WORKFLOW).read_text()), "full candidate coverage is below its floor")
+        floor = red_below(Path(WORKFLOW).read_text())
+        notes.append(f"Whole-project coverage: measured {total}%, required {floor}%. Scope: the whole project.")
+        require(total >= floor, f"full candidate coverage {total}% is below its {floor}% floor")
         verdict = (
             "Whole-project coverage measured by full PR CI"
             if full
@@ -608,7 +768,10 @@ def verify(gate: Gate, run_id: int, manifest: str, read: Callable[[str], bytes],
             "focused workflow or producer does not match the detached review",
         )
         _verify_config(scope)
-        _verify_workload(gate, source, scope, read)
+        paths = sorted(scope.changed)
+        shown = ", ".join(paths[:TOP_LINES]) + (f", ... ({len(paths)} files)" if len(paths) > TOP_LINES else "")
+        notes.append(f"Scope: {len(paths)} changed file(s), {len(scope.production)} production: {shown}")
+        _verify_workload(gate, source, scope, read, notes)
         verdict = (
             "PR scoped coverage passed; whole-project validation deferred to release candidate"
             if scope.production
@@ -683,7 +846,11 @@ def verify_main(  # noqa: PLR0913 - preserve the independently supplied source, 
 
 
 def main() -> None:
-    """Run from the protected merge gate, with the workload Git tree fetched as data."""
+    """Run from the protected merge gate, with the workload Git tree fetched as data.
+
+    Raises:
+        CandidateError: The evidence does not meet the gate; the report names why.
+    """
     gate = Gate(REPOSITORY, os.environ.get("PR_NUMBER", ""), os.environ["PR_HEAD_SHA"], os.environ["GITHUB_TOKEN"])
 
     def read(path: str) -> bytes:
@@ -700,10 +867,30 @@ def main() -> None:
             )
         )
         return
-    verdict = verify(gate, run, manifests, read, slots=registry_slots(dict(os.environ)))
-    with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
-        output.write(f"verdict={verdict}\n")
-    print(verdict)
+    notes: list[str] = []
+    try:
+        verdict = verify(gate, run, manifests, read, slots=registry_slots(dict(os.environ)), notes=notes)
+    except CandidateError as error:
+        publish(f"coverage-floor FAILED (not met): {error}", notes)
+        raise
+    except Exception as error:
+        # A tool error is not a coverage verdict: say so, so nobody hunts for a coverage gap that isn't there.
+        publish(
+            "coverage-floor TOOL ERROR (the gate itself broke, coverage was not judged): "
+            f"{type(error).__name__}: {error}",
+            notes,
+        )
+        raise
+    publish(verdict, notes)
+
+
+def publish(headline: str, notes: list[str]) -> None:
+    """Print the verdict and hand it, with its details, to the workflow's report step."""
+    text = "\n".join([headline, *notes])
+    print(text)
+    if path := os.environ.get("GITHUB_OUTPUT"):
+        with Path(path).open("a", encoding="utf-8") as output:
+            output.write(f"verdict<<GATE_EOF\n{text[:60000].replace('GATE_EOF', 'GATE EOF')}\nGATE_EOF\n")
 
 
 if __name__ == "__main__":

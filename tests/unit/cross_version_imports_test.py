@@ -24,7 +24,8 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.unit
+# Each test parses the whole source tree, which takes seconds on a loaded runner: the integration limit, scaled by CI.
+pytestmark = [pytest.mark.unit, pytest.mark.timeout(15)]
 
 REPO = Path(__file__).resolve().parents[2]
 SOURCE = REPO / "src"
@@ -40,7 +41,7 @@ FACADE_ONLY = ("heinzel.spec", "heinzel.services")
 
 # Imports inside functions of a published version that already failed after a swap to a newer tree before the
 # check existed (version skew of those heads and renderers, not of the update path). This list may only shrink.
-KNOWN_BROKEN = {
+KNOWN_BROKEN: dict[str, set[str]] = {
     "0.9.14": {"heinzel.heads"},
     "0.9.15": {
         "heinzel.heads",
@@ -68,14 +69,14 @@ _MOVED_BY_895 = {
     "heinzel.kernel.session._chat_tools",
     "heinzel.kernel.session._presence",
 }
-KNOWN_SPLIT = {"0.9.52": _MOVED_BY_895, "0.9.53": _MOVED_BY_895, "0.9.54": set()}
+KNOWN_SPLIT: dict[str, set[str]] = {"0.9.52": _MOVED_BY_895, "0.9.53": _MOVED_BY_895, "0.9.54": set()}
 
 
 @dataclass
 class Published:
-    resident: dict[str, set[str]] = field(default_factory=dict)
-    defines: dict[str, set[str]] = field(default_factory=dict)
-    lazy: list[tuple[str, str, list[str]]] = field(default_factory=list)
+    resident: dict[str, set[str]] = field(default_factory=dict[str, set[str]])
+    defines: dict[str, set[str]] = field(default_factory=dict[str, set[str]])
+    lazy: list[tuple[str, str, list[str]]] = field(default_factory=list[tuple[str, str, list[str]]])
 
     def has(self, module: str, name: str) -> bool:
         return name in self.resident.get(module, set()) or f"{module}.{name}" in self.resident
@@ -283,7 +284,7 @@ def test_a_published_process_never_loads_a_second_definition_of_a_class_it_holds
 def test_a_moved_class_is_the_same_object_at_its_old_path(version: str) -> None:
     """The current tree: every class a published version defined is, where its old file still exists, one object."""
     tree = Tree(SOURCE)
-    split = []
+    split: list[str] = []
     for qualified, module in moved_classes(published(version), tree).items():
         name = qualified.rpartition(".")[2]
         if module not in tree.modules or not tree.defines(module, name):

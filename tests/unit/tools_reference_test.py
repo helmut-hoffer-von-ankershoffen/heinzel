@@ -11,6 +11,7 @@ from heinzel import Config, HeinzelError, Kernel, Settings
 from heinzel.heads._served_tools import bind_served_tools
 from heinzel.kernel import discover
 from heinzel.modules.system._tools import mcp_reference, render, served_mcp_tools, tools
+from heinzel.testing import ISOLATED
 
 pytestmark = pytest.mark.unit
 
@@ -19,9 +20,14 @@ DOCS = Path(__file__).resolve().parents[2] / "docs"
 
 @pytest.fixture(scope="module")
 def built_ins() -> Kernel:
-    config = Config.empty()
-    kernel = Kernel(config.settings(Settings, "hz"), discover(plugins=False)[0], config=config)
-    bind_served_tools(kernel)
+    # A module-scoped fixture is built before the per-test `hz_isolation`, so it would read the developer's HZ_*
+    # variables (a disabled module, a log level) and list other operations than the committed references: scrub them.
+    with pytest.MonkeyPatch.context() as env:
+        for name in ISOLATED:
+            env.delenv(name, raising=False)
+        config = Config.empty()
+        kernel = Kernel(config.settings(Settings, "hz"), discover(plugins=False)[0], config=config)
+        bind_served_tools(kernel)
     return kernel
 
 

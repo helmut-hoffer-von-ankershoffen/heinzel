@@ -3,8 +3,10 @@
 import hashlib
 import json
 import logging
+import platform
 import re
 import stat
+import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from html.parser import HTMLParser
@@ -16,8 +18,9 @@ from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, Field
 
 from heinzel import __version__
-from heinzel._adapter_system import SYSTEM_CLOCK
-from heinzel.kernel import HeinzelError, Installation, Kernel, ReleaseCache
+from heinzel._adapter_system import SYSTEM_CLOCK, SYSTEM_RUNNER
+from heinzel.kernel import HeinzelError, Installation, Kernel, ReleaseCache, subprocess_environment
+from heinzel.kernel._desktop_app import DesktopVariant, desktop_app_here
 from heinzel.kernel._logging import log_event
 
 _log = logging.getLogger(__name__)
@@ -38,6 +41,23 @@ class Frontend(BaseModel):
         description="Same-origin script and stylesheet paths declared by the installed HTML."
     )
     files: dict[str, str] = Field(description="Installed asset paths and their SHA256 hashes; no API or user files.")
+
+
+class DesktopAppStatus(BaseModel):
+    """The desktop app on this Mac and whether it is older than this server."""
+
+    version: str | None = Field(description="The app's version; none if its bundle doesn't say.")
+    variant: DesktopVariant | None = Field(description="native or electron; none for another bundle.")
+    behind: bool = Field(
+        description="Whether the app is older than this server, so `Update desktop app` installs this release."
+    )
+
+
+class DesktopUpdateStarted(BaseModel):
+    """The desktop app's update was started in its own process; the app quits, is replaced and opens again."""
+
+    started: bool = Field(description="Always true: `hz app install --restart` runs on its own now.")
+    command: str = Field(description="The command that runs, the same a person could type.")
 
 
 class UpdateStatus(BaseModel):
@@ -69,6 +89,9 @@ class UpdateStatus(BaseModel):
         default=True,
         description="Whether no chat answer, install or daemon job runs now, the same check automatic updates wait "
         "for; the app restarts on its own only while idle.",
+    )
+    desktop: DesktopAppStatus | None = Field(
+        default=None, description="The desktop app on this Mac and whether it is out of date; none without one."
     )
 
 
@@ -185,6 +208,34 @@ def _installed_core(installation: Installation) -> str | None:
     return installed if differs else None
 
 
+def _desktop_status() -> DesktopAppStatus | None:
+    """The desktop app here and whether it is older than this server; a version that can't be read is not behind."""
+    found = desktop_app_here()
+    if found is None or found.variant is None:
+        return None
+    try:
+        behind = found.version is not None and Version(found.version) < Version(__version__)
+    except InvalidVersion:
+        behind = False
+    return DesktopAppStatus(version=found.version, variant=found.variant, behind=behind)
+
+
+DESKTOP_COMMAND = "hz app install --restart"
+
+
+def _start_desktop_update() -> None:
+    """Run this hz's `hz app install --restart` in its own session, so it outlives the app it quits and reopens.
+
+    The installer asks the app to quit, waits, never forces it, replaces it and opens it again; it logs every step.
+    """
+    flags = ["-I", "-B"] if sys.dont_write_bytecode else ["-I"]
+    SYSTEM_RUNNER.spawn(
+        [sys.executable, *flags, "-m", "heinzel", "app", "install", "--restart"],
+        env=subprocess_environment() | {"HZ_UPDATE_CHECK": "false"},
+        detached=True,
+    )
+
+
 def add_updates(
     app: FastAPI,
     kernel: Kernel,
@@ -231,7 +282,30 @@ def add_updates(
             reason=reason,
             installed=_installed_core(installation) if restartable else None,
             idle=not busy(),
+            desktop=_desktop_status(),
         )
+
+    @app.post("/update-status/desktop", tags=["web"], status_code=202)
+    def update_desktop() -> DesktopUpdateStarted:
+        """Update the desktop app to this server's release: quit it, replace it and open it again.
+
+        \f
+
+        Raises:
+            HTTPException: 409 without an out-of-date desktop app here, 500 if the update can't be started.
+        """  # noqa: D301 - FastAPI ends the description at a real form feed
+        desktop = _desktop_status()
+        if platform.system() != "Darwin" or desktop is None:
+            raise HTTPException(status_code=409, detail="There is no desktop app here to update.")
+        if not desktop.behind:
+            raise HTTPException(status_code=409, detail=f"The desktop app is already at {desktop.version}.")
+        try:
+            _start_desktop_update()
+        except OSError as exc:
+            log_event(_log, "web.update.desktop", outcome="error", error=type(exc).__name__)
+            raise HTTPException(status_code=500, detail="The desktop app update couldn't be started.") from exc
+        log_event(_log, "web.update.desktop", outcome="started", before=desktop.version, target=__version__)
+        return DesktopUpdateStarted(started=True, command=DESKTOP_COMMAND)
 
     @app.get("/frontend", tags=["web"])
     def build(response: Response) -> Frontend:

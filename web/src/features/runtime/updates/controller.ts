@@ -30,7 +30,10 @@ export type UpdateStatus = {
   installed?: string | null;
   /** Whether no chat answer, install or daemon job runs on the server now; older servers omit it. */
   idle?: boolean;
+  /** The desktop app on this Mac and whether it is older than this server; none without one or on older servers. */
+  desktop?: DesktopAppStatus | null;
 };
+export type DesktopAppStatus = { version: string | null; variant: "native" | "electron" | null; behind: boolean };
 export type Frontend = { version: string; identity: string; entrypoints: string[]; files: Record<string, string> };
 type Receipt = {
   stage: "uncertain" | "installed" | "reloading";
@@ -74,6 +77,27 @@ async function read<T>(path: string, signal: AbortSignal): Promise<T> {
 }
 
 export const readUpdateStatus = (signal: AbortSignal) => read<UpdateStatus>("/update-status", signal);
+
+/**
+ * Update the desktop app to this server's release: the server runs `hz app install --restart` on its own, which
+ * quits the app, replaces it and opens it again. Its answer comes before the app quits.
+ */
+export async function updateDesktopApp(signal: AbortSignal): Promise<void> {
+  const response = await fetch(
+    new Request(new URL("/api/update-status/desktop", window.location.origin), {
+      method: "POST",
+      cache: "no-store",
+      signal,
+      headers: { Authorization: `Bearer ${token() ?? ""}` },
+    }),
+  );
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { detail?: unknown } | null;
+    throw new Error(
+      typeof body?.detail === "string" ? body.detail : `The desktop app update was refused (${response.status}).`,
+    );
+  }
+}
 
 /** What an update would change (hz, each plugin, the desktop app); it only asks, nothing is installed. */
 export async function readUpdatePlan(signal: AbortSignal): Promise<SchemaUpdatePlan> {

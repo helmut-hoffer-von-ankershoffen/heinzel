@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
+from rich.progress_bar import ProgressBar
 from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
@@ -164,7 +165,22 @@ class StepBoard:
             description, total, done = work
             amount = f" {min(done, total) / total:.0%}" if total else ""
             rows.append(Text(f"    {terminal_safe(description)}{amount}", style="bright_black"))
+        rows.append(StepBoard.overall(steps))
         return Group(*rows)
+
+    @staticmethod
+    def overall(steps: list[Step]) -> RenderableType:
+        """One horizontal bar under the checklist: steps ended of all, and the name of the step that runs now."""
+        counted = [step for step in steps if step.state != "skipped" or step.detail is not None] or steps
+        ended = sum(step.state in ENDED for step in counted)
+        running = next((step for step in counted if step.state == "running"), None)
+        grid = Table.grid(padding=(0, 1))
+        grid.add_row(
+            ProgressBar(total=max(len(counted), 1), completed=ended, width=30, complete_style="green"),
+            Text(f"{ended}/{len(counted)}"),
+            Text(terminal_safe(running.label) if running else "", style="cyan"),
+        )
+        return grid
 
     def _print(self, text: Text) -> None:
         self._console.print(TerminalSafe(text), highlight=False, soft_wrap=True)
