@@ -106,7 +106,9 @@ def service_for(make_kernel, prefix, runner=None, kernel=None, settings=None):
     installation.remove_transient_tool_constraint = (  # type: ignore[method-assign]
         lambda **_kwargs: installation.startup_fingerprint()
     )
-    service = PluginService(kernel, installation, configured, lifecycle=types.SimpleNamespace(mutation=mutation))
+    service = PluginService(
+        kernel, installation, configured, lifecycle=types.SimpleNamespace(mutation=mutation, busy=lambda: False)
+    )
     service.github_api = lambda path: _sources.get_json(f"https://api.github.com/{path}", configured.github_token, 10)
     return service
 
