@@ -1,5 +1,6 @@
 """Exercise real shell startup around a killed writer using an isolated SDK."""
 
+import fcntl
 import json
 import signal
 import subprocess
@@ -10,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from heinzel import HeinzelError, Progress
-from heinzel.kernel import Installation, private_write
+from heinzel.kernel import Installation, host_maintenance_lock, private_write
 from heinzel.modules.system.lifecycle._recovery_boot import NAME
 from heinzel.modules.system.lifecycle._recovery_launcher import interpreter
 from heinzel.modules.system.lifecycle._service import WebService
@@ -119,6 +120,17 @@ def _interrupt(web):
     assert dead.returncode == -signal.SIGKILL, dead.stderr
     assert (state / "daemon" / "mutation-pending.json").is_file()
     assert (state / "auto-update" / "before-update").is_dir()
+
+
+def test_update_holds_first_install_locks_even_without_a_registered_web_service(installed_launch):
+    web, installation, _ = installed_launch
+    state = web.directory.parent
+    assert not web.marker.exists()
+    paths = (host_maintenance_lock(installation.prefix), web.directory / "lifecycle.lock")
+    with _recovery_worker.supervised_recovery(installation, state / "auto-update"):
+        for path in paths:
+            with path.open("rb+") as contender, pytest.raises(BlockingIOError):
+                fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
 def test_legacy_launcher_refuses_new_updates_and_keeps_its_original_guard(installed_launch):

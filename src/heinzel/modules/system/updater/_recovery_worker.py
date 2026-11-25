@@ -123,11 +123,10 @@ def supervised_recovery(installation: Installation, folder: Path) -> Generator[N
         return
     installation = installation.for_interrupted_update()
     state = folder.parent.resolve()
-    if not _requires_recovery(installation, state):
-        yield
-        return
     with MaintenanceLocks((host_maintenance_lock(installation.prefix), state / "ui/lifecycle.lock")):
-        _requires_recovery(installation, state)
+        if not _requires_recovery(installation, state):
+            yield
+            return
         _require_clear(installation, state)
         _remove(state)
         try:
@@ -135,6 +134,9 @@ def supervised_recovery(installation: Installation, folder: Path) -> Generator[N
             yield
         finally:
             if all(path_absent(path) for path in installation_mutation_paths(installation.prefix, state)):
+                daemon = state / "daemon"
+                if not path_absent(daemon):
+                    _sync_directory(daemon)
                 _remove(state)
 
 

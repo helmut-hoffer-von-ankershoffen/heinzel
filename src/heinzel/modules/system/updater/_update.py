@@ -38,6 +38,7 @@ from heinzel.modules.system._service import RELEASE_TIMEOUT
 from heinzel.modules.system.updater._announced import (
     Announcement,
     ToolSnapshot,
+    _sync_tree,
     allows_core,
     environment_versions,
     installed_commit,
@@ -186,6 +187,7 @@ class UpdateService(UpdateChannels):
                     message="",
                     next=[],
                 )
+                _sync_tree(prefix)
                 if scope is not None and plan is not None:
                     self._finish_mutation(scope, plan, generation, result, before_handover=snapshot.discard)
                 else:

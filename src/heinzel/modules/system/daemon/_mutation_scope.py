@@ -9,6 +9,7 @@ from pathlib import Path
 
 from heinzel import HeinzelError
 from heinzel.kernel import DaemonHandoverPlan, DaemonHandoverRequest
+from heinzel.kernel.install._offline_uv import fsync_directory
 from heinzel.kernel.install._tool_uninstall import OwnedFile
 
 
@@ -121,6 +122,7 @@ class MutationScope:
             raise HeinzelError(msg)
         self._require_active()
         self.authority.pending_path.unlink()
+        fsync_directory(self.authority.pending_path.parent)
         self.aborted = True
         self.active = False
 
@@ -145,6 +147,7 @@ class MutationScope:
             raise HeinzelError(msg)
         self._verify(self.expected)
         self.authority.pending_path.unlink()
+        fsync_directory(self.authority.pending_path.parent)
         self.aborted = True  # nothing is left to commit; the daemon keeps running what it loaded
 
     def commit(self) -> None:
@@ -156,6 +159,7 @@ class MutationScope:
             raise HeinzelError(msg)
         self._verify(self.expected)
         self.authority.pending_path.unlink()
+        fsync_directory(self.authority.pending_path.parent)
 
 
 @dataclass(frozen=True)
