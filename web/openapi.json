@@ -11241,6 +11241,28 @@
             "title": "Popup",
             "type": "boolean"
           },
+          "producer": {
+            "anyOf": [
+              {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The registered distribution and module for a replacement group, assigned by the kernel.",
+            "title": "Producer"
+          },
           "replaces": {
             "anyOf": [
               {
@@ -11250,7 +11272,7 @@
                 "type": "null"
               }
             ],
-            "description": "The producer's replacement group, scoped to this kind, route and command.",
+            "description": "The replacement group within the registered producer, notice kind, route and command.",
             "title": "Replaces"
           },
           "resolve_when": {

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from heinzel import Delivery, NoticeKind, Notifications
+from heinzel import Delivery, JobLet, Module, NoticeKind, Notifications, OperationLet
 from heinzel.heads import api, web
 from heinzel.heads._exposure import exposed
 from heinzel.heads.web import _stream
@@ -79,39 +79,68 @@ def test_a_tab_that_cant_pop_up_only_hears_that_the_list_changed(client, kernel)
     assert kernel.resolve(Notifications).store.watched_at() is None
 
 
-def test_plugin_sdk_replaces_only_its_stream_and_does_not_replay_old_notices(
-    client, kernel, make_kernel, monkeypatch, tmp_path
-):
-    def record(hour: str, *, group: str = "rain:Berlin", command: str = "hz weather show", target=kernel):
-        def send(notifications: Notifications):
+def test_plugin_sdk_replaces_only_its_own_notices(make_kernel, monkeypatch, tmp_path):
+    def producer(name):
+        module = Module(name, "Reports a forecast.")
+
+        @module.operation
+        def report(notifications: Notifications, hour: str, group: str = "rain:Berlin"):
+            """Report a forecast."""
             return notifications.emit(
                 NoticeKind.PLUGIN,
                 f"Rain at {hour}",
                 route="/",
-                command=command,
+                command="hz weather show",
                 key=f"rain:{hour}",
                 urgent=True,
                 replaces=group,
             )
 
-        return target.call(send)
+        @module.job(schedule="*/5 * * * *")
+        def watch(notifications: Notifications):
+            """Report the next forecast."""
+            return report(notifications, "02")
+
+        return module
+
+    modules = {"forecasts": producer("forecasts"), "reports": producer("reports")}
+    kernel = make_kernel(builtins=True, **modules)
+    client = TestClient(web.build(kernel, port=8000, token=TOKEN, static=None), base_url=BASE)
+
+    def record(target, name, hour, **kwargs):
+        operation = next(let for record, let in target.lets(OperationLet) if record.qualname == name)
+        return target.invoke(operation, hour=hour, **kwargs)
 
     with monkeypatch.context() as scope:
         scope.setenv("HZ_STATE_DIR", str(tmp_path / "other"))
-        other_profile = make_kernel(builtins=True)
-        another_user = record("00", target=other_profile)
-    old = record("00")
-    another_place = record("00", group="rain:Paris")
-    another_producer = record("00", command="hz other report")
-    new = record("02")
-    assert record("00").id == old.id
+        other_profile = make_kernel(builtins=True, **modules)
+        another_user = record(other_profile, "forecasts", "00")
+    notifications = kernel.resolve(Notifications)
+    old = record(kernel, "forecasts", "00")
+    another_place = record(kernel, "forecasts", "00", group="rain:Paris")
+    another_producer = record(kernel, "reports", "00")
+    watch = next(let for owner, let in kernel.lets(JobLet) if owner.qualname == "forecasts")
+    new = kernel.call(watch.func)
+    assert record(kernel, "forecasts", "00").id == old.id
+    assert record(kernel, "reports", "00").id == another_producer.id
     assert other_profile.resolve(Notifications).recent() == [another_user]
 
+    def legacy(**replacement):
+        return notifications.emit(
+            NoticeKind.PLUGIN, "Legacy forecast", route="/", command="hz weather show", key="rain:02", **replacement
+        )
+
+    unowned = legacy()
+    assert legacy().id == unowned.id
+    assert legacy(replaces="rain:Berlin").id == unowned.id
+    assert unowned.producer is None
+    assert unowned.replaces is None
     listed = client.get("/api/system/notify/list", headers=AUTH).json()["notices"]
-    assert {notice["id"] for notice in listed} == {new.id, another_place.id, another_producer.id}
+    assert {notice["id"] for notice in listed} == {new.id, another_place.id, another_producer.id, unowned.id}
     assert next(notice for notice in listed if notice["id"] == new.id)["replaces"] == "rain:Berlin"
-    resolved = kernel.resolve(Notifications).store.read()
-    assert next(notice for notice in resolved if notice.id == old.id).resolved == "Replaced by a newer notice."
+    history = notifications.store.read()
+    assert {notice.id for notice in history if notice.resolved_at} == {old.id}
+    assert next(notice for notice in history if notice.id == old.id).resolved == "Replaced by a newer notice."
 
     response = client.get(STREAM, params={"once": True, "popups": True}, headers=AUTH)
     popups = {payload["id"] for event, payload in events(response.text) if event == "notice"}

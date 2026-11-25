@@ -11201,8 +11201,16 @@ export interface components {
              */
             popup: boolean;
             /**
+             * Producer
+             * @description The registered distribution and module for a replacement group, assigned by the kernel.
+             */
+            producer?: [
+                string,
+                string
+            ] | null;
+            /**
              * Replaces
-             * @description The producer's replacement group, scoped to this kind, route and command.
+             * @description The replacement group within the registered producer, notice kind, route and command.
              */
             replaces?: string | null;
             /** @description When it resolves by itself and disappears; none: it stays until it ages out. */

@@ -12,11 +12,14 @@ history. Resolution never marks anything read: only the person does that (ADR 00
 """
 
 from collections.abc import Callable, Sequence
+from contextvars import ContextVar
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, model_validator
+
+_notice_producer: ContextVar[tuple[str, str] | None] = ContextVar("heinzel_notice_producer", default=None)
 
 
 class NoticeKind(StrEnum):
@@ -148,7 +151,11 @@ class Notice(BaseModel):
     key: str = Field(description="What makes two notices the same, so a repeat within the window is dropped.")
     replaces: str | None = Field(
         default=None,
-        description="The producer's replacement group, scoped to this kind, route and command.",
+        description="The replacement group within the registered producer, notice kind, route and command.",
+    )
+    producer: tuple[str, str] | None = Field(
+        default=None,
+        description="The registered distribution and module for a replacement group, assigned by the kernel.",
     )
     urgent: bool = Field(default=False, description="Whether it may interrupt outside working hours.")
     at: AwareDatetime = Field(description="When it was recorded.")
@@ -195,8 +202,8 @@ class Notifications:
     ) -> Notice | None:
         """Record a notice under the policy; the recorded one (or the earlier one it repeats), None if its kind is off.
 
-        A nonempty `replaces` resolves older notices with the same kind, route, command and replacement group.
-        Use the same route and command for a stream and a distinct group per subject, such as rain for one place.
+        A nonempty `replaces` resolves older notices from the same registered module, kind, route, command and group.
+        Unregistered calls and older notices without an assigned producer are outside replacement groups.
 
         With `resolve_when`, a notice whose condition already holds is not recorded (None), and one that is recorded
         disappears once it holds. Never raises for a full or unwritable store: a lost notice must not fail the job

@@ -39,6 +39,7 @@ from heinzel import (
 from heinzel.kernel import KERNEL_SECTION
 from heinzel.kernel._calendar_reminders import agenda_plan
 from heinzel.kernel._logging import get_logger, log_event
+from heinzel.kernel._notifications import _notice_producer
 from heinzel.kernel.session._self_chat import STATE, SelfChat
 from heinzel.modules.system.notify import _chat, _resolve
 from heinzel.modules.system.notify import _policy as policy
@@ -243,17 +244,19 @@ class NotifyService(Notifications):
         now = self._clock()
         window = timedelta(hours=self.settings.repeat_hours)
         notice_route = route if ROUTE.fullmatch(route) else "/"
-        replacement = replaces or None
+        producer = _notice_producer.get() if replaces else None
+        replacement = replaces if producer else None
 
         def record(notices: list[Notice]) -> Notice:
             stream = {
                 index: older
                 for index, older in enumerate(notices)
-                if replacement is not None
+                if producer is not None
+                and older.producer == producer
                 and older.replaces == replacement
                 and (older.kind, older.route, older.command) == (kind, notice_route, command)
             }
-            repeats = list(stream.values()) if replacement is not None else notices
+            repeats = list(stream.values()) if producer else [older for older in notices if older.producer is None]
             if (
                 earlier := policy.repeated(repeats, key, now, window, include_resolved=replacement is not None)
             ) is not None:
@@ -268,6 +271,7 @@ class NotifyService(Notifications):
                 command=command,
                 key=key,
                 replaces=replacement,
+                producer=producer,
                 urgent=urgent,
                 at=now,
                 due=decision.due,
