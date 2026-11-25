@@ -6,7 +6,12 @@ Offline: uv, PyPI, GitHub and `hz app install` are fakes; nothing is installed a
 import inspect
 import json
 import logging
+import os
+import select
+import subprocess
+import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from types import SimpleNamespace
 
@@ -868,29 +873,102 @@ class _Told(Progress):
 
     def __init__(self) -> None:
         self.tasks: list[str] = []
+        self.started = threading.Event()
 
     @contextmanager
     def task(self, description, total=None):
         self.tasks.append(description)
+        self.started.set()
         yield lambda _amount: None
 
 
-def test_an_update_says_it_waits_for_another_and_gives_up_after_the_bound(tmp_path, monkeypatch):
+_HOLD_UPDATE = """\
+import os
+import sys
+from pathlib import Path
+from heinzel.modules.system.updater._adapter_state import FileInstallationState
+from heinzel.modules.system.updater._update import UpdateService
+
+def hold(*args, **kwargs):
+    os.write(1, b"R")
+    sys.stdin.buffer.read(1)
+
+state = FileInstallationState(Path(sys.argv[1]))
+mode = sys.argv[2]
+service = UpdateService(None, None, state=state)
+if mode == "manual":
+    service._update_with_steps = hold
+    service.update(current="0.2.0")
+elif mode == "automatic":
+    service._apply_announced = hold
+    service.apply_announced(object(), trial=lambda version: True)
+else:
+    with state.lock("update"):
+        hold()
+"""
+
+
+@contextmanager
+def _held_update(folder, mode):
+    with subprocess.Popen(
+        [sys.executable, "-c", _HOLD_UPDATE, str(folder), mode], stdin=subprocess.PIPE, stdout=subprocess.PIPE
+    ) as child:
+        try:
+            assert child.stdout is not None
+            assert child.stdin is not None
+            assert select.select([child.stdout], [], [], scaled(3))[0], "child never acquired the update lock"
+            assert os.read(child.stdout.fileno(), 1) == b"R"
+            yield child
+            if child.poll() is None:
+                child.stdin.close()
+                assert child.wait(timeout=scaled(2)) == 0
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.wait(timeout=scaled(2))
+
+
+@pytest.mark.parametrize("kind", ["manual", "automatic"])
+def test_an_update_names_the_process_holding_the_lock_and_times_out(tmp_path, monkeypatch, kind):
     monkeypatch.setattr(_update_core, "UPDATE_LOCK_NOTICE", 0.05)
     monkeypatch.setattr(_update_core, "UPDATE_LOCK_SECONDS", 0.3)
     uv = FakeUv("0.2.0")
     told = _Told()
+    state = FileInstallationState(tmp_path / "s")
     service = UpdateService(
         tool(tmp_path, AT_VERSION, uv),
         FakeReleases("0.4.0"),
         progress=told,
-        state=FileInstallationState(tmp_path / "s"),
+        state=state,
     )
-    other = FileInstallationState(tmp_path / "s")  # another hz updates and does not finish in time
-    with other.lock("update"), pytest.raises(HeinzelError, match="Another update has held this installation"):
-        service.update(current="0.2.0")
-    assert "Waiting for another update…" in told.tasks
+    with _held_update(state.folder, kind) as child:
+        description = f"{kind} update (PID {child.pid})"
+        with pytest.raises(HeinzelError, match="couldn't start within") as exc:
+            service.update(current="0.2.0")
+        assert str(exc.value).endswith(
+            f"The lock was held by the {description}. Wait for it to finish, then try again."
+        )
+        assert told.tasks == [f"Waiting for the {description}…"]
+        assert child.poll() is None
     assert uv.commands == []  # nothing was installed
+    assert state.update_owner() is None
+
+
+def test_a_record_left_by_a_crashed_update_is_ignored_when_an_older_update_holds_the_lock(tmp_path, monkeypatch):
+    monkeypatch.setattr(_update_core, "UPDATE_LOCK_NOTICE", 0.05)
+    monkeypatch.setattr(_update_core, "UPDATE_LOCK_SECONDS", 0.15)
+    uv = FakeUv("0.2.0")
+    told = _Told()
+    state = FileInstallationState(tmp_path / "s")
+    service = UpdateService(tool(tmp_path, AT_VERSION, uv), FakeReleases("0.4.0"), progress=told, state=state)
+    with _held_update(state.folder, "automatic") as child:
+        child.kill()
+        assert child.wait(timeout=scaled(2)) < 0
+    with _held_update(state.folder, "legacy"), pytest.raises(HeinzelError, match="another update was running") as exc:
+        service.update(current="0.2.0")
+    assert "PID" not in str(exc.value)
+    assert told.tasks == ["Waiting for another update…"]
+    assert uv.commands == []
 
 
 def test_an_update_that_gets_the_lock_at_once_says_nothing_about_waiting(tmp_path):
@@ -903,7 +981,7 @@ def test_an_update_that_gets_the_lock_at_once_says_nothing_about_waiting(tmp_pat
         state=FileInstallationState(tmp_path / "s"),
     )
     service.update(current="0.2.0")
-    assert "Waiting for another update…" not in told.tasks
+    assert not any(task.startswith("Waiting for ") for task in told.tasks)
 
 
 def test_an_automatic_update_waits_for_a_cli_update_on_the_same_state_folder(tmp_path):
@@ -919,27 +997,26 @@ def test_an_automatic_update_waits_for_a_cli_update_on_the_same_state_folder(tmp
     worker.join(scaled(10))
 
 
-def test_an_update_waits_for_one_another_process_holds_on_the_same_state_folder(tmp_path):
+def test_an_update_acquires_the_lock_when_the_reported_holder_exits(tmp_path, monkeypatch):
+    monkeypatch.setattr(_update_core, "UPDATE_LOCK_NOTICE", 0.05)
     uv = FakeUv("0.2.0")
     target = tool(tmp_path, AT_VERSION, uv)
-    service = UpdateService(target, FakeReleases("0.4.0"), state=FileInstallationState(tmp_path / "state"))
-    other = FileInstallationState(tmp_path / "state")  # another hz on the same installation: its own lock file handle
-    started, done = threading.Event(), threading.Event()
+    state = FileInstallationState(tmp_path / "state")
+    told = _Told()
+    service = UpdateService(target, FakeReleases("0.4.0"), progress=told, state=state)
 
-    def update():
-        started.set()
-        service.update(current="0.2.0")
-        done.set()
+    def update(*_args, **_kwargs):
+        assert state.update_owner() == f"manual update (PID {os.getpid()})"
 
-    with other.lock("update"):
-        worker = threading.Thread(target=update)
-        worker.start()
-        assert started.wait(scaled(10))
-        assert not done.wait(scaled(0.3))  # held off while the other process updates
-        assert uv.commands == []
-    assert done.wait(scaled(10))
-    worker.join(scaled(10))
-    assert uv.commands  # once the other one let go, this update ran
+    monkeypatch.setattr(service, "_update_with_steps", update)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with _held_update(state.folder, "automatic") as child:
+            result = executor.submit(service.update, current="0.2.0")
+            assert told.started.wait(scaled(2))
+            assert told.tasks == [f"Waiting for the automatic update (PID {child.pid})…"]
+            assert not result.done()
+        result.result(timeout=scaled(2))
+    assert state.update_owner() is None
 
 
 @pytest.mark.parametrize("error", [LookupError("no such release"), KeyError("tag_name"), TypeError("not a list")])
