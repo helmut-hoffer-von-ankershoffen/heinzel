@@ -802,7 +802,13 @@ def test_bridge_readiness_precedes_literal_update_and_does_not_mask_its_failure(
         run=cli,
     )
     monkeypatch.setattr(harness, "app_cycle", lambda *_args: None)
-    monkeypatch.setattr(harness, "hz", lambda *_args, **_kwargs: None)
+    user_commands = []
+    monkeypatch.setattr(harness, "hz", lambda _case, *args, **_kwargs: user_commands.append(args))
+    monkeypatch.setattr(
+        harness,
+        "check_installed_version",
+        lambda _case, name, version, label: calls.append((name, version, label)),
+    )
     monkeypatch.setattr(harness, "plugin_map", lambda *_args: {})
     monkeypatch.setattr(harness, "expect_plugins", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(harness, "installed_interpreter", lambda _case: "/managed/bin/python3.12")
@@ -816,11 +822,66 @@ def test_bridge_readiness_precedes_literal_update_and_does_not_mask_its_failure(
     if quota_ready:
         with pytest.raises(harness.StepFailed, match="updated=False"):
             harness.case_update(case)
-        assert calls == ["hz-system-update", "verified bridge", "quota", "hz-system-update-from-bridge"]
+        assert calls == [
+            ("heinzel-example", "0.5.2", "user-plugin-version"),
+            "hz-system-update",
+            "verified bridge",
+            "quota",
+            "hz-system-update-from-bridge",
+        ]
     else:
         with pytest.raises(harness.Refused, match="infrastructure deadline"):
             harness.case_update(case)
-        assert calls == ["hz-system-update", "verified bridge", "quota"]
+        assert calls == [
+            ("heinzel-example", "0.5.2", "user-plugin-version"),
+            "hz-system-update",
+            "verified bridge",
+            "quota",
+        ]
+    assert user_commands == [
+        ("system", "plugin", "add", "heinzel-example==0.5.2", "--confirm"),
+        ("system", "plugin", "disable", "heinzel-resource"),
+        ("system", "config", "set", "clock.zones", '["Europe/Berlin","Asia/Tokyo"]'),
+    ]
+
+
+@pytest.mark.parametrize("installed", ["0.5.2", "0.5.3"])
+def test_update_fixture_checks_the_installed_pin_before_updating(monkeypatch, installed):
+    case = SimpleNamespace(
+        ctx={
+            "from_app": {"profile": {}, "accepted": {}, "version": "0.9.8", "url": "published URL"},
+            "update_target": {"version": "target"},
+        },
+        env={},
+        root=Path("private-case"),
+        notes={},
+        plugins_expected={},
+        provide_uv=lambda: None,
+    )
+
+    def stop_after_prepare(_name, action):
+        action()
+        raise StopIteration
+
+    case.step = stop_after_prepare
+    monkeypatch.setattr(harness, "app_cycle", lambda *_args: None)
+    monkeypatch.setattr(harness, "hz", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(harness, "plugin_map", lambda *_args: {"heinzel-example": {"version": installed}})
+    monkeypatch.setattr(harness, "installed_interpreter", lambda _case: "/managed/bin/python3.12")
+    monkeypatch.setattr(harness, "snapshot_files", lambda _path: {"config": b"preserved"})
+    if installed == "0.5.2":
+        with pytest.raises(StopIteration):
+            harness.case_update(case)
+        assert case.plugins_expected["heinzel-example"] == {"enabled": True, "version": "0.5.2"}
+        assert case.plugins_expected["heinzel-resource"]["enabled"] is False
+    else:
+        with pytest.raises(harness.StepFailed, match=r"not at the bound 0\.5\.2"):
+            harness.case_update(case)
+    assert case.notes["installed_versions"]["user-plugin-version"] == {
+        "plugin": "heinzel-example",
+        "bound": "0.5.2",
+        "found": installed,
+    }
 
 
 def test_legacy_bridge_rejects_wrong_wheel_before_creating_proof(tmp_path, monkeypatch):
@@ -993,6 +1054,15 @@ def written_versions(source):
             isinstance(t, ast.Name) and t.id in VERSION_TABLES for t in node.targets
         ):
             skip.update(id(n) for n in ast.walk(node))
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == "UPDATE_FIXTURE_PLUGIN"
+            and isinstance(node.value, ast.Constant)
+            and node.value.value == "heinzel-example==0.5.2"
+        ):
+            skip.add(id(node.value))
         if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.Module)) and ast.get_docstring(node) is not None:
             skip.add(id(node.body[0].value))
     return [
@@ -1006,9 +1076,23 @@ def written_versions(source):
     ]
 
 
-def test_no_plugin_version_is_written_into_the_harness_except_the_deliberate_older_clock_pin():
+def test_no_plugin_version_is_written_except_deliberate_historical_fixtures():
     """A plugin the cases install unpinned is bound from the index in each run; a literal goes stale on release."""
     assert written_versions((HARNESS / "run_acceptance.py").read_text()) == []
+
+
+def test_historical_plugin_pin_is_used_only_by_the_update_fixture():
+    tree = ast.parse((HARNESS / "run_acceptance.py").read_text())
+    users = [
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and any(
+            isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load) and child.id == "UPDATE_FIXTURE_PLUGIN"
+            for child in ast.walk(node)
+        )
+    ]
+    assert users == ["case_update"]
 
 
 INSTALL = 'case.step("install a plugin (CLI)", lambda: add(EXAMPLE_PLUGIN, "example-add", example_version))'

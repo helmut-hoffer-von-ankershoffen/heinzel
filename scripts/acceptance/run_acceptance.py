@@ -75,6 +75,9 @@ LEGACY_BRIDGE_URL = (
 LEGACY_BRIDGE_SHA256 = "f18571dae4d3533598eaa645367cbe7432d5f915360f01814faf64352bc93b7a"
 # The plugin both plugin cases install unpinned; its expected version is bound from the index in each run.
 EXAMPLE_PLUGIN = "heinzel-example"
+# Historical user state must remain installable in the published Python 3.12 app, even when the latest plugin
+# requires a newer interpreter. This is only the upgrade fixture; current-app plugin cases still use latest.
+UPDATE_FIXTURE_PLUGIN = "heinzel-example==0.5.2"
 FOREGROUND_UI = {
     **{f"0.9.{patch}": ("ui",) for patch in range(8, 16)},
     "0.9.16": ("ui", "serve"),
@@ -1912,15 +1915,17 @@ def case_update(case):
         case.env.pop("HZ_APP_PROFILE", None)
 
     def prepare():
-        hz(case, "system", "plugin", "add", "heinzel-example", "--confirm", label="user-plugin-add")
+        hz(case, "system", "plugin", "add", UPDATE_FIXTURE_PLUGIN, "--confirm", label="user-plugin-add")
+        check_installed_version(case, EXAMPLE_PLUGIN, UPDATE_FIXTURE_PLUGIN.split("==")[1], "user-plugin-version")
         if old["version"] in UPGRADES_PLUGINS_ON_ADD:
             # These releases upgrade the other plugins when one is added, so the starting state can be ahead of the
             # app profile. Record that as a finding; from the fixed release on, the exact versions are required.
             drift = {p: v["version"] for p, v in plugin_map(case, "versions-after-add").items()}
             case.notes["known_plugin_drift_on_add"] = drift
             expect_plugins(case)
-            for entry in case.plugins_expected.values():
-                entry["version"] = None
+            for name, entry in case.plugins_expected.items():
+                if name != EXAMPLE_PLUGIN:
+                    entry["version"] = None
         hz(case, "system", "plugin", "disable", "heinzel-resource", label="user-disable")
         hz(case, "system", "config", "set", "clock.zones", '["Europe/Berlin","Asia/Tokyo"]', label="user-config")
         expect_plugins(case, heinzel_example={"enabled": True}, heinzel_resource={"enabled": False})
@@ -1959,8 +1964,9 @@ def case_update(case):
         evidence["interpreter"] = verify_update_interpreter(case, migrated=migrated)
         check(snapshot_files(case.root / "config_home") == case.notes["config_before"], "Configuration changed")
         if target["mode"] == "published":
-            for entry in case.plugins_expected.values():
-                entry["version"] = None  # PyPI may be ahead of the app profile; versions are recorded, not compared
+            for name, entry in case.plugins_expected.items():
+                if name != EXAMPLE_PLUGIN:
+                    entry["version"] = None  # PyPI may be ahead of the app profile; versions are recorded, not compared
         evidence.update(verify_state(case, "after"))
         evidence["plugin_versions_after"] = {p: v["version"] for p, v in plugin_map(case, "versions-after").items()}
         return evidence
