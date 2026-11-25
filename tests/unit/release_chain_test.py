@@ -163,6 +163,17 @@ def test_main_proof_names_the_exact_two_original_runs():
     assert chain.main_gate(reader(routes()), TIP) == chain.MainCIProof(TIP, 7, 9)
 
 
+def test_main_proof_refuses_missing_linux_upgrade_job():
+    data = routes()
+    inventory = data["actions/runs/7/attempts/1/jobs"]
+    inventory["jobs"] = [
+        job for job in inventory["jobs"] if job["name"] != "Upgrade in place (published to candidate, Linux)"
+    ]
+    inventory["total_count"] = len(inventory["jobs"])
+    with pytest.raises(chain.ChainError, match="missing or ambiguous main job: Upgrade in place"):
+        chain.main_gate(reader(data), TIP)
+
+
 @pytest.mark.parametrize(
     ("rows", "error"),
     [
@@ -214,6 +225,11 @@ def test_main_refuses_incomplete_or_nonexecuting_jobs(damage):
         (7, "Lint, contracts and types", "Run make managed-backend-check"),
         (7, "Build", "Run make build"),
         (7, "Plugin SDK candidate", "Build core artifacts for isolated consumer checks"),
+        (
+            7,
+            "Upgrade in place (published to candidate, Linux)",
+            "The published release updates in place to this wheel",
+        ),
         (
             7,
             "Secret scan",

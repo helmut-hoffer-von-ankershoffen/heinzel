@@ -428,6 +428,9 @@ def main_workload(candidate: Any, runner: str) -> dict[str, tuple[str, ...]]:  #
             "Run make test-web",
         )
         required["Plugin SDK candidate"] = ("Build core artifacts for isolated consumer checks",)
+        required["Upgrade in place (published to candidate, Linux)"] = (
+            "The published release updates in place to this wheel",
+        )
         required["Optional source plugins"] = (
             'Run make --no-print-directory -C .plugin-tooling plan BASE="$BASE" CONTRACT="$CONTRACT" > plan.json',
         )
