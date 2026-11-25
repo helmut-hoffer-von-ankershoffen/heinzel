@@ -484,6 +484,7 @@ def test_interrupted_update_refuses_a_symlinked_tool_directory(tmp_path, monkeyp
 def test_server_recovery_holds_the_apply_lock_and_the_installation_lock(tmp_path, monkeypatch, make_kernel):
     update, tool, _, _ = service(tmp_path, monkeypatch)
     state = tmp_path / "state"
+    state_port = FileInstallationState(state)
     interrupt_after_prefix_replacement(update, tool, state, monkeypatch)
     kernel = make_kernel(builtins=True, settings_=Settings(state_dir=state))
     kernel.bind(Installation, tool)
@@ -494,6 +495,7 @@ def test_server_recovery_holds_the_apply_lock_and_the_installation_lock(tmp_path
         for lock in (state / "web/auto-update-apply.lock", state / "update.lock"):
             with lock.open("r+") as held, pytest.raises(BlockingIOError):
                 fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert state_port.update_owner() == f"automatic update (PID {os.getpid()})"
         observed.append(snapshot)
         restore(snapshot, **kwargs)
 
@@ -501,6 +503,7 @@ def test_server_recovery_holds_the_apply_lock_and_the_installation_lock(tmp_path
     AutoUpdater(kernel, restart=None, development=None)
 
     assert len(observed) == 1
+    assert state_port.update_owner() is None
     assert tool.startup_state_matches()
     assert not installation_mutation_pending(tool.prefix, state)
 
