@@ -458,3 +458,15 @@ def test_the_rest_head_keeps_the_authority_names_the_kit_now_owns() -> None:
     names = ("API_HOST_HELP", "DEFAULT_PORTS", "FORBIDDEN", "LOOPBACK", "WEB_HOST_HELP", "refusal", "request_refusal")
     for name in names:
         assert getattr(api, name) is getattr(_kit, name), name
+
+
+def test_the_published_055_process_cannot_load_spec_errors_directly() -> None:
+    """A post-swap renderer must use resident errors, even if their new file preserves the old pickle path."""
+    old, tree = published("0.9.55"), Tree(SOURCE)
+    renderer = "heinzel.modules.system._render"
+    original, package = tree.modules[renderer]
+    direct = ast.parse("from heinzel.spec._errors import HeinzelError").body
+    tree.modules[renderer] = (ast.Module(body=[*original.body, *direct], type_ignores=[]), package)
+    found = {line for lines in swap_identity_problems(old, tree).values() for line in lines}
+    assert "heinzel.spec._errors is facade-only and loads fresh" in found
+    assert "heinzel.spec._errors defines HeinzelError again; the process holds it from heinzel.kernel._errors" in found

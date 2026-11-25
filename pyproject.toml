@@ -456,4 +456,9 @@ ignore_imports = [
     "heinzel.heads.web._mcp -> heinzel.heads.mcp",
 ]
 
+[[tool.importlinter.contracts]]
+name = "Kernel composition depends on declarative spec (contexts.toml)"
+type = "layers"
+layers = ["heinzel.kernel", "heinzel.spec"]
+
 # END generated from contexts.toml
