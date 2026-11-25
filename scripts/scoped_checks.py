@@ -679,15 +679,16 @@ def early_guard_commands(changed: list[str]) -> list[list[str]]:
         for path in changed
     )
     groups = []
+    if ci:
+        # Run the owning workflow tests first, in their own session.
+        groups.append(["tests/unit/ci_test.py"])
     if fixture:
         groups.append(["tests/unit/standards_test.py::test_tests_and_template_use_only_variables_something_reads"])
     if guides:
         groups.append(["tests/integration/guides_test.py"])
     if ci:
-        # Give the larger workflow contract suite its own session budget.
         groups.extend(
             [
-                ["tests/unit/ci_test.py"],
                 [
                     "tests/unit/browser_runtime_setup_test.py",
                     "tests/unit/ci_supervised_test.py",

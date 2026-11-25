@@ -542,9 +542,9 @@ def test_direct_make_guards_include_branch_and_uncommitted_inputs(monkeypatch, m
 def test_early_ci_guards_use_whole_owning_files_so_test_renames_do_not_break_preflight():
     commands = scoped.early_guard_commands([".github/workflows/ci.yml", "src/heinzel/kernel/example.py"])
     assert [command[3:-5] for command in commands] == [
+        ["tests/unit/ci_test.py"],
         ["tests/unit/standards_test.py::test_tests_and_template_use_only_variables_something_reads"],
         ["tests/integration/guides_test.py"],
-        ["tests/unit/ci_test.py"],
         [
             "tests/unit/browser_runtime_setup_test.py",
             "tests/unit/ci_supervised_test.py",
