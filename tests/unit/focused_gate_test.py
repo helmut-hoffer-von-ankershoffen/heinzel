@@ -872,6 +872,7 @@ SELECTED = {
     "contracts": True,
     "electron": True,
     "plugins": False,
+    "upgrade": True,
     "release": False,
 }
 
@@ -927,11 +928,23 @@ def test_selected_inventory_follows_each_selector(focused_gate):
     assert site["Consumer (${{ matrix.name }})"] == "skipped"
     assert site["Build"] == "success"
     surface = focused_gate.selected_pr_inventory(
-        {**SELECTED, "core": False, "surface_only": True, "macos_full": False, "contracts": False, "electron": False}
+        {
+            **SELECTED,
+            "core": False,
+            "surface_only": True,
+            "macos_full": False,
+            "contracts": False,
+            "electron": False,
+            "upgrade": False,
+        }
     )
     assert surface["Lint, contracts and types"] == surface["macOS-specific tests"] == "success"
     assert {surface[n] for n in ("Build", "Coverage", "Dependency audit")} == {"skipped"}
-    assert surface["Plugin SDK candidate"] == surface["Upgrade in place (published to candidate, Linux)"] == "success"
+    assert surface["Plugin SDK candidate"] == "success"
+    assert surface["Upgrade in place (published to candidate, Linux)"] == "skipped"
+    quiet = focused_gate.selected_pr_inventory({**SELECTED, "upgrade": False})
+    assert quiet["Upgrade in place (published to candidate, Linux)"] == "skipped"
+    assert not [name for name in quiet if name.startswith("Test (macos")]
     ordinary = focused_gate.selected_pr_inventory(SELECTED)
     assert ordinary["Upgrade in place (published to candidate, Linux)"] == "success"
     assert {name: result for name, result in ordinary.items() if name.startswith("Test (")} == {
@@ -939,7 +952,7 @@ def test_selected_inventory_follows_each_selector(focused_gate):
         for os in ("ubuntu-24.04", "macos-latest")
         for level in ("unit", "integration")
     }
-    release = focused_gate.selected_pr_inventory({**SELECTED, "release": True})
+    release = focused_gate.selected_pr_inventory({**SELECTED, "release": True, "upgrade": False})
     assert release == {**focused_gate.expected_jobs("pull_request"), "Release candidate source": "skipped"}
 
 

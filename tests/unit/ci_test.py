@@ -1227,13 +1227,14 @@ def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
     assert '"os":"macos-latest","python":"3.15"' in jobs["test"]["strategy"]["matrix"]["include"]
 
 
-def _macos_include(matrix: dict, event: str, *, full_ci: bool = True, lane: str = "") -> list[dict]:
+def _macos_include(matrix: dict, event: str, *, full_ci: bool = True, lane: str = "", upgrade: str = "") -> list[dict]:
     expression = re.fullmatch(r"\$\{\{ fromJSON\((.*)\) \}\}", matrix["include"].strip())
     assert expression
     context = {
         "github.event_name": event,
         "needs.changes.outputs.lane": lane or ("linux" if event == "push" else "all"),
         "needs.changes.outputs.full_ci": str(full_ci).lower(),
+        "needs.changes.outputs.upgrade": upgrade,
     }
     for branch in expression[1].split(" || "):
         value = None
@@ -1523,6 +1524,7 @@ def _changes_outputs(  # noqa: PLR0913 - independent changed-path, event and rel
             "PATH": f"{directory / 'bin'}:{Path(sys.executable).parent}:/usr/bin:/bin",
             "EVENT": event,
             "FULL_RELEASE": str(release).lower(),
+            "RELEASE_FULL": str(release).lower(),
             "BASE": "base",
             "GITHUB_OUTPUT": str(output),
             "CHANGED_PATHS": changed,
@@ -1651,6 +1653,7 @@ def test_every_selector_key_stays_on_outside_a_pull_request(tmp_path, ci_paths, 
         "notifier=true",
         "contracts=true",
         "electron=true",
+        "upgrade=true",
         "macos_full=true",
         "site_only=false",
     } <= outputs
@@ -2115,8 +2118,8 @@ def test_sharded_release_acceptance_keeps_one_named_job_receipt_and_verdict_per_
 @pytest.mark.parametrize(
     "changed", ["CHANGELOG.md\npyproject.toml\n", "docs/guides/install.md\n", "plugins/example/file.py\n"]
 )
-def test_release_candidates_force_the_whole_existing_matrix_for_every_changed_scope(tmp_path, ci_paths, changed):
-    outputs = _changes_outputs(tmp_path, ci_paths, "pull_request", changed, release=True)
+def test_release_candidates_force_the_whole_matrix_for_every_changed_scope(tmp_path, ci_contexts_paths, changed):
+    outputs = _changes_outputs(tmp_path, ci_contexts_paths, "pull_request", changed, release=True)
     assert {
         "macos_full=true",
         "site_only=false",
@@ -2124,12 +2127,13 @@ def test_release_candidates_force_the_whole_existing_matrix_for_every_changed_sc
         "notifier=true",
         "contracts=true",
         "electron=true",
+        "upgrade=true",
     } <= outputs
     jobs = _ci_jobs()
     assert _oses(jobs["test"]["strategy"]["matrix"]["python"], "pull_request", release=True) == [
         "3.15",
     ]
-    assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "pull_request")) == 2
+    assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "pull_request", upgrade="true")) == 2
     assert _oses(jobs["e2e"]["strategy"]["matrix"]["os"], "pull_request", release=True) == [
         "ubuntu-24.04",
         "macos-latest",
@@ -2625,7 +2629,7 @@ def _ci_ok_run(run: str, **env: str) -> tuple[int, str]:
 
 
 _OFF = {"NOTIFIER": "false", "ELECTRON": "false", "MACOS_FULL": "false", "CONTRACTS": "false", "PLUGIN_PATHS": "false"}
-_PROSE = {**_OFF, "SITE_ONLY": "true", "CORE": "true", "PLUGINS": "False"}
+_PROSE = {**_OFF, "SITE_ONLY": "true", "CORE": "true", "PLUGINS": "False", "UPGRADE": "false"}
 _PROSE_JOBS = [
     "admission",
     "changes",
@@ -2636,12 +2640,11 @@ _PROSE_JOBS = [
     "site-tests",
     "build",
     "core-wheel",
-    "upgrade",
 ]
 PROSE_RUN = " ".join([*_PROSE_JOBS, "quarantine-registry", "commits", "dependency-review"])
 
 
-def test_a_prose_pull_request_passes_ci_ok_with_site_and_upgrade_tests():
+def test_a_prose_pull_request_passes_ci_ok_with_site_tests():
     assert _ci_ok_run(PROSE_RUN, **_PROSE)[0] == 0
 
 
@@ -2651,9 +2654,16 @@ def test_a_prose_pull_request_cannot_pass_without_its_site_tests():
     assert "site-tests" in out
 
 
-def test_a_plugins_only_pull_request_keeps_the_upgrade_and_wheel():
-    run = "admission changes secrets quarantine-registry commits dependency-review local-plugin-plan core-wheel upgrade"
-    env = {**_OFF, "SITE_ONLY": "false", "CORE": "false", "PLUGIN_PATHS": "true", "PLUGINS": "False"}
+def test_a_plugins_only_pull_request_keeps_the_sdk_wheel():
+    run = "admission changes secrets quarantine-registry commits dependency-review local-plugin-plan core-wheel"
+    env = {
+        **_OFF,
+        "SITE_ONLY": "false",
+        "CORE": "false",
+        "PLUGIN_PATHS": "true",
+        "PLUGINS": "False",
+        "UPGRADE": "false",
+    }
     assert _ci_ok_run(run, **env)[0] == 0
     assert _ci_ok_run(run.replace("local-plugin-plan", ""), **env)[0] != 0
 
@@ -2672,7 +2682,14 @@ def test_the_macos_jobs_wait_for_a_native_path_on_ordinary_pull_requests():
     assert _evaluate_if(condition, "push", {**base, "macos_full": "false", "full_release": "false"})
 
 
-def test_an_ordinary_core_pr_keeps_both_macos_shards_without_native_paths(tmp_path, ci_contexts_paths):
+@pytest.mark.parametrize(
+    ("path", "upgrade"),
+    [
+        ("src/heinzel/modules/team/_render.py", "false"),
+        ("src/heinzel/modules/system/updater/_adapter_state.py", "true"),
+    ],
+)
+def test_the_upgrade_selector_controls_linux_upgrade_and_macos_cells(tmp_path, ci_contexts_paths, path, upgrade):
     jobs = _ci_jobs()
     full = next(step for step in jobs["changes"]["steps"] if step.get("id") == "full")
     assert "if" not in full
@@ -2681,23 +2698,29 @@ def test_an_ordinary_core_pr_keeps_both_macos_shards_without_native_paths(tmp_pa
         ["bash", "-e", "-c", full["run"]], env={"GITHUB_OUTPUT": str(full_output)}, check=True, timeout=scaled(30)
     )
     assert full_output.read_text() == "selected=true\n"
-    changed = "src/heinzel/modules/team/_render.py\n"
+    changed = path + "\n"
     outputs = dict(
         line.split("=", 1) for line in _changes_outputs(tmp_path, ci_contexts_paths, "pull_request", changed)
     )
-    assert outputs["macos_full"] == "false"
-    assert _evaluate_if(jobs["test"]["if"], "pull_request", {**outputs, "full_ci": "true"})
+    assert outputs["upgrade"] == upgrade
+    outputs.update(full_ci="true", lane="all")
+    assert _evaluate_if(jobs["test"]["if"], "pull_request", outputs)
+    assert _evaluate_if(jobs["upgrade"]["if"], "pull_request", outputs) is (upgrade == "true")
     matrix = jobs["test"]["strategy"]["matrix"]
     assert matrix["os"] == ["ubuntu-24.04"]
     assert matrix["levels"] == ["unit", "integration"]
-    assert _macos_include(matrix, "pull_request") == [
-        {"os": "macos-latest", "python": "3.15", "levels": level} for level in matrix["levels"]
-    ]
+    macos_cells = [{"os": "macos-latest", "python": "3.15", "levels": level} for level in matrix["levels"]]
+    assert _macos_include(matrix, "pull_request", upgrade=upgrade) == (macos_cells if upgrade == "true" else [])
 
 
-def test_a_failed_diff_keeps_the_consumers_and_the_notifier_on(tmp_path, ci_paths):
-    outputs = _changes_outputs(tmp_path, ci_paths, "pull_request", "", git_exit=1)
-    assert {"contracts=true", "notifier=true", "core=true"} <= outputs
+def test_a_failed_diff_keeps_the_consumers_notifier_and_upgrade_on(tmp_path, ci_contexts_paths):
+    outputs = _changes_outputs(tmp_path, ci_contexts_paths, "pull_request", "", git_exit=1)
+    assert {"contracts=true", "notifier=true", "core=true", "upgrade=true"} <= outputs
+
+
+def test_a_failed_upgrade_selector_keeps_the_upgrade_on(tmp_path, ci_paths):
+    outputs = _changes_outputs(tmp_path, ci_paths, "pull_request", "web/src/components/Footer.tsx\n")
+    assert "upgrade=true" in outputs
 
 
 def test_a_release_branch_that_is_not_the_candidate_runs_everything(tmp_path, ci_paths, monkeypatch):
@@ -2712,7 +2735,7 @@ def test_a_release_branch_that_is_not_the_candidate_runs_everything(tmp_path, ci
         },
         cwd=directory, check=True, timeout=scaled(30),
     )  # fmt: skip
-    assert {"site_only=false", "macos_full=true", "contracts=true", "notifier=true"} <= set(
+    assert {"site_only=false", "macos_full=true", "contracts=true", "notifier=true", "upgrade=true"} <= set(
         output.read_text().splitlines()
     )
 
@@ -2804,6 +2827,7 @@ def _selection_run(  # noqa: PLR0913 - independent event, path and job fixture i
         "NOTIFIER": changes["notifier"],
         "ELECTRON": changes["electron"],
         "MACOS_FULL": changes["macos_full"],
+        "UPGRADE": changes["upgrade"],
         "CONTRACTS": changes["contracts"],
         "PLUGIN_PATHS": changes["plugins"],
         "LANE": lane,
@@ -2845,10 +2869,8 @@ def test_ci_ok_requires_only_jobs_the_selection_runs(  # noqa: PLR0913,PLR0917 -
 @pytest.mark.parametrize(
     "case",
     [
-        ("pull_request", False, "AGENTS.md\n"),
-        ("pull_request", False, "apple/App/Info.plist\n"),
-        ("pull_request", False, "plugins/heinzel-x/src/plugin.py\n"),
-        ("pull_request", False, "web/src/components/Footer.tsx\n"),
+        ("pull_request", False, "src/heinzel/modules/system/updater/_adapter_state.py\n"),
+        ("pull_request", False, ".github/workflows/ci.yml\n"),
         ("pull_request", True, "CHANGELOG.md\n"),
         ("push", False, "README.md\n"),
         ("push", False, "src/heinzel/runtime/updater/system_update.py\n"),
@@ -2857,7 +2879,7 @@ def test_ci_ok_requires_only_jobs_the_selection_runs(  # noqa: PLR0913,PLR0917 -
     ],
 )
 @pytest.mark.parametrize("job", ["upgrade", "core-wheel"])
-def test_ci_ok_requires_upgrade_and_its_wheel_for_all_linux_workloads(tmp_path, ci_contexts_paths, case, job):
+def test_ci_ok_requires_selected_upgrade_and_its_wheel(tmp_path, ci_contexts_paths, case, job):
     event, release, changed = case
     run = _selection_run(tmp_path, ci_contexts_paths, event, changed, release=release, skipped_job=job)
     assert run.returncode != 0
@@ -2868,7 +2890,8 @@ def test_upgrade_reuses_the_run_local_candidate_wheel_and_executes_the_real_scen
     jobs = _ci_jobs()
     upgrade = jobs["upgrade"]
     assert upgrade["needs"] == ["changes", "core-wheel"]
-    assert upgrade["if"] == jobs["core-wheel"]["if"]
+    assert upgrade["if"].startswith(jobs["core-wheel"]["if"] + " && ")
+    assert "outputs.upgrade != 'false'" in upgrade["if"]
     assert "outputs.lane != 'macos'" in upgrade["if"]
     uploads = [s for s in jobs["core-wheel"]["steps"] if "actions/upload-artifact@" in s.get("uses", "")]
     assert len(uploads) == 1

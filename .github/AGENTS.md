@@ -15,7 +15,8 @@ Intel large runners, or Intel self-hosted runners. Keep the shared bootstrap arc
 native, browser, Electron and release-acceptance coverage and its limits. Linux coverage is unchanged.
 
 macOS e2e, Electron and setup lanes run on push to main, schedule and dispatch, and on a release PR
-(`full_release`); an ordinary PR runs every Linux job plus macOS unit, integration, macOS-specific and notifier.
+(`full_release`). On ordinary PRs, the upgrade selector controls the Linux in-place upgrade and macOS unit and
+integration cells. The existing path rules select macOS-specific and notifier jobs.
 Narrow by matrix, never by a job-level `if` on a required job. The nightly requires the full matrix (`CI OK`
 checks it), and a red nightly or main macOS lane blocks the next release. PR matrices use `fail-fast: false`, and the
 template job starts with the Linux jobs instead of waiting for lint. The pre-push hook is capped at lint, types and
