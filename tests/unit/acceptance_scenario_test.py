@@ -26,6 +26,16 @@ def load(name):
 scenario = load("scenario")
 
 
+def test_receipt_limits_describe_the_selected_upgrade_workload() -> None:
+    candidate = " ".join(scenario.receipt_limits(candidate=True))
+    assert "explicitly updates it in place" in candidate
+    assert "one foreground server and answers a chat" in candidate
+    assert "ADVISORY" not in candidate
+    published = " ".join(scenario.receipt_limits(candidate=False))
+    assert "ADVISORY" in published
+    assert "two web servers" in published
+
+
 def test_previous_release_is_the_newest_final_unyanked_one_before_n():
     releases = {
         "0.9.50": [{"yanked": False}],

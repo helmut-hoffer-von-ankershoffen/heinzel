@@ -501,6 +501,30 @@ def write(path, result, secrets):
     HARNESS.write_result(path, result, secrets)
 
 
+def receipt_limits(*, candidate: bool) -> list[str]:
+    """Describe the scope of the selected scenario in its receipt."""
+    if candidate:
+        return [
+            "This gate starts with a published Core release and explicitly updates it in place to this CI run's candidate wheel.",
+            "The updated Core runs one foreground server and answers a chat. Scheduled updates, multiple servers and "
+            "live daemon ownership are outside this gate.",
+            "The starting release and candidate use the default state folder inside the private home. The scenario "
+            "checks that state survives the update.",
+            "Native apps and plugin upgrades are outside this gate.",
+        ]
+    return [
+        "ADVISORY: slice 1 of the end-to-end scenario; no release waits for this verdict yet.",
+        "The servers run in the foreground; the daemon and the service manager are not involved (case 11 says "
+        "why a hosted runner cannot prove an active daemon), so 'one owned backend' is the two web servers on "
+        "one state folder.",
+        "The core age gate is set to 0 hours as a user can, so a release of minutes is installed by itself; the "
+        "plugin gate is 0 hours (core and plugins update together) or 24 hours (the default: core only).",
+        "The state folder is the user's default one inside the private home (HZ_STATE_DIR is not set): the "
+        "updater treats any other state folder as development and never updates.",
+        "No apps, no chat thread or bookmark before the update, no plugin upgrade check: later slices.",
+    ]
+
+
 def main(argv=None):
     args = parse_args(argv)
     HARNESS.require_isolated_python()
@@ -526,17 +550,7 @@ def main(argv=None):
         "started": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "ci": HARNESS.ci_record(),
         "proof_root": str(parent),
-        "limits": [
-            "ADVISORY: slice 1 of the end-to-end scenario; no release waits for this verdict yet.",
-            "The servers run in the foreground; the daemon and the service manager are not involved (case 11 says "
-            "why a hosted runner cannot prove an active daemon), so 'one owned backend' is the two web servers on "
-            "one state folder.",
-            "The core age gate is set to 0 hours as a user can, so a release of minutes is installed by itself; the "
-            "plugin gate is 0 hours (core and plugins update together) or 24 hours (the default: core only).",
-            "The state folder is the user's default one inside the private home (HZ_STATE_DIR is not set): the "
-            "updater treats any other state folder as development and never updates.",
-            "No apps, no chat thread or bookmark before the update, no plugin upgrade check: later slices.",
-        ],
+        "limits": receipt_limits(candidate=bool(args.candidate_wheel)),
         "verdict": "INCOMPLETE",
         "steps": {},
     }
