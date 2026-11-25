@@ -11241,6 +11241,18 @@
             "title": "Popup",
             "type": "boolean"
           },
+          "replaces": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The producer's replacement group, scoped to this kind, route and command.",
+            "title": "Replaces"
+          },
           "resolve_when": {
             "anyOf": [
               {

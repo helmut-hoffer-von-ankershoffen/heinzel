@@ -79,6 +79,46 @@ def test_a_tab_that_cant_pop_up_only_hears_that_the_list_changed(client, kernel)
     assert kernel.resolve(Notifications).store.watched_at() is None
 
 
+def test_plugin_sdk_replaces_only_its_stream_and_does_not_replay_old_notices(
+    client, kernel, make_kernel, monkeypatch, tmp_path
+):
+    def record(hour: str, *, group: str = "rain:Berlin", command: str = "hz weather show", target=kernel):
+        def send(notifications: Notifications):
+            return notifications.emit(
+                NoticeKind.PLUGIN,
+                f"Rain at {hour}",
+                route="/",
+                command=command,
+                key=f"rain:{hour}",
+                urgent=True,
+                replaces=group,
+            )
+
+        return target.call(send)
+
+    with monkeypatch.context() as scope:
+        scope.setenv("HZ_STATE_DIR", str(tmp_path / "other"))
+        other_profile = make_kernel(builtins=True)
+        another_user = record("00", target=other_profile)
+    old = record("00")
+    another_place = record("00", group="rain:Paris")
+    another_producer = record("00", command="hz other report")
+    new = record("02")
+    assert record("00").id == old.id
+    assert other_profile.resolve(Notifications).recent() == [another_user]
+
+    listed = client.get("/api/system/notify/list", headers=AUTH).json()["notices"]
+    assert {notice["id"] for notice in listed} == {new.id, another_place.id, another_producer.id}
+    assert next(notice for notice in listed if notice["id"] == new.id)["replaces"] == "rain:Berlin"
+    resolved = kernel.resolve(Notifications).store.read()
+    assert next(notice for notice in resolved if notice.id == old.id).resolved == "Replaced by a newer notice."
+
+    response = client.get(STREAM, params={"once": True, "popups": True}, headers=AUTH)
+    popups = {payload["id"] for event, payload in events(response.text) if event == "notice"}
+    assert new.id in popups
+    assert old.id not in popups
+
+
 def test_empty_stream_sends_initial_snapshot(client):
     assert events(client.get(STREAM, params={"once": True}, headers=AUTH).text) == [("changed", {"latest": None})]
 

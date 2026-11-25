@@ -11200,6 +11200,11 @@ export interface components {
              * @description Whether it is shown as a desktop notification at all; false: in the list only.
              */
             popup: boolean;
+            /**
+             * Replaces
+             * @description The producer's replacement group, scoped to this kind, route and command.
+             */
+            replaces?: string | null;
             /** @description When it resolves by itself and disappears; none: it stays until it ages out. */
             resolve_when?: components["schemas"]["ResolveWhen"] | null;
             /**
