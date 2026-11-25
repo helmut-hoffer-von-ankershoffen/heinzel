@@ -218,7 +218,7 @@ jobs:
           if [ "$prose_push" = true ] || [ "$surface_only" = true ]; then
             echo "core=false" >> "$GITHUB_OUTPUT"
             core_work=false
-          elif [ "$full_release" = true ] || [ -n "${BATCH_BASE:-}" ] || [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ] \
+          elif [ "$full_release" = true ] || [ -n "${BATCH_BASE:-}" ] || [ "$EVENT" != pull_request ] \
             || [ -z "$changed" ] || grep -qvE '^plugins/' <<< "$changed"; then
             echo "core=true" >> "$GITHUB_OUTPUT"
             core_work=true
@@ -247,9 +247,10 @@ jobs:
           else
             echo "contracts=false" >> "$GITHUB_OUTPUT"
           fi
-          # A push to main needs Electron only for the paths a pull request needs it for; an unknown diff runs it.
-          if [ "$core_work" = true ] && [ -f desktop/package.json ] && { [ "$full_release" = true ] || [ "$EVENT" = schedule ] \
-            || [ "$EVENT" = workflow_dispatch ] || [ -z "$changed" ] \
+          # Every event but a pull request keeps Electron: CI OK requires it on push, schedule and dispatch. A pull request
+          # needs it only for the paths below; an unknown diff runs it.
+          if [ "$core_work" = true ] && [ -f desktop/package.json ] && { [ "$full_release" = true ] || [ "$EVENT" != pull_request ] \
+            || [ -z "$changed" ] \
             || { [ "$EVENT" = pull_request ] && [ "$macos_full" = true ] && [ "$site_only" = false ]; } \
             || grep -qE '^(desktop/|Makefile$|scripts/sync_template\.py$|\.github/workflows/ci\.yml$)' <<< "$changed"; }; then
             echo "electron=true" >> "$GITHUB_OUTPUT"
@@ -592,6 +593,9 @@ jobs:
           fetch-depth: 0 # the install-from-git tests clone this repository
           persist-credentials: false
       - uses: ./.github/actions/setup-uv
+        env:
+          # Create the CLI test venv from uv-managed Python on macOS so xdist can copy the exact patch without a download.
+          UV_PYTHON_PREFERENCE: ${{ matrix.os == 'macos-latest' && matrix.suite == 'cli' && 'only-managed' || 'managed' }}
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -1403,25 +1407,32 @@ jobs:
           esac # main lanes
           if [ "$EVENT" = pull_request ]; then required+=(commits dependency-review); fi
           if [ "${PLUGINS:-False}" = True ]; then required+=(local-plugin-check); fi
-          # An Apple-only or prose-only pull request (contexts.toml, level L0) skips the Python jobs.
-          # An ordinary pull request (not a release candidate) requires what its changed paths select, no more: the jobs
-          # the selector skipped are not required. Main, the nightly, a release and a missing selector stay complete.
-          if [ "$EVENT" = pull_request ] && [ "${FULL_RELEASE:-true}" != true ] \
+          # The list follows the selector outputs of the changes job and the `if` of each job; ci_test.py runs this
+          # script against every (event, selection) pair and fails when a required job is not one the selection runs.
+          drop() { local keep=() job x; for job in "${required[@]}"; do for x in "$@"; do [ "$job" = "$x" ] && continue 2; done; keep+=("$job"); done; required=("${keep[@]}"); }
+          if [ "${SURFACE_ONLY:-false}" = true ]; then
+            # An Apple-only or prose-only pull request (contexts.toml, level L0) skips the Python jobs; macos-specific
+            # does not run next to site_only.
+            required=(admission changes lint secrets commits dependency-review quarantine-registry)
+            if [ "${SITE_ONLY:-false}" = true ]; then required+=(site-tests); else required+=(macos-specific); fi
+          elif [ "${CORE:-true}" != true ]; then
+            # No core workload: keep policy, selected plugin jobs, and the macOS dispatch on main.
+            required=(admission changes secrets quarantine-registry)
+            if [ "$EVENT" = push ] && [ "${LANE:-all}" = linux ]; then required+=(macos-main); fi
+
+            [ "$EVENT" != pull_request ] || required+=(commits dependency-review)
+            [ "${PLUGIN_PATHS:-false}" != true ] || required+=(local-plugin-plan)
+            [ "${PLUGINS:-False}" != True ] || required+=(local-plugin-check)
+          elif [ "$EVENT" = pull_request ] && [ "${FULL_RELEASE:-true}" != true ] \
             && [[ "${HEAD_REF:-}" != release/* ]] && [ "${LANE:-all}" = all ]; then
-            drop() { local keep=() job x; for job in "${required[@]}"; do for x in "$@"; do [ "$job" = "$x" ] && continue 2; done; keep+=("$job"); done; required=("${keep[@]}"); }
+            # An ordinary pull request (not a release candidate) requires what its changed paths select, no more.
             if [ "${SITE_ONLY:-false}" = true ]; then drop test coverage perf e2e template; required+=(site-tests); fi
             [ "${NOTIFIER:-true}" = true ] || drop notifier
             [ "${ELECTRON:-true}" = true ] || drop electron
             [ "${MACOS_FULL:-true}" = true ] || drop macos-specific
             [ "${CONTRACTS:-true}" = true ] || drop consumer-plan consumer-check
             [ "${PLUGIN_PATHS:-true}" = true ] || [ "${CONTRACTS:-true}" = true ] || drop local-plugin-plan
-            if [ "${CORE:-true}" != true ]; then
-              required=(admission changes secrets quarantine-registry commits dependency-review)
-              [ "${PLUGIN_PATHS:-false}" != true ] || required+=(local-plugin-plan)
-              [ "${PLUGINS:-False}" != True ] || required+=(local-plugin-check)
-            fi
           fi
-          if [ "${SURFACE_ONLY:-false}" = true ]; then required=(admission changes lint secrets commits dependency-review quarantine-registry macos-specific); fi
           # The coverage floor: on every pull request, and on a dispatched run outside the macOS main lane.
           if [ "$EVENT" = pull_request ] || { [ "$EVENT" = workflow_dispatch ] && [ "${LANE:-all}" != macos ]; }; then required+=(coverage-floor); fi # Core coverage floor
           if [ "$EVENT" = pull_request ]; then required+=(sonar-ratings); fi # Core coverage floor

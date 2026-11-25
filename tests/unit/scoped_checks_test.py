@@ -296,13 +296,22 @@ def test_only_changes_that_touch_the_web_app_run_its_tests(changed, web):
 
 
 def test_docs_tooling_and_its_tests_run_the_documentation_checks_not_the_full_gate():
-    changed = ["docs/TEAMS.md", "scripts/site_pages.py", "scripts/sync_template.py", "tests/unit/site_catalog_test.py"]
+    changed = [
+        "docs/TEAMS.md",
+        "scripts/site_pages.py",
+        "scripts/sync_template.py",
+        "tests/unit/site_catalog_test.py",
+        "tests/unit/documentation_test.py",
+    ]
     steps = scoped.scoped_steps(changed)
-    assert names(steps) == ["format", "ruff", "template", "docs", "demo", "typos", "tests"]
-    tests = steps[-1]
-    assert "tests/unit/site_catalog_test.py" in tests
-    assert "tests/unit/documentation_test.py" in tests
-    assert "tests/unit/ci_test.py" in tests
+    assert names(steps) == ["format", "ruff", "template", "docs", "demo", "typos", "tests", "tooling-tests"]
+    assert steps[-2] == scoped.DOCS_STEPS[-1]
+    tooling_tests = steps[-1].split()
+    assert tooling_tests[3:-5] == [
+        "tests/unit/ci_test.py",
+        *sorted(str(path.relative_to(REPO)) for path in (REPO / "tests/unit").glob("site_*_test.py")),
+    ]
+    assert tooling_tests[-5:] == steps[-2].split()[-5:]
     assert "scripts/site_pages.py" in steps[0]
     assert "--check" in steps[0]
 
@@ -531,15 +540,37 @@ def test_direct_make_guards_include_branch_and_uncommitted_inputs(monkeypatch, m
 
 
 def test_early_ci_guards_use_whole_owning_files_so_test_renames_do_not_break_preflight():
-    command, partition = scoped.early_guard_commands([".github/workflows/ci.yml"])
-    assert {argument for argument in command if argument.startswith("tests/")} == {
-        "tests/unit/browser_runtime_setup_test.py",
-        "tests/unit/ci_supervised_test.py",
-        "tests/unit/ci_test.py",
-        "tests/unit/web_build_test.py",
-    }
-    assert "tests/e2e" in partition
-    assert partition[partition.index("-m") + 1] == "integration"
+    commands = scoped.early_guard_commands([".github/workflows/ci.yml", "src/heinzel/kernel/example.py"])
+    assert [command[3:-5] for command in commands] == [
+        ["tests/unit/ci_test.py"],
+        ["tests/unit/standards_test.py::test_tests_and_template_use_only_variables_something_reads"],
+        ["tests/integration/guides_test.py"],
+        [
+            "tests/unit/browser_runtime_setup_test.py",
+            "tests/unit/ci_supervised_test.py",
+            "tests/unit/web_build_test.py",
+        ],
+        ["tests/integration/e2e_lane_partition_test.py", "tests/e2e", "-m", "integration"],
+    ]
+    assert all(command[-5:] == ["-n", "2", "-x", "-q", "--session-timeout=120"] for command in commands)
+
+
+@pytest.mark.parametrize("failed_group", [0, 1, 2])
+def test_early_ci_guard_propagates_failure_from_any_group(monkeypatch, failed_group):
+    changed = [".github/workflows/ci.yml"]
+    commands = scoped.early_guard_commands(changed)
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        assert kwargs == {"timeout": 180, "light": False}
+        if command == commands[failed_group]:
+            raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(scoped, "run_check", run)
+    with pytest.raises(subprocess.CalledProcessError):
+        scoped.run_early_guards(changed)
+    assert calls == commands[: failed_group + 1]
 
 
 @pytest.fixture

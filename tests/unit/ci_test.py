@@ -344,10 +344,11 @@ def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert not foreign_index.exists()
     plugin_only = path.startswith("plugins/")
-    assert values["core"] == str(batch_base or not plugin_only).lower()
+    complete = batch_base or event != "pull_request" or not plugin_only  # CI OK demands every job outside a PR
+    assert values["core"] == str(complete).lower()
     assert values["plugins"] == str(plugin_only).lower()
-    assert values["contracts"] == str(batch_base or not plugin_only).lower()
-    if plugin_only and not batch_base:
+    assert values["contracts"] == str(complete).lower()
+    if plugin_only and not complete:
         assert values["notifier"] == values["electron"] == "false"
     for name in ("lint", "setup", "audit", "test", "coverage", "perf", "e2e", "build", "core-wheel"):
         assert "needs.changes.outputs.core == 'true'" in jobs[name]["if"]
@@ -1391,9 +1392,21 @@ def test_e2e_sequence_stops_after_readme_failure(tmp_path, first_fails):
 @pytest.fixture(scope="module")
 def ci_paths(tmp_path_factory):
     """One immutable workflow/script fixture per worker; every case still executes it with distinct data."""
+    return _make_ci_paths(tmp_path_factory, with_contexts=False)
+
+
+@pytest.fixture(scope="module")
+def ci_contexts_paths(tmp_path_factory):
+    """The same fixture with the repository's scripts/contexts.py, so the Apple-only and prose-only level L0 applies."""
+    return _make_ci_paths(tmp_path_factory, with_contexts=True)
+
+
+def _make_ci_paths(tmp_path_factory, *, with_contexts):
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
     script = next(step["run"] for step in jobs["changes"]["steps"] if step.get("id") == "paths")
     directory = tmp_path_factory.mktemp("ci-paths")
+    if with_contexts:
+        (directory / "scripts").symlink_to(REPO / "scripts", target_is_directory=True)
     stubs = directory / "bin"
     stubs.mkdir()
     git = stubs / "git"
@@ -1412,7 +1425,7 @@ def _changes_outputs(  # noqa: PLR0913 - independent changed-path, event and rel
     subprocess.run(
         ["bash", "-c", script],
         env={
-            "PATH": f"{directory / 'bin'}:/usr/bin:/bin",
+            "PATH": f"{directory / 'bin'}:{Path(sys.executable).parent}:/usr/bin:/bin",
             "EVENT": event,
             "FULL_RELEASE": str(release).lower(),
             "BASE": "base",
@@ -1512,7 +1525,8 @@ def test_failed_diff_with_partial_output_still_runs_full_macos(tmp_path, ci_path
 @pytest.mark.parametrize(
     ("event", "changed", "electron"),
     [
-        ("push", "src/heinzel/__init__.py\n", "false"),
+        ("push", "src/heinzel/__init__.py\n", "true"),
+        ("push", "web/src/components/Footer.tsx\n", "true"),
         ("push", "desktop/src/main.js\n", "true"),
         ("push", "Makefile\n", "true"),
         ("push", "scripts/sync_template.py\n", "true"),
@@ -1524,10 +1538,27 @@ def test_failed_diff_with_partial_output_still_runs_full_macos(tmp_path, ci_path
         ("workflow_dispatch", "src/heinzel/__init__.py\n", "true"),
     ],
 )
-def test_electron_runs_for_its_paths_on_a_push_and_always_on_schedule_and_dispatch(
+def test_electron_runs_on_every_event_but_a_pull_request_and_for_its_paths_there(
     tmp_path, ci_paths, event, changed, electron
 ):
     assert f"electron={electron}" in _changes_outputs(tmp_path, ci_paths, event, changed)
+
+
+@pytest.mark.parametrize("event", ["push", "schedule", "workflow_dispatch"])
+@pytest.mark.parametrize(
+    "changed", ["web/src/components/Footer.tsx\n", "plugins/heinzel-x/src/plugin.py\n", "tests/unit/a_test.py\n"]
+)
+def test_every_selector_key_stays_on_outside_a_pull_request(tmp_path, ci_paths, event, changed):
+    """CI OK requires these jobs on push, schedule and dispatch; a skipped one fails the run (main run 45072787338)."""
+    outputs = _changes_outputs(tmp_path, ci_paths, event, changed)
+    assert {
+        "core=true",
+        "notifier=true",
+        "contracts=true",
+        "electron=true",
+        "macos_full=true",
+        "site_only=false",
+    } <= outputs
 
 
 def test_the_test_matrix_keeps_the_whole_output_of_a_failure():
@@ -2006,6 +2037,19 @@ def test_release_candidate_source_and_selector_never_reach_plugin_templates():
         "github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true'"
         in (_ci_jobs()["test"]["strategy"]["matrix"]["include"])
     )
+
+
+def test_macos_cli_e2e_provisions_managed_python_in_ci_and_the_focused_diagnostic():
+    focused = yaml.safe_load((REPO / ".github/workflows/focused-job.yml").read_text(encoding="utf-8"))["jobs"][
+        "focused"
+    ]
+    for job, condition in (
+        (_ci_jobs()["e2e"], "matrix.os == 'macos-latest' && matrix.suite == 'cli'"),
+        (focused, "inputs.os == 'macos-latest' && inputs.kind == 'e2e' && inputs.selector == 'cli'"),
+    ):
+        setup = next(step for step in job["steps"] if step.get("uses") == "./.github/actions/setup-uv")
+        assert setup["env"]["UV_PYTHON_PREFERENCE"] == "${{ " + condition + " && 'only-managed' || 'managed' }}"
+    assert "UV_PYTHON_PREFERENCE" not in _template_sync_module().ci_workflow()
 
 
 def test_lint_job_leaves_room_for_the_candidate_web_component_suite():
@@ -2531,3 +2575,127 @@ def test_ci_ok_requires_everything_on_a_release_branch_and_keeps_the_plugin_chec
     env = {**_OFF, "SITE_ONLY": "false", "CORE": "false", "PLUGIN_PATHS": "true", "PLUGINS": "True"}
     assert _ci_ok_run(run + " local-plugin-check", **env)[0] == 0
     assert _ci_ok_run(run, **env)[0] != 0
+
+
+def _evaluate_job_if(expression, event, outputs, results, ref="refs/heads/main"):
+    """Evaluate one job `if` against a selection; only the expression forms ci.yml uses are supported."""
+    text = re.sub(r"^\$\{\{\s*|\s*\}\}$", "", str(expression).strip())
+    text = re.sub(r"\s+#.*$", "", text)
+    text = re.sub(r"needs\.([\w-]+)\.outputs\.(\w+)", r'N("\1","\2")', text)
+    text = re.sub(r"needs\.([\w-]+)\.result", r'R("\1")', text)
+    text = text.replace("github.event_name", "EV").replace("github.ref", "REF").replace("github.head_ref", "''")
+    text = text.replace("&&", " and ").replace("||", " or ")
+    text = re.sub(r"!(?!=)", " not ", text)
+    scope = {
+        "N": lambda job, key: outputs.get(job, {}).get(key, ""),
+        "R": results,
+        "EV": event,
+        "REF": ref,
+        "cancelled": lambda: False,
+        "startsWith": lambda *_: False,
+        "failure": lambda: False,
+        "__builtins__": {},
+    }
+    return bool(eval(text, scope))  # noqa: S307 - the expression comes from the repository's own workflow
+
+
+def _selection_run(  # noqa: PLR0913 - independent event, path and job fixture inputs
+    tmp_path, ci_paths, event, changed, *, release=False, plugins="True", skipped_job=None
+):
+    """Run the real selector, evaluate every job `if` on it, then run CI OK's own script on the resulting results."""
+    workflow = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    jobs = workflow["jobs"]
+    selected = dict(
+        line.split("=", 1)
+        for line in _changes_outputs(tmp_path, ci_paths, event, changed, release=release)
+        if "=" in line
+    )
+    lane = "linux" if event == "push" else "all"
+    outputs = {
+        "changes": {
+            **selected,
+            "lane": lane,
+            "full_ci": "true",
+            "full_release": str(release).lower(),
+            "focused_mode": "",
+            "scheduled_maintenance": "true" if event == "schedule" else "",
+        },
+        "admission": {"full": "true", "base": ""},
+        "local-plugin-plan": {"selected": plugins},
+        "consumer-plan": {"selected": "True"},
+        "quarantine-plan": {"selected": "true"},
+    }
+    cache: dict[str, str] = {}
+
+    def result(job):
+        if job not in cache:
+            cache[job] = (
+                "success"
+                if job not in jobs or "if" not in jobs[job] or _evaluate_job_if(jobs[job]["if"], event, outputs, result)
+                else "skipped"
+            )
+        return cache[job]
+
+    needs = {job: {"result": result(job), "outputs": outputs.get(job, {})} for job in jobs["ci-ok"]["needs"]}
+    if skipped_job is not None:
+        assert needs[skipped_job]["result"] == "success"
+        needs[skipped_job]["result"] = "skipped"
+    step = next(
+        s for s in jobs["ci-ok"]["steps"] if s.get("name", "").startswith("Require the complete direct CI workload")
+    )
+    changes = outputs["changes"]
+    env = {
+        "PATH": os.environ["PATH"],
+        "RESULTS": json.dumps(needs),
+        "EVENT": event,
+        "SURFACE_ONLY": changes["surface_only"],
+        "PLUGINS": plugins,
+        "FULL_RELEASE": changes["full_release"],
+        "HEAD_REF": "docs/x",
+        "SITE_ONLY": changes["site_only"],
+        "CORE": changes["core"],
+        "NOTIFIER": changes["notifier"],
+        "ELECTRON": changes["electron"],
+        "MACOS_FULL": changes["macos_full"],
+        "CONTRACTS": changes["contracts"],
+        "PLUGIN_PATHS": changes["plugins"],
+        "LANE": lane,
+    }
+    return subprocess.run(
+        ["bash", "-c", step["run"]], env=env, capture_output=True, text=True, timeout=scaled(30), check=False
+    )
+
+
+SELECTION_PATHS = [
+    "AGENTS.md\n",  # a docs-only change: site_only and surface_only together (PR 955)
+    "docs/guides/install.md\nREADME.md\n",
+    "docs/install.sh\n",
+    "web/src/components/Footer.tsx\n",
+    "src/heinzel/__init__.py\n",
+    "src/heinzel/modules/team/_render.py\n",
+    "plugins/heinzel-x/src/plugin.py\n",
+    "desktop/src/main.js\n",
+    ".github/workflows/ci.yml\n",
+    "apple/App/Info.plist\n",
+    "tests/unit/a_test.py\n",
+    "CHANGELOG.md\n",
+    "",
+]
+
+
+@pytest.mark.parametrize("plugins", ["True", "False"])
+@pytest.mark.parametrize("release", [False, True])
+@pytest.mark.parametrize("changed", SELECTION_PATHS)
+@pytest.mark.parametrize("event", ["pull_request", "push", "schedule", "workflow_dispatch"])
+def test_ci_ok_requires_only_jobs_the_selection_runs(  # noqa: PLR0913,PLR0917 - one parametrized axis each
+    tmp_path, ci_contexts_paths, event, changed, release, plugins
+):
+    """CI OK and the job conditions can never disagree: every job it requires is one this selection ran."""
+    run = _selection_run(tmp_path, ci_contexts_paths, event, changed, release=release, plugins=plugins)
+    assert run.returncode == 0, run.stderr + run.stdout
+
+
+def test_ci_ok_requires_macos_dispatch_on_prose_only_main_push(tmp_path, ci_contexts_paths):
+    run = _selection_run(tmp_path, ci_contexts_paths, "push", "README.md\n", plugins="False", skipped_job="macos-main")
+    assert run.returncode == 1
+    assert "Required full CI job did not pass: macos-main" in run.stdout
