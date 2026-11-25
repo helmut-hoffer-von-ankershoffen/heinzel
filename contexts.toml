@@ -173,7 +173,12 @@ contexts = [
 ]
 heads = [
     "heinzel.heads._served_tools -> heinzel.heads.mcp",
-    "heinzel.heads.cli._serve -> heinzel.heads.**",
+    "heinzel.heads.cli._serve -> heinzel.heads.api",
+    "heinzel.heads.cli._serve -> heinzel.heads.mcp",
+    "heinzel.heads.cli._serve -> heinzel.heads.mcp._http_check",
+    "heinzel.heads.cli._serve -> heinzel.heads.mcp._standard_project",
+    "heinzel.heads.cli._serve -> heinzel.heads.web",
+    "heinzel.heads.cli._serve -> heinzel.heads.web._supervision",
     "heinzel.heads.web -> heinzel.heads.api",
     "heinzel.heads.web._browser_bridge -> heinzel.heads.api",
     "heinzel.heads.web._mcp -> heinzel.heads.mcp",
