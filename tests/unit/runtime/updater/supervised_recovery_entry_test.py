@@ -16,6 +16,8 @@ from heinzel.modules.system.lifecycle._recovery_launcher import interpreter
 from heinzel.modules.system.lifecycle._service import WebService
 from heinzel.modules.system.updater import _recovery_worker
 
+pytestmark = pytest.mark.unit
+
 _UPDATE = """
 import json
 import os
