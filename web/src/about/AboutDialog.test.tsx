@@ -109,9 +109,13 @@ describe("About dialog", () => {
   });
 
   it("tells which client shows the page from the bridge it injects", () => {
+    const about = () => Promise.resolve({ version: "1", path: "/A" });
     expect(clientHere(undefined)).toBe("browser");
     expect(clientHere({})).toBe("native");
-    expect(clientHere({ about: () => Promise.resolve({ version: "1", path: "/A" }) })).toBe("electron");
+    expect(clientHere({ about })).toBe("electron");
+    expect(clientHere({ about, workspaceAudio: false })).toBe("native");
+    expect(clientHere({ about, clientFlavor: "native" })).toBe("native");
+    expect(clientHere({ clientFlavor: "electron" })).toBe("electron");
   });
 
   it("shows the Native app row and the client it runs in", async () => {
@@ -140,6 +144,21 @@ describe("About dialog", () => {
     expect(text).toContain("desktop Electron app 0.9.29 /Applications/H.app");
     expect(text).toContain("client Browser");
     expect(text).toContain("plugin heinzel-b 0.4.0 git");
+  });
+
+  it("labels local Native About details when the backend has no desktop app metadata", async () => {
+    const about = async () => ({ version: "0.9.53", path: "/Applications/Heinzelmaennchen.app" });
+    vi.stubGlobal("heinzelDesktop", { about, clientFlavor: "native" });
+    try {
+      show();
+      act(() => requestMenuAction("about"));
+      const dialog = await screen.findByRole("dialog");
+      expect(await within(dialog).findByText("Native app 0.9.53")).toBeInTheDocument();
+      expect(within(dialog).getByText("Running in").nextSibling).toHaveTextContent("Native app");
+      expect(detailsText(info as never, await about())).toContain("desktop Native app 0.9.53");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("includes the loaded entrypoint and safe surface snapshot separately from backend version", () => {

@@ -275,7 +275,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         )
         #if os(macOS)
         NotificationCenter.default.addObserver(
-            self, selector: #selector(menuAction), name: WorkspaceMenuAction.notification, object: nil
+            self, selector: #selector(menuAction), name: WorkspaceMenuRequest.notification, object: nil
         )
         #endif
     }
@@ -748,7 +748,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     @objc private func menuAction(_ notification: Notification) {
-        guard let action = notification.object as? WorkspaceMenuAction,
+        guard let request = notification.object as? WorkspaceMenuRequest, !request.delivered,
               let workspace else { return }
         let loading: Bool
         if case .idle = provisionalLoad { loading = false } else { loading = true }
@@ -757,6 +757,8 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                                       keyWindow: workspace.window?.isKeyWindow == true,
                                       ownsOrigin: workspace.url.map(endpoint.owns) == true,
                                       committed: hasCommittedWorkspace, loading: loading) else { return }
+        request.delivered = true
+        let action = request.action
         switch action {
         case .reload: workspace.reload()
         case .zoomIn: workspace.pageZoom = min(workspace.pageZoom * 1.2, 3)
@@ -781,7 +783,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         )
         #if os(macOS)
         observeWindow(nil)
-        NotificationCenter.default.removeObserver(self, name: WorkspaceMenuAction.notification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: WorkspaceMenuRequest.notification, object: nil)
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelWindow", contentWorld: .page)
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelDrag", contentWorld: .defaultClient)
         #else
