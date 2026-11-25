@@ -2039,6 +2039,19 @@ def test_release_candidate_source_and_selector_never_reach_plugin_templates():
     )
 
 
+def test_macos_cli_e2e_provisions_managed_python_in_ci_and_the_focused_diagnostic():
+    focused = yaml.safe_load((REPO / ".github/workflows/focused-job.yml").read_text(encoding="utf-8"))["jobs"][
+        "focused"
+    ]
+    for job, condition in (
+        (_ci_jobs()["e2e"], "matrix.os == 'macos-latest' && matrix.suite == 'cli'"),
+        (focused, "inputs.os == 'macos-latest' && inputs.kind == 'e2e' && inputs.selector == 'cli'"),
+    ):
+        setup = next(step for step in job["steps"] if step.get("uses") == "./.github/actions/setup-uv")
+        assert setup["env"]["UV_PYTHON_PREFERENCE"] == "${{ " + condition + " && 'only-managed' || 'managed' }}"
+    assert "UV_PYTHON_PREFERENCE" not in _template_sync_module().ci_workflow()
+
+
 def test_lint_job_leaves_room_for_the_candidate_web_component_suite():
     lint = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8"))["jobs"]["lint"]
     assert lint["steps"][-1] == {"if": "needs.changes.outputs.full_ci == 'true'", "run": "make test-web"}
