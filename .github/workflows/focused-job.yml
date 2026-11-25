@@ -69,6 +69,8 @@ jobs:
           fetch-depth: 0 # the install-from-git end-to-end tests clone this repository
           persist-credentials: false
       - uses: ./.github/actions/setup-uv
+        env:
+          UV_PYTHON_PREFERENCE: ${{ inputs.os == 'macos-latest' && inputs.kind == 'e2e' && inputs.selector == 'cli' && 'only-managed' || 'managed' }}
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
