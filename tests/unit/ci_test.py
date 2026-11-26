@@ -1160,6 +1160,48 @@ def test_gate_review_only_waives_a_confirmed_spend_limit(tmp_path, changes, prev
             assert not output.exists()
 
 
+def test_gate_review_does_not_accept_approval_after_explicit_rejection(tmp_path):
+    reject = {"type": "assistant", "message": {"content": [{"type": "text", "text": "VERDICT: REJECT"}]}}
+    approve = {"type": "result", "is_error": False, "result": "VERDICT: APPROVE"}
+    execution = tmp_path / "execution.json"
+    execution.write_text(json.dumps([reject, approve]), encoding="utf-8")
+    output = tmp_path / "output"
+    collect = next(step["run"] for step in _gate_review()["jobs"]["model"]["steps"] if step.get("id") == "result")
+    env = os.environ | {
+        "OUTCOME": "success",
+        "CLAUDE_CONCLUSION": "success",
+        "EXECUTION_FILE": str(execution),
+        "GITHUB_OUTPUT": str(output),
+    }
+    args = ["bash", "-e", "-o", "pipefail", "-c"]
+    subprocess.run([*args, collect], env=env, check=True, timeout=10)
+    assert output.read_text(encoding="utf-8").splitlines()[:2] == [
+        "explicit_rejection=true",
+        "verdict_line=VERDICT: APPROVE",
+    ]
+    result = subprocess.run(
+        [*args, "gh() { return 0; }\n" + _gate_judge_script()],
+        env=env
+        | {
+            "MODE": "review",
+            "MODEL": "success",
+            "VERDICT_LINE": "VERDICT: APPROVE",
+            "RESULT": "VERDICT: APPROVE",
+            "EXPLICIT_REJECTION": "true",
+            "SPEND_LIMIT": "",
+            "RUNNER_TEMP": str(tmp_path),
+            "PR": "1",
+            "GITHUB_REPOSITORY": "owner/repo",
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 1
+    assert "reported an explicit rejection" in result.stdout
+
+
 def test_gate_review_holds_least_privilege():
     spec = _gate_review()
     for name, job in spec["jobs"].items():

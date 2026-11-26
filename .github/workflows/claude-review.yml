@@ -214,6 +214,7 @@ jobs:
           MODEL: ${{ needs.model.result }}
           SPEND_LIMIT: ${{ needs.model.outputs.spend_limit }}
           HISTORY_OUTCOME: ${{ steps.history.outcome }}
+          EXPLICIT_REJECTION: ${{ needs.model.outputs.explicit_rejection }}
           VERDICT_LINE: ${{ needs.model.outputs.verdict_line }}
           RESULT: ${{ needs.model.outputs.result }}
         run: |
@@ -233,6 +234,10 @@ jobs:
           fi
           { echo "### Gate review (Opus)"; echo; echo "$RESULT"; } > "$RUNNER_TEMP/gate-review.md"
           gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/gate-review.md"
+          if [[ "$EXPLICIT_REJECTION" == true ]]; then
+            echo "::error::Gate review reported an explicit rejection."
+            exit 1
+          fi
           if [[ "$VERDICT_LINE" == "VERDICT: APPROVE" ]]; then echo "Gate review approved."; exit 0; fi
           echo "::error::Gate review did not approve (last line: ${VERDICT_LINE:0:80})"
           exit 1
