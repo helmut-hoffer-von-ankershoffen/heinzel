@@ -347,7 +347,9 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
     private func browser(in workspace: WKWebView, endpoint: Endpoint, revision: Int, tab: Tab) async throws -> WKWebView {
         if let view = tab.view { return view }
         if configuration == nil {
-            guard try await Self.enabled(in: workspace, for: endpoint) else { throw URLError(.userAuthenticationRequired) }
+            guard try await Self.authenticated(in: workspace, for: endpoint) else {
+                throw URLError(.userAuthenticationRequired)
+            }
             guard revision == generation else { throw URLError(.cancelled) }
             let host = endpoint.origin.host()?.lowercased()
             let rules = try await Self.requestRules(excluding: host)
@@ -375,7 +377,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         return view
     }
 
-    private static func enabled(in workspace: WKWebView, for endpoint: Endpoint) async throws -> Bool {
+    private static func authenticated(in workspace: WKWebView, for endpoint: Endpoint) async throws -> Bool {
         // Use the owning document's current session or pairing credential. The guest never receives it.
         try await workspace.callAsyncJavaScript("""
             if (location.origin !== new URL(origin).origin) return false;
@@ -387,8 +389,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
             });
             if (!response.ok) return false;
             const report = await response.json();
-            const features = report.settings?.find(row => row.section === "hz" && row.key === "features")?.value;
-            return Array.isArray(features) && features.includes("sidebar_browser");
+            return Array.isArray(report?.settings);
             """, arguments: ["origin": endpoint.origin.absoluteString], contentWorld: .defaultClient) as? Bool == true
     }
 
