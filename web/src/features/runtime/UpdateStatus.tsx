@@ -25,6 +25,7 @@ import { describe, partSegments } from "@/features/runtime/updates/updateState";
 import { reloadHeld, workOnScreen } from "@/features/runtime/updates/work";
 import { t } from "@/i18n";
 import { type Phase, requestDrivenOperation } from "@/lib/operationRun";
+import { zoneDateTime } from "@/lib/zoneTime";
 
 /** The update as the operation dialog asks for it: the call the person confirms there, after seeing its plan. */
 const updateCall = () => ({
@@ -266,10 +267,7 @@ export function UpdateStatus() {
         ? partSegments(view.parts)
         : [];
   const installed = status?.installed_at ? new Date(status.installed_at) : null;
-  const installedDate =
-    installed && !Number.isNaN(installed.getTime())
-      ? installed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
-      : null;
+  const installedDate = installed && !Number.isNaN(installed.getTime()) ? zoneDateTime(installed) : null;
   const canUpdate = status?.supported && !busy && !planning && recovery === "none" && !installedCore;
   const canLoad = installedCore !== null && !busy && recovery === "none";
   const desktop = status?.desktop?.behind ? status.desktop : null;

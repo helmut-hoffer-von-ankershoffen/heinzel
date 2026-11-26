@@ -12,6 +12,9 @@ import subprocess
 import sys
 import tomllib
 import zipfile
+from copy import deepcopy
+from functools import lru_cache
+from itertools import product
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1223,6 +1226,70 @@ def _macos_include(matrix: dict, event: str, full: bool, *, release: bool = Fals
     raise AssertionError(message)
 
 
+def _matrix_parallel_limit(job: dict, event: str, ref: str, lane: str) -> int:
+    expression = re.fullmatch(r"\$\{\{ (.*) \}\}", job["strategy"]["max-parallel"])
+    assert expression
+    context = {"github.event_name": event, "github.ref": ref, "inputs.lane": lane}
+    for branch in expression[1].split(" || "):
+        *conditions, limit = branch.split(" && ")
+        matched = True
+        for text in conditions:
+            condition = re.fullmatch(r"([a-z_.]+) == '([^']*)'", text)
+            assert condition, text
+            matched &= context[condition[1]] == condition[2]
+        if matched:
+            return int(limit)
+    message = "No parallel-limit branch matched"
+    raise AssertionError(message)
+
+
+def test_matrix_caps_apply_only_to_the_main_macos_dispatch():
+    jobs = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["jobs"]
+    scenarios = product(
+        ("pull_request", "push", "schedule", "workflow_dispatch"),
+        ("refs/heads/main", "refs/heads/feature", "refs/pull/1/merge"),
+        ("all", "linux", "macos"),
+    )
+    for event, ref, lane in scenarios:
+        limited = (event, ref, lane) == ("workflow_dispatch", "refs/heads/main", "macos")
+        assert _matrix_parallel_limit(jobs["test"], event, ref, lane) == (1 if limited else 256)
+        assert _matrix_parallel_limit(jobs["e2e"], event, ref, lane) == (2 if limited else 256)
+
+
+def test_candidate_and_linux_matrices_fit_without_parallel_throttling():
+    jobs = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["jobs"]
+    test, e2e = jobs["test"], jobs["e2e"]
+    matrix = test["strategy"]["matrix"]
+    assert matrix["os"] == ["ubuntu-24.04"]
+    assert matrix["levels"] == ["unit", "integration"]
+    macos = _macos_include(matrix, "pull_request", full=True, release=True, lane="all")
+    assert macos == [{"os": "macos-latest", "python": "3.15", "levels": level} for level in ("unit", "integration")]
+    assert e2e["strategy"]["matrix"]["suite"] == ["cli", "supervised", "web-1", "web-2", "web-3"]
+    assert '\'["ubuntu-24.04","macos-latest"]\'' in e2e["strategy"]["matrix"]["os"]
+    for event, ref, lane in (("pull_request", "refs/pull/1/merge", "all"), ("push", "refs/heads/main", "linux")):
+        assert _matrix_parallel_limit(test, event, ref, lane) >= 4
+        assert _matrix_parallel_limit(e2e, event, ref, lane) >= 10
+
+
+def test_matrix_caps_keep_every_workload_and_failure_required():
+    jobs = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["jobs"]
+    for name in ("test", "e2e"):
+        job = jobs[name]
+        assert job["needs"] == "changes"
+        assert job["if"] == (
+            "needs.changes.outputs.full_ci == 'true' && "
+            "(needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true')"
+        )
+        assert job["strategy"]["fail-fast"] is False
+        assert "continue-on-error" not in job
+        assert "concurrency" not in job
+        assert name in jobs["ci-ok"]["needs"]
+    assert jobs["test"]["timeout-minutes"] == "${{ matrix.levels == 'integration' && 15 || 10 }}"
+    assert jobs["e2e"]["timeout-minutes"] == 15
+    assert any(step.get("run") == "make test-parallel" for step in jobs["test"]["steps"])
+    assert any(step.get("run") == "make test-e2e SUITE=${{ matrix.suite }}" for step in jobs["e2e"]["steps"])
+
+
 @pytest.mark.parametrize(
     ("event", "full", "pythons"),
     [
@@ -1402,7 +1469,7 @@ def ci_contexts_paths(tmp_path_factory):
 
 
 def _make_ci_paths(tmp_path_factory, *, with_contexts):
-    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    jobs = _ci_jobs()
     script = next(step["run"] for step in jobs["changes"]["steps"] if step.get("id") == "paths")
     directory = tmp_path_factory.mktemp("ci-paths")
     if with_contexts:
@@ -1679,8 +1746,26 @@ def test_native_face_compile_has_a_required_serial_job_with_a_real_notifier_buil
     assert "test-e2e: e2e-prepare" in makefile
 
 
+@lru_cache(maxsize=1)
+def _parsed_ci_jobs(source: str) -> dict:
+    """Parse unchanged CI source once per worker."""
+    return yaml.safe_load(source)["jobs"]
+
+
 def _ci_jobs() -> dict:
-    return yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    source = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    return deepcopy(_parsed_ci_jobs(source))
+
+
+def test_ci_jobs_use_current_source_and_isolate_nested_mutations(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys.modules[__name__], "REPO", tmp_path)
+    workflow = tmp_path / ".github" / "workflows" / "ci.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("jobs: {sample: {steps: [{run: first}]}}")
+    _ci_jobs()["sample"]["steps"][0]["run"] = "changed by caller"
+    assert _ci_jobs()["sample"]["steps"][0]["run"] == "first"
+    workflow.write_text("jobs: {sample: {steps: [{run: second}]}}")
+    assert _ci_jobs()["sample"]["steps"][0]["run"] == "second"
 
 
 @pytest.mark.parametrize(
@@ -2603,8 +2688,7 @@ def _selection_run(  # noqa: PLR0913 - independent event, path and job fixture i
     tmp_path, ci_paths, event, changed, *, release=False, plugins="True", skipped_job=None
 ):
     """Run the real selector, evaluate every job `if` on it, then run CI OK's own script on the resulting results."""
-    workflow = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
-    jobs = workflow["jobs"]
+    jobs = _ci_jobs()
     selected = dict(
         line.split("=", 1)
         for line in _changes_outputs(tmp_path, ci_paths, event, changed, release=release)

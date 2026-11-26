@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-from heinzel import Config, HeinzelError, Kernel, Module, ModuleRecord, Settings, Soundscape, ThemeChoice
+from heinzel import Config, HeinzelError, Kernel, Module, ModuleRecord, Settings, SoundAssets, Soundscape, ThemeChoice
 from heinzel.heads import web
 from heinzel.heads.cli import build
 from heinzel.kernel import SOUND_CSP, Origin, discover, user_config_dir, walk
@@ -30,6 +30,12 @@ TOKEN = "s3ssion-token-for-tests"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 FRAMED = f"{web.CSP}; frame-src https://www.youtube-nocookie.com https://www.youtube.com"
 STREAM = {"kind": "stream", "stream": {"provider": "youtube", "video": "abcdefghijk"}}
+TRACKS = [
+    {"title": "One", "url": "https://media.heinzel.team/both/one.mp3", "type": "audio/mpeg", "duration_seconds": 61},
+    {"title": "Two", "url": "https://media.heinzel.team/both/two.m4a", "type": "audio/mp4", "duration_seconds": 62},
+]
+MEDIA = "media-src https://media.heinzel.team"
+NATIVE_ON = '[hz]\nfeatures = ["native_audio"]\n'
 
 
 @pytest.fixture
@@ -377,6 +383,182 @@ def test_no_audio_and_no_frame_when_the_sound_module_is_off(kernel, static, monk
     monkeypatch.setattr(hzk, "provides", lambda kind: False)
     assert web_client.get("/").headers["content-security-policy"] == web.CSP
     assert web_client.get("/sound-assets/demo/layer-0.opus").status_code == 404
+
+
+def both() -> Module:
+    """A plugin offering one soundscape with a stream and tracks."""
+    module = Module("both", "Offers both sources.")
+    module.soundscape(Soundscape.model_validate({"name": "both", "title": "Both", "tracks": TRACKS} | STREAM))
+    return module
+
+
+def listed(hzk: Kernel) -> dict[str, dict[str, object]]:
+    code, result = hz(hzk, "system", "sound", "list")
+    assert code == 0, result
+    assert isinstance(result, dict)
+    return {item["name"]: item for item in result["soundscapes"]}
+
+
+def test_with_native_audio_off_both_sources_are_exactly_the_stream(kernel):
+    hzk = kernel("heinzel_sound_demo", extra=(both(), paired("plain")))
+    found = listed(hzk)
+    differs = {key for key, value in found["both"].items() if value != found["plain"][key]}
+    assert differs == {"name", "title", "module", "pairs_with"}
+    assert found["both"]["tracks"] == []
+
+
+def test_with_native_audio_off_only_tracks_are_not_offered_or_picked(kernel):
+    hzk = kernel("heinzel_sound_demo")
+    assert "fixture-album" not in listed(hzk)
+    code, _ = hz(hzk, "system", "sound", "use", "fixture-album")
+    assert code == 1
+
+
+@pytest.mark.parametrize(("name", "policy"), [("fixture-album", web.CSP), ("both", FRAMED)])
+def test_with_native_audio_off_the_page_admits_no_media(kernel, static, name, policy):
+    configure(f'[system.sound]\nname = "{name}"\n')
+    hzk = kernel("heinzel_sound_demo", extra=(both(),))
+    assert client(hzk, static).get("/").headers["content-security-policy"] == policy
+
+
+def test_with_native_audio_on_tracks_are_listed_in_their_order_and_picked(kernel):
+    configure(NATIVE_ON)
+    hzk = kernel("heinzel_sound_demo", extra=(both(),))
+    code, result = hz(hzk, "system", "sound", "use", "fixture-album")
+    assert code == 0, result
+    found = listed(hzk)
+    assert found["fixture-album"]["effective"] is True
+    assert found["fixture-album"]["stream"] is None
+    assert [track["title"] for track in found["fixture-album"]["tracks"]] == ["First tone", "Second tone", "Third tone"]
+    assert found["both"]["tracks"] == TRACKS
+    assert found["both"]["stream"]["video"] == "abcdefghijk"
+
+
+@pytest.mark.parametrize(
+    ("name", "policy"),
+    [
+        ("off", web.CSP),
+        ("demo", web.CSP),
+        ("fixture-radio", FRAMED),
+        ("fixture-album", f"{web.CSP}; {MEDIA}"),
+        ("both", f"{FRAMED}; {MEDIA}"),
+    ],
+)
+def test_the_page_admits_only_the_media_origin_of_the_tracks_in_effect(kernel, static, name, policy):
+    configure(f'{NATIVE_ON}[system.sound]\nname = "{name}"\n')
+    web_client = client(kernel("heinzel_sound_demo", extra=(both(),)), static)
+    assert web_client.get("/contracts").headers["content-security-policy"] == policy
+    assert web_client.get("/api/system/sound/list", headers=AUTH).headers["content-security-policy"] == web.CSP
+    assert web_client.get("/favicon.svg").headers["content-security-policy"] == web.CSP
+
+
+def test_the_environment_switches_native_audio_on(kernel, monkeypatch):
+    monkeypatch.setenv("HZ_FEATURES", "native_audio")
+    assert "fixture-album" in listed(kernel("heinzel_sound_demo"))
+
+
+def test_a_projects_file_cannot_switch_native_audio_on(kernel, static, tmp_path, monkeypatch):
+    project = tmp_path / "cloned"
+    project.mkdir()
+    (project / "hz.toml").write_text(NATIVE_ON, encoding="utf-8")
+    monkeypatch.chdir(project)
+    configure('[system.sound]\nname = "both"\n')
+    hzk = kernel("heinzel_sound_demo", extra=(both(),))
+    assert "fixture-album" not in listed(hzk)
+    assert client(hzk, static).get("/").headers["content-security-policy"] == FRAMED
+
+
+def test_a_projects_file_cannot_switch_native_audio_off(kernel, tmp_path, monkeypatch):
+    project = tmp_path / "cloned"
+    project.mkdir()
+    (project / "hz.toml").write_text("[hz]\nfeatures = []\n", encoding="utf-8")
+    monkeypatch.chdir(project)
+    configure(NATIVE_ON)
+    assert "fixture-album" in listed(kernel("heinzel_sound_demo"))
+
+
+def test_native_audio_stays_off_while_the_hz_table_is_invalid(kernel, static):
+    web_client = client(kernel("heinzel_sound_demo", extra=(both(),)), static)
+    # It turns invalid while the server runs.
+    configure('[hz]\nfeatures = ["native_audio"]\nui_port = 1\n[system.sound]\nname = "both"\n')
+    assert web_client.get("/").headers["content-security-policy"] == FRAMED
+
+
+def test_a_failing_media_lookup_keeps_the_streams_frame(kernel, static, monkeypatch):
+    configure(f'{NATIVE_ON}[system.sound]\nname = "both"\n')
+
+    def broken(_: SoundService) -> tuple[str, ...]:
+        raise RuntimeError
+
+    monkeypatch.setattr(SoundService, "media_origins", broken)
+    hzk = kernel("heinzel_sound_demo", extra=(both(),))
+    assert client(hzk, static).get("/").headers["content-security-policy"] == FRAMED
+
+
+def test_the_page_admits_no_media_origin_the_head_does_not_know(kernel, static, monkeypatch):
+    configure(f'{NATIVE_ON}[system.sound]\nname = "fixture-album"\n')
+    monkeypatch.setattr(SoundService, "media_origins", lambda _: ("https://evil.example",))
+    assert client(kernel("heinzel_sound_demo"), static).get("/").headers["content-security-policy"] == web.CSP
+
+
+@pytest.mark.parametrize("broken", [b"[hz\n", b'title = "\xe9"\n'], ids=["not TOML", "not UTF-8"])
+def test_a_broken_configuration_leaves_layered_files_served_and_the_page_strict(kernel, static, broken):
+    web_client = client(kernel("heinzel_sound_demo"), static)
+    configure("")
+    assert web_client.get("/sound-assets/demo/layer-0.opus").status_code == 200
+    (user_config_dir() / "config.toml").write_bytes(broken)  # it breaks while the server serves
+    assert web_client.get("/sound-assets/demo/layer-0.opus").status_code == 200
+    assert web_client.get("/").headers["content-security-policy"] == web.CSP
+
+
+def test_only_the_core_sound_service_can_open_a_media_origin(settings, static):
+    module = Module("stand-in", "Replaces the sound service.")
+
+    class Replacement(SoundAssets):
+        def stream_provider(self) -> str | None:
+            return None
+
+        def media_origins(self) -> tuple[str, ...]:
+            return ("https://media.heinzel.team",)
+
+    module.service(SoundAssets, Replacement)
+    record = ModuleRecord(
+        qualname=module.name,
+        module=module,
+        origin=Origin(distribution="heinzel-test", version="1.0.0", builtin=False),
+    )
+    hzk = Kernel(settings, [record], config=Config(files=(), data={}))
+    assert web.page_csp(hzk) == web.CSP
+
+
+def test_a_media_origin_is_matched_whole_never_as_a_prefix(kernel, static, monkeypatch):
+    origins = ("https://media.heinzel.tea", "https://media.heinzel.team")
+    monkeypatch.setattr("heinzel.kernel.MEDIA_ORIGINS", origins)
+    monkeypatch.setattr("heinzel.modules.system.sound._service.MEDIA_ORIGINS", origins)
+    configure(f'{NATIVE_ON}[system.sound]\nname = "fixture-album"\n')
+    policy = client(kernel("heinzel_sound_demo"), static).get("/").headers["content-security-policy"]
+    assert policy == f"{web.CSP}; {MEDIA}"
+
+
+def test_a_soundscape_the_feature_hides_says_what_it_needs(kernel):
+    configure('[system.sound]\nname = "fixture-album"\n')
+    hzk = kernel("heinzel_sound_demo")
+    code, result = hz(hzk, "system", "sound", "list")
+    assert code == 0, result
+    assert "native_audio" in result["note"]
+    code, said = hz(hzk, "system", "sound", "use", "fixture-album")
+    assert code == 1
+    assert "native_audio" in str(said)
+
+
+def test_the_list_names_tracks_in_words(kernel, monkeypatch):
+    monkeypatch.setenv("COLUMNS", "200")
+    configure(NATIVE_ON)
+    code, text = hz(kernel("heinzel_sound_demo", extra=(both(),)), "system", "sound", "list", json_output=False)
+    assert code == 0, text
+    words = " ".join(str(text).split())
+    assert "3 tracks" in words
+    assert "2 tracks, stream" in words
 
 
 def test_singularity_is_the_default_once_a_plugin_offers_it_and_silent_while_none_does(kernel):

@@ -6,7 +6,7 @@ import { type FakeContext, fakeAudio } from "@/test/fakeAudio";
 import { acmeTheme, shell, themeList } from "@/test/fixtures";
 import { expectAccessible, mockApi } from "@/test/render";
 import { renderAt } from "@/test/renderApp";
-import { needsReload, page, pendingResume, rememberPageFrame, resetPageFrame } from "./queries";
+import { needsReload, page, pendingResume, rememberPagePolicy, resetPagePolicy } from "./queries";
 import { duck, resetSound, soundState } from "./store";
 import { rememberYouTubeAccount } from "./stream";
 
@@ -112,7 +112,7 @@ function serveLayers() {
 afterEach(() => {
   sessionStorage.clear();
   resetSound();
-  resetPageFrame();
+  resetPagePolicy();
   vi.restoreAllMocks();
 });
 
@@ -560,12 +560,12 @@ describe("Sound", () => {
 
 describe("the page's frame origin", () => {
   it("needs a reload only when the soundscape in effect needs another frame origin than the page admits", () => {
-    rememberPageFrame(soundList("off"));
+    rememberPagePolicy(soundList("off"));
     expect(needsReload(soundList("rain"))).toBe(false);
     expect(needsReload(soundList("fixture-radio"))).toBe(true);
-    resetPageFrame();
-    rememberPageFrame(soundList("fixture-radio"));
-    rememberPageFrame(soundList("off")); // the first list decides: it is what the server served the page with
+    resetPagePolicy();
+    rememberPagePolicy(soundList("fixture-radio"));
+    rememberPagePolicy(soundList("off")); // the first list decides: it is what the server served the page with
     expect(needsReload(soundList("fixture-radio"))).toBe(false);
     expect(needsReload(soundList("off"))).toBe(true);
   });

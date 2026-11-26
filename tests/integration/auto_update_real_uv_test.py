@@ -177,7 +177,11 @@ def apply(installation, tmp_path, *, starts, releases=None):
         exclude_newer=now + timedelta(days=1),  # local wheels have no upload time; the flag must still go through uv
         exclude_newer_core=now + timedelta(days=1),
     )
-    service = UpdateService(installation, releases)  # type: ignore[arg-type] - None: no release source is asked
+    service = UpdateService(
+        installation,
+        releases,  # type: ignore[arg-type] - None: no release source is asked
+        home=tmp_path / "home",
+    )
     return service.apply_announced(announced, current="1.0.0", folder=tmp_path / "state", trial=lambda v: starts)
 
 

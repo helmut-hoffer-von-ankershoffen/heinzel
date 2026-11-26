@@ -9040,14 +9040,14 @@
           "installed": {
             "anyOf": [
               {
-                "format": "date",
+                "format": "date-time",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "The day this version was installed here; none if unknown.",
+            "description": "The moment this version was installed here; none if unknown.",
             "title": "Installed"
           },
           "name": {
@@ -14912,13 +14912,26 @@
                 "type": "null"
               }
             ],
-            "description": "When it was published; none if the source didn't say.",
+            "description": "The day it was published; none if the source didn't say.",
             "title": "Date"
           },
           "notes": {
             "description": "Its release notes as Markdown: third-party text, without control or bidirectional characters.",
             "title": "Notes",
             "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The moment it was published (UTC); none if the source didn't say.",
+            "title": "Published At"
           },
           "url": {
             "anyOf": [
@@ -14945,6 +14958,66 @@
           "url"
         ],
         "title": "ReleaseNotes",
+        "type": "object"
+      },
+      "ReleaseTime": {
+        "description": "The installed release's publication time or the date recorded in its changelog.",
+        "properties": {
+          "day": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The UTC publication date or the date recorded in the changelog.",
+            "title": "Day"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "GitHub's publication time (UTC), if known.",
+            "title": "Published At"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "github",
+                  "changelog"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the answer came from; none if unknown.",
+            "title": "Source"
+          },
+          "version": {
+            "description": "Version of the release.",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "published_at",
+          "day",
+          "source"
+        ],
+        "title": "ReleaseTime",
         "type": "object"
       },
       "RendererBlock": {
@@ -17924,6 +17997,39 @@
         "title": "SoundStreamView",
         "type": "object"
       },
+      "SoundTrackView": {
+        "description": "One track the web app plays in its own audio element.",
+        "properties": {
+          "duration_seconds": {
+            "description": "How long it is, in seconds.",
+            "title": "Duration Seconds",
+            "type": "integer"
+          },
+          "title": {
+            "description": "What the player shows, e.g. `Morning tide`.",
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "description": "Its media type, `audio/mpeg` or `audio/mp4`.",
+            "title": "Type",
+            "type": "string"
+          },
+          "url": {
+            "description": "The https URL to play after Play, on a media host of the core's list.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "url",
+          "type",
+          "duration_seconds"
+        ],
+        "title": "SoundTrackView",
+        "type": "object"
+      },
       "SoundscapeView": {
         "description": "One available soundscape, ready for the web app to play.",
         "properties": {
@@ -18023,12 +18129,20 @@
                 "type": "null"
               }
             ],
-            "description": "The stream; none unless the kind is `stream`."
+            "description": "The stream; none for another kind or tracks only."
           },
           "title": {
             "description": "What people pick it by, e.g. `Claude FM`.",
             "title": "Title",
             "type": "string"
+          },
+          "tracks": {
+            "description": "Tracks to play in order, before the stream; empty while the feature `native_audio` is off.",
+            "items": {
+              "$ref": "#/components/schemas/SoundTrackView"
+            },
+            "title": "Tracks",
+            "type": "array"
           }
         },
         "required": [
@@ -18923,14 +19037,14 @@
           "installed": {
             "anyOf": [
               {
-                "format": "date",
+                "format": "date-time",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "The day this Heinzelmännchen version was installed here; none if unknown.",
+            "description": "The moment this Heinzelmännchen version was installed here; none if unknown.",
             "title": "Installed"
           },
           "latest_release": {
@@ -30084,6 +30198,28 @@
           }
         },
         "summary": "Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/changelog/released": {
+      "get": {
+        "description": "Show the installed version's GitHub publication time or changelog date.\n\nThe GitHub publication time is cached. When unavailable, the command shows the date recorded in the changelog.",
+        "operationId": "system_changelog_released",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseTime"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show the installed version's GitHub publication time or changelog date.",
         "tags": [
           "system"
         ]

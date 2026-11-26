@@ -13,11 +13,11 @@ afterEach(() => {
 
 const footerContentWidth = (element: HTMLElement) => (element.childElementCount ? 24 : 0);
 
-export function renderAt(path: string) {
+export function renderAt(path: string, client = queryClient()) {
   sessionStorage.setItem("hz.token", "test-token");
   const router = createMemoryRouter(routes, { initialEntries: [path] });
   const view = render(
-    <Providers client={queryClient()}>
+    <Providers client={client}>
       <RouterProvider router={router} />
     </Providers>,
   );
@@ -36,5 +36,5 @@ export function renderAt(path: string) {
     observer.observe(view.container, { childList: true, subtree: true });
     footerObservers.add(observer);
   }
-  return view;
+  return { ...view, client };
 }
