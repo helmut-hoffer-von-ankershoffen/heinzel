@@ -124,7 +124,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
     private final class Tab {
         let id = UUID().uuidString
         var view: WKWebView?
-        var navigationIdentity = NavigationIdentity<ObjectIdentifier>()
+        var navigationIdentity = NavigationIdentity<WKNavigation>()
         var status = "empty"
     }
 
@@ -178,7 +178,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
                 let view = try await browser(in: workspace, endpoint: endpoint, revision: revision, tab: tab)
                 if revision == generation, tabs.contains(where: { $0 === tab }) {
                     let navigation = view.load(URLRequest(url: url))
-                    tab.navigationIdentity.attach(navigation.map(ObjectIdentifier.init), to: attempt)
+                    tab.navigationIdentity.attach(navigation, to: attempt)
                     if navigation == nil {
                         tab.navigationIdentity.cancel(attempt)
                         markUnavailable(tab)
@@ -223,14 +223,14 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
             let attempt = tab.navigationIdentity.begin(target: surface.backForwardList.backItem?.url)
             tab.status = "loading"
             let navigation = surface.goBack()
-            tab.navigationIdentity.attach(navigation.map(ObjectIdentifier.init), to: attempt)
+            tab.navigationIdentity.attach(navigation, to: attempt)
         case "forward":
             guard let tab = selected, let surface, surface.canGoForward else { break }
             pageRevision &+= 1
             let attempt = tab.navigationIdentity.begin(target: surface.backForwardList.forwardItem?.url)
             tab.status = "loading"
             let navigation = surface.goForward()
-            tab.navigationIdentity.attach(navigation.map(ObjectIdentifier.init), to: attempt)
+            tab.navigationIdentity.attach(navigation, to: attempt)
         case "reload":
             pageRevision &+= 1
             guard let tab = selected, let surface else { break }
@@ -516,14 +516,14 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         guard let tab = tab(for: webView) else { return }
         // Ignore starts from a replaced navigation; the current action token also identifies nil WebKit callbacks.
-        guard tab.navigationIdentity.start(navigation.map(ObjectIdentifier.init), url: webView.url) else { return }
+        guard tab.navigationIdentity.start(navigation, url: webView.url) else { return }
         if tab === selected { pageRevision &+= 1 }
         tab.status = "loading"
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard let tab = tab(for: webView),
-              tab.navigationIdentity.finish(navigation.map(ObjectIdentifier.init), url: webView.url) else { return }
+              tab.navigationIdentity.finish(navigation, url: webView.url) else { return }
         if tab.status == "loading" { tab.status = "ready" }
         if tab === selected { pageRevision &+= 1 }
     }
@@ -545,7 +545,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     private func navigationFailed(_ view: WKWebView, navigation: WKNavigation!, error: Error) {
         guard let tab = tab(for: view),
-              tab.navigationIdentity.finish(navigation.map(ObjectIdentifier.init), url: view.url) else { return }
+              tab.navigationIdentity.finish(navigation, url: view.url) else { return }
         if (error as NSError).code == NSURLErrorCancelled {
             tab.status = "ready"
             if tab === selected { pageRevision &+= 1 }

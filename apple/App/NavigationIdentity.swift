@@ -1,16 +1,33 @@
 import Foundation
 
 /// Tracks the current WebKit navigation without mistaking a delayed callback for a replaced page.
-struct NavigationIdentity<Identifier: Hashable> {
+private final class WeakNavigation<Navigation: AnyObject> {
+    weak var value: Navigation?
+    init(_ value: Navigation) { self.value = value }
+}
+
+struct NavigationIdentity<Navigation: AnyObject> {
     private(set) var generation = 0
-    private(set) var current: Identifier?
+    private(set) var current: Navigation?
     private(set) var expectedURL: URL?
     private(set) var awaitingStart = false
     private(set) var inFlight = false
-    private var superseded: Set<Identifier> = []
+    private var superseded: [WeakNavigation<Navigation>] = []
+
+    private mutating func retire(_ navigation: Navigation?) {
+        guard let navigation else { return }
+        superseded.removeAll { $0.value == nil }
+        if !superseded.contains(where: { $0.value === navigation }) {
+            superseded.append(WeakNavigation(navigation))
+        }
+    }
+
+    private func wasSuperseded(_ navigation: Navigation) -> Bool {
+        superseded.contains { $0.value === navigation }
+    }
 
     mutating func begin(target: URL?) -> Int {
-        if let current { superseded.insert(current) }
+        retire(current)
         generation += 1
         current = nil
         expectedURL = target
@@ -19,14 +36,14 @@ struct NavigationIdentity<Identifier: Hashable> {
         return generation
     }
 
-    mutating func attach(_ identifier: Identifier?, to attempt: Int) {
+    mutating func attach(_ navigation: Navigation?, to attempt: Int) {
         guard attempt == generation else { return }
-        current = identifier
+        current = navigation
     }
 
     mutating func cancel(_ attempt: Int) {
         guard attempt == generation else { return }
-        if let current { superseded.insert(current) }
+        retire(current)
         generation += 1
         current = nil
         expectedURL = nil
@@ -36,24 +53,30 @@ struct NavigationIdentity<Identifier: Hashable> {
 
     func expects(_ url: URL?) -> Bool { awaitingStart && expectedURL == url }
 
-    mutating func start(_ identifier: Identifier?, url: URL?) -> Bool {
-        if let identifier, superseded.contains(identifier) { return false }
-        if identifier == nil, !expects(url) { return false }
-        if let current, current != identifier { superseded.insert(current) }
-        current = identifier
+    mutating func start(_ navigation: Navigation?, url: URL?) -> Bool {
+        superseded.removeAll { $0.value == nil }
+        if let navigation, wasSuperseded(navigation) { return false }
+        if navigation == nil, !expects(url) { return false }
+        if awaitingStart, let expectedURL, let url, expectedURL != url { return false }
+        if let current {
+            // An action-returned WKNavigation is already authoritative. An unrelated
+            // provisional start cannot replace it while WebKit callbacks are pending.
+            guard navigation === current else { return false }
+        }
+        current = navigation
         expectedURL = url ?? expectedURL
         awaitingStart = false
         inFlight = true
         return true
     }
 
-    func acceptsCompletion(_ identifier: Identifier?, url: URL?) -> Bool {
-        if let identifier { return current == identifier && !superseded.contains(identifier) && inFlight }
+    func acceptsCompletion(_ navigation: Navigation?, url: URL?) -> Bool {
+        if let navigation { return current === navigation && !wasSuperseded(navigation) && inFlight }
         return current == nil && expectedURL == url && !awaitingStart && inFlight
     }
 
-    mutating func finish(_ identifier: Identifier?, url: URL?) -> Bool {
-        guard acceptsCompletion(identifier, url: url) else { return false }
+    mutating func finish(_ navigation: Navigation?, url: URL?) -> Bool {
+        guard acceptsCompletion(navigation, url: url) else { return false }
         inFlight = false
         return true
     }
