@@ -209,6 +209,22 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
   const everyGuest = () => [...surfaces].flatMap(([window, surface]) =>
     [...surface.tabs.values()].map((guest) => [window, guest, surface]));
   const tabCount = () => everyGuest().length;
+  const loadGuest = (window, guest, url) => {
+    const surface = surfaces.get(window);
+    if (!surface || surface.tabs.get(guest.id) !== guest) return;
+    const navigation = (guest.navigationGeneration ?? 0) + 1;
+    guest.navigationGeneration = navigation;
+    guest.status = "loading";
+    surface.revision += 1;
+    const failed = (error) => {
+      if (surfaces.get(window) !== surface || surface.tabs.get(guest.id) !== guest || guest.navigationGeneration !== navigation) return;
+      if (error?.code === "ERR_ABORTED" || error?.errno === -3) return;
+      guest.status = "unavailable";
+      surface.revision += 1;
+    };
+    try { void guest.view.webContents.loadURL(url).catch(failed); }
+    catch (error) { failed(error); }
+  };
   // Only the selected tab may prompt: a background tab asking for a device is not something the person is looking at.
   const promptOwner = ({ contents, frame }) => everyGuest().find(([window, guest, surface]) => {
     const own = guest.view.webContents;
@@ -243,7 +259,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     const { list, ...from } = source(args);
     void pick(list, { type, ...from }).then((id) => (id ? callback(id) : cancel === undefined ? callback() : callback(cancel)));
   };
-  const isNewDocument = (event) => event.isMainFrame && !event.isSameDocument;
+  const isNewDocument = (event) => event?.isMainFrame && !event.isSameDocument;
   const partitionFor = () => {
     if (partition) return partition;
     partition = createSession(BROWSER_PARTITION);
@@ -375,21 +391,21 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     await Promise.allSettled([...opening.values()]);
     grants.clear();
     icons.clear();
-    const pages = everyGuest().map(([, guest]) => guest).map((guest) => [guest, guest.view.webContents.getURL()]);
+    const pages = everyGuest().map(([window, guest]) => ({ window, guest, url: guest.view.webContents.getURL() }));
     const others = [...leasedPages];
-    const blanked = await Promise.allSettled([...pages.map(async ([guest]) => guest.view.webContents.loadURL("about:blank")),
+    for (const { guest } of pages) guest.navigationGeneration = (guest.navigationGeneration ?? 0) + 1;
+    const blanked = await Promise.allSettled([...pages.map(async ({ guest }) => guest.view.webContents.loadURL("about:blank")),
       ...others.map(async (page) => page.blank())]);
     const results = await Promise.allSettled([partition.clearStorageData(), partition.clearCache?.(),
-      partition.clearAuthCache?.(), ...pages.map(async ([guest]) => {
+      partition.clearAuthCache?.(), ...pages.map(async ({ guest }) => {
         if (!guest.view.webContents.isDestroyed()) guest.view.webContents.navigationHistory.clear();
       })]);
     const failed = [...blanked, ...results].some((result) => result.status === "rejected");
-    for (const [guest, url] of pages) {
+    for (const { window, guest, url } of pages) {
       // Kept apart from page notices, so restoring the page cannot reset it; the next good clear does.
       guest.clearFailed = failed;
       guest.notice = null;
-      if (url && !guest.view.webContents.isDestroyed())
-        void guest.view.webContents.loadURL(url).catch(() => { guest.status = "unavailable"; });
+      if (url && !guest.view.webContents.isDestroyed()) loadGuest(window, guest, url);
     }
     for (const page of others) if (leasedPages.has(page)) page.restore();
     if (failed) throw new Error("Browsing data could not be cleared.");
@@ -442,8 +458,11 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       };
       contents.on("did-navigate", passkeyPage);
       contents.on("did-navigate-in-page", passkeyPage);
-      contents.on("did-start-navigation", (details) => {
+      contents.on("did-start-navigation", (...args) => {
+        const details = args[1] ?? args[0];
         if (isNewDocument(details)) guest.notice = null;
+        if (isNewDocument(details) && details.isRendererInitiated)
+          guest.navigationGeneration = (guest.navigationGeneration ?? 0) + 1;
       });
       contents.on("login", (event, _details, info, callback) => {
         event.preventDefault();
@@ -604,7 +623,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     const guest = await create({ sender: window.webContents }, window);
     surfaceOf(window).link = null;
     guest.blank = false;
-    void guest.view.webContents.loadURL(url).catch(() => { guest.status = "unavailable"; });
+    loadGuest(window, guest, url);
     return state(window);
   }
   const tabOf = (surface, id) => {
@@ -773,9 +792,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         surface = surfaces.get(window);
         if (url) {
           guest.blank = false;
-          guest.status = "loading";
-          surface.revision += 1;
-          void guest.view.webContents.loadURL(url).catch(() => { guest.status = "unavailable"; surface.revision += 1; });
+          loadGuest(window, guest, url);
         }
         if (action === "new-tab") return state(window);
       }
@@ -798,10 +815,17 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       }
       if (action === "hide") { surface.shown = false; apply(window, surface); }
       const history = guest.view.webContents.navigationHistory;
-      if (action === "back" && history.canGoBack()) { guest.status = "loading"; surface.revision += 1; history.goBack(); }
-      if (action === "forward" && history.canGoForward()) { guest.status = "loading"; surface.revision += 1; history.goForward(); }
+      if (action === "back" && history.canGoBack()) {
+        guest.navigationGeneration = (guest.navigationGeneration ?? 0) + 1;
+        guest.status = "loading"; surface.revision += 1; history.goBack();
+      }
+      if (action === "forward" && history.canGoForward()) {
+        guest.navigationGeneration = (guest.navigationGeneration ?? 0) + 1;
+        guest.status = "loading"; surface.revision += 1; history.goForward();
+      }
       if (action === "reload") {
         // Report the accepted reload immediately; did-start-loading may arrive after this IPC reply.
+        guest.navigationGeneration = (guest.navigationGeneration ?? 0) + 1;
         guest.status = "loading";
         surface.revision += 1;
         guest.view.webContents.reload();

@@ -85,6 +85,40 @@ test("reload reports loading immediately and a late stop does not clear failure"
   assert.equal(stopped.status, "unavailable");
   assert.equal(stopped.revision, failed.revision);
 });
+test("a superseded load rejection cannot replace the current navigation status or revision", async () => {
+  const f = fixture();
+  let rejectFirst;
+  await f.invoke({ action: "new-tab" });
+  const guest = f.views[0].webContents;
+  guest.loadURL = (url) => {
+    if (url === "https://first.example/") return new Promise((_resolve, reject) => { rejectFirst = reject; });
+    return Promise.resolve();
+  };
+  const first = await f.invoke({ action: "navigate", url: "https://first.example" });
+  const second = await f.invoke({ action: "navigate", url: "https://second.example" });
+  assert.equal(first.status, "loading");
+  assert.equal(second.status, "loading");
+  assert.ok(second.revision > first.revision);
+  rejectFirst(new Error("the superseded first load failed"));
+  await new Promise(setImmediate);
+  const current = await f.invoke({ action: "state" });
+  assert.equal(current.status, "loading");
+  assert.equal(current.revision, second.revision);
+});
+test("an Electron ERR_ABORTED load rejection does not become a refresh failure", async () => {
+  const f = fixture();
+  let rejectLoad;
+  await f.invoke({ action: "new-tab" });
+  const guest = f.views[0].webContents;
+  guest.loadURL = () => new Promise((_resolve, reject) => { rejectLoad = reject; });
+  const loading = await f.invoke({ action: "navigate", url: "https://cancelled.example" });
+  const cancelled = Object.assign(new Error("ERR_ABORTED"), { code: "ERR_ABORTED" });
+  rejectLoad(cancelled);
+  await new Promise(setImmediate);
+  const current = await f.invoke({ action: "state" });
+  assert.equal(current.status, "loading");
+  assert.equal(current.revision, loading.revision);
+});
 test("all permissions, downloads, popup dispatch and local redirects/subresources refuse", async () => {
   const f = fixture(); await f.invoke({ action: "navigate", url: "https://example.com" });
   const session = f.sessions[0], contents = f.views[0].webContents;
