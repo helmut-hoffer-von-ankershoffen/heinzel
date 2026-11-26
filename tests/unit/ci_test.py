@@ -241,7 +241,9 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "claude-review.yml": {
         "gate_paths='^(": "finds the gate paths the pull request touches; no tokens when there are none",
         'auth="$(printf': "fetches the head as git objects only, never checks it out",
-        'if [[ "$OUTCOME" != success': "collects the model result; a review that did not run fails",
+        'if [[ ! -f "$EXECUTION_FILE" ]]': "collects a verdict or records a confirmed provider spending limit",
+        "echo 'Gate review rejected this exact head.'": "records an explicit rejection in the run history",
+        'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"': "checks the protected base and review history",
         'if [[ "$MODE" == pass ]]': "no model call without gate paths; a gate change nobody reviewed fails",
     },
     "update-prs.yml": {
@@ -1016,13 +1018,21 @@ def _gate_scope_script():
     return next(step["run"] for step in _gate_review()["jobs"]["scope"]["steps"] if step.get("id") == "scope")
 
 
+def _gate_judge_script():
+    return next(
+        step["run"]
+        for step in _gate_review()["jobs"]["gate-review"]["steps"]
+        if step.get("name") == "Judge the review and comment"
+    )
+
+
 def test_gate_review_always_reports_one_check_and_fails_closed():
     spec = _gate_review()
     job = spec["jobs"]["gate-review"]
     assert spec["name"] == job["name"] == "Gate review"
     assert job["needs"] == ["scope", "model"]
     assert job["if"] == "${{ !cancelled() }}"  # runs whatever the model job did, so nothing hangs pending
-    script = job["steps"][0]["run"]
+    script = _gate_judge_script()
     assert 'if [[ "$MODE" == pass ]]' in script
     assert "needs a human or agent review" in script  # a bot, fork or draft gate change
     assert '"$MODEL" != success' in script  # a failed or skipped model run never passes
@@ -1041,8 +1051,14 @@ def test_gate_review_runs_the_base_workflow_and_never_executes_the_head():
     assert checkout["with"]["persist-credentials"] is False
     fetch = next(step["run"] for step in model["steps"] if step.get("name", "").startswith("Fetch the head"))
     assert "refs/pull/${PR}/head:refs/review/head" in fetch
-    for job in ("scope", "gate-review"):
-        assert not any("actions/checkout" in step.get("uses", "") for step in spec["jobs"][job]["steps"])
+    assert not any("actions/checkout" in step.get("uses", "") for step in spec["jobs"]["scope"]["steps"])
+    history_checkout = next(
+        step for step in spec["jobs"]["gate-review"]["steps"] if "actions/checkout" in step.get("uses", "")
+    )
+    assert history_checkout["if"] == "needs.model.outputs.spend_limit == 'true'"
+    assert history_checkout["with"] == {"persist-credentials": False}
+    history = next(step for step in spec["jobs"]["gate-review"]["steps"] if step.get("id") == "history")
+    assert 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in history["run"]
     assert "github.event.pull_request.head.sha" not in str(checkout)
 
 
@@ -1092,10 +1108,131 @@ def test_gate_review_guards_the_reviewers_own_instructions():
 
 
 def test_gate_review_passes_only_on_the_exact_last_line():
-    script = _gate_review()["jobs"]["gate-review"]["steps"][0]["run"]
+    script = _gate_judge_script()
     assert '[[ "$VERDICT_LINE" == "VERDICT: APPROVE" ]]' in script
     collect = next(step["run"] for step in _gate_review()["jobs"]["model"]["steps"] if step.get("id") == "result")
     assert "grep -v '^[[:space:]]*$' <<<\"$result\" | tail -n 1" in collect  # the last non-empty line
+
+
+@pytest.mark.parametrize(
+    ("changes", "previous_rejection", "skip"),
+    [
+        ({}, False, True),
+        ({"result": "You've hit your weekly spend limit. Try again later."}, False, True),
+        ({"result": "Rate limit exceeded. Try again later."}, False, False),
+        ({"api_error_status": 401}, False, False),
+        ({"api_error_origin": "other"}, False, False),
+        ({"is_error": False}, False, False),
+        ({}, True, False),
+    ],
+)
+def test_gate_review_only_waives_a_confirmed_spend_limit(tmp_path, changes, previous_rejection, skip):
+    review = _gate_review()["jobs"]
+    collect = next(step["run"] for step in review["model"]["steps"] if step.get("id") == "result")
+    execution_file = tmp_path / "execution.json"
+    output = tmp_path / "output"
+    summary = tmp_path / "summary"
+    terminal = {
+        "type": "result",
+        "is_error": True,
+        "terminal_reason": "api_error",
+        "api_error_type": "rate_limit_error",
+        "api_error_status": 429,
+        "api_error_origin": "first_party",
+        "result": "You've hit your monthly spend limit. Try again later.",
+    }
+    events = []
+    if previous_rejection:
+        events.append(
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "Finding.\nVERDICT: REJECT"}]}}
+        )
+    execution_file.write_text(json.dumps([*events, terminal | changes]), encoding="utf-8")
+    env = os.environ | {
+        "OUTCOME": "failure",
+        "CLAUDE_CONCLUSION": "failure",
+        "EXECUTION_FILE": str(execution_file),
+        "GITHUB_OUTPUT": str(output),
+    }
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", collect],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if skip:
+        assert result.returncode == 0, result.stderr
+        assert output.read_text(encoding="utf-8") == "spend_limit=true\n"
+        judge = _gate_judge_script()
+        result = subprocess.run(
+            ["bash", "-e", "-o", "pipefail", "-c", judge],
+            check=False,
+            env=env
+            | {
+                "MODE": "review",
+                "MODEL": "success",
+                "SPEND_LIMIT": "true",
+                "HISTORY_OUTCOME": "success",
+                "VERDICT_LINE": "",
+                "RESULT": "",
+                "GITHUB_STEP_SUMMARY": str(summary),
+            },
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "review skipped" in summary.read_text(encoding="utf-8")
+    else:
+        assert result.returncode == 1
+        assert "Gate review failed" in result.stdout
+        if previous_rejection:
+            assert output.read_text(encoding="utf-8") == "explicit_rejection=true\n"
+        else:
+            assert not output.exists()
+
+
+def test_gate_review_does_not_accept_approval_after_explicit_rejection(tmp_path):
+    reject = {"type": "assistant", "message": {"content": [{"type": "text", "text": "VERDICT: REJECT"}]}}
+    approve = {"type": "result", "is_error": False, "result": "VERDICT: APPROVE"}
+    execution = tmp_path / "execution.json"
+    execution.write_text(json.dumps([reject, approve]), encoding="utf-8")
+    output = tmp_path / "output"
+    collect = next(step["run"] for step in _gate_review()["jobs"]["model"]["steps"] if step.get("id") == "result")
+    env = os.environ | {
+        "OUTCOME": "success",
+        "CLAUDE_CONCLUSION": "success",
+        "EXECUTION_FILE": str(execution),
+        "GITHUB_OUTPUT": str(output),
+    }
+    args = ["bash", "-e", "-o", "pipefail", "-c"]
+    subprocess.run([*args, collect], env=env, check=True, timeout=10)
+    assert output.read_text(encoding="utf-8").splitlines()[:2] == [
+        "explicit_rejection=true",
+        "verdict_line=VERDICT: APPROVE",
+    ]
+    result = subprocess.run(
+        [*args, "gh() { return 0; }\n" + _gate_judge_script()],
+        env=env
+        | {
+            "MODE": "review",
+            "MODEL": "success",
+            "VERDICT_LINE": "VERDICT: APPROVE",
+            "RESULT": "VERDICT: APPROVE",
+            "EXPLICIT_REJECTION": "true",
+            "SPEND_LIMIT": "",
+            "RUNNER_TEMP": str(tmp_path),
+            "PR": "1",
+            "GITHUB_REPOSITORY": "owner/repo",
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 1
+    assert "reported an explicit rejection" in result.stdout
 
 
 def test_gate_review_holds_least_privilege():
@@ -1103,7 +1240,11 @@ def test_gate_review_holds_least_privilege():
     for name, job in spec["jobs"].items():
         assert "id-token" not in job["permissions"], name
     assert spec["jobs"]["model"]["permissions"] == {"contents": "read"}  # holds the secrets: no write
-    assert spec["jobs"]["gate-review"]["permissions"] == {"pull-requests": "write"}
+    assert spec["jobs"]["gate-review"]["permissions"] == {
+        "pull-requests": "write",
+        "actions": "read",
+        "contents": "read",
+    }
     assert spec["permissions"] == {}
 
 

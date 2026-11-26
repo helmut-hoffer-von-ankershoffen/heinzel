@@ -170,6 +170,7 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/source_review.py.lock": "locks that script for the review workflow",
     "scripts/review_tier.py.lock": "locks the tier decision for the review command",
     "scripts/source_review.py": "guard and runner of the core's protected source review workflow; plugins have none",
+    "scripts/review_history.py": "checks prior attempts of the Core-only Gate review workflow",
     ".github/workflows/source-review.yml": "runs only on the core's protected review ref, with its own secret",
     "scripts/web.py": "the web head's typed client and dev server (web/, ADR 0039); plugins bring no UI",
     "scripts/web_build.py": "runs and builds the web head's app (web/, ADR 0039); plugins bring no UI",
