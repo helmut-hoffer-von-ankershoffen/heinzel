@@ -480,13 +480,14 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     window.history.replaceState(window.history.state, "", `${address.pathname}${address.search}${address.hash}`);
   };
   const [query, setQuery] = useState("");
-  const refresh = useRefreshPluginSearch(query);
+  const refresh = useRefreshPluginSearch();
   const queryClient = useQueryClient();
   const searchFetching = useIsFetching({ queryKey: ["system", "plugin", "search", query] }) > 0;
   const searchState = queryClient.getQueryState(["system", "plugin", "search", query]);
   const refreshing = refresh.isPending || searchFetching;
   const refreshFailed =
-    searchState?.status === "error" || (refresh.isError && refresh.submittedAt >= (searchState?.dataUpdatedAt ?? 0));
+    searchState?.status === "error" ||
+    (refresh.isError && refresh.variables === query && refresh.submittedAt >= (searchState?.dataUpdatedAt ?? 0));
   const [adding, setAdding] = useState(false);
   const [spec, setSpec] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
@@ -858,7 +859,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
             spinning={refreshing}
             refreshFailed={refreshFailed}
             disabled={frozen || refreshing}
-            onClick={() => refresh.mutate()}
+            onClick={() => refresh.mutate(query)}
           >
             {t("plugins.refresh")}
           </PaneAction>
