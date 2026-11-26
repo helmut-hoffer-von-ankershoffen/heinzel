@@ -207,7 +207,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "claude-review.yml": {
         "gate_paths='^(": "finds the gate paths the pull request touches; no tokens when there are none",
         'auth="$(printf': "fetches the head as git objects only, never checks it out",
-        'if [[ "$OUTCOME" != success': "collects the model result; a review that did not run fails",
+        'if [[ ! -f "$EXECUTION_FILE" ]]': "collects a verdict or records a confirmed provider spending limit",
         'if [[ "$MODE" == pass ]]': "no model call without gate paths; a gate change nobody reviewed fails",
     },
     "update-prs.yml": {
@@ -1104,7 +1104,12 @@ def test_gate_review_only_waives_a_confirmed_spend_limit(tmp_path, changes, prev
         "GITHUB_OUTPUT": str(output),
     }
     result = subprocess.run(
-        ["bash", "-e", "-o", "pipefail", "-c", collect], check=False, env=env, capture_output=True, text=True
+        ["bash", "-e", "-o", "pipefail", "-c", collect],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     if skip:
         assert result.returncode == 0, result.stderr
@@ -1124,6 +1129,7 @@ def test_gate_review_only_waives_a_confirmed_spend_limit(tmp_path, changes, prev
             },
             capture_output=True,
             text=True,
+            timeout=10,
         )
         assert result.returncode == 0, result.stderr
         assert "review skipped" in summary.read_text(encoding="utf-8")
