@@ -481,10 +481,8 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         if (isNewDocument(details)) guest.notice = null;
         if (details.isMainFrame && details.isSameDocument) {
           const pending = guest.historyNavigation;
-          if (pending && pending.generation === guest.navigationGeneration) {
-            if (details.url === pending.url) pending.started = true;
-            else guest.historyNavigation = null;
-          }
+          if (pending && pending.generation === guest.navigationGeneration && details.url === pending.url)
+            pending.started = true;
           return;
         }
         if (!isNewDocument(details)) return;

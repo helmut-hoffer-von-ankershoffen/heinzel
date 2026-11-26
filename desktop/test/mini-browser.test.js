@@ -130,18 +130,15 @@ test("same-document Back and Forward settle only after the matching current in-p
   const current = "https://current.example/#current";
   history.setForTest([{ url: previous }, { url: current }], 1);
 
-  await f.invoke({ action: "back" });
-  contents.emit("did-start-navigation", {
-    url: "https://unrelated.example/", isSameDocument: true, isMainFrame: true, initiator: null,
-  }, "https://unrelated.example/", true, true, 1, 2);
-  contents.emit("did-navigate-in-page", {}, previous, true);
-  assert.equal((await f.invoke({ action: "state" })).status, "loading");
-
-  history.setForTest([{ url: previous }, { url: current }], 1);
   const back = await f.invoke({ action: "back" });
   assert.equal(back.status, "loading");
   // A matching URL alone is insufficient: wait for did-start-navigation for this attempt.
   contents.emit("did-navigate-in-page", {}, previous, true);
+  assert.equal((await f.invoke({ action: "state" })).status, "loading");
+  contents.emit("did-start-navigation", {
+    url: "https://unrelated.example/", isSameDocument: true, isMainFrame: true, initiator: null,
+  }, "https://unrelated.example/", true, true, 1, 2);
+  contents.emit("did-navigate-in-page", {}, "https://unrelated.example/", true);
   assert.equal((await f.invoke({ action: "state" })).status, "loading");
   contents.emit("did-start-navigation", {
     url: previous, isSameDocument: true, isMainFrame: true, initiator: null,
@@ -159,6 +156,7 @@ test("same-document Back and Forward settle only after the matching current in-p
   contents.emit("did-navigate-in-page", {}, current, true);
   assert.equal((await f.invoke({ action: "state" })).status, "ready");
 
+  history.setForTest([{ url: previous }, { url: current }], 1);
   await f.invoke({ action: "back" });
   const newNavigation = await f.invoke({ action: "navigate", url: "https://new.example/" });
   contents.emit("did-navigate-in-page", {}, previous, true);
