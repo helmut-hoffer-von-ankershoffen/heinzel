@@ -67,6 +67,8 @@ module.service(ProfileService)
 module.service(CalendarMaintenance)
 module.service(SyncService)
 
+CalendarOffset = Annotated[int, Field(ge=-52, le=52, description="Weeks before or after this week.")]
+
 
 # Your name and email are in it; a web page can reach a local REST server, so the CLI, MCP and the web head (which
 # needs its session token) get it, like drafts.
@@ -145,7 +147,7 @@ def calendar(
     calendar: Calendar,
     view: CapabilityView,
     settings: OrgSettings,
-    offset: Annotated[int, Field(ge=-52, le=52, description="Weeks before or after this week.")] = 0,
+    offset: CalendarOffset = 0,
     selection: Annotated[
         str, Field(max_length=32768, description="Calendar exclusions and their adapter as JSON.")
     ] = "",
@@ -161,6 +163,24 @@ def calendar(
         msg = "The calendar selection is invalid."
         raise HeinzelError(msg) from None
     return read_week(calendar, view, local_now(settings.timezone), offset, chosen)
+
+
+class CalendarWeekSelection(CalendarSelection):
+    """Browser calendar exclusions for one week."""
+
+    offset: CalendarOffset = 0
+
+
+# The web stream accepts large selections in its authenticated JSON body without putting opaque IDs in the URL.
+@module.operation(private=True, heads={"web"}, requires=["calendar:read"], optional=True)
+def calendar_selection(
+    calendar: Calendar,
+    view: CapabilityView,
+    settings: OrgSettings,
+    selection: CalendarWeekSelection,
+) -> CalendarWeek:
+    """Read a calendar week with the browser's current calendar exclusions."""
+    return read_week(calendar, view, local_now(settings.timezone), selection.offset, selection)
 
 
 # The web app's status bar shows it (ADR 0056): a view over `agenda`, so it is gated and private like the operation.

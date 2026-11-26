@@ -2191,6 +2191,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/org/calendar-selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a calendar week with the browser's current calendar exclusions.
+         * @description Read a calendar week with the browser's current calendar exclusions.
+         */
+        get: operations["org_calendar_selection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/org/show": {
         parameters: {
             query?: never;
@@ -22764,6 +22784,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    org_calendar_selection: {
+        parameters: {
+            query?: {
+                adapter?: string;
+                excluded?: string[];
+                /** @description Weeks before or after this week. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarWeek"];
                 };
             };
             /** @description Validation Error */

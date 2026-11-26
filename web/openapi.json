@@ -29672,6 +29672,78 @@
         ]
       }
     },
+    "/org/calendar-selection": {
+      "get": {
+        "description": "Read a calendar week with the browser's current calendar exclusions.",
+        "operationId": "org_calendar_selection",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "adapter",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Adapter",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "excluded",
+            "required": false,
+            "schema": {
+              "items": {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              "maxItems": 100,
+              "title": "Excluded",
+              "type": "array"
+            }
+          },
+          {
+            "description": "Weeks before or after this week.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Weeks before or after this week.",
+              "maximum": 52,
+              "minimum": -52,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarWeek"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read a calendar week with the browser's current calendar exclusions.",
+        "tags": [
+          "org"
+        ]
+      }
+    },
     "/org/show": {
       "get": {
         "description": "Show your profile: who you are, your role, time zone and working hours, and what is still missing.",

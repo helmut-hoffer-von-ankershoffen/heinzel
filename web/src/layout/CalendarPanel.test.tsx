@@ -87,17 +87,17 @@ it("combines readable calendars and preserves an explicit exclusion on reopen", 
   ];
   let finishSelection: (() => void) | undefined;
   const { calls } = mockApi({
-    "/api/org/calendar": (request: Request) => {
-      const value = new URL(request.url).searchParams.get("selection");
-      const selection = value ? JSON.parse(value) : null;
+    "/api/org/calendar": { ...weekOf(entries), calendars, adapter: "google" },
+    "/api/stream/org/calendar-selection": async (request: Request) => {
+      const { selection } = (await request.clone().json()) as { selection: { excluded: string[] } };
       const week = {
-        ...weekOf(entries.filter((event) => !selection?.excluded.includes(event.calendar_id))),
+        ...weekOf(entries.filter((event) => !selection.excluded.includes(event.calendar_id))),
         calendars,
         adapter: "google",
       };
-      if (!selection || finishSelection) return week;
-      return new Promise((resolve) => {
-        finishSelection = () => resolve(week);
+      if (finishSelection) return eventStream([], week);
+      return new Promise<Response>((resolve) => {
+        finishSelection = () => resolve(eventStream([], week));
       });
     },
     "/api/org/calendar-reminders-status": { enabled: false, service: "not installed" },
@@ -121,7 +121,7 @@ it("combines readable calendars and preserves an explicit exclusion on reopen", 
   expect(family).not.toBeChecked();
   expect(screen.queryByRole("button", { name: /Family meeting/ })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Personal meeting/ })).toBeInTheDocument();
-  expect(finishSelection).toBeDefined();
+  await waitFor(() => expect(finishSelection).toBeDefined());
   await act(async () => finishSelection?.());
   expect(JSON.parse(localStorage.getItem("hz.calendar.excluded.google") ?? "[]")).toEqual(["family"]);
   view.unmount();
@@ -134,10 +134,51 @@ it("combines readable calendars and preserves an explicit exclusion on reopen", 
   );
   await user.click(await screen.findByText("Calendars (2)"));
   expect(await screen.findByRole("checkbox", { name: "Family" })).not.toBeChecked();
-  const last = calls.filter((call) => new URL(call.url).pathname === "/api/org/calendar").at(-1);
-  expect(JSON.parse(new URL(last?.url ?? "").searchParams.get("selection") ?? "{}")).toEqual({
+  const last = calls.filter((call) => new URL(call.url).pathname === "/api/stream/org/calendar-selection").at(-1);
+  expect(last?.method).toBe("POST");
+  expect(new URL(last?.url ?? "").search).toBe("");
+  expect(await last?.json()).toEqual({
+    selection: { offset: 0, adapter: "google", excluded: ["family"] },
+  });
+});
+
+it("keeps visible exclusions when the saved list is full of calendars that disappeared", async () => {
+  const old = ["personal", ...Array.from({ length: 99 }, (_, index) => `removed-${index}`)];
+  localStorage.setItem("hz.calendar.adapter", "google");
+  localStorage.setItem("hz.calendar.excluded.google", JSON.stringify(old));
+  const week = {
+    ...weekOf([]),
     adapter: "google",
-    excluded: ["family"],
+    calendars: [
+      { id: "personal", title: "Personal", primary: true },
+      { id: "family", title: "Family", primary: false },
+    ],
+  };
+  const { calls } = mockApi({
+    "/api/stream/org/calendar-selection": () => eventStream([], week),
+    "/api/org/calendar-reminders-status": { enabled: false, service: "not installed" },
+  });
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter>
+        <CalendarPanel onClose={vi.fn()} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  await user.click(await screen.findByText("Calendars (2)"));
+  const personal = screen.getByRole("checkbox", { name: "Personal (primary)" });
+  const family = screen.getByRole("checkbox", { name: "Family" });
+  expect(personal).not.toBeChecked();
+  await user.click(family);
+  expect(personal).not.toBeChecked();
+  expect(family).not.toBeChecked();
+  const expected = ["personal", "family"];
+  expect(JSON.parse(localStorage.getItem("hz.calendar.excluded.google") ?? "[]")).toEqual(expected);
+  await waitFor(() => expect(calls.filter((call) => call.method === "POST")).toHaveLength(2));
+  const last = calls.filter((call) => call.method === "POST").at(-1);
+  expect(await last?.json()).toEqual({
+    selection: { offset: 0, adapter: "google", excluded: expected },
   });
 });
 
@@ -152,6 +193,7 @@ it("keeps the picker and other meetings available when one calendar fails", asyn
       ],
       warnings: ["Family: Access expired"],
     },
+    "/api/org/calendar-selection": () => ({ ...weekOf([]), adapter: "google", calendars: [] }),
     "/api/org/calendar-reminders-status": { enabled: false, service: "not installed" },
   });
   const user = userEvent.setup();

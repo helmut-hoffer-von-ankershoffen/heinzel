@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { stream } from "@/api/stream";
 import { token } from "@/api/token";
 import { OperationDialog } from "@/components/OperationDialog";
 import { PaneAction, PaneActions, PaneTitle } from "@/components/PaneActions";
@@ -71,10 +72,10 @@ function savedSelection(adapter?: string): CalendarSelection {
   try {
     const selectedAdapter = adapter ?? localStorage.getItem("hz.calendar.adapter") ?? "";
     const raw: unknown = JSON.parse(localStorage.getItem(`hz.calendar.excluded.${selectedAdapter}`) ?? "[]");
-    return {
-      adapter: selectedAdapter,
-      excluded: Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string").slice(0, 100) : [],
-    };
+    const ids = Array.isArray(raw)
+      ? raw.filter((id): id is string => typeof id === "string" && id.length > 0 && [...id].length <= 1024)
+      : [];
+    return { adapter: selectedAdapter, excluded: [...new Set(ids)].slice(0, 100) };
   } catch {
     return { adapter: adapter ?? "", excluded: [] };
   }
@@ -110,9 +111,11 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
       previousQuery?.queryKey[2] === offset && previous?.adapter === selection.adapter ? previous : undefined,
     // The query aborts its older read when it is cancelled or superseded, so a stale response never overwrites newer data.
     queryFn: async ({ signal }): Promise<Week> => {
+      if (selection.adapter && selection.excluded.length) {
+        return stream<Week>("/org/calendar-selection", {}, () => {}, signal, { selection: { offset, ...selection } });
+      }
       const url = new URL("/api/org/calendar", window.location.origin);
       url.searchParams.set("offset", String(offset));
-      if (selection.adapter) url.searchParams.set("selection", JSON.stringify(selection));
       const response = await fetch(
         new Request(url, {
           signal,
@@ -134,10 +137,12 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
     }
   }, [week.data?.adapter, selection.adapter]);
   const toggleCalendar = (id: string, checked: boolean) => {
-    const adapter = week.data?.adapter;
-    if (!adapter) return;
-    const previous = selection.adapter === adapter ? selection.excluded : savedSelection(adapter).excluded;
-    const excluded = checked ? previous.filter((item) => item !== id) : [...previous, id].slice(-100);
+    const { adapter, calendars } = week.data ?? {};
+    if (!adapter || !calendars) return;
+    const previous = new Set(selection.adapter === adapter ? selection.excluded : savedSelection(adapter).excluded);
+    const excluded = calendars.flatMap((calendar) =>
+      (calendar.id === id ? !checked : previous.has(calendar.id)) ? [calendar.id] : [],
+    );
     const next = { adapter, excluded };
     try {
       localStorage.setItem("hz.calendar.adapter", adapter);

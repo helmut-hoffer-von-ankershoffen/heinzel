@@ -145,3 +145,44 @@ def test_week_reads_selected_calendars_through_read_only_capability(make_kernel)
     assert partial["warnings"] == ["Family: Access expired"]
     assert [source["id"] for source in partial["calendars"]] == ["personal", "family"]
     assert partial["problem"] is None
+
+
+def test_calendar_selection_accepts_all_maximum_length_ids_in_the_authenticated_body(make_kernel):
+    ids = [f"{index:03}" + ('"\\😀' * 341)[:1021] for index in range(100)]
+
+    class Multiple(Diary):
+        calls: ClassVar[list[str]] = []
+
+        def calendars(self) -> list[CalendarSource]:
+            return [CalendarSource(id=identifier, title=f"Calendar {index}") for index, identifier in enumerate(ids)]
+
+        def events_for(self, calendar: str, window: Window) -> list[Event]:
+            self.calls.append(calendar)
+            return []
+
+    module = Module("diary", "Provides calendars for tests.")
+    module.provides("calendar", modes={"read"})(Multiple)
+    kernel = make_kernel(
+        builtins=True, diary=module, config=Config(files=(), data={"capabilities": {"calendar": "diary"}})
+    )
+    web_client = TestClient(web.build(kernel, port=8000, token=TOKEN, static=None), base_url=BASE)
+    path = "/api/stream/org/calendar-selection"
+    selection = {"adapter": "diary", "excluded": ids, "offset": 0}
+    assert all(len(identifier) == 1024 for identifier in ids)
+    assert len(json.dumps(selection)) > 32768
+    assert web_client.post(path, json={"selection": selection}).status_code == 401
+    response = web_client.post(path, json={"selection": selection}, headers=AUTH)
+    assert response.status_code == 200
+    (result,) = [
+        json.loads(block.removeprefix("event: result\ndata: "))
+        for block in response.text.split("\n\n")
+        if block.startswith("event: result\ndata: ")
+    ]
+    assert [source["id"] for source in result["data"]["calendars"]] == ids
+    assert result["data"]["problem"] is None
+    assert result["data"]["events"] == []
+    assert Multiple.calls == []
+    for invalid in ([*ids, "extra"], [ids[0] + "x"]):
+        refused = web_client.post(path, json={"selection": selection | {"excluded": invalid}}, headers=AUTH)
+        assert refused.status_code == 422
+        assert Multiple.calls == []
