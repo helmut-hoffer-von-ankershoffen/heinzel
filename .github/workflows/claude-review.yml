@@ -207,7 +207,7 @@ jobs:
         run: |
           # pull_request_target checks out the triggering protected base commit by default.
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          python3 scripts/review_history.py
+          python3 -I scripts/review_history.py
       - name: Judge the review and comment
         env:
           GH_TOKEN: ${{ github.token }}

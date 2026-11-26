@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.15"
+# dependencies = []
+# ///
 """A spend-limit exception cannot override a prior same-head Gate rejection."""
 
 import json
