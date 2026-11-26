@@ -1,5 +1,7 @@
 """The kernel discovers modules and injects their lets; heads expose them."""
 
+# ruff: noqa: F405
+
 from heinzel.kernel._api_access import ConfiguredApiAccess, ConfiguredApiLease, ConfiguredApiSnapshot
 from heinzel.kernel._bindings import HOWS, Adapters, CapabilitySettings, CapabilityView, How, Requester
 from heinzel.kernel._boot import boot
@@ -255,6 +257,7 @@ from heinzel.kernel._sign_in import (
     SignInStatus,
 )
 from heinzel.kernel._signals import SIGNALS, Signal
+from heinzel.kernel._soundscape_exports import *  # noqa: F403
 from heinzel.kernel._source_loading import SourceGuardedConnectedService
 from heinzel.kernel._telemetry import (
     HEINZEL_ID,
@@ -435,25 +438,6 @@ from heinzel.kernel.look._contributions import (
     WidgetLet,
     link_problem,
 )
-
-# fmt: off
-from heinzel.kernel.look._soundscapes import (
-    MEDIA_ORIGINS,
-    SOUND_CSP,
-    SOUND_ROUTE,
-    STREAM_PROVIDERS,
-    SoundAssets,
-    SoundEarcon,
-    SoundLayer,
-    Soundscape,
-    SoundscapeLet,
-    SoundStream,
-    SoundTrack,
-    StreamProvider,
-    ThemeChoice,
-)
-
-# fmt: on
 from heinzel.kernel.look._theme_signals import DAYPARTS, WEATHERS, Daypart, SignalLet, ThemeSignals, Weather, daypart
 from heinzel.kernel.look._themes import (
     DEFAULT_LOGO,
