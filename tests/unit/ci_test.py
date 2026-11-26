@@ -2331,7 +2331,7 @@ def _template_test_fixture(tmp_path: Path, *, make_failure: str = "", starter_fa
         "    pathlib.Path(os.environ['FAKE_STARTER_ENV']).write_text(json.dumps(observed))\n"
         "    os.execv(sys.executable, [sys.executable, os.environ['FAKE_STARTER']])\n"
         "if 'python' in args:\n"
-        "    index = args.index('python'); sys.argv = [sys.executable, *args[index + 1:]]\n"
+        "    index = args.index('python'); sys.argv = [sys.executable, *args[index + 2:]]\n"
         "    exec(compile(sys.stdin.read(), '<fixture-stdin>', 'exec'), {'__name__': '__main__'})\n"
         "raise SystemExit(f'unexpected uv command: {args!r}')\n",
         encoding="utf-8",
