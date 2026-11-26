@@ -208,6 +208,8 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "gate_paths='^(": "finds the gate paths the pull request touches; no tokens when there are none",
         'auth="$(printf': "fetches the head as git objects only, never checks it out",
         'if [[ ! -f "$EXECUTION_FILE" ]]': "collects a verdict or records a confirmed provider spending limit",
+        "echo 'Gate review rejected this exact head.'": "records an explicit rejection in the run history",
+        "python3 scripts/review_history.py": "authenticates prior attempts before a spending-limit skip",
         'if [[ "$MODE" == pass ]]': "no model call without gate paths; a gate change nobody reviewed fails",
     },
     "update-prs.yml": {
@@ -982,13 +984,21 @@ def _gate_scope_script():
     return next(step["run"] for step in _gate_review()["jobs"]["scope"]["steps"] if step.get("id") == "scope")
 
 
+def _gate_judge_script():
+    return next(
+        step["run"]
+        for step in _gate_review()["jobs"]["gate-review"]["steps"]
+        if step.get("name") == "Judge the review and comment"
+    )
+
+
 def test_gate_review_always_reports_one_check_and_fails_closed():
     spec = _gate_review()
     job = spec["jobs"]["gate-review"]
     assert spec["name"] == job["name"] == "Gate review"
     assert job["needs"] == ["scope", "model"]
     assert job["if"] == "${{ !cancelled() }}"  # runs whatever the model job did, so nothing hangs pending
-    script = job["steps"][0]["run"]
+    script = _gate_judge_script()
     assert 'if [[ "$MODE" == pass ]]' in script
     assert "needs a human or agent review" in script  # a bot, fork or draft gate change
     assert '"$MODEL" != success' in script  # a failed or skipped model run never passes
@@ -1007,8 +1017,15 @@ def test_gate_review_runs_the_base_workflow_and_never_executes_the_head():
     assert checkout["with"]["persist-credentials"] is False
     fetch = next(step["run"] for step in model["steps"] if step.get("name", "").startswith("Fetch the head"))
     assert "refs/pull/${PR}/head:refs/review/head" in fetch
-    for job in ("scope", "gate-review"):
-        assert not any("actions/checkout" in step.get("uses", "") for step in spec["jobs"][job]["steps"])
+    assert not any("actions/checkout" in step.get("uses", "") for step in spec["jobs"]["scope"]["steps"])
+    history_checkout = next(
+        step for step in spec["jobs"]["gate-review"]["steps"] if "actions/checkout" in step.get("uses", "")
+    )
+    assert history_checkout["if"] == "needs.model.outputs.spend_limit == 'true'"
+    assert history_checkout["with"] == {
+        "ref": "${{ github.event.pull_request.base.sha }}",
+        "persist-credentials": False,
+    }
     assert "github.event.pull_request.head.sha" not in str(checkout)
 
 
@@ -1058,7 +1075,7 @@ def test_gate_review_guards_the_reviewers_own_instructions():
 
 
 def test_gate_review_passes_only_on_the_exact_last_line():
-    script = _gate_review()["jobs"]["gate-review"]["steps"][0]["run"]
+    script = _gate_judge_script()
     assert '[[ "$VERDICT_LINE" == "VERDICT: APPROVE" ]]' in script
     collect = next(step["run"] for step in _gate_review()["jobs"]["model"]["steps"] if step.get("id") == "result")
     assert "grep -v '^[[:space:]]*$' <<<\"$result\" | tail -n 1" in collect  # the last non-empty line
@@ -1114,7 +1131,7 @@ def test_gate_review_only_waives_a_confirmed_spend_limit(tmp_path, changes, prev
     if skip:
         assert result.returncode == 0, result.stderr
         assert output.read_text(encoding="utf-8") == "spend_limit=true\n"
-        judge = review["gate-review"]["steps"][0]["run"]
+        judge = _gate_judge_script()
         result = subprocess.run(
             ["bash", "-e", "-o", "pipefail", "-c", judge],
             check=False,
@@ -1123,6 +1140,7 @@ def test_gate_review_only_waives_a_confirmed_spend_limit(tmp_path, changes, prev
                 "MODE": "review",
                 "MODEL": "success",
                 "SPEND_LIMIT": "true",
+                "HISTORY_OUTCOME": "success",
                 "VERDICT_LINE": "",
                 "RESULT": "",
                 "GITHUB_STEP_SUMMARY": str(summary),
@@ -1136,7 +1154,10 @@ def test_gate_review_only_waives_a_confirmed_spend_limit(tmp_path, changes, prev
     else:
         assert result.returncode == 1
         assert "Gate review failed" in result.stdout
-        assert not output.exists()
+        if previous_rejection:
+            assert output.read_text(encoding="utf-8") == "explicit_rejection=true\n"
+        else:
+            assert not output.exists()
 
 
 def test_gate_review_holds_least_privilege():
@@ -1144,7 +1165,11 @@ def test_gate_review_holds_least_privilege():
     for name, job in spec["jobs"].items():
         assert "id-token" not in job["permissions"], name
     assert spec["jobs"]["model"]["permissions"] == {"contents": "read"}  # holds the secrets: no write
-    assert spec["jobs"]["gate-review"]["permissions"] == {"pull-requests": "write"}
+    assert spec["jobs"]["gate-review"]["permissions"] == {
+        "pull-requests": "write",
+        "actions": "read",
+        "contents": "read",
+    }
     assert spec["permissions"] == {}
 
 
