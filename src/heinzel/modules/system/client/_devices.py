@@ -36,7 +36,8 @@ from heinzel.modules.system.client._widget_fence import FenceState, Receipt, Req
 
 PREFIX = "hzd_"
 """Device tokens start with this, so they are told apart from session tokens at a glance (and in a secret scan)."""
-MAX_DEVICES = 20
+MAX_DEVICES = 100
+MAX_STORE_BYTES = 256 * 1024
 NAME_LIMIT = 60
 UNUSED_FOR = timedelta(days=30)
 """A device token unused this long stops working, so a forgotten browser doesn't keep access."""
@@ -156,10 +157,11 @@ class Devices:
             HeinzelError: If MAX_DEVICES are paired already.
         """
         token = PREFIX + secrets.token_urlsafe(32)
-        now = self._clock()
         label = re.sub(r"\s+", " ", clean_text(name)).strip()[:NAME_LIMIT] or "a browser"
         with self._locked() as folder:
-            devices = self._read(folder)
+            now = self._clock()
+            previous = self._read(folder)
+            devices = [device for device in previous if now - device.last_used <= UNUSED_FOR]
             if len(devices) >= MAX_DEVICES:
                 msg = (
                     f"{MAX_DEVICES} devices are paired already; remove one with `hz ui serve --revoke ID` "
@@ -168,7 +170,7 @@ class Devices:
                 raise HeinzelError(msg)
             for _ in range(MAX_DEVICES + 1):
                 identifier = secrets.token_hex(4)
-                if all(existing.id != identifier for existing in devices):
+                if all(existing.id != identifier for existing in previous):
                     break
             else:
                 msg = "Could not allocate a unique device identifier"
@@ -185,12 +187,28 @@ class Devices:
         found = next((d for d in self.paired() if hmac.compare_digest(d.sha256, presented)), None)
         if found is None:
             return None
-        if self._clock() - found.last_used > UNUSED_FOR:
-            self.revoke(found.id)  # unused for a month: pair again with a link from `hz ui serve`
-            return None
-        if self._clock() - found.last_used > TOUCH_EVERY:
-            self._touch(found.id)
-        return found
+        age = self._clock() - found.last_used
+        if age <= TOUCH_EVERY:
+            return found
+        try:
+            with self._locked() as folder:
+                devices = self._read(folder)
+                found = next((d for d in devices if hmac.compare_digest(d.sha256, presented)), None)
+                if found is None:
+                    return None
+                now = self._clock()
+                if now - found.last_used > UNUSED_FOR:
+                    self._write(folder, [d for d in devices if d.id != found.id])
+                    found = None
+                elif now - found.last_used > TOUCH_EVERY:
+                    with contextlib.suppress(OSError, HeinzelError):
+                        self._write(
+                            folder,
+                            [d.model_copy(update={"last_used": now}) if d.id == found.id else d for d in devices],
+                        )
+                return found
+        except (OSError, HeinzelError):
+            return found if found is not None and self._clock() - found.last_used <= UNUSED_FOR else None
 
     def widget_issue(self, device_id: str, owner: str, token: str | None = None) -> tuple[str, str, datetime] | None:
         """Replace this device's widget credential; never issue to an unpaired device."""
@@ -435,25 +453,14 @@ class Devices:
                 self._write(folder, [d for d in devices if d not in gone])
         return gone
 
-    def _touch(self, device: str) -> None:
-        try:
-            with self._locked() as folder:
-                now = self._clock()
-                self._write(
-                    folder,
-                    [d.model_copy(update={"last_used": now}) if d.id == device else d for d in self._read(folder)],
-                )
-        except (OSError, HeinzelError):
-            return  # only the hint of when it was used is lost
-
     def _read(self, folder: int) -> list[Device]:
         try:
             descriptor = CurrentUser.open_private(folder, DEVICES_FILENAME, os.O_RDONLY)
         except FileNotFoundError:
             return []
         with os.fdopen(descriptor, "rb") as handle:
-            data = handle.read(256 * 1024 + 1)
-        if len(data) > 256 * 1024:
+            data = handle.read(MAX_STORE_BYTES + 1)
+        if len(data) > MAX_STORE_BYTES:
             msg = "The paired device store is damaged"
             raise HeinzelError(msg)
         try:
@@ -469,11 +476,17 @@ class Devices:
         return devices
 
     def _write(self, folder: int, devices: list[Device]) -> None:
+        data = (
+            json.dumps(_DEVICES.dump_python(devices, mode="json"), ensure_ascii=False, separators=(",", ":")) + "\n"
+        ).encode()
+        if len(data) > MAX_STORE_BYTES:
+            msg = "The paired device store exceeds its safe size; no change was saved"
+            raise HeinzelError(msg)
         partial = f".devices-{secrets.token_hex(12)}"
         descriptor = CurrentUser.open_private(folder, partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
         try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                handle.write(json.dumps(_DEVICES.dump_python(devices, mode="json"), indent=1) + "\n")
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(data)
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(partial, DEVICES_FILENAME, src_dir_fd=folder, dst_dir_fd=folder)

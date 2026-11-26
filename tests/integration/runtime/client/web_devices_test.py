@@ -1,6 +1,9 @@
 """Paired devices (ADR 0046): the session token pairs once, the device token reopens the app, revoking ends it."""
 
+import json
 import stat
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,7 +12,17 @@ from typer.testing import CliRunner
 from heinzel import HeinzelError
 from heinzel.heads import web
 from heinzel.heads.cli import build as cli
-from heinzel.modules.system.client._devices import MAX_DEVICES, PREFIX, Devices, digest
+from heinzel.modules.system.client._devices import (
+    MAX_DEVICES,
+    MAX_STORE_BYTES,
+    PREFIX,
+    Device,
+    Devices,
+    WidgetCredential,
+    WidgetFence,
+    WidgetReceipt,
+    digest,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -101,8 +114,10 @@ def test_pairing_is_bounded_and_names_are_cleaned(devices):
     device, _ = devices.pair("a" + chr(0x202E) + "bad" + chr(0) + " name " + "x" * 200)
     assert device.name.startswith("abad name")
     assert len(device.name) == 60
-    for index in range(MAX_DEVICES - 1):
-        devices.pair(str(index))
+    with devices._locked() as folder:
+        devices._write(
+            folder, [device.model_copy(update={"id": f"{i:08x}", "sha256": f"{i:064x}"}) for i in range(MAX_DEVICES)]
+        )
     with pytest.raises(HeinzelError, match="devices are paired already"):
         devices.pair("one too many")
 
@@ -115,8 +130,6 @@ def test_a_damaged_file_pairs_nothing_and_accepts_nothing(devices):
 
 
 def test_a_device_unused_for_a_month_stops_working(tmp_path):
-    from datetime import UTC, datetime, timedelta
-
     now = [datetime(2026, 10, 1, tzinfo=UTC)]
     devices = Devices(tmp_path / "web", clock=lambda: now[0])
     _, token = devices.pair("Chrome on macOS")
@@ -127,3 +140,107 @@ def test_a_device_unused_for_a_month_stops_working(tmp_path):
     now[0] += timedelta(days=31)
     assert devices.check(token) is None
     assert devices.paired() == []
+
+
+def test_pairing_reclaims_expired_pool_but_not_the_exact_ttl_boundary(tmp_path):
+    now = [datetime(2026, 10, 1, tzinfo=UTC)]
+    devices = Devices(tmp_path / "web", clock=lambda: now[0])
+    first, token = devices.pair("first")
+    with devices._locked() as folder:
+        devices._write(
+            folder, [first.model_copy(update={"id": f"{i:08x}", "sha256": f"{i:064x}"}) for i in range(MAX_DEVICES)]
+        )
+    now[0] += timedelta(days=30)
+    with pytest.raises(HeinzelError, match="devices are paired already"):
+        devices.pair("at boundary")
+    assert len(devices.paired()) == MAX_DEVICES
+    now[0] += timedelta(microseconds=1)
+    new, new_token = devices.pair("new")
+    assert [device.id for device in devices.paired()] == [new.id]
+    assert devices.check(token) is None
+    assert devices.check(new_token) is not None
+
+
+def test_maximum_widget_records_fit_the_bounded_store(tmp_path):
+    now = datetime(2026, 10, 1, tzinfo=UTC)
+    owner = "😀" * 128
+    workspace, revision, attempt = "a" * 64, "b" * 32, "c" * 32
+    widget = WidgetCredential(sha256="d" * 64, owner=owner, workspace=workspace, expires=now)
+    receipt = WidgetReceipt(
+        attempt=attempt,
+        operation="issue",
+        previous_revision="e" * 32,
+        commitment=widget.sha256,
+        revision=revision,
+        expires=now,
+    )
+    fence = WidgetFence(
+        epoch="f" * 32, revision=revision, initial_revision="e" * 32, owner=owner, workspace=workspace, receipt=receipt
+    )
+    devices = Devices(tmp_path / "web", clock=lambda: now)
+    records = [
+        Device(
+            id=f"{i:08x}",
+            name="😀" * 60,
+            created=now,
+            last_used=now,
+            sha256=f"{i:064x}",
+            widget=widget,
+            widget_fence=fence,
+        )
+        for i in range(MAX_DEVICES)
+    ]
+    with devices._locked() as folder:
+        devices._write(folder, records)
+    assert len(devices.path.read_bytes()) <= MAX_STORE_BYTES
+    assert len(devices.paired()) == MAX_DEVICES
+    assert len(json.loads(devices.path.read_text(encoding="utf-8"))) == MAX_DEVICES
+    before = devices.path.read_bytes()
+    escaped_owner = "\0" * 128
+    oversized = [
+        Device.model_validate(
+            record.model_dump()
+            | {
+                "widget": record.widget.model_dump() | {"owner": escaped_owner},
+                "widget_fence": record.widget_fence.model_dump() | {"owner": escaped_owner},
+            }
+        )
+        for record in records
+    ]
+    with devices._locked() as folder, pytest.raises(HeinzelError, match="exceeds its safe size"):
+        devices._write(folder, oversized)
+    assert devices.path.read_bytes() == before
+
+
+def test_widget_parent_remains_valid_at_ttl_boundary_and_expires_afterward(tmp_path):
+    now = [datetime(2026, 10, 1, tzinfo=UTC)]
+    devices = Devices(tmp_path / "web", clock=lambda: now[0])
+    device, token = devices.pair("parent")
+    now[0] += timedelta(days=30)
+    child, workspace, _ = devices.widget_issue(device.id, "owner", token)
+    assert devices.widget_check(child, "owner", workspace) == device.id
+    now[0] += timedelta(microseconds=1)
+    assert devices.widget_check(child, "owner", workspace) is None
+    assert devices.check(token) is None
+
+
+def test_concurrent_pairing_cannot_exceed_capacity(tmp_path):
+    devices = Devices(tmp_path / "web")
+    first, _ = devices.pair("first")
+    with devices._locked() as folder:
+        devices._write(
+            folder, [first.model_copy(update={"id": f"{i:08x}", "sha256": f"{i:064x}"}) for i in range(MAX_DEVICES - 1)]
+        )
+
+    def pair_once():
+        try:
+            devices.pair("concurrent")
+        except HeinzelError:
+            return False
+        else:
+            return True
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: pair_once(), range(2)))
+    assert sorted(results) == [False, True]
+    assert len(devices.paired()) == MAX_DEVICES
