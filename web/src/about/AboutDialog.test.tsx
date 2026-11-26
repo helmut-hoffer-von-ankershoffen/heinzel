@@ -8,7 +8,7 @@ import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { recordSurface } from "@/lib/surfaceDiagnostics";
 import { AboutDialog, clientHere, desktopApp, detailsText } from "./AboutDialog";
-import { requestMenuAction } from "./menu";
+import { MENU_EVENT, requestMenuAction } from "./menu";
 
 const info = {
   version: "1.2.3",
@@ -49,6 +49,19 @@ afterEach(() => {
 });
 
 describe("About dialog", () => {
+  it("acknowledges the native request only while mounted, including when About is already open", () => {
+    const request = () => window.dispatchEvent(new CustomEvent(MENU_EVENT, { detail: "about", cancelable: true }));
+    expect(request()).toBe(true);
+    const view = show();
+    act(() => expect(request()).toBe(false));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "Close" })).toHaveFocus();
+    act(() => expect(request()).toBe(false));
+    expect(screen.getByRole("dialog")).toBe(dialog);
+    view.unmount();
+    expect(request()).toBe(true);
+  });
+
   it("only exposes native About details to the owned desktop frame", () => {
     // The focused web lane owns the About surface and can run this dependency-free IPC suite with its pinned Node.
     const suite = resolve(dirname(fileURLToPath(import.meta.url)), "../../../desktop/test/lifecycle-ipc.test.js");

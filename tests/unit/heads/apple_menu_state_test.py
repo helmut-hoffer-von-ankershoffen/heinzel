@@ -37,11 +37,9 @@ def test_about_uses_the_guarded_workspace_menu_with_a_native_fallback() -> None:
     app = (ROOT / "apple/App/HeinzelApp.swift").read_text(encoding="utf-8")
     coordinator = (ROOT / "apple/App/Navigation.swift").read_text(encoding="utf-8")
     app_info = app[app.index("CommandGroup(replacing: .appInfo)") : app.index("CommandGroup(replacing: .appSettings)")]
-    assert re.search(
-        r"if !WorkspaceMenuRequest\.send\(\.about\) \{\s*NSApp\.orderFrontStandardAboutPanel\(nil\)", app_info
-    )
-    request = app[app.index("final class WorkspaceMenuRequest") : app.index("private struct WorkspaceCommands")]
-    assert request.index("NotificationCenter.default.post") < request.index("return request.delivered")
+    assert re.search(r"WorkspaceMenuRequest\.send\(\.about\) \{\s*NSApp\.orderFrontStandardAboutPanel\(nil\)", app_info)
     menu = coordinator[coordinator.index("@objc private func menuAction") : coordinator.index("func close(_ view")]
-    assert menu.index("guard MacMenuDelivery.allowed(") < menu.index("request.delivered = true")
-    assert menu.index("request.delivered = true") < menu.index("new CustomEvent('hz:menu'")
+    assert menu.index("guard MacMenuDelivery.allowed(") < menu.index("request.claim()") < menu.index("case .about:")
+    about = menu[menu.index("case .about:") : menu.index("case .reload:")]
+    assert "!window.dispatchEvent(new CustomEvent('hz:menu', { detail: 'about', cancelable: true }))" in about
+    assert "request.complete(value, error: error)" in about

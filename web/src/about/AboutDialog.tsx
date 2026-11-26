@@ -113,8 +113,9 @@ export function AboutDialog() {
   );
   useEffect(
     () =>
-      onMenuAction(["about", "copy"], (action) => {
+      onMenuAction(["about", "copy"], (action, event) => {
         if (action === "about") {
+          event.preventDefault();
           if (!dialog.current) {
             returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
             setOpen(true);

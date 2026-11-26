@@ -203,32 +203,6 @@ private extension FocusedValues {
     }
 }
 
-enum WorkspaceMenuAction: String {
-    case about
-    case settings, updates, search, sidebar, terminal, browser, chat, notifications
-    case newChat = "new-chat"
-    case today = "go:today", heinzel = "go:heinzel", team = "go:team", plugins = "go:plugins"
-    case help, changelog, doctor, copy, daemon
-    case reload, zoomIn, zoomOut, resetZoom
-}
-
-// NotificationCenter delivers synchronously, so About can fall back if no workspace accepts the request.
-@MainActor
-final class WorkspaceMenuRequest {
-    static let notification = Notification.Name("heinzelWorkspaceMenuAction")
-
-    let action: WorkspaceMenuAction
-    var delivered = false
-
-    private init(_ action: WorkspaceMenuAction) { self.action = action }
-
-    static func send(_ action: WorkspaceMenuAction) -> Bool {
-        let request = WorkspaceMenuRequest(action)
-        NotificationCenter.default.post(name: notification, object: request)
-        return request.delivered
-    }
-}
-
 private struct WorkspaceCommands: Commands {
     @FocusedValue(\.workspaceMenuAvailable) private var workspaceAvailable
     @FocusedValue(\.connectionMenuAvailable) private var connectionAvailable
@@ -238,7 +212,7 @@ private struct WorkspaceCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
             Button("About Heinzelmännchen") {
-                if !WorkspaceMenuRequest.send(.about) {
+                WorkspaceMenuRequest.send(.about) {
                     NSApp.orderFrontStandardAboutPanel(nil)
                 }
             }
@@ -298,7 +272,7 @@ private struct WorkspaceCommands: Commands {
     }
 
     private func command(_ title: String, _ action: WorkspaceMenuAction) -> some View {
-        Button(title) { _ = WorkspaceMenuRequest.send(action) }
+        Button(title) { WorkspaceMenuRequest.send(action) }
             .disabled(workspaceAvailable != true)
     }
 

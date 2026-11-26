@@ -748,7 +748,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     @objc private func menuAction(_ notification: Notification) {
-        guard let request = notification.object as? WorkspaceMenuRequest, !request.delivered,
+        guard let request = notification.object as? WorkspaceMenuRequest,
               let workspace else { return }
         let loading: Bool
         if case .idle = provisionalLoad { loading = false } else { loading = true }
@@ -756,10 +756,15 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                                       visible: !workspace.isHiddenOrHasHiddenAncestor,
                                       keyWindow: workspace.window?.isKeyWindow == true,
                                       ownsOrigin: workspace.url.map(endpoint.owns) == true,
-                                      committed: hasCommittedWorkspace, loading: loading) else { return }
-        request.delivered = true
+                                      committed: hasCommittedWorkspace, loading: loading),
+              request.claim() else { return }
         let action = request.action
         switch action {
+        case .about:
+            // Only the mounted About receiver cancels this event. An acknowledgment is the inverse of dispatchEvent's result.
+            workspace.evaluateJavaScript("!window.dispatchEvent(new CustomEvent('hz:menu', { detail: 'about', cancelable: true }))") { value, error in
+                request.complete(value, error: error)
+            }
         case .reload: workspace.reload()
         case .zoomIn: workspace.pageZoom = min(workspace.pageZoom * 1.2, 3)
         case .zoomOut: workspace.pageZoom = max(workspace.pageZoom / 1.2, 0.5)
