@@ -39,6 +39,7 @@ from heinzel.kernel import (
     private_socket_directory,
     private_write,
 )
+from heinzel.kernel._private_control import LIMIT as PRIVATE_CONTROL_LIMIT
 from heinzel.kernel.install._offline_uv import verified_installed_path
 from heinzel.kernel.install._tool_uninstall import OwnedFile, owned_file, remove_owned_file
 from heinzel.kernel.install._uv_locate import find_uv
@@ -71,6 +72,14 @@ Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 def _run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
     # The manager executable is resolved and its argument vector is fixed by the operation.
     return SYSTEM_RUNNER.run(command, timeout=10)
+
+
+def _encode_registration(record: dict[str, JsonValue]) -> str:
+    text = json.dumps(record)
+    if any(len(value.encode()) > PRIVATE_CONTROL_LIMIT for value in (text, str(record["launcher"]))):
+        msg = "The web registration exceeds its control-file budget. No service files were changed."
+        raise HeinzelError(msg)
+    return text
 
 
 class WebStatus(BaseModel):
@@ -581,6 +590,19 @@ class WebService:
         generation = secrets.token_hex(16)
         content = self._content()
         launcher = self._launch_content(port, generation, recovery=self.recovery)
+        registration = _encode_registration(
+            {
+                "port": port,
+                "generation": generation,
+                "executable": str(self.executable),
+                "prefix": str(self.prefix),
+                "uv": str(self.uv),
+                "profile": dict(self.profile),
+                "unit": str(self.unit),
+                "content": content,
+                "launcher": launcher,
+            }
+        )
         if dry_run:
             return WebChange(
                 changed=False,
@@ -595,22 +617,7 @@ class WebService:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-        private_write(
-            self.marker,
-            json.dumps(
-                {
-                    "port": port,
-                    "generation": generation,
-                    "executable": str(self.executable),
-                    "prefix": str(self.prefix),
-                    "uv": str(self.uv),
-                    "profile": self.profile,
-                    "unit": str(self.unit),
-                    "content": content,
-                    "launcher": launcher,
-                }
-            ),
-        )
+        private_write(self.marker, registration)
         commands = (
             [self._command("bootstrap", f"gui/{self.uid}", str(self.unit))]
             if self.platform == "darwin"
@@ -682,9 +689,7 @@ class WebService:
                 new["launcher"] = self._launch_content(
                     int(str(old["port"])), str(new["generation"]), profile, recovery=self.recovery
                 )
-                if len(json.dumps(new).encode()) > 16 * 1024:
-                    msg = "The canonical web record exceeds its existing control-file budget; no job was stopped."
-                    raise HeinzelError(msg)
+                _encode_registration(new)
             transition.prepare(
                 action, (old, new), (self.unit, self.launcher, self.marker), retiring_instance=retiring_instance
             )
@@ -888,16 +893,36 @@ class WebService:
             return
         if self.recovery is None or not interpreter_matches(self.recovery, self.prefix):
             return
-        record = self._record()
-        if record is None or record["uv"] != str(self.uv):
+        transition = LauncherTransition(self.directory, self.prefix, self.executable)
+        if not os.path.lexists(transition.path) and self._pre_recovery_port(self._record()) is None:
             return
+        with MaintenanceLocks(transition.lock_paths) as locks:
+            transition = LauncherTransition(self.directory, self.prefix, self.executable, locks)
+            installed_port = self._attachment_migration_port(transition)
+            if installed_port is not None:
+                self._transition("migrate", locks=locks, port=installed_port)
+
+    def _attachment_migration_port(self, transition: LauncherTransition) -> int | None:
+        if not os.path.lexists(transition.path):
+            return self._pre_recovery_port(self._record())
+        pending = transition.load()
+        if (
+            pending.kind == "web-launcher-migrate"
+            and pending.retiring_instance is None
+            and pending.new is not None
+            and recover_config(str(pending.new["launcher"])) == self.recovery
+        ):
+            return self._pre_recovery_port(pending.old)
+        return None
+
+    def _pre_recovery_port(self, record: dict[str, JsonValue] | None) -> int | None:
+        if record is None or record["uv"] != str(self.uv):
+            return None
         installed_port, generation = int(str(record["port"])), str(record["generation"])
         profile = validated_profile(record["profile"], self.home, self.directory.parent, self.prefix, self.executable)
-        if profile is None or record["launcher"] != self._launch_content(installed_port, generation, profile):
-            return
-        with MaintenanceLocks((host_maintenance_lock(self.prefix), self.directory / "lifecycle.lock")) as locks:
-            if self._record() == record:
-                self._transition("migrate", locks=locks, port=installed_port)
+        if profile is not None and record["launcher"] == self._launch_content(installed_port, generation, profile):
+            return installed_port
+        return None
 
     def _load(self) -> None:
         """Hand the exact owned unit to its manager again; the manager's KeepAlive or Restart then runs it.
