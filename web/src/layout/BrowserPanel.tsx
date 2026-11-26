@@ -19,6 +19,7 @@ import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { useNativeSurface } from "@/lib/nativeSurface";
+import { refreshIcon, refreshName } from "@/lib/refreshFeedback";
 
 type BrowserTab = {
   id: string;
@@ -416,12 +417,19 @@ export function BrowserPanel({
               variant="ghost"
               size="icon"
               className="size-8 shrink-0 sm:size-9"
-              aria-label={t("browser.reload")}
+              aria-label={refreshName(t("browser.reload"), state.status === "loading", state.status === "unavailable")}
               title={t("browser.reload")}
               disabled={!state.url || state.status === "loading"}
-              onClick={() => void request({ action: "reload" })}
+              aria-busy={state.status === "loading"}
+              onClick={() => {
+                setState((previous) => ({ ...previous, status: "loading" }));
+                void request({ action: "reload" });
+              }}
             >
-              <RefreshCw aria-hidden className={state.status === "loading" ? "animate-spin" : undefined} />
+              <RefreshCw
+                aria-hidden
+                className={refreshIcon(state.status === "loading", state.status === "unavailable")}
+              />
             </Button>
           </>
         )}

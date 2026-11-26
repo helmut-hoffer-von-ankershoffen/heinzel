@@ -5,6 +5,31 @@ import { addressUrl, BrowserPanel, externalBrowserUrl } from "./BrowserPanel";
 afterEach(() => {
   Reflect.deleteProperty(window, "heinzelDesktop");
 });
+it("shows native automatic loading and a failed reload until a successful retry", async () => {
+  let status = "ready";
+  let fail = true;
+  const browser = vi.fn(async ({ action }: Record<string, unknown>) => {
+    if (action === "reload" && fail) throw new Error("reload refused");
+    return { status, url: "https://example.com/" };
+  });
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  const reload = await screen.findByRole("button", { name: "Reload the website" });
+  await waitFor(() => expect(reload).toBeEnabled());
+  status = "loading";
+  await waitFor(() => expect(reload).toHaveAttribute("aria-busy", "true"), { timeout: 2500 });
+  expect(reload.querySelector("svg")).toHaveClass("motion-safe:animate-spin");
+  status = "ready";
+  await waitFor(() => expect(reload).toHaveAttribute("aria-busy", "false"), { timeout: 2500 });
+  fireEvent.click(reload);
+  const failed = await screen.findByRole("button", { name: "Reload the website — Refresh failed" });
+  expect(failed.querySelector("svg")).toHaveClass("text-bad");
+  fail = false;
+  fireEvent.click(failed);
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Reload the website" }).querySelector("svg")).not.toHaveClass("text-bad"),
+  );
+});
 it("web mode supplies an explicit safe external link without an iframe or disabled browser promise", () => {
   const { container } = render(<BrowserPanel active onClose={vi.fn()} />);
   const link = screen.getByRole("link", { name: "Open in a new browser tab" });

@@ -316,6 +316,7 @@ export function UpdateStatus() {
             <PaneAction
               icon={RefreshCw}
               spinning={check.isPending}
+              refreshFailed={check.isError}
               disabled={check.isPending}
               onClick={() => runCheck()}
             >

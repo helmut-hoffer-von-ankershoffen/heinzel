@@ -19,6 +19,7 @@ export const shell = {
   "top.more": "More workspace actions",
   "top.screenActions": "Screen actions",
   "top.refreshing": "Getting the latest data…",
+  "top.refreshFailed": "Refresh failed",
   "command.copied": "Copied",
   "app.skip": "Skip to content",
   "nav.label": "Main",

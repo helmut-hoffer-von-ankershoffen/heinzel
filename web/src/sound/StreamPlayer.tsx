@@ -2,10 +2,12 @@ import { Copy, ExternalLink, EyeOff, LogIn, RotateCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SchemaSoundscapeView } from "@/api/client";
 import { PaneAction } from "@/components/PaneActions";
+import { RefreshGlyph } from "@/components/RefreshGlyph";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { isIOS } from "@/lib/browser";
 import { useNativeSurface } from "@/lib/nativeSurface";
+import { refreshName } from "@/lib/refreshFeedback";
 import { PlayerCard } from "./PlayerCard";
 import { PlayerHelp } from "./PlayerHelp";
 import { page } from "./queries";
@@ -45,7 +47,7 @@ export function guestRequest(func: string, args: unknown[] = []): Record<string,
 type Props = { soundscape: SchemaSoundscapeView; stream: StreamView; level: Level };
 const STEP_MS = 100;
 const PLAYBACK_WAIT_MS = 15_000;
-const button = "min-h-8 rounded-lg border border-border px-2.5 py-1 hover:bg-accent";
+const button = "inline-flex min-h-8 items-center gap-1 rounded-lg border border-border px-2.5 py-1 hover:bg-accent";
 
 /** A private player by default, with explicit account playback and recovery for restricted browsers (ADR 0092). */
 export function StreamPlayer(props: Props) {
@@ -95,6 +97,8 @@ function Player({
   const guest = desktop && stream.provider === "youtube" ? guestBridge() : undefined;
   const [ready, setReady] = useState(false);
   const [blocked, setBlocked] = useState(false);
+  const [reloading, setReloading] = useState(false);
+  const [reloadFailed, setReloadFailed] = useState(false);
   const [help, setHelp] = useState(false);
   const [guestUnavailable, setGuestUnavailable] = useState(false);
   const [hasPlayed, setHasPlayed] = useState(false);
@@ -309,7 +313,24 @@ function Player({
         ) : blocked ? (
           <div className="flex flex-col items-start gap-2 p-3 text-ui-sm">
             <p>{t("sound.reloadNeeded")}</p>
-            <button type="button" onClick={page.reload} className={button}>
+            <button
+              type="button"
+              disabled={reloading}
+              aria-busy={reloading}
+              aria-label={refreshName(t("sound.reload"), reloading, reloadFailed)}
+              onClick={() => {
+                setReloading(true);
+                setReloadFailed(false);
+                try {
+                  page.reload();
+                } catch {
+                  setReloading(false);
+                  setReloadFailed(true);
+                }
+              }}
+              className={button}
+            >
+              <RefreshGlyph busy={reloading} failed={reloadFailed} />
               {t("sound.reload")}
             </button>
           </div>
