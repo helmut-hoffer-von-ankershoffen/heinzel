@@ -9040,14 +9040,14 @@
           "installed": {
             "anyOf": [
               {
-                "format": "date",
+                "format": "date-time",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "The day this version was installed here; none if unknown.",
+            "description": "The moment this version was installed here; none if unknown.",
             "title": "Installed"
           },
           "name": {
@@ -14918,13 +14918,26 @@
                 "type": "null"
               }
             ],
-            "description": "When it was published; none if the source didn't say.",
+            "description": "The day it was published; none if the source didn't say.",
             "title": "Date"
           },
           "notes": {
             "description": "Its release notes as Markdown: third-party text, without control or bidirectional characters.",
             "title": "Notes",
             "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The moment it was published (UTC); none if the source didn't say.",
+            "title": "Published At"
           },
           "url": {
             "anyOf": [
@@ -14951,6 +14964,66 @@
           "url"
         ],
         "title": "ReleaseNotes",
+        "type": "object"
+      },
+      "ReleaseTime": {
+        "description": "The installed release's publication time or the date recorded in its changelog.",
+        "properties": {
+          "day": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The UTC publication date or the date recorded in the changelog.",
+            "title": "Day"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "GitHub's publication time (UTC), if known.",
+            "title": "Published At"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "github",
+                  "changelog"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the answer came from; none if unknown.",
+            "title": "Source"
+          },
+          "version": {
+            "description": "Version of the release.",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "published_at",
+          "day",
+          "source"
+        ],
+        "title": "ReleaseTime",
         "type": "object"
       },
       "RendererBlock": {
@@ -18929,14 +19002,14 @@
           "installed": {
             "anyOf": [
               {
-                "format": "date",
+                "format": "date-time",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "The day this Heinzelmännchen version was installed here; none if unknown.",
+            "description": "The moment this Heinzelmännchen version was installed here; none if unknown.",
             "title": "Installed"
           },
           "latest_release": {
@@ -30090,6 +30163,28 @@
           }
         },
         "summary": "Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/changelog/released": {
+      "get": {
+        "description": "Show the installed version's GitHub publication time or changelog date.\n\nThe GitHub publication time is cached. When unavailable, the command shows the date recorded in the changelog.",
+        "operationId": "system_changelog_released",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseTime"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show the installed version's GitHub publication time or changelog date.",
         "tags": [
           "system"
         ]
