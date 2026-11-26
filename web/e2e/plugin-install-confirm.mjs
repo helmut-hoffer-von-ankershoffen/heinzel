@@ -42,6 +42,9 @@ try {
     const context = await browser.newContext({ viewport: { width, height }, serviceWorkers: "block" });
     const page = await context.newPage();
     await page.route("**/api/system/plugin/search**", (route) => route.fulfill({ json: { plugins, warnings: [] } }));
+    await page.route("**/api/system/plugin/showcase**", (route) =>
+      route.fulfill({ json: { screenshots: [], soundscapes: [] } }),
+    );
     await page.route("**/api/system/plugin/add**", async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 300));
       await route.fulfill({
@@ -141,8 +144,10 @@ try {
     assert.equal(await confirm.isVisible(), true, "outside pointer cannot dismiss or operate the page");
     assert.equal(await page.locator("#background-fixture").getAttribute("data-clicked"), null);
     await page.screenshot({ path: `${shots}/plugin-install-confirm-${name}.png` });
+    const installStarted = page.waitForRequest((request) => request.url().includes("/api/stream/system/plugin/add"));
     await confirm.getByRole("button", { name: "Install", exact: true }).click();
     const progress = page.getByRole("dialog", { name: /Installing heinzel-p29/ });
+    await installStarted;
     await progress.getByRole("button", { name: "Hide progress" }).click();
     await page.mouse.click(3, 3);
     assert.equal(await page.locator("#background-fixture").getAttribute("data-clicked"), "yes");
