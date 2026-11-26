@@ -2557,11 +2557,11 @@ $ hz system changelog [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `released`: (expert) Show when the installed version...
+* `released`: (expert) Show the installed version&#x27;s...
 
 #### `hz system changelog released`
 
-(expert) Show when the installed version was released, by its GitHub publish time or the changelog.
+(expert) Show the installed version&#x27;s GitHub publication time or changelog date.
 
 **Usage**:
 

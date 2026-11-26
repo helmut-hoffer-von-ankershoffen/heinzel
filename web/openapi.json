@@ -14961,7 +14961,7 @@
         "type": "object"
       },
       "ReleaseTime": {
-        "description": "When the installed release was published: the moment if known, else the day its changelog section names.",
+        "description": "The installed release's publication time or the date recorded in its changelog.",
         "properties": {
           "day": {
             "anyOf": [
@@ -14973,7 +14973,7 @@
                 "type": "null"
               }
             ],
-            "description": "The day it was released, when no moment is known.",
+            "description": "The UTC publication date or the date recorded in the changelog.",
             "title": "Day"
           },
           "published_at": {
@@ -14986,7 +14986,7 @@
                 "type": "null"
               }
             ],
-            "description": "The moment it was published (UTC): from GitHub, or the cut time in the changelog header.",
+            "description": "GitHub's publication time (UTC), if known.",
             "title": "Published At"
           },
           "source": {
@@ -30164,7 +30164,7 @@
     },
     "/system/changelog/released": {
       "get": {
-        "description": "Show when the installed version was released, by its GitHub publish time or the changelog.\n\nAsks GitHub once for the release (then remembers the answer); offline it falls back to the changelog's header,\nwhich names the cut time, or on older releases only the day.",
+        "description": "Show the installed version's GitHub publication time or changelog date.\n\nThe GitHub publication time is cached. When unavailable, the command shows the date recorded in the changelog.",
         "operationId": "system_changelog_released",
         "responses": {
           "200": {
@@ -30178,7 +30178,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Show when the installed version was released, by its GitHub publish time or the changelog.",
+        "summary": "Show the installed version's GitHub publication time or changelog date.",
         "tags": [
           "system"
         ]

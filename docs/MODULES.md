@@ -300,7 +300,7 @@ Release notes of the installed version and of newer releases.
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
 | Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring. | `hz system changelog` | `system_changelog` | `GET /system/changelog` | `GET /api/system/changelog` |  | expert |
-| Show when the installed version was released, by its GitHub publish time or the changelog. | `hz system changelog released` | `system_changelog_released` | `GET /system/changelog/released` | `GET /api/system/changelog/released` |  | expert |
+| Show the installed version's GitHub publication time or changelog date. | `hz system changelog released` | `system_changelog_released` | `GET /system/changelog/released` | `GET /api/system/changelog/released` |  | expert |
 
 Settings: [`[system.changelog]`](CONFIGURATION.md#systemchangelog).
 

@@ -98,7 +98,8 @@ function ReleaseNotes({ version }: { version: string }) {
   const changelog = useChangelog(false);
   const desktop = useDesktopVersion().data;
   const time = useReleased().data;
-  const released = time ? releaseTime(time.published_at, time.day) : null;
+  const publication = time?.source === "github";
+  const when = time?.source ? releaseTime(publication ? time.published_at : null, time.day) : null;
   const notes = typeof changelog.data === "string" ? installedReleaseNotes(changelog.data, version) : null;
   return (
     <div className="px-1.5 pb-1" aria-busy={changelog.isPending}>
@@ -117,7 +118,9 @@ function ReleaseNotes({ version }: { version: string }) {
           <div className="mt-1 text-[10px] leading-tight font-medium text-muted-foreground">
             <span className="block">{t("status.backend", { version })}</span>
             {desktop && <span className="block">{t("status.desktop", { version: desktop })}</span>}
-            {released && <span className="block">{t("status.released", { when: released })}</span>}
+            {when && (
+              <span className="block">{t(publication ? "status.released" : "status.changelogDate", { when })}</span>
+            )}
           </div>
         </div>
         <PaneAction ghost icon={InfoIcon} onClick={() => requestMenuAction("about")}>

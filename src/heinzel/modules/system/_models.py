@@ -93,13 +93,11 @@ class ReleaseNotes(BaseModel):
 
 
 class ReleaseTime(BaseModel):
-    """When the installed release was published: the moment if known, else the day its changelog section names."""
+    """The installed release's publication time or the date recorded in its changelog."""
 
     version: str = Field(description="Version of the release.")
-    published_at: dt.datetime | None = Field(
-        description="The moment it was published (UTC): from GitHub, or the cut time in the changelog header."
-    )
-    day: dt.date | None = Field(description="The day it was released, when no moment is known.")
+    published_at: dt.datetime | None = Field(description="GitHub's publication time (UTC), if known.")
+    day: dt.date | None = Field(description="The UTC publication date or the date recorded in the changelog.")
     source: Literal["github", "changelog"] | None = Field(description="Where the answer came from; none if unknown.")
 
 

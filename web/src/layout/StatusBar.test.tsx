@@ -186,7 +186,7 @@ describe("Footer items are icons with a state and a pane", () => {
       day: "2026-10-25",
       source: "github",
     },
-    "/api/system/changelog": "## [0.4.0] - 2026-10-25\n\n### Features\n\n- Something new\n",
+    "/api/system/changelog": "## [0.4.0] - 2026-10-24 06:10 UTC\n\n### Features\n\n- Something new\n",
   };
   const widthBefore = window.innerWidth;
   afterEach(() => {
@@ -506,5 +506,20 @@ describe("Footer items are icons with a state and a pane", () => {
     } finally {
       Reflect.deleteProperty(window, "heinzelDesktop");
     }
+  });
+
+  it.each([null, "2026-10-24T06:10:00Z"])("labels the fallback as a changelog date (%s)", async (published_at) => {
+    mockApi({
+      ...states,
+      "/api/system/changelog/released": { version: "0.4.0", published_at, day: "2026-10-24", source: "changelog" },
+    });
+    window.innerWidth = 1280;
+    renderAt("/doctor");
+    await userEvent
+      .setup()
+      .click(await within(await screen.findByRole("contentinfo")).findByRole("button", { name: "v0.4.0" }));
+    const pane = await screen.findByRole("region", { name: "v0.4.0" });
+    expect(await within(pane).findByText("Changelog dated 24 Oct 2026")).toBeInTheDocument();
+    expect(within(pane).queryByText(/^Released /)).not.toBeInTheDocument();
   });
 });

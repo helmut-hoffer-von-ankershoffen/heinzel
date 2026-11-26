@@ -3114,7 +3114,7 @@ Module `system.changelog`. Read-only. Result: `string \| list[ReleaseNotes]`.
 
 ## `system_changelog_released`
 
-Show when the installed version was released, by its GitHub publish time or the changelog.
+Show the installed version's GitHub publication time or changelog date.
 
 Module `system.changelog`. Read-only. Result: `ReleaseTime {version: string, published_at: string \| null, day: string \| null, source: 'github' \| 'changelog' \| null}`.
 

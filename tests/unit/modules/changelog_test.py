@@ -14,7 +14,7 @@ from heinzel.kernel import Installation, Progress
 from heinzel.modules.system import ReleaseNotes, _github
 from heinzel.modules.system import changelog as changelog_module
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, MAX_NOTES, PAGE_SIZE, GitHubReleases, clean
-from heinzel.modules.system.changelog import ChangelogSettings, as_markdown, changelog, render
+from heinzel.modules.system.changelog import ChangelogSettings, as_markdown, changelog, render, render_released
 
 pytestmark = pytest.mark.unit
 
@@ -273,13 +273,13 @@ HEADED = (
 )
 
 
-def test_changelog_header_time_is_read_with_or_without_a_time():
-    from datetime import UTC, date, datetime
+def test_changelog_preserves_the_day_with_or_without_a_cut_time():
+    from datetime import date
 
     from heinzel.modules.system._service import changelog_release_time
 
     new = changelog_release_time(HEADED, "0.9.54")
-    assert new.published_at == datetime(2026, 11, 22, 7, 41, tzinfo=UTC)
+    assert new.published_at is None
     assert new.day == date(2026, 11, 22)
     old = changelog_release_time(HEADED, "0.9.53")
     assert old.published_at is None
@@ -295,25 +295,28 @@ def test_release_time_prefers_github_caches_it_and_falls_back_offline(monkeypatc
 
     def answer(url, token, timeout):
         calls.append(url)
-        return {"published_at": "2026-11-22T08:15:30Z"}
+        return {"published_at": "2026-11-23T08:15:30Z"}
 
     monkeypatch.setattr(github, "get_json", answer)
     installation = Installation(Progress(), prefix=tmp_path, uv="uv")
     first = release_time(installation, tmp_path, "0.9.54", HEADED)
-    assert (first.source, first.published_at) == ("github", datetime(2026, 11, 22, 8, 15, 30, tzinfo=UTC))
+    publication = datetime(2026, 11, 23, 8, 15, 30, tzinfo=UTC)
+    assert (first.source, first.published_at, first.day) == ("github", publication, publication.date())
+    local_publication = publication.astimezone().strftime("%Y-%m-%d %H:%M %Z")
+    assert str(render_released(first)) == f"hz 0.9.54 was released {local_publication}."
 
     def offline(url, token, timeout):
         msg = "offline"
         raise OSError(msg)
 
     monkeypatch.setattr(github, "get_json", offline)
-    assert release_time(installation, tmp_path, "0.9.54", HEADED).source == "github"  # from the cache, no request
+    assert release_time(installation, tmp_path, "0.9.54", HEADED) == first
     assert len(calls) == 1
     fallback = release_time(installation, tmp_path, "0.9.53", HEADED)
     assert (fallback.source, fallback.published_at, fallback.day.isoformat()) == ("changelog", None, "2026-11-21")
-    cut = release_time(installation, tmp_path, "0.9.54x", HEADED.replace("0.9.54", "0.9.54x"))
-    assert cut.source == "changelog"
-    assert cut.published_at == datetime(2026, 11, 22, 7, 41, tzinfo=UTC)
+    cut = release_time(installation, tmp_path / "uncached", "0.9.54", HEADED)
+    assert (cut.source, cut.published_at, cut.day.isoformat()) == ("changelog", None, "2026-11-22")
+    assert str(render_released(cut)) == "The changelog for hz 0.9.54 is dated 2026-11-22."
 
 
 @contextmanager

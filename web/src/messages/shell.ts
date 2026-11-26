@@ -142,6 +142,7 @@ export const shell = {
   "status.backend": "Backend v{version}",
   "status.desktop": "Desktop app v{version}",
   "status.released": "Released {when}",
+  "status.changelogDate": "Changelog dated {when}",
   "status.open": "Open",
   "status.runIt": "Run",
   "state.ok": "OK",

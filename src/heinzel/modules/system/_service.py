@@ -372,25 +372,21 @@ def _moment(published: object) -> datetime | None:
     return moment.astimezone(UTC) if moment.tzinfo is not None else None
 
 
-CHANGELOG_HEADING = r"(?m)^## \[{version}\][^\n]*? - (\d{{4}}-\d\d-\d\d)(?: (\d\d:\d\d) UTC)?[ \t]*$"
+CHANGELOG_HEADING = r"(?m)^## \[{version}\][^\n]*? - (\d{{4}}-\d\d-\d\d)(?: \d\d:\d\d UTC)?[ \t]*$"
 
 
 def changelog_release_time(changelog: str, version: str) -> ReleaseTime:
-    """The day, and when written the cut time (UTC), in the header of `version`'s changelog section."""
+    """The date recorded in the header of `version`'s changelog section."""
     match = re.search(CHANGELOG_HEADING.format(version=re.escape(version)), changelog)
     if not match:
         return ReleaseTime(version=version, published_at=None, day=None, source=None)
-    day = date.fromisoformat(match[1])
-    if match[2]:
-        moment = datetime.fromisoformat(f"{match[1]}T{match[2]}:00+00:00")
-        return ReleaseTime(version=version, published_at=moment, day=day, source="changelog")
-    return ReleaseTime(version=version, published_at=None, day=day, source="changelog")
+    return ReleaseTime(version=version, published_at=None, day=date.fromisoformat(match[1]), source="changelog")
 
 
 def release_time(
     installation: Installation, cache_dir: Path, version: str, changelog: str, token: SecretStr | None = None
 ) -> ReleaseTime:
-    """When release `version` was published: GitHub's `published_at`, cached; offline, the changelog header's time."""
+    """The cached GitHub publication time or the date recorded in the changelog."""
     cached = cache_dir / f"release-time-{version}.json"
     try:
         moment = _moment(json.loads(cached.read_text(encoding="utf-8")).get("published_at"))

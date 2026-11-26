@@ -2503,11 +2503,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Show when the installed version was released, by its GitHub publish time or the changelog.
-         * @description Show when the installed version was released, by its GitHub publish time or the changelog.
+         * Show the installed version's GitHub publication time or changelog date.
+         * @description Show the installed version's GitHub publication time or changelog date.
          *
-         *     Asks GitHub once for the release (then remembers the answer); offline it falls back to the changelog's header,
-         *     which names the cut time, or on older releases only the day.
+         *     The GitHub publication time is cached. When unavailable, the command shows the date recorded in the changelog.
          */
         get: operations["system_changelog_released"];
         put?: never;
@@ -13446,17 +13445,17 @@ export interface components {
         };
         /**
          * ReleaseTime
-         * @description When the installed release was published: the moment if known, else the day its changelog section names.
+         * @description The installed release's publication time or the date recorded in its changelog.
          */
         ReleaseTime: {
             /**
              * Day
-             * @description The day it was released, when no moment is known.
+             * @description The UTC publication date or the date recorded in the changelog.
              */
             day: string | null;
             /**
              * Published At
-             * @description The moment it was published (UTC): from GitHub, or the cut time in the changelog header.
+             * @description GitHub's publication time (UTC), if known.
              */
             published_at: string | null;
             /**

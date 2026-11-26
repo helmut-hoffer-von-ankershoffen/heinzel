@@ -66,11 +66,11 @@ def local_time(moment: datetime) -> str:
 
 
 def render_released(result: ReleaseTime) -> RenderableType:
-    """When the release was done, in local time with the zone; the day only if no moment is known."""
-    if result.published_at:
+    """Show the local publication time or a labeled changelog date."""
+    if result.source == "github" and result.published_at:
         return Text(f"hz {result.version} was released {local_time(result.published_at)}.")
-    if result.day:
-        return Text(f"hz {result.version} was released {result.day.isoformat()}.")
+    if result.source == "changelog" and result.day:
+        return Text(f"The changelog for hz {result.version} is dated {result.day.isoformat()}.")
     return Text(f"When hz {result.version} was released is not known.")
 
 
@@ -142,10 +142,9 @@ def _read_changelog() -> str:
 
 @module.operation(render=render_released)
 def released(installation: Installation, kernel: Kernel, settings: ChangelogSettings) -> ReleaseTime:
-    """Show when the installed version was released, by its GitHub publish time or the changelog.
+    """Show the installed version's GitHub publication time or changelog date.
 
-    Asks GitHub once for the release (then remembers the answer); offline it falls back to the changelog's header,
-    which names the cut time, or on older releases only the day.
+    The GitHub publication time is cached. When unavailable, the command shows the date recorded in the changelog.
     """
     return release_time(installation, kernel.settings.cache_dir, __version__, _read_changelog(), settings.github_token)
 
