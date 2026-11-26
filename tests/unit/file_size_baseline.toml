@@ -8,7 +8,7 @@
 "src/heinzel/kernel/_module.py" = 1014
 "src/heinzel/kernel/_protocols.py" = 1042
 "src/heinzel/kernel/_source_loading.py" = 912
-"src/heinzel/kernel/install/_installation.py" = 1605
+"src/heinzel/kernel/install/_installation.py" = 1557
 "src/heinzel/kernel/install/_uninstall_recovery.py" = 879
 "src/heinzel/kernel/look/_contributions.py" = 805
 "src/heinzel/kernel/look/_themes.py" = 1110
@@ -19,10 +19,10 @@
 "src/heinzel/modules/heinzel/_session_operations.py" = 1308
 "src/heinzel/modules/heinzel/_user_chat.py" = 894
 "src/heinzel/modules/system/daemon/_legacy_retirement.py" = 892
-"src/heinzel/modules/system/daemon/_service.py" = 1789
-"src/heinzel/modules/system/lifecycle/_service.py" = 1201
+"src/heinzel/modules/system/daemon/_service.py" = 1788
+"src/heinzel/modules/system/lifecycle/_service.py" = 1159
 "src/heinzel/modules/system/notify/_service.py" = 1048
-"src/heinzel/modules/system/plugin/_service.py" = 2696
+"src/heinzel/modules/system/plugin/_service.py" = 2691
 "src/heinzel/modules/system/plugin/_sources.py" = 902
 "src/heinzel/modules/system/runner/chat/_service.py" = 1349
 "src/heinzel/modules/team/_service.py" = 1004

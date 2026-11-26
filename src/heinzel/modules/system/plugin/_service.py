@@ -65,7 +65,6 @@ from heinzel.modules.system.plugin._models import (
     PluginChange,
     PluginEvent,
     PluginInfo,
-    PluginKind,
     PluginLayer,
     PluginNeed,
     PluginOperation,
@@ -77,6 +76,7 @@ from heinzel.modules.system.plugin._models import (
     PluginShowcase,
     PluginUnpin,
     Source,
+    plugin_kinds,
 )
 from heinzel.modules.system.plugin._receipts import PluginReceipts
 from heinzel.modules.system.plugin._showcase import public_showcase, raw_showcase
@@ -160,17 +160,6 @@ def distributions_in_spec(spec: str) -> set[str]:
 
 TEMPLATE_OPERATIONS = frozenset({"info"})
 """Operations every plugin scaffolded from the template has (`hz <name> info`): no feature of its own."""
-
-
-def plugin_kinds(*, capabilities: bool, themes: bool, features: bool, playbooks: bool) -> list[PluginKind]:
-    """What a plugin is, in the order `PluginInfo.kinds` documents: connector, theme, capability, playbook."""
-    flags: dict[PluginKind, bool] = {
-        "connector": capabilities,
-        "theme": themes,
-        "capability": features,
-        "playbook": playbooks,
-    }
-    return [kind for kind, has in flags.items() if has]
 
 
 def short_name(distribution: str) -> str:

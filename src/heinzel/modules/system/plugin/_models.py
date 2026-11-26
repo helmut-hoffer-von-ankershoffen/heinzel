@@ -16,6 +16,17 @@ PluginKind = Literal["connector", "theme", "capability", "playbook"]
 """What a plugin is (`PluginInfo.kinds`); a plugin can be several."""
 
 
+def plugin_kinds(*, capabilities: bool, themes: bool, features: bool, playbooks: bool) -> list[PluginKind]:
+    """What a plugin is, in the order `PluginInfo.kinds` documents: connector, theme, capability, playbook."""
+    flags: dict[PluginKind, bool] = {
+        "connector": capabilities,
+        "theme": themes,
+        "capability": features,
+        "playbook": playbooks,
+    }
+    return [kind for kind, has in flags.items() if has]
+
+
 class PluginSettings(ModuleSettings):
     """Settings of the plugin module: the `[system.plugin]` table or `HZ_SYSTEM_PLUGIN__*` variables."""
 

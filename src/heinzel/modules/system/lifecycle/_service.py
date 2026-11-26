@@ -5,7 +5,6 @@ import os
 import plistlib
 import re
 import secrets
-import shlex
 import shutil
 import socket
 import stat
@@ -47,24 +46,22 @@ from heinzel.modules.system.lifecycle import _adapter_launchd as launchd
 from heinzel.modules.system.lifecycle import _adapter_systemd as systemd
 from heinzel.modules.system.lifecycle._adapter_launchd import LaunchdWebCommands
 from heinzel.modules.system.lifecycle._adapter_systemd import SystemdWebCommands
-from heinzel.modules.system.lifecycle._historical_launcher import HistoricalLauncher
 from heinzel.modules.system.lifecycle._launcher_transition import Action, LauncherTransition
 from heinzel.modules.system.lifecycle._profile import (
     default_profile,
-    environment_command,
     installation_overrides,
     require_installation_profile,
     user_profile,
     validated_profile,
 )
-from heinzel.modules.system.lifecycle._recovery_launcher import interpreter, interpreter_matches, recover_config, render
+from heinzel.modules.system.lifecycle._recovery_launcher import interpreter, interpreter_matches, recover_config
+from heinzel.modules.system.lifecycle._web_registration import MAX_PORT, WEB_SERVICE_LABEL, WebRegistration
 from heinzel.ports import ServiceManager
 
-LABEL = "io.github.helmut-hoffer-von-ankershoffen.heinzel.web"
+LABEL = WEB_SERVICE_LABEL
 UNIT = "hz-web.service"
 STARTUP_PENDING = ".heinzel-startup-pending"
 """The continuity marker an installation change keeps while its outcome is uncertain (ADR 0108)."""
-MAX_PORT = 65535
 STOP_SECONDS = 5.0
 STOP_POLL_SECONDS = 0.05
 READY_SECONDS = 12.0
@@ -137,7 +134,7 @@ class WebRemoval:
     compatibility_gates: tuple[Path, ...] = ()
 
 
-class WebService:
+class WebService(WebRegistration):
     """Install and mutate only exact recorded OS integration for one user and stable uv shim."""
 
     def __init__(  # noqa: PLR0913 - isolated OS and installation seams
@@ -263,82 +260,6 @@ class WebService:
             return LaunchdWebCommands(executable, self.uid, LABEL)
         return SystemdWebCommands(executable, UNIT)
 
-    def _launch_content(
-        self,
-        port: int,
-        generation: str,
-        profile: dict[str, str] | None = None,
-        *,
-        legacy: bool = False,
-        recovery: tuple[str, str] | None = None,
-    ) -> str:
-        guards = "".join(
-            f"if [ -e {shlex.quote(str(path))} ] || [ -L {shlex.quote(str(path))} ]; then exit 75; fi\n"
-            for path in installation_mutation_paths(self.prefix, self.directory.parent)
-        )
-        directories = dict.fromkeys(
-            [
-                str(self.uv.parent),
-                str(self.executable.parent),
-                "/opt/homebrew/bin",
-                "/usr/local/bin",
-                "/usr/bin",
-                "/bin",
-            ]
-        )
-        path = shlex.quote(":".join(directories))
-        arguments = shlex.join(
-            [
-                str(self.executable),
-                "ui",
-                *([] if legacy else ["serve"]),
-                "--no-browser",
-                "--port",
-                str(port),
-                "--supervised",
-                generation,
-            ]
-        )
-        return (
-            "#!/bin/sh\nset -eu\n"
-            "# Recovery requires the existing update authority before any mutable tool code imports.\n"
-            + render(self.platform, self.prefix, self.directory.parent, self.home, recovery)
-            + guards
-            + environment_command(self.profile if profile is None else profile)
-            + f'exec "$@" PATH={path} {arguments}\n'
-        )
-
-    def _content(self) -> str:
-        arguments = ["/bin/sh", str(self.launcher)]
-        if self.platform == "darwin":
-            return plistlib.dumps(
-                {
-                    "Label": LABEL,
-                    "ProgramArguments": arguments,
-                    "WorkingDirectory": str(self.home),
-                    "RunAtLoad": True,
-                    "KeepAlive": True,
-                    "ThrottleInterval": 10,
-                    "ProcessType": "Background",
-                    # No session URL or arbitrary startup/plugin error reaches an unrotated OS log.
-                    "StandardOutPath": "/dev/null",
-                    "StandardErrorPath": "/dev/null",
-                    "EnvironmentVariables": {
-                        "PATH": f"{self.executable.parent}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-                    },
-                },
-                sort_keys=True,
-            ).decode()
-        command = shlex.join(arguments).replace("%", "%%").replace("$", "$$")
-        directory = shlex.quote(str(self.home)).replace("%", "%%")
-        return (
-            "[Unit]\nDescription=Heinzelmännchen web workspace\nStartLimitIntervalSec=0\n\n"
-            "[Service]\nType=simple\n"
-            f"ExecStart={command}\nWorkingDirectory={directory}\n"
-            "Restart=always\nRestartSec=10\nStandardOutput=null\nStandardError=null\n\n"
-            "[Install]\nWantedBy=default.target\n"
-        )
-
     def historical_record(self, record: dict[str, JsonValue] | None) -> bool:
         """Recognized historical authority remains distinct from a current operational launcher."""
         if record is None:
@@ -377,50 +298,6 @@ class WebService:
             and selected is not None
             and interpreter_matches(selected, self.prefix)
         )
-
-    def valid_record_value(self, value: dict[str, JsonValue]) -> bool:
-        """Validate only exact current or historical tuples; this does not authorize files, a manager or effects."""
-        if set(value) != {
-            "port",
-            "generation",
-            "executable",
-            "unit",
-            "content",
-            "launcher",
-            "prefix",
-            "uv",
-            "profile",
-        }:
-            return False
-        profile = validated_profile(
-            value.get("profile"), self.home, self.directory.parent, self.prefix, self.executable
-        )
-        port, generation, uv = value.get("port"), value.get("generation"), value.get("uv")
-        if (
-            profile is None
-            or type(port) is not int
-            or not 1 <= port <= MAX_PORT
-            or not isinstance(generation, str)
-            or re.fullmatch(r"[0-9a-f]{32}", generation) is None
-            or value["executable"] != str(self.executable)
-            or value["prefix"] != str(self.prefix)
-            or value["unit"] != str(self.unit)
-            or value["content"] != self._content()
-            or not isinstance(uv, str)
-            or not Path(uv).is_absolute()
-            or len(uv) > 4 * 1024
-            or "\x00" in uv
-        ):
-            return False
-        historical = HistoricalLauncher(self.prefix, self.directory, self.executable, Path(uv), profile)
-        recovery = recover_config(str(value["launcher"]))
-        return (
-            value["uv"] == str(self.uv)
-            and value["launcher"] == self._launch_content(port, generation, profile, recovery=recovery)
-        ) or value["launcher"] in {
-            historical.render(port, generation),
-            historical.render(port, generation, legacy=True),
-        }
 
     def _record(self) -> dict[str, JsonValue] | None:
         try:
