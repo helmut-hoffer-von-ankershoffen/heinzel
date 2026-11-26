@@ -75,7 +75,17 @@ def test_guest_open_requires_workspace_authentication_without_preview_flag(brows
         thread.start()
         try:
             origin = f"http://127.0.0.1:{server.server_port}"
-            subprocess.run([str(browser_probe), origin], check=True, timeout=10)
+            subprocess.run(
+                [
+                    str(browser_probe),
+                    f"{origin}/#token={'x' * 32}",
+                    "https://example.com/",
+                    "https://workspace.example.com",
+                    "https://127.0.0.1/",
+                ],
+                check=True,
+                timeout=10,
+            )
         finally:
             server.shutdown()
             thread.join()
