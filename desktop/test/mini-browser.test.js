@@ -76,7 +76,7 @@ test("reload reports loading immediately and a late stop does not clear failure"
   const loading = await f.invoke({ action: "reload" });
   assert.equal(loading.status, "loading");
   assert.ok(loading.revision > ready.revision);
-  contents.emit("did-fail-load", {}, -105, "offline", "https://example.com", true);
+  contents.emit("did-fail-load", {}, -105, "offline", contents.getURL(), true);
   const failed = await f.invoke({ action: "state" });
   assert.equal(failed.status, "unavailable");
   assert.ok(failed.revision > loading.revision);
@@ -84,6 +84,32 @@ test("reload reports loading immediately and a late stop does not clear failure"
   const stopped = await f.invoke({ action: "state" });
   assert.equal(stopped.status, "unavailable");
   assert.equal(stopped.revision, failed.revision);
+});
+test("Electron 45 guest navigation events and failures are bound to the current main-frame URL", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://first.example/" });
+  const contents = f.views[0].webContents;
+
+  // Electron 45 emits (event, url, isSameDocument, isMainFrame, ...); the event carries initiator.
+  contents.emit("did-start-navigation", {
+    url: "https://second.example/", isSameDocument: false, isMainFrame: true, initiator: { url: "https://first.example/" },
+  }, "https://second.example/", false, true, 1, 2);
+  const loading = await f.invoke({ action: "state" });
+  assert.equal(loading.status, "loading");
+  contents.emit("did-redirect-navigation", {
+    url: "https://second-redirect.example/", isSameDocument: false, isMainFrame: true, initiator: null,
+  }, "https://second-redirect.example/", false, true, 1, 2);
+  contents.emit("did-fail-load", {}, -105, "stale first failure", "https://first.example/", true);
+  const stillLoading = await f.invoke({ action: "state" });
+  assert.equal(stillLoading.status, "loading");
+  assert.equal(stillLoading.revision, loading.revision);
+
+  contents.emit("did-fail-load", {}, -105, "stale pre-redirect failure", "https://second.example/", true);
+  assert.equal((await f.invoke({ action: "state" })).status, "loading");
+  contents.emit("did-fail-load", {}, -105, "current redirect failure", "https://second-redirect.example/", true);
+  const failed = await f.invoke({ action: "state" });
+  assert.equal(failed.status, "unavailable");
+  assert.ok(failed.revision > stillLoading.revision);
 });
 test("a superseded load rejection cannot replace the current navigation status or revision", async () => {
   const f = fixture();

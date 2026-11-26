@@ -56,7 +56,14 @@ struct NavigationIdentity<Navigation: AnyObject> {
     mutating func start(_ navigation: Navigation?, url: URL?) -> Bool {
         superseded.removeAll { $0.value == nil }
         if let navigation, wasSuperseded(navigation) { return false }
-        if navigation == nil, !expects(url) { return false }
+        if navigation == nil {
+            guard inFlight, expectedURL == url else { return false }
+            if current != nil {
+                awaitingStart = false
+                return true
+            }
+            guard expects(url) else { return false }
+        }
         if awaitingStart, let expectedURL, let url, expectedURL != url { return false }
         if let current {
             // An action-returned WKNavigation is already authoritative. An unrelated
@@ -72,11 +79,18 @@ struct NavigationIdentity<Navigation: AnyObject> {
 
     func acceptsCompletion(_ navigation: Navigation?, url: URL?) -> Bool {
         if let navigation { return current === navigation && !wasSuperseded(navigation) && inFlight }
-        return current == nil && expectedURL == url && !awaitingStart && inFlight
+        return expectedURL == url && !awaitingStart && inFlight
     }
 
     mutating func finish(_ navigation: Navigation?, url: URL?) -> Bool {
         guard acceptsCompletion(navigation, url: url) else { return false }
+        inFlight = false
+        return true
+    }
+
+    mutating func finishSameDocument(url: URL?) -> Bool {
+        guard inFlight, expectedURL == url else { return false }
+        awaitingStart = false
         inFlight = false
         return true
     }

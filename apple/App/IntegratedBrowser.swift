@@ -124,6 +124,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
     private final class Tab {
         let id = UUID().uuidString
         var view: WKWebView?
+        var urlObservation: NSKeyValueObservation?
         var navigationIdentity = NavigationIdentity<WKNavigation>()
         var status = "empty"
     }
@@ -243,7 +244,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
                 markUnavailable(tab)
                 break
             }
-            tab.navigationIdentity.attach(ObjectIdentifier(navigation), to: attempt)
+            tab.navigationIdentity.attach(navigation, to: attempt)
         default: break
         }
 
@@ -333,6 +334,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         view.uiDelegate = nil
         view.stopLoading()
         view.removeFromSuperview()
+        tab.urlObservation = nil
         tab.view = nil
     }
 
@@ -405,6 +407,17 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         view.navigationDelegate = self
         view.uiDelegate = self
         view.isHidden = true
+        // WebKit may omit navigation delegate completions for history restorations; URL KVO settles a stopped traversal.
+        tab.urlObservation = view.observe(\.url, options: [.new]) { [weak self, tabID = tab.id] _, change in
+            let changedURL = change.newValue ?? nil
+            Task { @MainActor [weak self] in
+                guard let self, let tab = self.tabs.first(where: { $0.id == tabID }), let view = tab.view else { return }
+                if !view.isLoading, tab.navigationIdentity.finishSameDocument(url: changedURL ?? view.url) {
+                    tab.status = "ready"
+                }
+                if tab === self.selected { self.pageRevision &+= 1 }
+            }
+        }
         workspace.addSubview(view)
         tab.view = view
         updateVisibility()

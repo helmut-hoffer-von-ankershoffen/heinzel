@@ -29,9 +29,16 @@ struct BrowserNavigationIdentityTests {
         precondition(identity.finish(pageNavigation, url: oldURL))
 
         let cachedAttempt = identity.begin(target: oldURL)
-        identity.attach(nil, to: cachedAttempt)
-        precondition(identity.start(nil, url: oldURL), "back-forward-cache starts can use the current attempt URL")
-        precondition(identity.finish(nil, url: oldURL), "the current nil-identity navigation can finish")
+        let cachedNavigation = Token()
+        identity.attach(cachedNavigation, to: cachedAttempt)
+        precondition(identity.start(nil, url: oldURL), "back-forward-cache starts can use the attached history attempt URL")
+        precondition(identity.finish(nil, url: oldURL), "the current nil-identity history navigation can finish")
+
+        let sameDocumentAttempt = identity.begin(target: newURL)
+        let sameDocumentNavigation = Token()
+        identity.attach(sameDocumentNavigation, to: sameDocumentAttempt)
+        precondition(!identity.finishSameDocument(url: oldURL), "a stale same-document history callback cannot finish the current attempt")
+        precondition(identity.finishSameDocument(url: newURL), "same-document history traversal settles the current attempt")
 
         var retired = NavigationIdentity<Token>()
         let retiredAttempt = retired.begin(target: oldURL)

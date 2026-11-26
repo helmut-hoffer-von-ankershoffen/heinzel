@@ -214,6 +214,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     if (!surface || surface.tabs.get(guest.id) !== guest) return;
     const navigation = (guest.navigationGeneration ?? 0) + 1;
     guest.navigationGeneration = navigation;
+    guest.navigationURL = url;
     guest.status = "loading";
     surface.revision += 1;
     const failed = (error) => {
@@ -258,6 +259,15 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     if (typeof callback !== "function") return;
     const { list, ...from } = source(args);
     void pick(list, { type, ...from }).then((id) => (id ? callback(id) : cancel === undefined ? callback() : callback(cancel)));
+  };
+  const navigationEvent = (event, url, isSameDocument, isMainFrame) => {
+    if (event && typeof event === "object") return {
+      url: typeof event.url === "string" ? event.url : url,
+      isSameDocument: event.isSameDocument === true,
+      isMainFrame: event.isMainFrame === true,
+      rendererInitiated: event.initiator != null || event.isRendererInitiated === true,
+    };
+    return { url, isSameDocument: isSameDocument === true, isMainFrame: isMainFrame === true, rendererInitiated: false };
   };
   const isNewDocument = (event) => event?.isMainFrame && !event.isSameDocument;
   const partitionFor = () => {
@@ -422,7 +432,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         safeDialogs: true, disableDialogs: true, spellcheck,
       } });
       const guest = { id: newTabId(window), owner: agent ? agentOwner(agent.id) : "person", agent, paused: false, shown: false, expected: [],
-        blank: true, view, session: partition, network, status: "empty", notice: null };
+        blank: true, view, session: partition, network, status: "empty", notice: null, navigationURL: null };
       const contents = view.webContents;
       contents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
       const refuseCredentials = (event, ...args) => {
@@ -458,11 +468,21 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       };
       contents.on("did-navigate", passkeyPage);
       contents.on("did-navigate-in-page", passkeyPage);
-      contents.on("did-start-navigation", (...args) => {
-        const details = args[1] ?? args[0];
+      contents.on("did-start-navigation", (event, url, isSameDocument, isMainFrame) => {
+        const details = navigationEvent(event, url, isSameDocument, isMainFrame);
         if (isNewDocument(details)) guest.notice = null;
-        if (isNewDocument(details) && details.isRendererInitiated)
+        if (!isNewDocument(details)) return;
+        // Electron 45 supplies the navigation event as arg 1, with `initiator` as its
+        // renderer-origin signal; matching app-started URLs keep their load promise current.
+        if (details.rendererInitiated || details.url !== guest.navigationURL)
           guest.navigationGeneration = (guest.navigationGeneration ?? 0) + 1;
+        guest.navigationURL = details.url;
+        guest.status = "loading";
+        surfaceOf(window).revision += 1;
+      });
+      contents.on("did-redirect-navigation", (event, url, isSameDocument, isMainFrame) => {
+        const details = navigationEvent(event, url, isSameDocument, isMainFrame);
+        if (isNewDocument(details)) guest.navigationURL = details.url;
       });
       contents.on("login", (event, _details, info, callback) => {
         event.preventDefault();
@@ -513,8 +533,11 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       }
       contents.on("did-start-loading", () => { guest.status = "loading"; surfaceOf(window).revision += 1; });
       contents.on("did-stop-loading", () => { if (guest.status === "loading") { guest.status = "ready"; surfaceOf(window).revision += 1; } });
-      contents.on("did-fail-load", (_event, code, _description, _url, mainFrame) => {
-        if (mainFrame && code !== -3) { guest.status = "unavailable"; surfaceOf(window).revision += 1; }
+      contents.on("did-fail-load", (_event, code, _description, url, mainFrame) => {
+        if (mainFrame && code !== -3 && url === guest.navigationURL) {
+          guest.status = "unavailable";
+          surfaceOf(window).revision += 1;
+        }
       });
       contents.on("render-process-gone", () => {
         guest.status = "unavailable";
@@ -817,15 +840,18 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       const history = guest.view.webContents.navigationHistory;
       if (action === "back" && history.canGoBack()) {
         guest.navigationGeneration = (guest.navigationGeneration ?? 0) + 1;
+        guest.navigationURL = null;
         guest.status = "loading"; surface.revision += 1; history.goBack();
       }
       if (action === "forward" && history.canGoForward()) {
         guest.navigationGeneration = (guest.navigationGeneration ?? 0) + 1;
+        guest.navigationURL = null;
         guest.status = "loading"; surface.revision += 1; history.goForward();
       }
       if (action === "reload") {
         // Report the accepted reload immediately; did-start-loading may arrive after this IPC reply.
         guest.navigationGeneration = (guest.navigationGeneration ?? 0) + 1;
+        guest.navigationURL = guest.view.webContents.getURL();
         guest.status = "loading";
         surface.revision += 1;
         guest.view.webContents.reload();
