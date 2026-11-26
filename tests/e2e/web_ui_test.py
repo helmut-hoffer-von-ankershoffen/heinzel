@@ -125,6 +125,17 @@ def verify_stream_fixture(url: str) -> None:
     assert any(item["name"] == "fixture-radio" and item["stream"] for item in sound["soundscapes"])
 
 
+def verify_tracks_fixture(url: str) -> None:
+    """Check the real backend admits the album's media origin, and no frame, before the browser plays a tone."""
+    parsed = urlsplit(url)
+    assert parsed.scheme == "http"
+    assert parsed.hostname == "127.0.0.1"
+    with urlopen(f"http://127.0.0.1:{parsed.port}/", timeout=10) as response:
+        policy = response.headers.get("Content-Security-Policy", "")
+    assert policy.endswith("; media-src https://media.heinzel.team")
+    assert "frame-src" not in policy
+
+
 @pytest.fixture
 def environment(tmp_path):
     """Made-up configuration in temporary directories; a BROWSER that records the URL instead of opening it."""
@@ -719,7 +730,16 @@ MOBILE_VIEWPORTS = (
     "wide-landscape",
     "short-landscape",
 )
-MOBILE_SECTIONS = (*MOBILE_VIEWPORTS, "phone", "share-chromium", "share-webkit", "updates-actions", "native-layout")
+NATIVE_AUDIO_SECTIONS = ("native-audio-chromium", "native-audio-webkit")
+MOBILE_SECTIONS = (
+    *MOBILE_VIEWPORTS,
+    "phone",
+    "share-chromium",
+    "share-webkit",
+    "updates-actions",
+    "native-layout",
+    *NATIVE_AUDIO_SECTIONS,
+)
 # The driver child's deadline per section. One section is a seventh or less of what the single 300 s child covered
 # (all of it took 205 s on Ubuntu and 294 s on macOS; a section ran in 15-45 s locally), so this leaves a section 2.5x
 # its expected time, and a hung one fails in two minutes instead of five.
@@ -745,6 +765,15 @@ def check_mobile_result(section, result):
             "copy": True,
             "unsupported": True,
             "wraps": True,
+        }
+    elif section in NATIVE_AUDIO_SECTIONS:
+        assert result["engine"].startswith("WebKit " if section.endswith("webkit") else "Chromium ")
+        assert result["cases"] == []
+        assert result["nativeAudio"] == {
+            "viewports": len(MOBILE_VIEWPORTS),
+            "nothingBeforePlay": True,
+            "advanced": True,
+            "policy": True,
         }
     elif section == "phone":
         assert result["cases"] == []
@@ -772,6 +801,15 @@ def report_mobile_time(capfd, section, begun):
         sys.stderr.write(f"Mobile section {section}: {time.monotonic() - begun:.1f} s of {MOBILE_CHILD_SECONDS} s\n")
 
 
+def prepare_mobile_section(env, section):
+    """Set the section's server up; return its fixture check and whether it runs in WebKit."""
+    if section in NATIVE_AUDIO_SECTIONS:
+        env |= {"HZ_FEATURES": "native_audio", "HZ_SYSTEM_SOUND__NAME": "fixture-album"}
+        return verify_tracks_fixture, section.endswith("webkit")
+    engine = os.environ.get("PLAYWRIGHT_BROWSER")
+    return verify_stream_fixture, section == "share-webkit" or (section != "share-chromium" and engine == "webkit")
+
+
 @pytest.mark.timeout(600)
 @pytest.mark.e2e_early
 @pytest.mark.parametrize("section", MOBILE_SECTIONS)
@@ -780,9 +818,7 @@ def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(envi
     env, _recorded = environment
     web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
-    use_webkit = section == "share-webkit" or (
-        section != "share-chromium" and os.environ.get("PLAYWRIGHT_BROWSER") == "webkit"
-    )
+    verify_fixture, use_webkit = prepare_mobile_section(env, section)
     subprocess.run(
         [*run, "exec", "playwright-core", "install", "webkit" if use_webkit else "chromium"],
         cwd=REPO,
@@ -802,7 +838,7 @@ def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(envi
         assert url.startswith("http://127.0.0.1:")
         assert "#token=" in url
         token = parse_qs(urlsplit(url).fragment).get("token", [""])[0]
-        verify_stream_fixture(url)
+        verify_fixture(url)
         begun = time.monotonic()
         try:
             driven = subprocess.run(

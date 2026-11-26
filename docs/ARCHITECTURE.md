@@ -243,6 +243,12 @@ stay mounted. On phones, the World Clock, Chat and Terminal header actions scrol
 back to the main screen. Reduced motion uses an immediate transition. The header and footer stay visible while scrolling, except in the full-screen
 terminal. New panels use the same renderer rather than adding another stack or viewport rule; [ADR 0089](adr/0089-one-selected-workspace-panel.md) records the boundary.
 
+A stream soundscape may also carry ordered tracks
+([ADR 0166](adr/0166-soundscapes-may-play-native-tracks-from-an-allowlisted-media-host.md), dark behind `native_audio`).
+They play in one plain audio element from an origin of the kernel's `MEDIA_ORIGINS`, admitted by `media-src` only while
+they are in effect; Media Session gives the system's play, pause, previous and next. They follow the stream's volume
+rules below.
+
 On iPhone and iPad, embedded YouTube volume belongs to the device's volume buttons. The sound picker explains this
 instead of offering a slider or typing ducking; layered Web Audio soundscapes keep both. Stream pause, meeting mute
 and mute during voice input use the player's pause/mute commands rather than volume fades.

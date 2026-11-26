@@ -438,6 +438,7 @@ from heinzel.kernel.look._contributions import (
     link_problem,
 )
 from heinzel.kernel.look._soundscapes import (
+    MEDIA_ORIGINS,
     SOUND_CSP,
     SOUND_ROUTE,
     STREAM_PROVIDERS,
@@ -447,6 +448,7 @@ from heinzel.kernel.look._soundscapes import (
     Soundscape,
     SoundscapeLet,
     SoundStream,
+    SoundTrack,
     StreamProvider,
     ThemeChoice,
 )
@@ -522,6 +524,7 @@ __all__ = [
     "MAX_WINDOW",
     "MCP_HTTP",
     "MCP_STDIO",
+    "MEDIA_ORIGINS",
     "MODES",
     "NO_ADAPTER",
     "PREREQUISITE_CONTEXTS",
@@ -847,6 +850,7 @@ __all__ = [
     "SoundEarcon",
     "SoundLayer",
     "SoundStream",
+    "SoundTrack",
     "Soundscape",
     "SoundscapeLet",
     "SourceFailure",

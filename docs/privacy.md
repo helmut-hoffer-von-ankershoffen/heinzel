@@ -5,7 +5,7 @@ description: What data is processed when you visit heinzel.team or use the hz ap
 
 # Privacy notice
 
-*Status: 1 November 2026.*
+*Status: 22 November 2026.*
 
 ## In short
 
@@ -113,7 +113,7 @@ agencies, no advertising networks and no social plug-ins.
 ## 9. The hz app (Heinzelmännchen)
 
 The `hz` app is free software that you install and run on your own computer. We operate no service the app sends data
-to. Having reviewed the source code (the Python package, the web interface and the desktop shell):
+to; a media host is planned for a preview feature (see "Music tracks" below). Having reviewed the source code (the Python package, the web interface and the desktop shell):
 
 - **No telemetry.** The app contains no code that sends usage data, crash reports or metrics to us or to third parties; this is a
   project rule ([ADR 0027](adr/0027-nothing-is-sent-home.md)). The `hz report` command writes a local log in your state directory and copies it into your own team's repository only
@@ -152,6 +152,17 @@ to. Having reviewed the source code (the Python package, the web interface and t
   and are subject to its terms.
 - **Soundscapes.** The local web interface embeds YouTube only after you press Play on a streamed soundscape (by default
   through `youtube-nocookie.com`).
+- **Music tracks (preview, off by default; the media host does not exist yet).** If you switch on `native_audio`, a
+  soundscape can play tracks from `media.heinzel.team`, only after you press Play. We plan to run that host on
+  Cloudflare. Until then the name only redirects through Cloudflare, and the app refuses the redirect. We will update
+  this notice before the host serves audio.
+  - *What it receives:* your IP address, browser and system details (the desktop app adds its name and version),
+    language, which tracks and parts of them load and when, and any cookie that host or `heinzel.team` had set. It
+    gets no referrer and not the app's address.
+  - *Purpose:* delivering the music you asked to play.
+  - *Legal basis:* Art. 6(1)(f) GDPR. <!-- LAWYER: legal basis is a proposal -->
+  - *Recipient and third country:* Cloudflare, Inc., USA, as described in section 4.
+  - *Retention:* determined by Cloudflare. <!-- LAWYER: confirm once the host exists -->
 - **Local data.** Configuration, profile (handle, GitHub login, name, work email, if you enter them), chat history,
   telemetry logs and caches are files in your user folders; credentials are in the operating system's keychain. The app
   transfers data only if you set a destination (for example `[system.state] personal`) or use team features, and then
