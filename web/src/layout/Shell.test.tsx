@@ -24,15 +24,27 @@ const answers = {
 };
 
 describe("Shell", () => {
-  it("reserves the native workspace slot and applies the home inset once", async () => {
+  it("reserves the workspace slot and adds the home inset only after the native handoff", async () => {
+    let bottom = 0;
     const reportSlot = vi.fn().mockResolvedValue(true);
-    vi.stubGlobal("heinzelDesktop", { nativeFooter: { metrics: () => ({ width: 112, bottom: 34 }), reportSlot } });
+    vi.stubGlobal("heinzelDesktop", { nativeFooter: { metrics: () => ({ width: 112, bottom }), reportSlot } });
     try {
       mockApi({ ...answers, "/api/system/info": { version: "0.7.12", modules: [] } });
       renderAt("/doctor");
       const footer = await screen.findByRole("contentinfo");
-      expect(footer).toHaveStyle({ height: "82px", paddingBottom: "34px", paddingLeft: "112px" });
-      expect(footer.querySelector("[data-native-footer-slot]")).toHaveStyle({ width: "112px" });
+      const handoff = [
+        [0, 48],
+        [34, 82],
+        [0, 48],
+      ] as const;
+      for (const [inset, height] of handoff) {
+        act(() => {
+          bottom = inset;
+          window.dispatchEvent(new Event("heinzel-native-footer-metrics"));
+        });
+        expect(footer).toHaveStyle({ height: `${height}px`, paddingBottom: `${inset}px`, paddingLeft: "112px" });
+        expect(footer.querySelector("[data-native-footer-slot]")).toHaveStyle({ width: "112px" });
+      }
       expect(within(footer).queryByRole("button", { name: /^v\d/ })).not.toBeInTheDocument();
       expect(screen.getByTestId("app-shell").className).not.toContain("pb-[var(--hz-safe-area-bottom");
       await waitFor(() => expect(reportSlot).toHaveBeenCalled());

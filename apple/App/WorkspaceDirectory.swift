@@ -4,6 +4,11 @@ import Foundation
 import Security
 
 enum WorkspaceFooterGeometry {
+    /// Until the web slot is accepted, the native switcher and safe area sit outside the web view.
+    static func webBottomInset(safeArea: CGFloat, hasSlot: Bool) -> CGFloat {
+        hasSlot ? safeArea : 0
+    }
+
     static func deliveryIsCurrent(revision: Int, currentRevision: Int,
                                   requested: (CGFloat, CGFloat, Int), current: (CGFloat, CGFloat, Int)) -> Bool {
         revision == currentRevision && requested == current

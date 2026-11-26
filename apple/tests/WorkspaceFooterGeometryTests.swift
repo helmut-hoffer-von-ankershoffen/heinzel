@@ -2,6 +2,7 @@ import Foundation
 
 @main struct WorkspaceFooterGeometryTests {
     @MainActor static func main() async throws {
+        verifyFooterHandoff()
         let viewport = CGSize(width: 390, height: 844)
         let valid: [String: NSNumber] = ["x": 0, "y": 762, "width": 100, "height": 48,
                                                 "viewportWidth": 390, "viewportHeight": 844]
@@ -52,6 +53,30 @@ import Foundation
         verifyCloudSyncPreference()
         await verifyVersionRefresh(now: now)
         print("PASS: native footer slot is bounded to the current viewport")
+    }
+
+    private static func verifyFooterHandoff() {
+        for (width, height, safeArea, left) in [(390, 844, 34, 0), (844, 390, 21, 44), (390, 844, 0, 0)] {
+            let row = 48
+            let fallbackHeight = height - safeArea - row
+            let fallbackViewport = CGSize(width: width, height: fallbackHeight)
+            let integratedViewport = CGSize(width: width, height: height)
+            let fallback: [String: NSNumber] = ["x": .init(value: left), "y": .init(value: fallbackHeight - row),
+                "width": 100, "height": 48, "viewportWidth": .init(value: width),
+                "viewportHeight": .init(value: fallbackHeight)]
+            let integrated: [String: NSNumber] = ["x": .init(value: left), "y": .init(value: fallbackHeight),
+                "width": 100, "height": 48, "viewportWidth": .init(value: width), "viewportHeight": .init(value: height)]
+            let nativeBottom = CGFloat(safeArea)
+            let fallbackBottom = WorkspaceFooterGeometry.webBottomInset(safeArea: nativeBottom, hasSlot: false)
+            let integratedBottom = WorkspaceFooterGeometry.webBottomInset(safeArea: nativeBottom, hasSlot: true)
+            let fallbackSlot = WorkspaceFooterGeometry.slot(fallback, viewport: fallbackViewport, width: 100, bottom: fallbackBottom)
+            let integratedSlot = WorkspaceFooterGeometry.slot(integrated, viewport: integratedViewport, width: 100, bottom: integratedBottom)
+            precondition(fallbackSlot?.maxY == fallbackViewport.height)
+            precondition(integratedSlot?.minY == fallbackViewport.height)
+            precondition(integratedSlot?.maxY == integratedViewport.height - nativeBottom)
+            precondition(WorkspaceFooterGeometry.slot(fallback, viewport: integratedViewport, width: 100, bottom: integratedBottom) == nil)
+            precondition(WorkspaceFooterGeometry.slot(integrated, viewport: fallbackViewport, width: 100, bottom: fallbackBottom) == nil)
+        }
     }
 
     private static func verifyCloudSyncPreference() {
