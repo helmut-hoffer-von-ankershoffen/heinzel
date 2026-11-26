@@ -308,7 +308,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
   const surfaceOf = (window) => {
     let surface = surfaces.get(window);
     if (surface) return surface;
-    surface = { tabs: new Map(), selected: null, bounds: null, shown: false, opening: null, pending: 0, pendingAgents: 0, link: null };
+    surface = { tabs: new Map(), selected: null, bounds: null, shown: false, opening: null, pending: 0, pendingAgents: 0, link: null, revision: 0 };
     const onClosed = () => close(window);
     const onNavigation = (event) => { if (isNewDocument(event)) close(window); };
     const onBlur = () => { for (const guest of surface.tabs.values()) { guest.view.setVisible(false); if (guest.agent) guest.shown = false; } };
@@ -492,13 +492,14 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         };
         for (const name of INPUT_CHANNELS) contents.on(name, own(name));
       }
-      contents.on("did-start-loading", () => { guest.status = "loading"; });
-      contents.on("did-stop-loading", () => { if (guest.status === "loading") guest.status = "ready"; });
+      contents.on("did-start-loading", () => { guest.status = "loading"; surfaceOf(window).revision += 1; });
+      contents.on("did-stop-loading", () => { if (guest.status === "loading") { guest.status = "ready"; surfaceOf(window).revision += 1; } });
       contents.on("did-fail-load", (_event, code, _description, _url, mainFrame) => {
-        if (mainFrame && code !== -3) guest.status = "unavailable";
+        if (mainFrame && code !== -3) { guest.status = "unavailable"; surfaceOf(window).revision += 1; }
       });
       contents.on("render-process-gone", () => {
         guest.status = "unavailable";
+        surfaceOf(window).revision += 1;
         view.setVisible(false);
       });
       window.contentView.addChildView(view);
@@ -507,7 +508,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       surface.tabs.set(guest.id, guest);
       // An agent's new tab never takes the person's view; the person selects it to watch.
       if (agent) view.setBounds(surface.bounds ?? DEFAULT_BOUNDS);
-      else surface.selected = guest.id;
+      else { surface.selected = guest.id; surface.revision += 1; }
       apply(window, surface);
       return guest;
     } catch {
@@ -530,8 +531,9 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     const tabs = [...(surface?.tabs.values() ?? [])].map((guest) => tabInfo(guest, guest.id === surface.selected));
     const guest = target ?? surface?.tabs.get(surface.selected);
     const link = surface?.link ?? null;
-    if (!guest) return { status: "empty", url: "", canGoBack: false, canGoForward: false, notice: null, tabs, selected: null, link };
+    if (!guest) return { status: "empty", url: "", canGoBack: false, canGoForward: false, notice: null, tabs, selected: null, link, revision: surface?.revision ?? 0 };
     return {
+      revision: surface?.revision ?? 0,
       status: guest.status,
       url: guest.view.webContents.getURL(),
       canGoBack: guest.view.webContents.navigationHistory.canGoBack(),
@@ -728,6 +730,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       if (action === "select-tab") {
         tabOf(surface, request.tab);
         surface.selected = request.tab;
+        surface.revision += 1;
         apply(window, surface);
         return state(window);
       }
@@ -770,7 +773,9 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         surface = surfaces.get(window);
         if (url) {
           guest.blank = false;
-          void guest.view.webContents.loadURL(url).catch(() => { guest.status = "unavailable"; });
+          guest.status = "loading";
+          surface.revision += 1;
+          void guest.view.webContents.loadURL(url).catch(() => { guest.status = "unavailable"; surface.revision += 1; });
         }
         if (action === "new-tab") return state(window);
       }
@@ -793,11 +798,12 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       }
       if (action === "hide") { surface.shown = false; apply(window, surface); }
       const history = guest.view.webContents.navigationHistory;
-      if (action === "back" && history.canGoBack()) history.goBack();
-      if (action === "forward" && history.canGoForward()) history.goForward();
+      if (action === "back" && history.canGoBack()) { guest.status = "loading"; surface.revision += 1; history.goBack(); }
+      if (action === "forward" && history.canGoForward()) { guest.status = "loading"; surface.revision += 1; history.goForward(); }
       if (action === "reload") {
         // Report the accepted reload immediately; did-start-loading may arrive after this IPC reply.
         guest.status = "loading";
+        surface.revision += 1;
         guest.view.webContents.reload();
       }
       // Only the guest's own current location, under the same public-HTTPS rule as any navigation.

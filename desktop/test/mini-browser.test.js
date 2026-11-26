@@ -43,12 +43,12 @@ test("diagnostics report actual native visibility without page details", async (
   const f = fixture();
   await f.invoke({ action: "navigate", url: "https://example.com" });
   await f.invoke({ action: "layout", bounds: { x: 10, y: 10, width: 200, height: 200 } });
-  assert.deepEqual(await f.invoke({ action: "diagnostics" }), { focused: true, visible: true, status: "empty", reason: "draw-enabled" });
+  assert.deepEqual(await f.invoke({ action: "diagnostics" }), { focused: true, visible: true, status: "loading", reason: "draw-enabled" });
   await f.invoke({ action: "hide" });
   assert.equal((await f.invoke({ action: "diagnostics" })).visible, false);
   f.owner.isFocused = () => false;
   await f.invoke({ action: "layout", bounds: { x: 10, y: 10, width: 200, height: 200 } });
-  assert.deepEqual(await f.invoke({ action: "diagnostics" }), { focused: false, visible: false, status: "empty", reason: "unfocused" });
+  assert.deepEqual(await f.invoke({ action: "diagnostics" }), { focused: false, visible: false, status: "loading", reason: "unfocused" });
 });
 
 test("native guest never borrows the product session/preload", async () => {
@@ -70,13 +70,20 @@ test("reload reports loading immediately and a late stop does not clear failure"
   const contents = f.views[0].webContents;
   contents.emit("did-start-loading");
   contents.emit("did-stop-loading");
-  assert.equal((await f.invoke({ action: "state" })).status, "ready");
+  const ready = await f.invoke({ action: "state" });
+  assert.equal(ready.status, "ready");
 
-  assert.equal((await f.invoke({ action: "reload" })).status, "loading");
+  const loading = await f.invoke({ action: "reload" });
+  assert.equal(loading.status, "loading");
+  assert.ok(loading.revision > ready.revision);
   contents.emit("did-fail-load", {}, -105, "offline", "https://example.com", true);
-  assert.equal((await f.invoke({ action: "state" })).status, "unavailable");
+  const failed = await f.invoke({ action: "state" });
+  assert.equal(failed.status, "unavailable");
+  assert.ok(failed.revision > loading.revision);
   contents.emit("did-stop-loading");
-  assert.equal((await f.invoke({ action: "state" })).status, "unavailable");
+  const stopped = await f.invoke({ action: "state" });
+  assert.equal(stopped.status, "unavailable");
+  assert.equal(stopped.revision, failed.revision);
 });
 test("all permissions, downloads, popup dispatch and local redirects/subresources refuse", async () => {
   const f = fixture(); await f.invoke({ action: "navigate", url: "https://example.com" });
@@ -236,7 +243,7 @@ test("a passkey step or a WebAuthn failure shows a visible note that passkeys ma
 test("Open in browser hands only the guest's own public HTTPS location to the OS", async () => {
   const opened = [];
   const f = fixture(undefined, { openExternal: async (url, window) => { assert.equal(window, f.owner); opened.push(url); return true; } });
-  assert.deepEqual(await f.invoke({ action: "external" }), { status: "empty", url: "", canGoBack: false, canGoForward: false, notice: null, tabs: [], selected: null, link: null });
+  assert.deepEqual(await f.invoke({ action: "external" }), { status: "empty", url: "", canGoBack: false, canGoForward: false, notice: null, tabs: [], selected: null, link: null, revision: 0 });
   await f.invoke({ action: "navigate", url: "https://example.com/page?q=1" });
   await f.invoke({ action: "external" });
   assert.deepEqual(opened, ["https://example.com/page?q=1"]);
