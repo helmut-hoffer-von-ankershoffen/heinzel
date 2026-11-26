@@ -7,6 +7,7 @@
 contexts.py check      every file has exactly one owner and pyproject.toml holds the generated contracts
 contexts.py write      regenerate the contracts block in pyproject.toml
 contexts.py owner FILE the context that owns FILE
+contexts.py select     changed paths on stdin: python=true|false (level L0)
 """
 
 from __future__ import annotations
