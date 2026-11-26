@@ -64,7 +64,8 @@ def _stop_process_group(process: subprocess.Popen[str], grace: float = 2.0) -> N
 
 def run_process(command: list[str], cwd: Path, environment: dict[str, str], output: TextIO, timeout: int = 600) -> int:
     """Run one journey command in a private process group, cleaning descendants on interruption."""
-    process = subprocess.Popen(  # noqa: S603 - explicit tools and artifact paths, no shell
+    # The starter builds the argument list from its tools and candidate artifact.
+    process = subprocess.Popen(  # noqa: S603
         command,
         cwd=cwd,
         env=environment,
