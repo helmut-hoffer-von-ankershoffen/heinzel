@@ -63,6 +63,21 @@ test("native guest never borrows the product session/preload", async () => {
   assert.equal(f.options[0].webPreferences.sandbox, true);
   assert.equal(f.options[0].webPreferences.contextIsolation, true);
 });
+
+test("reload reports loading immediately and a late stop does not clear failure", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://example.com" });
+  const contents = f.views[0].webContents;
+  contents.emit("did-start-loading");
+  contents.emit("did-stop-loading");
+  assert.equal((await f.invoke({ action: "state" })).status, "ready");
+
+  assert.equal((await f.invoke({ action: "reload" })).status, "loading");
+  contents.emit("did-fail-load", {}, -105, "offline", "https://example.com", true);
+  assert.equal((await f.invoke({ action: "state" })).status, "unavailable");
+  contents.emit("did-stop-loading");
+  assert.equal((await f.invoke({ action: "state" })).status, "unavailable");
+});
 test("all permissions, downloads, popup dispatch and local redirects/subresources refuse", async () => {
   const f = fixture(); await f.invoke({ action: "navigate", url: "https://example.com" });
   const session = f.sessions[0], contents = f.views[0].webContents;

@@ -795,7 +795,11 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       const history = guest.view.webContents.navigationHistory;
       if (action === "back" && history.canGoBack()) history.goBack();
       if (action === "forward" && history.canGoForward()) history.goForward();
-      if (action === "reload") guest.view.webContents.reload();
+      if (action === "reload") {
+        // Report the accepted reload immediately; did-start-loading may arrive after this IPC reply.
+        guest.status = "loading";
+        guest.view.webContents.reload();
+      }
       // Only the guest's own current location, under the same public-HTTPS rule as any navigation.
       if (action === "external") await openExternal(browserUrl(guest.view.webContents.getURL(), connection()?.origin), window);
       return state(window, guest);
