@@ -2,6 +2,7 @@
 
 import fcntl
 import json
+import shlex
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -30,7 +31,13 @@ def installed_launch(tmp_path, monkeypatch):
     installed.write_text("#!/bin/sh\nprintf 'old generation started\\n'\n")
     installed.chmod(0o700)
     executable.symlink_to(installed)
-    (prefix / "bin" / "python").symlink_to(Path(sys._base_executable).resolve(strict=True))
+    # A physical executable in the fixture keeps the external interpreter checks independent of the
+    # host Python's directory permissions. Forward every argument to the real interpreter.
+    python = root / "python"
+    base_python = Path(sys._base_executable).resolve(strict=True)
+    python.write_text(f'#!/bin/sh\nexec {shlex.quote(str(base_python))} "$@"\n')
+    python.chmod(0o700)
+    (prefix / "bin" / "python").symlink_to(python)
     (prefix / "uv-receipt.toml").write_text(f"""
 [tool]
 requirements = [{{ name = "heinzel" }}]
