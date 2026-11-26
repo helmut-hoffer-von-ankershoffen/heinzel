@@ -1,5 +1,7 @@
 """Service of the system module."""
 
+import contextlib
+import hashlib
 import importlib.metadata
 import json
 import logging
@@ -10,7 +12,7 @@ import unicodedata
 import urllib.error
 import urllib.parse
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Literal, cast, override
 from urllib.parse import urlsplit
@@ -23,7 +25,14 @@ from heinzel.kernel import EDGE_WHEEL_PREFIX, EdgeRelease, Installation, Release
 from heinzel.kernel._desktop_app import desktop_app_here
 from heinzel.kernel._logging import log_event
 from heinzel.modules.system import _github
-from heinzel.modules.system._models import InstalledPlugin, ModuleInfo, ReleaseCheck, ReleaseNotes, SystemInfo
+from heinzel.modules.system._models import (
+    InstalledPlugin,
+    ModuleInfo,
+    ReleaseCheck,
+    ReleaseNotes,
+    ReleaseTime,
+    SystemInfo,
+)
 from heinzel.modules.system._pypi import PYPI, fetch
 
 DEFAULT_REPOSITORY = "helmut-hoffer-von-ankershoffen/heinzel"
@@ -350,7 +359,59 @@ def _release_notes(item: object, repository: str) -> ReleaseNotes | None:
     notes = clean(body).strip() if isinstance(body, str) else ""
     if len(notes) > MAX_NOTES:
         notes = _cut(notes, url)
-    return ReleaseNotes(version=str(version), date=day, notes=notes, url=url)
+    return ReleaseNotes(version=str(version), date=day, published_at=_moment(published), notes=notes, url=url)
+
+
+def _moment(published: object) -> datetime | None:
+    """GitHub's `published_at` as an aware UTC moment; None if absent or odd."""
+    if not isinstance(published, str):
+        return None
+    try:
+        moment = datetime.fromisoformat(published)
+    except ValueError:
+        return None
+    return moment.astimezone(UTC) if moment.tzinfo is not None else None
+
+
+CHANGELOG_HEADING = r"(?m)^## \[{version}\][^\n]*? - (\d{{4}}-\d\d-\d\d)(?: \d\d:\d\d UTC)?[ \t]*$"
+
+
+def changelog_release_time(changelog: str, version: str) -> ReleaseTime:
+    """The date recorded in the header of `version`'s changelog section."""
+    match = re.search(CHANGELOG_HEADING.format(version=re.escape(version)), changelog)
+    if not match:
+        return ReleaseTime(version=version, published_at=None, day=None, source=None)
+    return ReleaseTime(version=version, published_at=None, day=date.fromisoformat(match[1]), source="changelog")
+
+
+def release_time(
+    installation: Installation, cache_dir: Path, version: str, changelog: str, token: SecretStr | None = None
+) -> ReleaseTime:
+    """The cached GitHub publication time or the date recorded in the changelog."""
+    repository = installed_releases(installation).repository
+    identity = hashlib.sha256(repository.encode("utf-8")).hexdigest()
+    cached = cache_dir / f"release-time-{identity}-{version}.json"
+    try:
+        moment = _moment(json.loads(cached.read_text(encoding="utf-8")).get("published_at"))
+    except (OSError, ValueError, AttributeError):
+        moment = None
+    if moment is None:
+        try:
+            answer = _github.get_json(
+                f"{_github.GITHUB_API}/repos/{repository}/releases/tags/v{version}", token, RELEASE_TIMEOUT
+            )
+            moment = (
+                _moment(cast("dict[str, object]", answer).get("published_at")) if isinstance(answer, dict) else None
+            )
+        except (OSError, ValueError, TypeError):
+            moment = None
+        if moment is not None:
+            with contextlib.suppress(OSError):
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                cached.write_text(json.dumps({"published_at": moment.isoformat()}), encoding="utf-8")
+    if moment is not None:
+        return ReleaseTime(version=version, published_at=moment, day=moment.date(), source="github")
+    return changelog_release_time(changelog, version)
 
 
 def github_releases(installation: Installation, kernel: Kernel) -> GitHubReleases:
@@ -365,14 +426,14 @@ def installed_releases(installation: Installation, channel: str = "stable") -> G
     return GitHubReleases(repository_of(requirements[0] if requirements else None), channel)
 
 
-def _installed_on(distribution: str) -> date | None:
-    """The day a distribution was installed here: the change time of its METADATA file; None if it can't be read."""
+def _installed_on(distribution: str) -> datetime | None:
+    """The moment a distribution was installed here: the change time of its METADATA file; None if it can't be read."""
     try:
         dist = importlib.metadata.distribution(distribution)
         metadata = next((file for file in dist.files or [] if file.name == "METADATA"), None)
         if metadata is None:
             return None
-        return datetime.fromtimestamp(Path(str(dist.locate_file(metadata))).stat().st_mtime).astimezone().date()
+        return datetime.fromtimestamp(Path(str(dist.locate_file(metadata))).stat().st_mtime).astimezone()
     except (importlib.metadata.PackageNotFoundError, OSError, ValueError):
         return None
 
