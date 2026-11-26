@@ -7,6 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { recordSurface } from "@/lib/surfaceDiagnostics";
+import { zoneDateTime } from "@/lib/zoneTime";
 import { AboutDialog, clientHere, desktopApp, detailsText } from "./AboutDialog";
 import { requestMenuAction } from "./menu";
 
@@ -259,9 +260,10 @@ describe("About dialog", () => {
   it("shows versions with their dates, a first-party chip, and nothing for an unknown date", () => {
     show();
     act(() => requestMenuAction("about"));
-    expect(screen.getByText(/^Installed Nov 8, 2026, \d\d:\d\d$/)).toBeInTheDocument();
+    expect(screen.getByText(`Installed ${zoneDateTime(new Date(info.installed))}`)).toBeInTheDocument();
     const rows = screen.getAllByRole("row");
-    expect(within(rows[1] as HTMLElement).getByText(/^Nov 1, 2026, \d\d:\d\d$/)).toBeInTheDocument();
+    const installed = zoneDateTime(new Date("2026-11-01T09:05:00Z"));
+    expect(within(rows[1] as HTMLElement).getByText(installed)).toBeInTheDocument();
     expect(within(rows[2] as HTMLElement).getByText("first-party")).toBeInTheDocument();
     expect(within(rows[2] as HTMLElement).queryByText(/unknown|Nov/)).toBeNull();
   });

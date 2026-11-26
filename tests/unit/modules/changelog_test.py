@@ -90,6 +90,14 @@ def test_newer_releases_come_newest_first_without_drafts_prereleases_or_odd_tags
     assert timeout == 5
 
 
+@pytest.mark.parametrize("published_at", ["2026-10-01", "2026-10-01T12:00:00"])
+def test_newer_release_keeps_the_day_when_the_publish_instant_is_unknown(github, published_at):
+    github.pages = [[release("v1.1.0", published_at=published_at)]]
+    [note] = GitHubReleases("org/heinzel").newer_than("1.0.0", 5)
+    assert note.published_at is None
+    assert "hz 1.1.0 (2026-10-01)" in rendered([note])
+
+
 def test_pages_are_asked_until_one_reaches_the_installed_version_and_never_more_than_four(github):
     full = [release(f"v9.{n}.0") for n in range(PAGE_SIZE)]
     github.pages = [full, [*full[:-1], release("v0.1.0")]]

@@ -1,6 +1,7 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { releaseTime } from "@/lib/releaseTime";
 import { shell } from "@/test/fixtures";
 import { expectPane } from "@/test/pane";
 import { expectAccessible, mockApi } from "@/test/render";
@@ -488,7 +489,9 @@ describe("Footer items are icons with a state and a pane", () => {
     const pane = await screen.findByRole("region", { name: "v0.4.0" });
     expect(within(pane).getByText("Backend v0.4.0")).toBeInTheDocument();
     expect(within(pane).queryByText(/Desktop app/)).not.toBeInTheDocument();
-    expect(await within(pane).findByText(/^Released 25 Oct 2026, \d\d:\d\d \S+$/)).toBeInTheDocument();
+    const release = states["/api/system/changelog/released"];
+    const released = releaseTime(release.published_at, release.day);
+    expect(await within(pane).findByText(`Released ${released}`)).toBeInTheDocument();
     unmount();
     Object.defineProperty(window, "heinzelDesktop", {
       value: { about: async () => ({ version: "0.9.38", path: "/Applications/H.app" }) },

@@ -369,7 +369,7 @@ def _moment(published: object) -> datetime | None:
         moment = datetime.fromisoformat(published)
     except ValueError:
         return None
-    return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment.astimezone(UTC)
+    return moment.astimezone(UTC) if moment.tzinfo is not None else None
 
 
 CHANGELOG_HEADING = r"(?m)^## \[{version}\][^\n]*? - (\d{{4}}-\d\d-\d\d)(?: (\d\d:\d\d) UTC)?[ \t]*$"
