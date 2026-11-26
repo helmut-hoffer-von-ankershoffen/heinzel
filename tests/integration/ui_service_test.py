@@ -30,7 +30,7 @@ from heinzel.kernel import (
 from heinzel.modules.system.lifecycle._service import LABEL, WebService
 from heinzel.modules.system.runner.chat._policy import refusal
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.real_system]
 TOKEN = "t" * 43
 INSTANCE = "a" * 32
 

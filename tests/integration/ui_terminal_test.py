@@ -29,7 +29,7 @@ ORIGIN = "http://testserver"
 def client(make_kernel, monkeypatch, tmp_path):
     monkeypatch.setenv("SHELL", "/bin/sh")
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr(web.api, "LOOPBACK", web.api.LOOPBACK | {"testserver"})
+    monkeypatch.setattr(web._kit, "LOOPBACK", web._kit.LOOPBACK | {"testserver"})
     return TestClient(web.build(make_kernel(builtins=True), port=None, token=TOKEN, static=None))
 
 

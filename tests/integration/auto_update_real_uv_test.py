@@ -29,7 +29,7 @@ from heinzel.kernel.install._installation import _run
 from heinzel.modules.system.updater._announced import Announcement, environment_versions
 from heinzel.modules.system.updater._update import UpdateService
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.real_system]
 
 
 def unavailable(reason: str, environ: Mapping[str, str] | None = None) -> NoReturn:

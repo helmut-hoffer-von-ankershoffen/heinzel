@@ -104,7 +104,7 @@ src = ["src/heinzel/modules/__init__.py", "src/heinzel/modules/system/*.py"]
 
 [context.head-kit]
 summary = "what every head shares"
-src = ["src/heinzel/heads/*.py"]
+src = ["src/heinzel/heads/*.py", "src/heinzel/heads/_kit/**"]
 exclude = ["src/heinzel/modules/system/client/_mcp_tokens.py", "src/heinzel/heads/daemon_recovery.py", "src/heinzel/heads/_mcp_tokens.py"]
 
 [context.head-cli]
@@ -173,19 +173,12 @@ contexts = [
 ]
 heads = [
     "heinzel.heads._served_tools -> heinzel.heads.mcp",
-    "heinzel.heads.cli._serve -> heinzel.heads.api",
-    "heinzel.heads.cli._serve -> heinzel.heads.mcp",
-    "heinzel.heads.cli._serve -> heinzel.heads.mcp._http_check",
-    "heinzel.heads.cli._serve -> heinzel.heads.mcp._standard_project",
-    "heinzel.heads.cli._serve -> heinzel.heads.web",
-    "heinzel.heads.cli._serve -> heinzel.heads.web._supervision",
+    "heinzel.heads.cli -> heinzel.heads._compose",
+    "heinzel.heads.cli._serve -> heinzel.heads._compose",
     "heinzel.heads.web -> heinzel.heads.api",
-    "heinzel.heads.web._browser_bridge -> heinzel.heads.api",
     "heinzel.heads.web._mcp -> heinzel.heads.mcp",
-    "heinzel.heads.web._terminal -> heinzel.heads.api",
 ]
 
 # Files of an `adapters_only` context that still touch the world directly, with how many places: subprocess, time.sleep,
 # time.monotonic, datetime.now, launchctl. Moving a call behind a port lowers the number; it never rises.
 [allow.adapters]
-"src/heinzel/modules/system/lifecycle/_service.py" = 5

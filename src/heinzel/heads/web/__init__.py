@@ -52,7 +52,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from heinzel.heads import api
+from heinzel.heads import _kit, api
 from heinzel.heads._stream import StreamProgress
 from heinzel.heads.web import _browser_bridge, _terminal
 from heinzel.heads.web._auto_update import Activity, AutoUpdater, add_auto_update, as_work, counts_as_work
@@ -235,15 +235,15 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     async def guarded(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         headers = request.headers
         if not local_callback_navigation(request, port) and (
-            problem := api.request_refusal(
+            problem := _kit.request_refusal(
                 headers,
-                api.LOOPBACK,
+                _kit.LOOPBACK,
                 port,
                 allowed_origins=runtime.loaded_origins,
-                host_help=api.WEB_HOST_HELP,
+                host_help=_kit.WEB_HOST_HELP,
             )
         ):
-            response: Response = JSONResponse(status_code=api.FORBIDDEN, content={"error": problem})
+            response: Response = JSONResponse(status_code=_kit.FORBIDDEN, content={"error": problem})
         elif counts_as_work(request.method, request.url.path):
             # A chat answer or install holds off an automatic update (ADR 0116) until its body has been sent.
             response = await as_work(activity, call_next, request)
