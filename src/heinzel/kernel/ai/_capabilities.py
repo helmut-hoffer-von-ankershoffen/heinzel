@@ -140,6 +140,8 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 methods=MappingProxyType(
                     {
                         "events": "read",
+                        "calendars": "read",
+                        "events_for": "read",
                         "free_busy": "read",
                         "create_event": "write",
                         "update_event": "write",
@@ -147,6 +149,7 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                         "respond": "write",
                     }
                 ),
+                optional=frozenset({"calendars", "events_for"}),
                 checks=MappingProxyType({("free_busy", "people"): free_busy_people}),
             ),
             Capability(

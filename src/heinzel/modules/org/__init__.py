@@ -8,7 +8,7 @@ for `ProfileService` by type to learn who is acting.
 from collections.abc import Mapping
 from typing import Annotated, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from rich.console import RenderableType
 
 from heinzel import (
@@ -25,7 +25,15 @@ from heinzel import (
     Status,
 )
 from heinzel.kernel import CapabilityView
-from heinzel.modules.org._agenda import Agenda, CalendarWeek, local_now, read_agenda, read_week, status_item
+from heinzel.modules.org._agenda import (
+    Agenda,
+    CalendarSelection,
+    CalendarWeek,
+    local_now,
+    read_agenda,
+    read_week,
+    status_item,
+)
 from heinzel.modules.org._models import ROLES, OrgSettings, Profile
 from heinzel.modules.org._profile import ProfileService, ask_profile
 from heinzel.modules.org._reminder_maintenance import CalendarMaintenance
@@ -138,9 +146,21 @@ def calendar(
     view: CapabilityView,
     settings: OrgSettings,
     offset: Annotated[int, Field(ge=-52, le=52, description="Weeks before or after this week.")] = 0,
+    selection: Annotated[
+        str, Field(max_length=32768, description="Calendar exclusions and their adapter as JSON.")
+    ] = "",
 ) -> CalendarWeek:
-    """Show a week from your connected calendar."""
-    return read_week(calendar, view, local_now(settings.timezone), offset)
+    """Show a week from your connected calendar.
+
+    Raises:
+        HeinzelError: If the calendar selection is invalid.
+    """
+    try:
+        chosen = CalendarSelection.model_validate_json(selection) if selection else CalendarSelection()
+    except ValidationError:
+        msg = "The calendar selection is invalid."
+        raise HeinzelError(msg) from None
+    return read_week(calendar, view, local_now(settings.timezone), offset, chosen)
 
 
 # The web app's status bar shows it (ADR 0056): a view over `agenda`, so it is gated and private like the operation.

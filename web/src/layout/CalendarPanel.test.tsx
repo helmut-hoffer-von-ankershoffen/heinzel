@@ -12,6 +12,8 @@ import { CalendarPanel } from "./CalendarPanel";
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  localStorage.removeItem("hz.calendar.adapter");
+  localStorage.removeItem("hz.calendar.excluded.google");
 });
 
 function panel(local: boolean, service = "not installed") {
@@ -72,6 +74,90 @@ const weekOf = (events: object[]) => ({
   events,
   problem: null,
   fix: null,
+});
+
+it("combines readable calendars and preserves an explicit exclusion on reopen", async () => {
+  const calendars = [
+    { id: "personal", title: "Personal", primary: true },
+    { id: "family", title: "Family", primary: false },
+  ];
+  const entries = [
+    { ...baseEvent, calendar_id: "personal", title: "Personal meeting" },
+    { ...baseEvent, calendar_id: "family", title: "Family meeting" },
+  ];
+  const { calls } = mockApi({
+    "/api/org/calendar": (request: Request) => {
+      const value = new URL(request.url).searchParams.get("selection");
+      const selection = value ? JSON.parse(value) : null;
+      return {
+        ...weekOf(entries.filter((event) => !selection?.excluded.includes(event.calendar_id))),
+        calendars,
+        adapter: "google",
+      };
+    },
+    "/api/org/calendar-reminders-status": { enabled: false, service: "not installed" },
+  });
+  const user = userEvent.setup();
+  const view = render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter>
+        <CalendarPanel onClose={vi.fn()} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await user.click(await screen.findByText("Calendars (2)"));
+  expect(await screen.findByRole("checkbox", { name: "Personal (primary)" })).toBeChecked();
+  expect(await screen.findByRole("checkbox", { name: "Family" })).toBeChecked();
+  expect(await screen.findByRole("button", { name: /Family meeting/ })).toBeInTheDocument();
+  await expectAccessible(view.container);
+  await user.click(screen.getByRole("checkbox", { name: "Family" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: /Family meeting/ })).not.toBeInTheDocument());
+  expect(await screen.findByRole("button", { name: /Personal meeting/ })).toBeInTheDocument();
+  expect(JSON.parse(localStorage.getItem("hz.calendar.excluded.google") ?? "[]")).toEqual(["family"]);
+  view.unmount();
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter>
+        <CalendarPanel onClose={vi.fn()} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await user.click(await screen.findByText("Calendars (2)"));
+  expect(await screen.findByRole("checkbox", { name: "Family" })).not.toBeChecked();
+  const last = calls.filter((call) => new URL(call.url).pathname === "/api/org/calendar").at(-1);
+  expect(JSON.parse(new URL(last?.url ?? "").searchParams.get("selection") ?? "{}")).toEqual({
+    adapter: "google",
+    excluded: ["family"],
+  });
+});
+
+it("keeps the picker and other meetings available when one calendar fails", async () => {
+  mockApi({
+    "/api/org/calendar": {
+      ...weekOf([{ ...baseEvent, calendar_id: "personal", title: "Personal meeting" }]),
+      adapter: "google",
+      calendars: [
+        { id: "personal", title: "Personal", primary: true },
+        { id: "family", title: "Family", primary: false },
+      ],
+      warnings: ["Family: Access expired"],
+    },
+    "/api/org/calendar-reminders-status": { enabled: false, service: "not installed" },
+  });
+  const user = userEvent.setup();
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter>
+        <CalendarPanel onClose={vi.fn()} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await waitFor(() => expect(screen.getByText("Family: Access expired")).toBeInTheDocument());
+  expect(await screen.findByRole("button", { name: /Personal meeting/ })).toBeInTheDocument();
+  await user.click(screen.getByText("Calendars (2)"));
+  expect(await screen.findByRole("checkbox", { name: "Family" })).toBeChecked();
+  await user.click(screen.getByRole("checkbox", { name: "Family" }));
+  expect(JSON.parse(localStorage.getItem("hz.calendar.excluded.google") ?? "[]")).toEqual(["family"]);
 });
 
 it("Refresh aborts the older calendar read, so a stale response never overwrites the edited meeting", async () => {

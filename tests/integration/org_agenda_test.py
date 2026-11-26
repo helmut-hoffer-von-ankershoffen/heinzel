@@ -1,11 +1,13 @@
 """`hz org agenda` through the web head (ADR 0039), the footer's source, with and without a calendar bound."""
 
+import json
 from datetime import UTC, datetime, timedelta
+from typing import ClassVar
 
 import pytest
 from fastapi.testclient import TestClient
 
-from heinzel import Config, Event, FreeBusy, HeinzelError, Module, Window
+from heinzel import CalendarSource, Config, Event, FreeBusy, HeinzelError, Module, Window
 from heinzel.heads import api, web
 from heinzel.heads._exposure import exposed
 
@@ -97,3 +99,49 @@ def test_calendar_week_is_private_and_limited(make_kernel):
     assert week.status_code == 200
     assert [event["title"] for event in week.json()["events"]] == ["Standup", "Review"]
     assert web_client.get("/api/org/calendar?offset=53", headers=AUTH).status_code == 400
+
+
+def test_week_reads_selected_calendars_through_read_only_capability(make_kernel):
+    class Multiple(Diary):
+        calls: ClassVar[list[str]] = []
+        fail_family = False
+
+        def calendars(self) -> list[CalendarSource]:
+            return [
+                CalendarSource(id="personal", title="Personal", primary=True),
+                CalendarSource(id="family", title="Family"),
+            ]
+
+        def events_for(self, calendar: str, window: Window) -> list[Event]:
+            self.calls.append(calendar)
+            if calendar == "family" and self.fail_family:
+                msg = "Access expired"
+                raise HeinzelError(msg)
+            now = datetime.now(UTC)
+            return [Event(id="shared-id", title=calendar, start=now, end=now + timedelta(minutes=10))]
+
+    module = Module("diary", "Provides calendars for tests.")
+    module.provides("calendar", modes={"read"})(Multiple)
+    kernel = make_kernel(
+        builtins=True, diary=module, config=Config(files=(), data={"capabilities": {"calendar": "diary"}})
+    )
+    web_client = TestClient(web.build(kernel, port=8000, token=TOKEN, static=None), base_url=BASE)
+    both = web_client.get("/api/org/calendar", headers=AUTH).json()
+    assert [item["title"] for item in both["events"]] == ["personal", "family"]
+    assert [item["calendar_id"] for item in both["events"]] == ["personal", "family"]
+    assert both["adapter"] == "diary"
+    Multiple.calls.clear()
+    selection = json.dumps({"adapter": "diary", "excluded": ["family"]})
+    chosen = web_client.get("/api/org/calendar", params={"selection": selection}, headers=AUTH).json()
+    assert [item["title"] for item in chosen["events"]] == ["personal"]
+    assert Multiple.calls == ["personal"]
+    mismatch = json.dumps({"adapter": "other", "excluded": ["family"]})
+    assert len(web_client.get("/api/org/calendar", params={"selection": mismatch}, headers=AUTH).json()["events"]) == 2
+    none = json.dumps({"adapter": "diary", "excluded": ["personal", "family"]})
+    assert web_client.get("/api/org/calendar", params={"selection": none}, headers=AUTH).json()["events"] == []
+    Multiple.fail_family = True
+    partial = web_client.get("/api/org/calendar", headers=AUTH).json()
+    assert [event["title"] for event in partial["events"]] == ["personal"]
+    assert partial["warnings"] == ["Family: Access expired"]
+    assert [source["id"] for source in partial["calendars"]] == ["personal", "family"]
+    assert partial["problem"] is None
