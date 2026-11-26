@@ -51,11 +51,13 @@ def _stop_process_group(process: subprocess.Popen[str], grace: float = 2.0) -> N
 
     with contextlib.suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGTERM)
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        process.wait(timeout=grace)
     deadline = time.monotonic() + grace
     while _process_group_exists(process.pid) and time.monotonic() < deadline:
         time.sleep(0.05)
     if _process_group_exists(process.pid):
-        with contextlib.suppress(ProcessLookupError):
+        with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(process.pid, signal.SIGKILL)
     process.wait()
 

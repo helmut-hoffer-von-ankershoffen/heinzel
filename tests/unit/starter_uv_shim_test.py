@@ -156,10 +156,10 @@ def test_journey_owns_its_cache_without_changing_the_callers_cache(starter, tmp_
         pass
 
     def inspect_first_command(*args, **kwargs):
-        assert kwargs["env"]["UV_CACHE_DIR"] == str(destination / "uv-cache")
+        assert args[2]["UV_CACHE_DIR"] == str(destination / "uv-cache")
         raise FirstCommandError
 
-    monkeypatch.setattr(starter.subprocess, "run", inspect_first_command)
+    monkeypatch.setattr(starter, "run_process", inspect_first_command)
     with pytest.raises(FirstCommandError):
         starter.journey("fixture-core", None, tmp_path, destination)
     assert os.environ["UV_CACHE_DIR"] == caller_cache

@@ -2280,17 +2280,20 @@ def test_the_documented_app_launch_never_inherits_the_reviewed_pyyaml_find_links
 def test_the_starter_journeys_find_the_reviewed_pyyaml_through_find_links():
     lines = (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8").splitlines()
     build = next(i for i, line in enumerate(lines) if "bootstrap-pyyaml.sh --wheel-dir" in line)
-    launch = next(i for i, line in enumerate(lines) if "scripts/starter-test.py" in line and "uv run" in line)
+    launch = next(i for i, line in enumerate(lines) if 'UV_FIND_LINKS="$pyyaml_wheels"' in line)
     wheel = next(i for i, line in enumerate(lines) if "scripts/build.py --wheel" in line)
     setup = next(i for i, line in enumerate(lines) if line.strip() == "make setup")
     assert wheel < build < launch < setup
-    assert '--core "$core_wheel"' in "\n".join(lines[launch : launch + 2])
-    assert '--destination "$starter_destination"' in "\n".join(lines[launch : launch + 2])
+    assert "scripts/starter-test.py" in "\n".join(lines[launch : launch + 4])
+    assert '--core "$core_wheel"' in "\n".join(lines[launch : launch + 4])
+    assert '--destination "$starter_destination"' in "\n".join(lines[launch : launch + 4])
+    assert 'UV_CACHE_DIR="$starter_destination/uv-cache"' in lines[launch]
+    assert 'UV_TOOL_DIR="$starter_destination/uv-tool"' in lines[launch + 1]
     assert "trap on_exit EXIT" in lines
     assert "trap 'on_signal 143' TERM" in lines
     assert 'wait "$starter_pid"' in lines
     assert build < launch
-    assert lines[launch].lstrip().startswith('UV_FIND_LINKS="$pyyaml_wheels" ')
+    assert lines[launch].lstrip() == 'UV_FIND_LINKS="$pyyaml_wheels" UV_CACHE_DIR="$starter_destination/uv-cache" \\'
 
 
 def _template_test_fixture(tmp_path: Path, *, make_failure: str = "", starter_failure: bool = False) -> dict[str, str]:
@@ -2339,7 +2342,8 @@ def _template_test_fixture(tmp_path: Path, *, make_failure: str = "", starter_fa
         f"#!{sys.executable}\n"
         "import os, pathlib, sys\n"
         "if sys.argv[1].endswith('scripts/bootstrap-pyyaml.sh'):\n"
-        "    directory = pathlib.Path(sys.argv[sys.argv.index('--wheel-dir') + 1]); directory.mkdir(parents=True)\n"
+        "    directory = pathlib.Path(sys.argv[sys.argv.index('--wheel-dir') + 1])\n"
+        "    directory.mkdir(parents=True, exist_ok=True)\n"
         "    (directory / 'pyyaml.whl').write_text('fixture')\n"
         "else:\n"
         "    os.execv('/bin/bash', ['/bin/bash', *sys.argv[1:]])\n",
