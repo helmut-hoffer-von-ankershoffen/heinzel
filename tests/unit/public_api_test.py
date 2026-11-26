@@ -304,6 +304,7 @@ KERNEL = [
     "CachedOverviewLet",
     "Calendar",
     "CalendarSource",
+    "CalendarSources",
     "CallIdentity",
     "Caller",
     "Capability",
