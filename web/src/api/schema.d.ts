@@ -2198,13 +2198,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        get?: never;
+        put?: never;
         /**
          * Read a calendar week with the browser's current calendar exclusions.
          * @description Read a calendar week with the browser's current calendar exclusions.
          */
-        get: operations["org_calendar_selection"];
-        put?: never;
-        post?: never;
+        post: operations["org_calendar_selection"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6106,6 +6106,25 @@ export interface components {
              * @description Where people open it; none if it has no web address.
              */
             url?: string | null;
+        };
+        /**
+         * CalendarWeekSelection
+         * @description Browser calendar exclusions for one week.
+         */
+        CalendarWeekSelection: {
+            /**
+             * Adapter
+             * @default
+             */
+            adapter: string;
+            /** Excluded */
+            excluded?: string[];
+            /**
+             * Offset
+             * @description Weeks before or after this week.
+             * @default 0
+             */
+            offset: number;
         };
         /**
          * CallerActivity
@@ -18834,6 +18853,10 @@ export interface components {
              */
             session_id: string;
         };
+        /** org_calendar_selection_Input */
+        org_calendar_selection_Input: {
+            selection: components["schemas"]["CalendarWeekSelection"];
+        };
         /** system_claude_acknowledge_Input */
         system_claude_acknowledge_Input: {
             /**
@@ -18955,6 +18978,7 @@ export type SchemaCalendarReminderStatus = components['schemas']['CalendarRemind
 export type SchemaCalendarSource = components['schemas']['CalendarSource'];
 export type SchemaCalendarWeek = components['schemas']['CalendarWeek'];
 export type SchemaCalendarWeekEvent = components['schemas']['CalendarWeekEvent'];
+export type SchemaCalendarWeekSelection = components['schemas']['CalendarWeekSelection'];
 export type SchemaCallerActivity = components['schemas']['CallerActivity'];
 export type SchemaCandidate = components['schemas']['Candidate'];
 export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
@@ -19337,6 +19361,7 @@ export type SchemaHeinzelSearchAgentConversationsInput = components['schemas']['
 export type SchemaHeinzelSearchConversationInput = components['schemas']['heinzel_search_conversation_Input'];
 export type SchemaHeinzelSetLevelInput = components['schemas']['heinzel_set_level_Input'];
 export type SchemaHeinzelShareDraftLinkInput = components['schemas']['heinzel_share_draft_link_Input'];
+export type SchemaOrgCalendarSelectionInput = components['schemas']['org_calendar_selection_Input'];
 export type SchemaSystemClaudeAcknowledgeInput = components['schemas']['system_claude_acknowledge_Input'];
 export type SchemaSystemClaudeDisableInput = components['schemas']['system_claude_disable_Input'];
 export type SchemaSystemClaudeEnableInput = components['schemas']['system_claude_enable_Input'];
@@ -22799,17 +22824,16 @@ export interface operations {
     };
     org_calendar_selection: {
         parameters: {
-            query?: {
-                adapter?: string;
-                excluded?: string[];
-                /** @description Weeks before or after this week. */
-                offset?: number;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["org_calendar_selection_Input"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

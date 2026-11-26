@@ -71,7 +71,7 @@ CalendarOffset = Annotated[int, Field(ge=-52, le=52, description="Weeks before o
 CALENDAR_QUERY_LIMIT = 32_768
 # An ASCII-escaped supplementary Unicode code point can take 12 bytes; 100 full-length IDs plus the adapter
 # and JSON framing fit in 2 MiB even when the ASCII adapter name is also escaped.
-CALENDAR_STREAM_BODY_LIMIT = 2 * 1024 * 1024
+CALENDAR_BODY_LIMIT = 2 * 1024 * 1024
 
 
 # Your name and email are in it; a web page can reach a local REST server, so the CLI, MCP and the web head (which
@@ -179,7 +179,7 @@ class CalendarWeekSelection(CalendarSelection):
 
 # The web stream accepts large selections in its authenticated JSON body without putting opaque IDs in the URL.
 @module.operation(
-    private=True, heads={"web"}, requires=["calendar:read"], optional=True, stream_body_limit=CALENDAR_STREAM_BODY_LIMIT
+    private=True, heads={"web"}, requires=["calendar:read"], optional=True, request_body_limit=CALENDAR_BODY_LIMIT
 )
 def calendar_selection(
     calendar: Calendar,

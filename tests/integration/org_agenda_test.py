@@ -4,6 +4,8 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import ClassVar
 
+import anyio
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -147,7 +149,8 @@ def test_week_reads_selected_calendars_through_read_only_capability(make_kernel)
     assert partial["problem"] is None
 
 
-def test_calendar_selection_accepts_all_maximum_length_ids_in_the_authenticated_body(make_kernel):
+@pytest.mark.parametrize("streamed", [False, True], ids=["json", "stream"])
+def test_calendar_selection_accepts_all_maximum_length_ids_in_the_authenticated_body(make_kernel, streamed):
     ids = [f'{index:03}"\\' + "😀" * 1019 for index in range(100)]
 
     class Multiple(Diary):
@@ -165,24 +168,29 @@ def test_calendar_selection_accepts_all_maximum_length_ids_in_the_authenticated_
     kernel = make_kernel(
         builtins=True, diary=module, config=Config(files=(), data={"capabilities": {"calendar": "diary"}})
     )
-    web_client = TestClient(web.build(kernel, port=8000, token=TOKEN, static=None), base_url=BASE)
-    path = "/api/stream/org/calendar-selection"
+    app = web.build(kernel, port=8000, token=TOKEN, static=None)
+    web_client = TestClient(app, base_url=BASE)
+    path = f"/api{'/stream' if streamed else ''}/org/calendar-selection"
     selection = {"adapter": "diary", "excluded": ids, "offset": 0}
     assert all(len(identifier) == 1024 for identifier in ids)
     wire = json.dumps({"selection": selection}, ensure_ascii=True).encode()
     assert len(wire) > 1_200_000
     assert web_client.post(path, json={"selection": selection}).status_code == 401
+    assert web_client.get(path, headers=AUTH).status_code == 405
     headers = AUTH | {"Content-Type": "application/json"}
     response = web_client.post(path, content=wire, headers=headers)
     assert response.status_code == 200
-    (result,) = [
-        json.loads(block.removeprefix("event: result\ndata: "))
-        for block in response.text.split("\n\n")
-        if block.startswith("event: result\ndata: ")
-    ]
-    assert [source["id"] for source in result["data"]["calendars"]] == ids
-    assert result["data"]["problem"] is None
-    assert result["data"]["events"] == []
+    if streamed:
+        (result,) = [
+            json.loads(block.removeprefix("event: result\ndata: "))["data"]
+            for block in response.text.split("\n\n")
+            if block.startswith("event: result\ndata: ")
+        ]
+    else:
+        result = response.json()
+    assert [source["id"] for source in result["calendars"]] == ids
+    assert result["problem"] is None
+    assert result["events"] == []
     assert Multiple.calls == []
     for invalid in ([*ids, "extra"], [ids[0] + "x"]):
         refused = web_client.post(path, json={"selection": selection | {"excluded": invalid}}, headers=AUTH)
@@ -193,8 +201,17 @@ def test_calendar_selection_accepts_all_maximum_length_ids_in_the_authenticated_
         assert refused.status_code == 422
         assert Multiple.calls == []
 
-    # Valid JSON whose padding puts it over the wire limit, supplied without Content-Length.
-    padded = web_client.post(path, content=iter([wire, b" " * (2 * 1024 * 1024)]), headers=headers)
-    assert "content-length" not in padded.request.headers
-    assert padded.status_code == 413
+    async def chunks():
+        yield wire
+        yield b" " * (512 * 1024)
+        yield b" " * (512 * 1024)
+
+    async def reject_padded_body():
+        # Each ASGI request chunk fits. Valid JSON plus padding exceeds the cumulative limit.
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE) as client:
+            padded = await client.post(path, content=chunks(), headers=headers)
+            assert "content-length" not in padded.request.headers
+            assert padded.status_code == 413
+
+    anyio.run(reject_padded_body)
     assert Multiple.calls == []

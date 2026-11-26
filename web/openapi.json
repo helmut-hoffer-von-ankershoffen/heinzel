@@ -2156,6 +2156,38 @@
         "title": "CalendarWeekEvent",
         "type": "object"
       },
+      "CalendarWeekSelection": {
+        "additionalProperties": false,
+        "description": "Browser calendar exclusions for one week.",
+        "properties": {
+          "adapter": {
+            "default": "",
+            "maxLength": 32768,
+            "pattern": "^(?:[a-z][a-z0-9-]*)?$",
+            "title": "Adapter",
+            "type": "string"
+          },
+          "excluded": {
+            "items": {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Excluded",
+            "type": "array"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Weeks before or after this week.",
+            "maximum": 52.0,
+            "minimum": -52.0,
+            "title": "Offset",
+            "type": "integer"
+          }
+        },
+        "title": "CalendarWeekSelection",
+        "type": "object"
+      },
       "CallerActivity": {
         "description": "What one agent did: for a token, the line shown beside it in Settings.",
         "properties": {
@@ -24397,6 +24429,19 @@
         "title": "heinzel_share_draft_link_Input",
         "type": "object"
       },
+      "org_calendar_selection_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "selection": {
+            "$ref": "#/components/schemas/CalendarWeekSelection"
+          }
+        },
+        "required": [
+          "selection"
+        ],
+        "title": "org_calendar_selection_Input",
+        "type": "object"
+      },
       "system_claude_acknowledge_Input": {
         "additionalProperties": false,
         "properties": {
@@ -29673,51 +29718,19 @@
       }
     },
     "/org/calendar-selection": {
-      "get": {
+      "post": {
         "description": "Read a calendar week with the browser's current calendar exclusions.",
         "operationId": "org_calendar_selection",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "adapter",
-            "required": false,
-            "schema": {
-              "default": "",
-              "maxLength": 32768,
-              "pattern": "^(?:[a-z][a-z0-9-]*)?$",
-              "title": "Adapter",
-              "type": "string"
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/org_calendar_selection_Input"
+              }
             }
           },
-          {
-            "in": "query",
-            "name": "excluded",
-            "required": false,
-            "schema": {
-              "items": {
-                "maxLength": 1024,
-                "type": "string"
-              },
-              "maxItems": 100,
-              "title": "Excluded",
-              "type": "array"
-            }
-          },
-          {
-            "description": "Weeks before or after this week.",
-            "in": "query",
-            "name": "offset",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "description": "Weeks before or after this week.",
-              "maximum": 52,
-              "minimum": -52,
-              "title": "Offset",
-              "type": "integer"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
