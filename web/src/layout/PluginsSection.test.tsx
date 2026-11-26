@@ -1759,6 +1759,28 @@ describe("PluginGallery", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it.each(["source change", "visibility round trip"] as const)(
+    "requires fresh consent after a gallery %s",
+    async (change) => {
+      const calls = serve((url) => (url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url)));
+      const user = userEvent.setup();
+      const client = queryClient();
+      const gallery = (spec: string, privateSource?: boolean) => (
+        <Providers client={client}>
+          <PluginGallery spec={spec} name="Harbor" privateSource={privateSource} />
+        </Providers>
+      );
+      const view = render(gallery("harbor"));
+      await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
+      expect(await screen.findByRole("img", { name: "Harbor in the app" })).toBeInTheDocument();
+      if (change === "visibility round trip") view.rerender(gallery("harbor", true));
+      view.rerender(gallery(change === "source change" ? "different-source" : "harbor"));
+      expect(screen.getByRole("button", { name: "Screenshots for Harbor" })).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByRole("region", { name: "Screenshot gallery: Harbor" })).not.toBeInTheDocument();
+      expect(calls).toHaveLength(1);
+    },
+  );
+
   it("offers an installed plugin's exact Git source gallery without installing or changing it", async () => {
     const calls = serve((url) => {
       if (url.pathname === "/api/system/plugin/showcase") return { body: GALLERY };

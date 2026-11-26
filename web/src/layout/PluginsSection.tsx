@@ -1323,9 +1323,20 @@ export function PluginGallery({
   name: string;
   privateSource?: boolean | null;
 }) {
-  const visibility = privateSource == null ? "unknown" : privateSource;
-  const [openOverride, setOpenOverride] = useState<{ visibility: boolean | "unknown"; open: boolean } | null>(null);
-  const open = openOverride?.visibility === visibility ? openOverride.open : visibility !== "unknown";
+  const visibility = privateSource ?? null;
+  return <GalleryDisclosure key={JSON.stringify([spec, visibility])} spec={spec} name={name} visibility={visibility} />;
+}
+
+function GalleryDisclosure({
+  spec,
+  name,
+  visibility,
+}: {
+  spec: string | null;
+  name: string;
+  visibility: boolean | null;
+}) {
+  const [open, setOpen] = useState(visibility !== null);
   const galleryId = useId();
   return (
     <div className="mt-2 min-w-0">
@@ -1335,7 +1346,7 @@ export function PluginGallery({
         aria-expanded={open}
         aria-controls={open ? galleryId : undefined}
         aria-label={t("plugins.screenshotsFor", { name })}
-        onClick={() => setOpenOverride({ visibility, open: !open })}
+        onClick={() => setOpen((current) => !current)}
       >
         {t("plugins.screenshots")}
       </Button>
@@ -1345,7 +1356,7 @@ export function PluginGallery({
           aria-label={t("plugins.galleryFor", { name })}
           className="mt-2 min-w-0 rounded-lg border border-border bg-muted/30 p-3"
         >
-          {privateSource ? (
+          {visibility === true ? (
             <p className="text-sm text-muted-foreground">{t("plugins.privateGallery")}</p>
           ) : spec ? (
             <GalleryContents key={spec} spec={spec} />
