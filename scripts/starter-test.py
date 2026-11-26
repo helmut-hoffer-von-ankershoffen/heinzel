@@ -78,6 +78,8 @@ def run_process(command: list[str], cwd: Path, environment: dict[str, str], outp
     except BaseException:
         _stop_process_group(process)
         raise
+    if os.name == "posix" and _process_group_exists(process.pid):
+        _stop_process_group(process)
     return returncode
 
 
@@ -85,6 +87,7 @@ def journey_environment(destination: Path) -> dict[str, str]:
     """Build a disposable process environment for one generated plugin journey."""
     environment = {key: value for key, value in os.environ.items() if not key.startswith("HZ_")}
     environment.pop("VIRTUAL_ENV", None)
+    environment.pop("UV_FROZEN", None)
     # Tool installs hardlink cache files; a caller cache may retain unsafe modes from unrelated builds.
     environment["UV_CACHE_DIR"] = str(destination / "uv-cache")
     environment["UV_TOOL_DIR"] = str(destination / "uv-tool")
@@ -357,14 +360,20 @@ def collection_journey(
         raise AssertionError(msg)
 
 
-def main() -> None:
-    """Accept explicit candidate artifacts; normal CI consumes the versioned toolkit."""
+def install_signal_handlers() -> None:
+    """Raise through the active command runner so its isolated process group is cleaned up."""
 
     def abort(signum: int, _frame: object) -> None:
         raise SystemExit(128 + signum)
 
-    signal.signal(signal.SIGINT, abort)
-    signal.signal(signal.SIGTERM, abort)
+    for signum in (signal.SIGINT, signal.SIGTERM, getattr(signal, "SIGHUP", None)):
+        if signum is not None:
+            signal.signal(signum, abort)
+
+
+def main() -> None:
+    """Accept explicit candidate artifacts; normal CI consumes the versioned toolkit."""
+    install_signal_handlers()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--core", required=True)
     parser.add_argument("--toolkit", default=os.environ.get("PLUGIN_TOOLKIT"))

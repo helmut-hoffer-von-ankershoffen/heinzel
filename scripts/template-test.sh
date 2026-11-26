@@ -23,10 +23,26 @@ starter_pid=""
 starter_grouped=0
 stop_starter() {
   [[ -n "$starter_pid" ]] || return 0
+  local attempt
   if (( starter_grouped )); then
     kill -TERM -- "-$starter_pid" 2>/dev/null || true
   else
     kill -TERM "$starter_pid" 2>/dev/null || true
+  fi
+  for ((attempt = 0; attempt < 100; attempt++)); do
+    if (( starter_grouped )); then
+      kill -0 -- "-$starter_pid" 2>/dev/null || break
+    else
+      kill -0 "$starter_pid" 2>/dev/null || break
+    fi
+    sleep 0.05
+  done
+  if (( attempt == 100 )); then
+    if (( starter_grouped )); then
+      kill -KILL -- "-$starter_pid" 2>/dev/null || true
+    else
+      kill -KILL "$starter_pid" 2>/dev/null || true
+    fi
   fi
   wait "$starter_pid" 2>/dev/null || true
   starter_pid=""
@@ -48,12 +64,12 @@ trap 'on_signal 130' INT
 trap 'on_signal 143' TERM
 trap 'on_signal 129' HUP
 if command -v setsid >/dev/null 2>&1; then
-  UV_FIND_LINKS="$pyyaml_wheels" UV_CACHE_DIR="$starter_destination/uv-cache" \
+  env -u VIRTUAL_ENV -u UV_FROZEN UV_FIND_LINKS="$pyyaml_wheels" UV_CACHE_DIR="$starter_destination/uv-cache" \
     UV_TOOL_DIR="$starter_destination/uv-tool" setsid uv run --no-project --script scripts/starter-test.py \
     --core "$core_wheel" --template "$repo_root" --destination "$starter_destination" &
   starter_grouped=1
 else
-  UV_FIND_LINKS="$pyyaml_wheels" UV_CACHE_DIR="$starter_destination/uv-cache" \
+  env -u VIRTUAL_ENV -u UV_FROZEN UV_FIND_LINKS="$pyyaml_wheels" UV_CACHE_DIR="$starter_destination/uv-cache" \
     UV_TOOL_DIR="$starter_destination/uv-tool" uv run --no-project --script scripts/starter-test.py \
     --core "$core_wheel" --template "$repo_root" --destination "$starter_destination" &
 fi

@@ -2293,10 +2293,16 @@ def test_the_starter_journeys_find_the_reviewed_pyyaml_through_find_links():
     assert "trap 'on_signal 143' TERM" in lines
     assert 'wait "$starter_pid"' in lines
     assert build < launch
-    assert lines[launch].lstrip() == 'UV_FIND_LINKS="$pyyaml_wheels" UV_CACHE_DIR="$starter_destination/uv-cache" \\'
+    assert "env -u VIRTUAL_ENV -u UV_FROZEN" in lines[launch]
 
 
-def _template_test_fixture(tmp_path: Path, *, make_failure: str = "", starter_failure: bool = False) -> dict[str, str]:
+def _template_test_fixture(
+    tmp_path: Path,
+    *,
+    make_failure: str = "",
+    starter_failure: bool = False,
+    starter_ignores_term: bool = False,
+) -> dict[str, str]:
     """Provide deterministic external tools for the template shell's overlap and cleanup paths."""
     binary = tmp_path / "bin"
     binary.mkdir()
@@ -2326,11 +2332,11 @@ def _template_test_fixture(tmp_path: Path, *, make_failure: str = "", starter_fa
         "    raise SystemExit(0)\n"
         "if 'scripts/starter-test.py' in args:\n"
         f"    pathlib.Path(os.environ['FAKE_STARTER_ARGS']).write_text(json.dumps(args))\n"
-        "    names = ('UV_CACHE_DIR', 'UV_TOOL_DIR', 'UV_FIND_LINKS')\n"
+        "    names = ('UV_CACHE_DIR', 'UV_TOOL_DIR', 'UV_FIND_LINKS', 'VIRTUAL_ENV', 'UV_FROZEN')\n"
         "    observed = {key: os.environ.get(key) for key in names}\n"
         "    pathlib.Path(os.environ['FAKE_STARTER_ENV']).write_text(json.dumps(observed))\n"
         "    os.execv(sys.executable, [sys.executable, os.environ['FAKE_STARTER']])\n"
-        "if len(args) > 4 and args[3] == 'python' and args[4] == '-':\n"
+        "if args and args[0] == 'run' and args[-2] == '-':\n"
         "    sys.argv = [sys.executable, *args[5:]]\n"
         "    exec(compile(sys.stdin.read(), '<fixture-stdin>', 'exec'), {'__name__': '__main__'})\n"
         "raise SystemExit(f'unexpected uv command: {args!r}')\n",
@@ -2381,6 +2387,11 @@ def _template_test_fixture(tmp_path: Path, *, make_failure: str = "", starter_fa
         encoding="utf-8",
     )
     starter = tmp_path / "starter.py"
+    child_start = (
+        "child = None\n"
+        if starter_ignores_term
+        else "child = subprocess.Popen([sys.executable, child_script], start_new_session=True)\n"
+    )
     starter.write_text(
         "import os, pathlib, signal, subprocess, sys, time\n"
         f"started = pathlib.Path({str(started)!r}); parent_stopped = pathlib.Path({str(parent_stopped)!r})\n"
@@ -2393,9 +2404,9 @@ def _template_test_fixture(tmp_path: Path, *, make_failure: str = "", starter_fa
         "        try: child.wait(timeout=2)\n"
         "        except subprocess.TimeoutExpired: os.killpg(child.pid, signal.SIGKILL); child.wait()\n"
         "    parent_stopped.write_text('stopped'); raise SystemExit(128 + signum)\n"
-        "signal.signal(signal.SIGTERM, stop)\n"
-        "child = subprocess.Popen([sys.executable, child_script], start_new_session=True)\n"
-        "started.write_text(str(os.getpid()))\n"
+        f"signal.signal(signal.SIGTERM, {'signal.SIG_IGN' if starter_ignores_term else 'stop'})\n"
+        + child_start
+        + "started.write_text(str(os.getpid()))\n"
         f"if {starter_failure!r}: stop(15, None)\n"
         "while True: time.sleep(.05)\n",
         encoding="utf-8",
@@ -2404,6 +2415,8 @@ def _template_test_fixture(tmp_path: Path, *, make_failure: str = "", starter_fa
         **os.environ,
         "PATH": f"{binary}{os.pathsep}{os.environ['PATH']}",
         "TMPDIR": str(temporary),
+        "VIRTUAL_ENV": str(tmp_path / "caller-venv"),
+        "UV_FROZEN": "1",
         "FAKE_STARTER": str(starter),
         "STARTER_STARTED": str(started),
         "STARTER_CHILD_READY": str(child_ready),
@@ -2441,6 +2454,8 @@ def test_template_test_overlaps_after_wheel_and_cleans_starter_when_governed_che
     starter_environment = json.loads((tmp_path / "starter.environment").read_text())
     assert starter_environment["UV_CACHE_DIR"] == str(starter_destination / "uv-cache")
     assert starter_environment["UV_TOOL_DIR"] == str(starter_destination / "uv-tool")
+    assert starter_environment["VIRTUAL_ENV"] is None
+    assert starter_environment["UV_FROZEN"] is None
     assert (Path(starter_environment["UV_FIND_LINKS"]) / "pyyaml.whl").is_file()
     assert f'"heinzel @ {core_wheel.as_uri()}"' in (tmp_path / "governed" / "pyproject.toml").read_text()
     events = (tmp_path / "events.log").read_text().splitlines()
@@ -2498,6 +2513,24 @@ def test_template_test_signal_cleans_the_independent_starter_tree(tmp_path):
         if (tmp_path / "starter.child").exists():
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(int((tmp_path / "starter.child").read_text()), signal.SIGKILL)
+
+
+def test_template_test_bounds_cleanup_of_a_nonresponsive_starter(tmp_path):
+    environment = _template_test_fixture(tmp_path, make_failure="check", starter_ignores_term=True)
+    started_at = time.monotonic()
+    result = subprocess.run(
+        ["/bin/bash", str(REPO / "scripts/template-test.sh"), str(tmp_path / "governed")],
+        cwd=REPO,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=8,
+        check=False,
+    )
+    assert result.returncode == 23, result.stdout + result.stderr
+    assert (tmp_path / "starter.started").is_file()
+    assert time.monotonic() - started_at < 7
+    assert not (tmp_path / "starter.parent-stopped").exists()
 
 
 @pytest.mark.parametrize("makefile", ["Makefile", "template/Makefile"])
