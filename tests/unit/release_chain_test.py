@@ -432,6 +432,15 @@ def test_no_freeze_without_a_candidate():
     assert chain.freeze_of_pr(read, 10)[0] is True
 
 
+def test_bulk_and_single_freeze_reject_competing_release_candidates():
+    prs = [pr(9, "release/v0.9.54"), pr(10, "release/v0.9.55", sha=OTHER), pr(11, "fix/x", title="fix: x", sha=TIP)]
+    read = reader(routes(prs=prs))
+    posted = []
+    chain.freeze_sync(read, lambda sha, passes, text: posted.append((sha, passes)))
+    assert posted == [(HEAD, False), (OTHER, False), (TIP, False)]
+    assert all(chain.freeze_of_pr(read, number)[0] is False for number in (9, 10, 11))
+
+
 def test_the_merge_refuses_when_main_moved_since_the_candidate_base():
     read = reader({f"commits/{HEAD}": {"parents": [{"sha": BASE}]}, "commits/main": {"sha": OTHER}})
     assert "main moved" in chain.main_moved(read, HEAD)
@@ -666,6 +675,35 @@ def test_the_profile_must_select_the_released_core_wheel():
         chain.validate_profile(other, "0.9.54", WHEEL, other_app)
     with pytest.raises(chain.ChainError, match="provider digest"):
         chain.validate_profile(content + b" ", "0.9.54", WHEEL, app)
+
+
+@pytest.mark.parametrize("publish_digest", [False, True])
+@pytest.mark.parametrize("profile_digest", [False, True])
+def test_each_plugin_artifact_needs_matching_provider_and_profile_digests(publish_digest, profile_digest):
+    version = "0.9.54"
+    filename = "heinzel_example-1.0-py3-none-any.whl"
+    digest = "8" * 64
+    plugin = {
+        "name": "heinzel-example",
+        "filename": filename,
+        "url": f"https://github.com/{chain.PLUGINS}/releases/download/app-v{version}/{filename}",
+    }
+    if profile_digest:
+        plugin["sha256"] = digest
+    data = json.loads(profile(version))
+    data["artifacts"].append(plugin)
+    content = json.dumps(data).encode()
+    app = app_release(version, content)
+    asset = {"name": filename}
+    if publish_digest:
+        asset["digest"] = f"sha256:{digest}"
+    app["assets"].append(asset)
+
+    if publish_digest and profile_digest:
+        assert chain.validate_profile(content, version, WHEEL, app) == hashlib.sha256(content).hexdigest()
+    else:
+        with pytest.raises(chain.ChainError, match=r"heinzel-example.*outside the app release"):
+            chain.validate_profile(content, version, WHEEL, app)
 
 
 def test_snapshot_waits_for_pypi_and_refuses_a_different_pypi_wheel(monkeypatch):

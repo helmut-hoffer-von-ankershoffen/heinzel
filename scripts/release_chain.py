@@ -932,10 +932,9 @@ def audit_notes(cwd: Path, previous: str, base: str, version: str) -> None:
 
 
 def freeze_targets(read: Callable[[str], Any]) -> tuple[list[tuple[int, str, bool]], int | None]:
-    """(PR number, head SHA, passes) for every open PR, and the open release PR number, if any."""
+    """(PR number, head SHA, passes) for every open PR, and the lowest open release PR number, if any."""
     candidates = {p["number"] for p in open_release_prs(read)}
-    frozen = bool(candidates)
-    targets = [(p["number"], p["head"]["sha"], p["number"] in candidates or not frozen) for p in open_prs(read)]
+    targets = [(p["number"], p["head"]["sha"], candidates <= {p["number"]}) for p in open_prs(read)]
     return targets, min(candidates) if candidates else None
 
 
@@ -943,7 +942,7 @@ def freeze_sync(read: Callable[[str], Any], post: Callable[[str, bool, str], Non
     """Post the "Release freeze" check on every open PR head: failing while another PR is the release candidate."""
     targets, candidate = freeze_targets(read)
     text = (
-        f"Release candidate #{candidate} is open: main is frozen until it merges."
+        f"Release candidate #{candidate} is open. A PR passes only when no other release candidate is open."
         if candidate
         else "No release candidate is open."
     )
@@ -1444,11 +1443,13 @@ def validate_profile(content: bytes, version: str, wheel: str, app: dict[str, An
     names = set()
     for artifact in artifacts:
         name, filename = artifact.get("name"), artifact.get("filename")
+        provider_digest = asset_digest(app, str(filename))
         if (
             not isinstance(name, str)
             or name in names
             or artifact.get("url") != f"{base}{filename}"
-            or artifact.get("sha256") != asset_digest(app, str(filename))
+            or provider_digest is None
+            or artifact.get("sha256") != provider_digest
         ):
             msg = f"standard.json artifact {name!r} is outside the app release"
             raise ChainError(msg)
