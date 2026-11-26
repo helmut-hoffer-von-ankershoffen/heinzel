@@ -668,7 +668,10 @@ def test_merge_is_pinned_to_the_verified_candidate(monkeypatch, changed, refusal
             "commits/main": {"sha": BASE},
             f"commits/{TIP}": {
                 "parents": [{"sha": BASE}],
-                "commit": {"tree": {"sha": OTHER if changed == "tree" else TREE}},
+                "commit": {
+                    "tree": {"sha": OTHER if changed == "tree" else TREE},
+                    "message": "Heinzel-Release-Tail: 1729",
+                },
             },
             f"compare/{BASE}...{HEAD}": content(),
             "rules/branches/main": RULES,
@@ -681,9 +684,18 @@ def test_merge_is_pinned_to_the_verified_candidate(monkeypatch, changed, refusal
             chain.merge(read, 9, "0.9.54", "token", CANDIDATE_PROOF)
         assert calls == []
         return
-    assert chain.merge(read, 9, "0.9.54", "token", CANDIDATE_PROOF) == TIP
+    assert chain.merge(read, 9, "0.9.54", "token", CANDIDATE_PROOF, chain_run="1729") == TIP
     assert "--match-head-commit" in calls[0]
     assert calls[0][calls[0].index("--match-head-commit") + 1] == HEAD
+    assert calls[0][calls[0].index("--body") + 1] == "Heinzel-Release-Tail: 1729"
+
+
+def test_an_unmarked_merge_cannot_resume_as_a_deferred_chain_release():
+    commit = {"parents": [{"sha": BASE}], "commit": {"tree": {"sha": TREE}, "message": "chore(release): v0.9.54 (#9)"}}
+    merged = {"merged": True, "merge_commit_sha": TIP}
+    with pytest.raises(chain.ChainError, match="does not carry"):
+        chain.verified_merge(reader({f"commits/{TIP}": commit}), 9, merged, BASE, TREE, require_tail=True)
+    assert chain.verified_merge(reader({f"commits/{TIP}": commit}), 9, merged, BASE, TREE) == TIP
 
 
 def app_release(version, profile_bytes, wheel=WHEEL):
@@ -904,6 +916,29 @@ def test_the_marker_is_written_once(monkeypatch):
         True,
         5,
     )
+
+
+@pytest.mark.parametrize("accepted", [False, True])
+def test_tail_promotes_only_after_its_independent_acceptance_receipts(tmp_path, monkeypatch, accepted):
+    write_receipts(tmp_path, **({} if accepted else {"macOS": {"verdict": "REJECTED"}}))
+    effects = []
+    monkeypatch.setattr(chain, "older_open", lambda *_: None)
+    monkeypatch.setattr(
+        chain, "publish_marker", lambda _read, _version, data: effects.append(("marker", data["accepted"]))
+    )
+    monkeypatch.setattr(chain, "promote", lambda *_: effects.append(("latest", True)))
+    args = SimpleNamespace(
+        receipts=tmp_path,
+        dry_run=False,
+        run_id="5",
+        attempt="1",
+        version="0.9.54",
+        wait=0,
+        wheel_sha256=SNAP["wheel_sha256"],
+        profile_sha256=SNAP["profile_sha256"],
+    )
+    assert chain.cmd_verdict(args) == (0 if accepted else 1)
+    assert effects == [("marker", True), ("latest", True)] if accepted else effects == [("marker", False)]
 
 
 def git(cwd, *args):
@@ -1182,7 +1217,9 @@ def test_hosted_release_writes_stay_inactive_until_queue_and_freeze_are_protecte
     assert "dry=false" not in mode
     assert (workflows / "release-freeze.yml").read_text().count("if: ${{ false }}") == 2
     assert "if: ${{ false }}" in (workflows / "release-tail.yml").read_text()
-    assert "--latest=false" not in (workflows / "publish.yml").read_text()
+    publish = (workflows / "publish.yml").read_text()
+    assert "DEFER_LATEST: ${{ steps.latest.outputs.defer_latest }}" in publish
+    assert "true) latest=(--latest=false) ;;" in publish
 
 
 @pytest.mark.parametrize(

@@ -134,6 +134,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         ),
     },
     "release-chain.yml": {
+        'test "$GITHUB_RUN_ATTEMPT" = 1': "binds the verified candidate to the exact chain before its squash merge",
         'if [ "$EVENT" != pull_request ]': (
             "allows a real release only from main, then chooses a dry run and its throwaway version"
         ),
@@ -171,6 +172,9 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         '[[ "$TAG" =~': "binds the exact core tag, checkout, caller source and main ancestry before tooling",
         "uv run --no-project --frozen --no-build --python 3.15 python scripts/pypi_release.py checkout": (
             "verifies the reviewed release source before producing its signed artifact manifest"
+        ),
+        "uv run --no-project --frozen --no-build --python 3.15 python scripts/release_latest.py": (
+            "binds an optional Latest deferral to the authenticated release-chain merge"
         ),
         "uv run --no-project --frozen --no-build --python 3.15 python -I scripts/acceptance/run_acceptance.py "
         "--check-foreground-ui": "checks the Core version contract without running acceptance",

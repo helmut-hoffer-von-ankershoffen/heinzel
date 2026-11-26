@@ -76,6 +76,7 @@ USER_FACING = re.compile(r"^(feat|fix|perf|revert)(\([^)]*\))?!?:\s*")
 COMBINES = re.compile(r"^Combines #(?P<number>\d+) (?P<subject>\S.*)$")
 MEMBERS = re.compile(r"^(?:Combines #(\d+)\b.*|Merged via this PR:\s*(.*))$", re.MULTILINE)
 TAIL = "release-tail.yml"
+DEFER_LATEST_TRAILER = "Heinzel-Release-Tail"
 MAX_IN_FLIGHT = 2  # releases at once: one in its tail, one at its front (cut, candidate, merge, tag)
 PASSING = ("success", "neutral", "skipped")
 PROBE_BRANCH = "release-probe/"
@@ -1271,7 +1272,15 @@ def checks_pass(read: Callable[[str], Any], head: str, required: list[str]) -> N
         raise Wait(msg)
 
 
-def merge(read: Callable[[str], Any], number: int, version: str, token: str, proof: tuple[str, str, str]) -> str:
+def merge(  # noqa: PLR0913 - includes the optional chain run bound to the candidate proof
+    read: Callable[[str], Any],
+    number: int,
+    version: str,
+    token: str,
+    proof: tuple[str, str, str],
+    *,
+    chain_run: str = "",
+) -> str:
     """Squash-merge the verified release PR as the release identity, pinned to its head, if main has not moved.
 
     Returns:
@@ -1291,7 +1300,7 @@ def merge(read: Callable[[str], Any], number: int, version: str, token: str, pro
         msg = "release PR head differs from the verified candidate"
         raise ChainError(msg)
     if (pr or {}).get("merged"):
-        return verified_merge(read, number, pr, candidate_base(read, head), tree)
+        return verified_merge(read, number, pr, candidate_base(read, head), tree, require_tail=bool(chain_run))
     pr = pr_of(read, number, version)
     verify_pr_content(read, pr, version)
     if refusal := main_moved(read, head):
@@ -1318,14 +1327,23 @@ def merge(read: Callable[[str], Any], number: int, version: str, token: str, pro
             "--subject",
             f"chore(release): v{version} (#{number})",
             "--body",
-            "",
+            f"{DEFER_LATEST_TRAILER}: {chain_run}" if chain_run else "",
         ],
         env=gh_env(token),
     )
-    return verified_merge(read, number, read(f"pulls/{number}"), base, tree)
+    return verified_merge(read, number, read(f"pulls/{number}"), base, tree, chain_run=chain_run)
 
 
-def verified_merge(read: Callable[[str], Any], number: int, merged: dict[str, Any] | None, base: str, tree: str) -> str:
+def verified_merge(  # noqa: PLR0913 - the chain also verifies its immutable commit signal
+    read: Callable[[str], Any],
+    number: int,
+    merged: dict[str, Any] | None,
+    base: str,
+    tree: str,
+    *,
+    chain_run: str = "",
+    require_tail: bool = False,
+) -> str:
     """A merge or retry may proceed only with the tested tree on its single validated parent.
 
     Raises:
@@ -1335,9 +1353,16 @@ def verified_merge(read: Callable[[str], Any], number: int, merged: dict[str, An
     if not (merged or {}).get("merged") or not SHA.fullmatch(sha) or candidate_base(read, sha) != base:
         msg = f"release PR #{number} did not merge as one commit on {base[:9]}"
         raise ChainError(msg)
-    if (read(f"commits/{sha}") or {}).get("commit", {}).get("tree", {}).get("sha") != tree:
+    commit = (read(f"commits/{sha}") or {}).get("commit", {})
+    if commit.get("tree", {}).get("sha") != tree:
         msg = f"release PR #{number} merged with a different tree than the verified candidate"
         raise ChainError(msg)
+    if chain_run or require_tail:
+        lines = str(commit.get("message", "")).rstrip().splitlines()
+        target = chain_run or r"[1-9][0-9]*"
+        if not lines or not re.fullmatch(rf"{DEFER_LATEST_TRAILER}: {target}", lines[-1]):
+            msg = "the release merge does not carry the chain's defer-Latest trailer"
+            raise ChainError(msg)
     return sha
 
 
@@ -1879,13 +1904,23 @@ def cmd_candidate(args: argparse.Namespace) -> int:
 
 
 def cmd_merge(args: argparse.Namespace) -> int:
-    """Merge the verified release PR as the release identity."""
+    """Merge the verified release PR as the release identity.
+
+    Raises:
+        ChainError: The merge would run outside the first attempt or could not be verified.
+    """
     token = os.environ.get("RELEASE_TOKEN", "")
     if not token:
         say(f"error: {NO_RELEASE_IDENTITY}")
         return 1
+    chain_run = os.environ.get("GITHUB_RUN_ID", "")
+    if not re.fullmatch(r"[1-9][0-9]*", chain_run) or os.environ.get("GITHUB_RUN_ATTEMPT") != "1":
+        msg = "the release merge and its defer-Latest receipt must be from the chain's first attempt"
+        raise ChainError(msg)
     proof = (args.candidate_head, args.candidate_tree, args.candidate_run)
-    sha = poll("required checks", lambda: merge(get, args.pr, args.version, token, proof), args.wait)
+    sha = poll(
+        "required checks", lambda: merge(get, args.pr, args.version, token, proof, chain_run=chain_run), args.wait
+    )
     say(f"ok   merged release commit {sha[:9]}")
     output({"sha": sha})
     return 0

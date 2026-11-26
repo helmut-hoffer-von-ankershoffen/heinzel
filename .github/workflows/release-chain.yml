@@ -340,6 +340,25 @@ jobs:
       - uses: ./.github/actions/setup-uv
         with:
           enable-cache: false
+      - name: Bind the candidate to this chain before the squash can trigger Publish
+        env:
+          PR: ${{ needs.cut.outputs.pr || needs.plan.outputs.pr }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          CANDIDATE_HEAD: ${{ needs.candidate.outputs.head }}
+          CANDIDATE_TREE: ${{ needs.candidate.outputs.tree }}
+          CANDIDATE_RUN: ${{ needs.candidate.outputs.run_id }}
+        run: |
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          jq -n --arg version "$VERSION" --arg head "$CANDIDATE_HEAD" --arg tree "$CANDIDATE_TREE" \
+            --argjson repository_run "$GITHUB_RUN_ID" --argjson pr "$PR" --argjson candidate_run "$CANDIDATE_RUN" \
+            '{schema: 1, version: $version, head: $head, tree: $tree, chain_run: $repository_run, pr: $pr, candidate_run: $candidate_run}' \
+            > "$RUNNER_TEMP/release-defer-latest.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-defer-latest-1
+          path: ${{ runner.temp }}/release-defer-latest.json
+          if-no-files-found: error
+          retention-days: 30
       - id: merge
         name: Merge as the owner, only if main has not moved since the candidate base
         env:
@@ -410,7 +429,7 @@ jobs:
               test "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" = "$SHA" \
                 || { echo "error: no Release tag run for $SHA and main moved on; tag it by hand" >&2; exit 1; }
               before="$(newest release-tag.yml -e workflow_dispatch)"
-              gh workflow run release-tag.yml -R "$GITHUB_REPOSITORY" --ref main
+              gh workflow run release-tag.yml -R "$GITHUB_REPOSITORY" --ref main -f sha="$SHA"
               run="$(created_after "$before" release-tag.yml -e workflow_dispatch)"
             fi
             published || gh run watch "$run" -R "$GITHUB_REPOSITORY" --exit-status --interval 30 > /dev/null
