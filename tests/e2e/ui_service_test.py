@@ -1,6 +1,8 @@
 """An installed uv tool retains authenticated web identity through replacement, exec and crash recovery."""
 
+import importlib.metadata
 import json
+import shutil
 import signal
 import subprocess
 import sys
@@ -9,11 +11,14 @@ from urllib.parse import urlsplit
 import httpx
 import pytest
 
+from heinzel import Progress
+from heinzel.kernel import Installation, private_write
 from heinzel.modules.system.lifecycle._profile import default_profile
 from heinzel.modules.system.lifecycle._recovery_launcher import interpreter
 from tests.e2e._ui_service import RunningService, startup_diagnostics
 from tests.e2e.tool_install_test import sandbox, seed_uv_cache, wheel
-from tests.integration.ui_service_test import service, service_factory
+from tests.integration.auto_update_real_uv_test import wheel as fixture_wheel
+from tests.integration.ui_service_test import released_launcher, service, service_factory
 
 __all__ = ["sandbox", "seed_uv_cache", "service", "service_factory", "wheel"]
 
@@ -50,6 +55,45 @@ with (
     ToolSnapshot.take(prefix, state / "auto-update", content=installation.content_fingerprint())
     (prefix / "bin/hz").unlink()
     os.kill(os.getpid(), signal.SIGKILL)
+"""
+
+_INTERRUPT_REAL_UPDATE = """
+import os
+import signal
+import sys
+from pathlib import Path
+
+from heinzel import Progress, Settings
+from heinzel.kernel import Installation
+from heinzel.kernel.install._installation import _run
+from heinzel.modules.system.daemon import _installation_lifecycle
+from heinzel.modules.system.daemon._models import DaemonSettings
+from heinzel.modules.system.daemon._service import DaemonService
+from heinzel.modules.system.lifecycle._service import WebService
+from heinzel.modules.system.updater._adapter_state import FileInstallationState
+from heinzel.modules.system.updater._announced import Announcement
+from heinzel.modules.system.updater._update import UpdateService
+
+state, prefix, home, wheels, uv, real_uv = (Path(sys.argv[i]).resolve() for i in (1, 2, 3, 5, 6, 7))
+binary = Path(sys.argv[4])  # Keep the owned uv entrypoint path, not its resolved target.
+def runner(command, environment=None):
+    install = command[1:3] == ['tool', 'install']
+    result = _run([*command, '--no-index', '--find-links', str(wheels)] if install else command, environment)
+    if install and result.returncode == 0:
+        os.kill(os.getpid(), signal.SIGKILL)
+    return result
+
+installation = Installation(Progress(), prefix=prefix, uv=str(real_uv), runner=runner)
+settings = Settings(state_dir=state, data_dir=state / 'data', cache_dir=state / 'cache', log_dir=state / 'logs')
+daemon = DaemonService(None, settings, DaemonSettings(unit_dir=state / 'units'),
+                       continuity_fingerprint=installation.startup_fingerprint,
+                       quiescence_installation=installation)
+web = WebService(state, home, binary, prefix=prefix, uv=uv)
+updater = UpdateService(installation, None, lifecycle=_installation_lifecycle(daemon), web=web,
+                        state=FileInstallationState(state), home=home)
+updater.apply_announced(Announcement('999.0.0', {}), current=installation.installed_core_version(),
+                        folder=state / 'auto-update', trial=lambda _: False)
+raise AssertionError('real uv did not replace the tool')
 """
 
 
@@ -169,6 +213,86 @@ def test_installed_supervisor_recovers_its_server_after_the_update_owner_is_kill
     assert not tick["locked"]
     assert not tick["paused"]
     assert json.loads(heartbeat.read_text())["outcome"] == "completed"
+
+
+@pytest.mark.timeout(300)
+def test_historical_migration_recovers_interrupted_real_uv_replacement(supervised, sandbox, tmp_path):
+    service, running = supervised
+    if service.platform != sys.platform:
+        pytest.skip("The installed recovery worker validates the host's own service format")
+
+    # This fixture's diagnostic .pth executes code at startup, which the real updater correctly refuses.
+    [site] = list((service.prefix / "lib").glob("python*/site-packages"))
+    for suffix in (".pth", ".py"):
+        (site / f"_heinzel_fixture_startup_diagnostics{suffix}").unlink()
+
+    # Keep uv's entrypoint registration but model a normal index requirement, not a local wheel pin.
+    receipt = service.prefix / "uv-receipt.toml"
+    receipt.write_text(
+        '[tool]\nrequirements = [{ name = "heinzel" }]\n'
+        f'entrypoints = [{{ name = "hz", install-path = "{sandbox.hz_bin}" }}]\n'
+    )
+    installation = Installation(Progress(), prefix=service.prefix)
+    installation.record_startup_state(expected=installation.startup_fingerprint())
+    original = installation.content_fingerprint()
+    state = service.directory.parent
+
+    # Recreate the published launcher with its independently pinned renderer, then use the supported migration.
+    old = json.loads(service.marker.read_text())
+    port = service.status().port
+    assert port is not None
+    old["launcher"] = released_launcher(service, port, old, "published015")
+    private_write(service.launcher, old["launcher"])
+    private_write(service.marker, json.dumps(old))
+    assert service.historical_record(old)
+    service.recovery = interpreter(service.prefix)
+    assert service.recovery is not None
+    service.install(port)
+    assert not service.historical_record(json.loads(service.marker.read_text()))
+    assert service.recovery_ready(state)
+
+    running.launch()
+    first = running.ready()
+    wheels = tmp_path / "replacement-wheels"
+    wheels.mkdir()
+    fixture_wheel(wheels, "heinzel", "999.0.0", script="hz")
+    real_uv = shutil.which("uv")
+    assert real_uv is not None
+    interrupted = subprocess.run(
+        [
+            service.prefix / "bin/python",
+            "-I",
+            "-B",
+            "-c",
+            _INTERRUPT_REAL_UPDATE,
+            state,
+            service.prefix,
+            service.home,
+            sandbox.hz_bin,
+            wheels,
+            service.uv,
+            real_uv,
+        ],
+        env={**sandbox.env, "HOME": str(service.home)},
+        capture_output=True,
+        check=False,
+        timeout=180,
+    )
+    assert interrupted.returncode == -signal.SIGKILL, interrupted.stderr.decode(errors="replace")
+    [replacement] = importlib.metadata.distributions(path=[str(site)], name="heinzel")
+    assert replacement.version == "999.0.0"
+    assert (state / "auto-update/before-update").is_dir()
+    assert (state / "daemon/mutation-pending.json").is_file()
+    running.processes[-1].kill()
+    running.processes[-1].communicate(timeout=3)
+    process = running.launch()
+    recovered = running.ready(first.instance)
+    assert recovered.pid == process.pid
+    assert recovered.version == first.version
+    assert installation.content_fingerprint() == original
+    assert installation.startup_state_matches()
+    assert not (state / "daemon/mutation-pending.json").exists()
+    assert not (state / "auto-update/before-update").exists()
 
 
 def test_installed_server_keeps_session_on_update_exec_and_pairing_after_cold_restart(supervised, sandbox, wheel):
