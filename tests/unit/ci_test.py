@@ -2522,6 +2522,7 @@ def test_template_test_signal_cleans_the_independent_starter_tree(tmp_path):
                 os.killpg(int((tmp_path / "starter.child").read_text()), signal.SIGKILL)
 
 
+@pytest.mark.timeout(10)
 def test_template_test_bounds_cleanup_of_a_nonresponsive_starter(tmp_path):
     environment = _template_test_fixture(tmp_path, make_failure="check", starter_ignores_term=True)
     started_at = time.monotonic()
