@@ -29,15 +29,15 @@ stop_starter() {
   else
     kill -TERM "$starter_pid" 2>/dev/null || true
   fi
-  for ((attempt = 0; attempt < 100; attempt++)); do
+  for ((attempt = 0; attempt < 5; attempt++)); do
     if (( starter_grouped )); then
       kill -0 -- "-$starter_pid" 2>/dev/null || break
     else
       kill -0 "$starter_pid" 2>/dev/null || break
     fi
-    sleep 0.05
+    sleep 1
   done
-  if (( attempt == 100 )); then
+  if (( attempt == 5 )); then
     if (( starter_grouped )); then
       kill -KILL -- "-$starter_pid" 2>/dev/null || true
     else
