@@ -3806,7 +3806,7 @@ Module `system.plugin`. Read-only. Result: `PluginPending {changes: list[PluginP
 
 Read the status and result of a plugin add without repeating it.
 
-Module `system.plugin`. Read-only. Result: `PluginOperation {operation_id: string, status: 'previewed' \| 'running' \| 'completed' \| 'unknown', candidate: PluginCandidate, result: PluginChange \| null}`.
+Module `system.plugin`. Read-only. Result: `PluginOperation {operation_id: string, status: 'previewed' \| 'running' \| 'completed' \| 'unknown', candidate: PluginCandidate, result: PluginChange \| null, lifecycle_busy: boolean}`.
 
 ```json
 {

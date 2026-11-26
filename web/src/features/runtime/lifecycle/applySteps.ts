@@ -66,6 +66,10 @@ export class ApplySteps {
       if (phase.state === "running" || phase.state === "failed") this.mark("write", phase.state, phase.detail);
       return;
     }
+    if (phase.state === "running") {
+      this.mark("write", "running", phase.label);
+      return;
+    }
     if (phase.state === "failed") {
       this.mark("write", "failed", phase.detail ?? phase.label);
       return;
@@ -78,8 +82,10 @@ export class ApplySteps {
       : null;
     if (phase.id === "verify") this.notes.push(t("applySteps.checked"));
     else if (note) this.notes.push(note);
-    this.steps.write = { ...this.steps.write, detail: this.notes.join(" · ") };
-    this.tell();
+    if (this.notes.length) {
+      this.steps.write = { ...this.steps.write, detail: this.notes.join(" · ") };
+      this.tell();
+    }
   };
   mark(id: ApplyStepId, state: PhaseState, detail?: string) {
     const previous = this.steps[id];

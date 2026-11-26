@@ -357,6 +357,10 @@ class DaemonService(_Quiescence, _HandoverRequest, _Removal):
         """`tick` while a tick runs its jobs, else `other` (an update or another change); from read-only probes."""
         return "tick" if held(self.state_dir / "tick.lock") else "other"
 
+    def lifecycle_busy(self) -> bool:
+        """Whether a tick or another writer currently holds lifecycle authority."""
+        return held(self.state_dir / "lifecycle.lock")
+
     def _wait_budget(self) -> float:
         """Seconds a lifecycle writer waits now: the fixed budget, or the head's bound one, or none."""
         if self.lifecycle_wait_seconds is not None:
@@ -372,8 +376,7 @@ class DaemonService(_Quiescence, _HandoverRequest, _Removal):
         while it installs. Only a held lock is waited for: a pending marker with a free lock is left for recovery.
         Returns whether the lock is free now; the caller still acquires it without waiting, as before.
         """
-        path = self.state_dir / "lifecycle.lock"
-        if not held(path):
+        if not self.lifecycle_busy():
             return True
         budget = self._wait_budget()
         if budget <= 0:
@@ -383,9 +386,9 @@ class DaemonService(_Quiescence, _HandoverRequest, _Removal):
         started = time.monotonic()
         deadline = started + budget
         with self._kernel.resolve(Progress).task(f"Waiting for {_HOLDERS[holder]} to finish (up to {_budget(budget)})"):
-            while held(path) and time.monotonic() < deadline:
+            while self.lifecycle_busy() and time.monotonic() < deadline:
                 time.sleep(min(self.lifecycle_poll_seconds, max(0.0, deadline - time.monotonic())))
-        free = not held(path)
+        free = not self.lifecycle_busy()
         log_event(
             logger,
             "daemon.lifecycle.wait",

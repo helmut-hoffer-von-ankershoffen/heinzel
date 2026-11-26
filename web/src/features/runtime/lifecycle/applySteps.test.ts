@@ -83,6 +83,16 @@ describe("The steps of a change that restarts hz", () => {
     subject.stop();
   });
 
+  it("names the running work after the package check", () => {
+    const { subject } = steps();
+    subject.heard({ id: "verify", label: "Verify", state: "done" });
+    subject.heard({ id: "record", label: "Recording the add", state: "running" });
+    expect(subject.list().find((s) => s.id === "write")?.detail).toBe("Recording the add");
+    subject.heard({ id: "bind", label: "Applying connector bindings", state: "running" });
+    expect(subject.list().find((s) => s.id === "write")?.detail).toBe("Applying connector bindings");
+    subject.stop();
+  });
+
   it("fails the write with the server's reason when a reported step fails", () => {
     const { subject } = steps();
     subject.heard({ id: "verify", label: "Verify", state: "failed", detail: "Hash mismatch" });
