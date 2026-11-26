@@ -195,7 +195,7 @@ struct WorkspaceView: WebRepresentable {
                     window.dispatchEvent(new Event("heinzel-native-footer-metrics"));
                 }});
                 Object.defineProperty(window, "heinzelDesktop", {
-                    value: Object.freeze({ \(chrome) \(connection) browser, notices, workspaceAudio: false, \(audioMember) })
+                    value: Object.freeze({ clientFlavor: "native", \(chrome) \(connection) browser, notices, workspaceAudio: false, \(audioMember) })
                 });
             })();
             """,
