@@ -1,6 +1,9 @@
 import json
+import time
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import SecretStr
@@ -11,7 +14,7 @@ from heinzel.kernel import Installation, Progress
 from heinzel.modules.system import ReleaseNotes, _github
 from heinzel.modules.system import changelog as changelog_module
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, MAX_NOTES, PAGE_SIZE, GitHubReleases, clean
-from heinzel.modules.system.changelog import ChangelogSettings, as_markdown, changelog, render
+from heinzel.modules.system.changelog import ChangelogSettings, as_markdown, changelog, render, render_released
 
 pytestmark = pytest.mark.unit
 
@@ -85,6 +88,14 @@ def test_newer_releases_come_newest_first_without_drafts_prereleases_or_odd_tags
     assert "Authorization" not in headers  # no token unless one is set (ADR 0031)
     assert headers["User-agent"] == f"heinzel/{__version__}"
     assert timeout == 5
+
+
+@pytest.mark.parametrize("published_at", ["2026-10-01", "2026-10-01T12:00:00"])
+def test_newer_release_keeps_the_day_when_the_publish_instant_is_unknown(github, published_at):
+    github.pages = [[release("v1.1.0", published_at=published_at)]]
+    [note] = GitHubReleases("org/heinzel").newer_than("1.0.0", 5)
+    assert note.published_at is None
+    assert "hz 1.1.0 (2026-10-01)" in rendered([note])
 
 
 def test_pages_are_asked_until_one_reaches_the_installed_version_and_never_more_than_four(github):
@@ -254,3 +265,128 @@ def test_render_shows_each_newer_release_with_date_page_and_notes_and_link_targe
 def test_render_says_when_nothing_is_newer_and_shows_the_changelog_as_before():
     assert rendered([]).strip() == f"hz {__version__} is the latest release; nothing newer to show."
     assert rendered("# Changelog").strip() == "Changelog"
+
+
+HEADED = (
+    "## [0.9.54](https://x/v0.9.54) - 2026-11-22 07:41 UTC\n\nIntro.\n\n"
+    "## [0.9.53](https://x/v0.9.53) - 2026-11-21\n\nOld.\n"
+)
+
+
+def test_changelog_preserves_the_day_with_or_without_a_cut_time():
+    from datetime import date
+
+    from heinzel.modules.system._service import changelog_release_time
+
+    new = changelog_release_time(HEADED, "0.9.54")
+    assert new.published_at is None
+    assert new.day == date(2026, 11, 22)
+    old = changelog_release_time(HEADED, "0.9.53")
+    assert old.published_at is None
+    assert old.day == date(2026, 11, 21)
+    assert changelog_release_time(HEADED, "0.1.0").source is None
+
+
+def test_release_time_prefers_github_caches_it_and_falls_back_offline(monkeypatch, tmp_path):
+    from heinzel.modules.system import _github as github
+    from heinzel.modules.system._service import release_time
+
+    calls = []
+
+    def answer(url, token, timeout):
+        calls.append(url)
+        return {"published_at": "2026-11-23T08:15:30Z"}
+
+    monkeypatch.setattr(github, "get_json", answer)
+    installation = Installation(Progress(), prefix=tmp_path, uv="uv")
+    first = release_time(installation, tmp_path, "0.9.54", HEADED)
+    publication = datetime(2026, 11, 23, 8, 15, 30, tzinfo=UTC)
+    assert (first.source, first.published_at, first.day) == ("github", publication, publication.date())
+    local_publication = publication.astimezone().strftime("%Y-%m-%d %H:%M %Z")
+    assert str(render_released(first)) == f"hz 0.9.54 was released {local_publication}."
+
+    def offline(url, token, timeout):
+        msg = "offline"
+        raise OSError(msg)
+
+    monkeypatch.setattr(github, "get_json", offline)
+    assert release_time(installation, tmp_path, "0.9.54", HEADED) == first
+    assert len(calls) == 1
+    fallback = release_time(installation, tmp_path, "0.9.53", HEADED)
+    assert (fallback.source, fallback.published_at, fallback.day.isoformat()) == ("changelog", None, "2026-11-21")
+    cut = release_time(installation, tmp_path / "uncached", "0.9.54", HEADED)
+    assert (cut.source, cut.published_at, cut.day.isoformat()) == ("changelog", None, "2026-11-22")
+    assert str(render_released(cut)) == "The changelog for hz 0.9.54 is dated 2026-11-22."
+
+
+def test_release_time_cache_is_bound_to_repository_and_version(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from heinzel.modules.system import _service
+
+    repository = {"value": "one/heinzel"}
+    calls = []
+    monkeypatch.setattr(
+        _service, "installed_releases", lambda _installation: SimpleNamespace(repository=repository["value"])
+    )
+
+    def answer(url, _token, _timeout):
+        calls.append(url)
+        return {"published_at": "2026-11-23T08:15:30Z" if "one/heinzel" in url else "2026-11-24T09:00:00Z"}
+
+    monkeypatch.setattr(_service._github, "get_json", answer)
+    installation = Installation(Progress(), prefix=tmp_path, uv="uv")
+    one = _service.release_time(installation, tmp_path, "0.9.54", HEADED)
+    repository["value"] = "two/heinzel"
+    two = _service.release_time(installation, tmp_path, "0.9.54", HEADED)
+    assert one.day.isoformat() == "2026-11-23"
+    assert two.day.isoformat() == "2026-11-24"
+    assert len(calls) == 2
+    repository["value"] = "one/heinzel"
+    assert _service.release_time(installation, tmp_path, "0.9.54", HEADED) == one
+    assert len(calls) == 2
+
+
+@contextmanager
+def local_zone(monkeypatch, zone):
+    """Set the process timezone and restore it after the environment is restored."""
+    try:
+        with monkeypatch.context() as local:
+            local.setenv("TZ", zone)
+            time.tzset()
+            yield
+    finally:
+        time.tzset()
+
+
+@pytest.fixture
+def berlin(monkeypatch):
+    with local_zone(monkeypatch, "Europe/Berlin"):
+        yield
+
+
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="time.tzset is Unix only")
+@pytest.mark.parametrize("raises", [False, True])
+def test_local_zone_restores_process_timezone(monkeypatch, raises):
+    moment = datetime(2026, 11, 22, 7, 41, tzinfo=UTC)
+    with local_zone(monkeypatch, "UTC"):
+        assert moment.astimezone().strftime("%H:%M %Z") == "07:41 UTC"
+        if raises:
+            message = "timezone fixture probe"
+            with pytest.raises(RuntimeError, match=message), local_zone(monkeypatch, "Europe/Berlin"):
+                raise RuntimeError(message)
+        else:
+            with local_zone(monkeypatch, "Europe/Berlin"):
+                assert moment.astimezone().strftime("%H:%M %Z") == "08:41 CET"
+        assert moment.astimezone().strftime("%H:%M %Z") == "07:41 UTC"
+
+
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="time.tzset is Unix only")
+@pytest.mark.usefixtures("berlin")
+def test_newer_release_shows_publish_time_with_zone():
+    moment = datetime(2026, 11, 22, 7, 41, tzinfo=UTC)
+    note = ReleaseNotes(version="1.0.0", date=moment.date(), published_at=moment, notes="n", url=None)
+    console = Console(width=200, force_terminal=False)
+    with console.capture() as capture:
+        console.print(render([note]))
+    assert "hz 1.0.0 (2026-11-22 08:41 CET)" in capture.get()
