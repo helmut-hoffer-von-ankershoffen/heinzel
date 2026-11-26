@@ -1,9 +1,11 @@
 """The owned shell's exact, versioned pre-import recovery command."""
 
+import base64
 import json
 import os
 import re
 import shlex
+import zlib
 from pathlib import Path
 
 from heinzel import HeinzelError
@@ -64,7 +66,12 @@ def render(platform: str, prefix: Path, state: Path, home: Path, selected: tuple
     python, checksum = selected
     binary = shlex.quote(python)
     sum_command = "/usr/bin/shasum -a 256" if platform == "darwin" else "/usr/bin/sha256sum"
-    bootstrap = Path(_recovery_boot.__file__).read_text(encoding="utf-8")
+    source = Path(_recovery_boot.__file__).read_bytes()
+    # Keep the owned registration within its existing size limit, even with long installation paths.
+    compressor = zlib.compressobj(level=9, strategy=zlib.Z_FIXED)
+    payload = base64.b64encode(compressor.compress(source) + compressor.flush())
+    decode = f"zlib.decompress(base64.b64decode({payload!r}))"
+    bootstrap = f"import base64,zlib; exec(compile({decode}, '<recovery>', 'exec'))"
     recover = shlex.join(
         ["/usr/bin/env", "-i", f"HOME={home}", python, "-I", "-S", "-B", "-c", bootstrap, str(prefix), str(state)]
     )

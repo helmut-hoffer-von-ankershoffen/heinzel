@@ -1,13 +1,16 @@
 """An installed uv tool retains authenticated web identity through replacement, exec and crash recovery."""
 
 import json
+import signal
 import subprocess
+import sys
 from urllib.parse import urlsplit
 
 import httpx
 import pytest
 
 from heinzel.modules.system.lifecycle._profile import default_profile
+from heinzel.modules.system.lifecycle._recovery_launcher import interpreter
 from tests.e2e._ui_service import RunningService, startup_diagnostics
 from tests.e2e.tool_install_test import sandbox, seed_uv_cache, wheel
 from tests.integration.ui_service_test import service, service_factory
@@ -15,6 +18,36 @@ from tests.integration.ui_service_test import service, service_factory
 __all__ = ["sandbox", "seed_uv_cache", "service", "service_factory", "wheel"]
 
 pytestmark = pytest.mark.e2e
+
+_INTERRUPT_INSTALLED_UPDATE = """
+import json
+import os
+import signal
+import sys
+from pathlib import Path
+
+from heinzel import Progress
+from heinzel.kernel import Installation, private_lock, private_write
+from heinzel.modules.system.daemon._abandoned_mutation import host_boot, mutation_record
+from heinzel.modules.system.updater._adapter_state import FileInstallationState
+from heinzel.modules.system.updater._announced import ToolSnapshot
+from heinzel.modules.system.updater._recovery_worker import supervised_recovery
+
+state, prefix = (Path(value).resolve() for value in sys.argv[1:])
+installation = Installation(Progress(), prefix=prefix)
+installation.record_startup_state(expected=installation.startup_fingerprint())
+with (
+    private_lock(state / "web" / "auto-update-apply.lock"),
+    supervised_recovery(installation, state / "auto-update"),
+    FileInstallationState(state).lock("update"),
+    private_lock(state / "daemon/lifecycle.lock"),
+):
+    marker = mutation_record("b" * 64, os.getpid(), host_boot()[0])
+    private_write(state / "daemon/mutation-pending.json", json.dumps(marker, indent=2) + "\\n")
+    ToolSnapshot.take(prefix, state / "auto-update", content=installation.content_fingerprint())
+    (prefix / "bin/hz").unlink()
+    os.kill(os.getpid(), signal.SIGKILL)
+"""
 
 
 @pytest.fixture
@@ -29,6 +62,7 @@ def supervised(service, tmp_path, sandbox, wheel, supervised_install_options):
     sandbox.run("uv", "tool", "install", "--offline", *supervised_install_options, wheel)
     service.executable = sandbox.hz_bin
     service.prefix = sandbox.root / "tools/heinzel"
+    service.uv = service.prefix / "bin/uv"
     config = tmp_path / "selected-config/config.toml"
     config.parent.mkdir(mode=0o700)
     config.write_text(
@@ -70,6 +104,55 @@ def supervised(service, tmp_path, sandbox, wheel, supervised_install_options):
 
 def session_headers(url):
     return {"Authorization": "Bearer " + urlsplit(url).fragment.removeprefix("token=")}
+
+
+def test_installed_supervisor_recovers_its_server_after_the_update_owner_is_killed(supervised, sandbox):
+    service, running = supervised
+    if service.platform != sys.platform:
+        pytest.skip("The installed recovery worker validates the host's own service format")
+    assert service.recovery_interpreter() is None
+    service.recovery = interpreter(service.prefix)
+    assert service.recovery is not None
+    port = service.status().port
+    assert port is not None
+    assert service.install(port).changed
+    assert service.recovery_interpreter() == service.recovery
+    process = running.launch()
+    first = running.ready()
+    process.kill()
+    process.communicate(timeout=3)
+    state = service.directory.parent
+    interrupted = subprocess.run(
+        [service.prefix / "bin/python", "-I", "-B", "-c", _INTERRUPT_INSTALLED_UPDATE, state, service.prefix],
+        env={**sandbox.env, "HOME": str(service.home)},
+        capture_output=True,
+        check=False,
+        timeout=90,
+    )
+    assert interrupted.returncode == -signal.SIGKILL, interrupted.stderr.decode(errors="replace")
+    pending = state / "daemon/mutation-pending.json"
+    assert pending.is_file()
+    assert not (service.prefix / "bin/hz").exists()
+    process = running.launch()
+    recovered = running.ready(first.instance)
+    assert recovered.pid == process.pid
+    assert recovered.version == first.version
+    assert not pending.exists()
+    assert not (state / "auto-update/before-update").exists()
+    sandbox.run(
+        service.prefix / "bin/python",
+        "-I",
+        "-c",
+        "from heinzel import Progress; from heinzel.kernel import Installation; "
+        "assert Installation(Progress()).startup_state_matches()",
+        HOME=str(service.home),
+    )
+    heartbeat = state / "daemon/heartbeat.json"
+    assert not heartbeat.exists()
+    tick = json.loads(sandbox.run(sandbox.hz_bin, "system", "daemon", "tick", "--json", **service.profile))
+    assert not tick["locked"]
+    assert not tick["paused"]
+    assert json.loads(heartbeat.read_text())["outcome"] == "completed"
 
 
 def test_installed_server_keeps_session_on_update_exec_and_pairing_after_cold_restart(supervised, sandbox, wheel):
