@@ -965,7 +965,7 @@ def test_the_marker_is_written_once(monkeypatch):
     monkeypatch.setattr(chain, "run", lambda *_, **__: pytest.fail("no upload over an existing marker"))
     with pytest.raises(chain.ChainError, match="terminal"):
         chain.publish_marker(reader({"releases/tags/v0.9.54": release("0.9.54")}), "0.9.54", {})
-    data = chain.marker("0.9.54", "5", good=True)
+    data = chain.marker("0.9.54", "5", good=True, snap=SNAP)
     assert (data["project"], data["version"], data["accepted"], data["acceptance_run"]) == (
         "heinzel",
         "0.9.54",
@@ -979,6 +979,7 @@ def test_tail_promotes_only_after_its_independent_acceptance_receipts(tmp_path, 
     write_receipts(tmp_path, **({} if accepted else {"macOS": {"verdict": "REJECTED"}}))
     effects = []
     monkeypatch.setattr(chain, "older_open", lambda *_: None)
+    monkeypatch.setattr(chain, "release_of", lambda *_: None)
     monkeypatch.setattr(
         chain, "publish_marker", lambda _read, _version, data: effects.append(("marker", data["accepted"]))
     )
@@ -995,6 +996,58 @@ def test_tail_promotes_only_after_its_independent_acceptance_receipts(tmp_path, 
     )
     assert chain.cmd_verdict(args) == (0 if accepted else 1)
     assert effects == [("marker", True), ("latest", True)] if accepted else effects == [("marker", False)]
+
+
+@pytest.mark.parametrize("change", [None, "rejected", "wheel", "profile", "digest", "origin", "legacy"])
+def test_resume_requires_original_accepted_marker_and_matching_bytes(monkeypatch, change):
+    data = chain.marker("0.9.54", "5", good=True, snap=SNAP)
+    if change == "rejected":
+        data["accepted"] = False
+    elif change in ("wheel", "profile"):
+        data[f"{change}_sha256"] = "0" * 64
+    elif change == "legacy":
+        del data["profile_sha256"]
+    raw = json.dumps(data).encode()
+    rel = release("0.9.54")
+    rel["assets"][-1]["digest"] = "sha256:" + ("0" * 64 if change == "digest" else hashlib.sha256(raw).hexdigest())
+    origin = run_row(event="workflow_dispatch", run_id=5)
+    origin.update(path=".github/workflows/release-tail.yml", display_title="Release tail v0.9.54")
+    if change == "origin":
+        origin["run_attempt"] = 2
+    monkeypatch.setattr(chain, "fetch", lambda _: raw)
+    read = reader({"releases/tags/v0.9.54": rel, "actions/runs/5": origin})
+    if change is None:
+        chain.resume_marker(read, "0.9.54", SNAP)
+    else:
+        with pytest.raises(chain.ChainError):
+            chain.resume_marker(read, "0.9.54", SNAP)
+
+
+@pytest.mark.parametrize("accepted", [False, True])
+def test_retry_rechecks_acceptance_before_resuming_latest(tmp_path, monkeypatch, accepted):
+    write_receipts(tmp_path, **({} if accepted else {"macOS": {"verdict": "REJECTED"}}))
+    effects = []
+    monkeypatch.setattr(chain, "older_open", lambda *_: None)
+    monkeypatch.setattr(chain, "release_of", lambda *_: release("0.9.54"))
+    monkeypatch.setattr(chain, "resume_marker", lambda *_: effects.append("authenticated"))
+    monkeypatch.setattr(chain, "promote", lambda *_: effects.append("latest"))
+    args = SimpleNamespace(
+        receipts=tmp_path,
+        dry_run=False,
+        run_id="5",
+        attempt="1",
+        version="0.9.54",
+        wait=0,
+        wheel_sha256=WHEEL,
+        profile_sha256=PROFILE,
+    )
+    if accepted:
+        assert chain.cmd_verdict(args) == 0
+        assert effects == ["authenticated", "latest"]
+    else:
+        with pytest.raises(chain.ChainError, match="fresh acceptance rejected"):
+            chain.cmd_verdict(args)
+        assert not effects
 
 
 def git(cwd, *args):

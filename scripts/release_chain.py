@@ -1744,7 +1744,7 @@ def older_open(read: Callable[[str], Any], version: str) -> None:
         raise Wait(msg)
 
 
-def marker(version: str, run_id: str, good: bool) -> dict[str, Any]:
+def marker(version: str, run_id: str, good: bool, snap: dict[str, str]) -> dict[str, Any]:
     """The acceptance.json the updater reads."""
     return {
         "schema": 1,
@@ -1752,8 +1752,66 @@ def marker(version: str, run_id: str, good: bool) -> dict[str, Any]:
         "version": version,
         "accepted": good,
         "acceptance_run": int(run_id),
+        "wheel_sha256": snap["wheel_sha256"],
+        "profile_sha256": snap["profile_sha256"],
         "at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+
+
+def resume_marker(read: Callable[[str], Any], version: str, snap: dict[str, str]) -> None:
+    """Authenticate an accepted marker before a fresh acceptance can resume promotion.
+
+    Raises:
+        ChainError: The marker, its originating run, or its byte binding is not trustworthy.
+    """
+    release = release_of(read, version)
+    digest = asset_digest(release, MARKER) if release else None
+    if not digest:
+        msg = "the existing acceptance marker has no unique provider digest"
+        raise ChainError(msg)
+    data = fetch(f"https://github.com/{REPOSITORY}/releases/download/v{version}/{MARKER}")
+    if hashlib.sha256(data).hexdigest() != digest:
+        msg = "the existing acceptance marker differs from its provider digest"
+        raise ChainError(msg)
+    try:
+        existing = json.loads(data)
+    except (ValueError, UnicodeDecodeError) as exc:
+        msg = "the existing acceptance marker is unreadable"
+        raise ChainError(msg) from exc
+    if (
+        not isinstance(existing, dict)
+        or existing.get("accepted") is not True
+        or any(
+            existing.get(key) != value
+            for key, value in {
+                "schema": 1,
+                "project": "heinzel",
+                "version": version,
+                "accepted": True,
+                "wheel_sha256": snap["wheel_sha256"],
+                "profile_sha256": snap["profile_sha256"],
+            }.items()
+        )
+    ):
+        msg = "the existing acceptance marker is rejected or contradicts the snapshot"
+        raise ChainError(msg)
+    run_id = existing.get("acceptance_run")
+    if type(run_id) is not int or run_id < 1:
+        msg = "the existing acceptance marker has no originating run"
+        raise ChainError(msg)
+    origin = read(f"actions/runs/{run_id}")
+    if not isinstance(origin, dict) or not (
+        origin.get("id") == run_id
+        and origin.get("path") == f".github/workflows/{TAIL}"
+        and origin.get("event") == "workflow_dispatch"
+        and origin.get("head_branch") == "main"
+        and origin.get("status") == "completed"
+        and origin.get("display_title") == f"Release tail v{version}"
+        and origin.get("run_attempt") == 1
+        and all((origin.get(key) or {}).get("full_name") == REPOSITORY for key in ("repository", "head_repository"))
+    ):
+        msg = "the existing acceptance marker has no trusted first-attempt tail run"
+        raise ChainError(msg)
 
 
 def publish_marker(read: Callable[[str], Any], version: str, data: dict[str, Any]) -> None:
@@ -2036,7 +2094,11 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
 
 
 def cmd_verdict(args: argparse.Namespace) -> int:
-    """Judge the receipts, then the marker, then Latest."""
+    """Judge the receipts, then the marker, then Latest.
+
+    Raises:
+        ChainError: A fresh rejection cannot resume an existing marker.
+    """
     snap = {"version": args.version, "wheel_sha256": args.wheel_sha256, "profile_sha256": args.profile_sha256}
     good, lines = judge(args.receipts, snap, args.run_id, args.attempt)
     for line in lines:
@@ -2050,7 +2112,15 @@ def cmd_verdict(args: argparse.Namespace) -> int:
         promote(get, args.version, snap, dry=True)
         return 0 if good else 1
     poll("older release", lambda: older_open(get, args.version), args.wait)
-    publish_marker(get, args.version, marker(args.version, args.run_id, good))
+    if has_marker(release_of(get, args.version)):
+        if not good:
+            msg = "fresh acceptance rejected; an existing marker cannot authorize Latest"
+            raise ChainError(msg)
+        resume_marker(get, args.version, snap)
+        say(f"ok   authenticated accepted marker on v{args.version}; resuming Latest")
+        promote(get, args.version, snap)
+        return 0
+    publish_marker(get, args.version, marker(args.version, args.run_id, good, snap))
     say(f"ok   acceptance marker on v{args.version}: {'accepted' if good else 'not accepted'}")
     if not good:
         return 1
