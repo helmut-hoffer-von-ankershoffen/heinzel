@@ -2112,6 +2112,9 @@ export interface paths {
         /**
          * Show a week from your connected calendar.
          * @description Show a week from your connected calendar.
+         *
+         *     Raises:
+         *         HeinzelError: If the calendar selection is invalid.
          */
         get: operations["org_calendar"];
         put?: never;
@@ -2182,6 +2185,26 @@ export interface paths {
          *         HeinzelError: If removal has not been explicitly confirmed.
          */
         post: operations["org_calendar_reminders_uninstall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/org/calendar-selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read a calendar week with the browser's current calendar exclusions.
+         * @description Read a calendar week with the browser's current calendar exclusions.
+         */
+        post: operations["org_calendar_selection"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5927,15 +5950,47 @@ export interface components {
             service: string;
         };
         /**
+         * CalendarSource
+         * @description A readable calendar exposed by a calendar adapter.
+         */
+        CalendarSource: {
+            /**
+             * Id
+             * @description Stable opaque source id, suitable for events_for.
+             */
+            id: string;
+            /**
+             * Primary
+             * @description Whether this is the owner's primary calendar.
+             * @default false
+             */
+            primary: boolean;
+            /**
+             * Title
+             * @description Name of the calendar shown to its owner.
+             */
+            title: string;
+        };
+        /**
          * CalendarWeek
          * @description A bounded week of calendar events or an explanation why it could not be read.
          */
         CalendarWeek: {
             /**
+             * Adapter
+             * @description The bound adapter whose calendar ids these are.
+             */
+            adapter?: string | null;
+            /**
+             * Calendars
+             * @description Readable calendars, or none for a single-calendar adapter.
+             */
+            calendars?: components["schemas"]["CalendarSource"][] | null;
+            /**
              * Events
              * @description Non-cancelled events overlapping the week.
              */
-            events?: components["schemas"]["Event"][];
+            events?: components["schemas"]["CalendarWeekEvent"][];
             /**
              * Fix
              * @description A command to connect a calendar, if available.
@@ -5963,6 +6018,113 @@ export interface components {
              * @description The exclusive end of the week in your time zone.
              */
             until: string;
+            /**
+             * Warnings
+             * @description Selected calendars that could not be read.
+             */
+            warnings?: string[];
+        };
+        /**
+         * CalendarWeekEvent
+         * @description An occurrence in the weekly view, labeled with its source when available.
+         */
+        CalendarWeekEvent: {
+            /**
+             * All Day
+             * @description Whether it is an all-day event.
+             * @default false
+             */
+            all_day: boolean;
+            /**
+             * Attendees
+             * @description Who is invited, the user included.
+             */
+            attendees?: components["schemas"]["Participant"][];
+            /**
+             * Calendar Id
+             * @description Source calendar id, when reading several calendars.
+             */
+            calendar_id?: string | null;
+            /**
+             * Conference Id
+             * @description Identifier of the conference it is held in, in the meeting tool's notation (a Zoom meeting number taken from the conferencing data, location or description; a Meet code), so that the `Meeting` with the same `conference_id` and an overlapping time is this event's meeting; none without conferencing.
+             */
+            conference_id?: string | null;
+            /**
+             * Conference Url
+             * @description Link to join the conference; none without one.
+             */
+            conference_url?: string | null;
+            /**
+             * End
+             * Format: date-time
+             * @description When it ends, exclusive; the next midnight for an all-day event.
+             */
+            end: string;
+            /**
+             * Id
+             * @description Identifier of this occurrence in the adapter's notation.
+             */
+            id: string;
+            /**
+             * Location
+             * @description Where it takes place, in the event's words; none if unset.
+             */
+            location?: string | null;
+            /**
+             * Organized By User
+             * @description Whether the user organizes it, and so may move or cancel it for everyone.
+             * @default false
+             */
+            organized_by_user: boolean;
+            /** @description Who organizes it; none if the vendor doesn't say. */
+            organizer?: components["schemas"]["Participant"] | null;
+            /**
+             * Response
+             * @description The user's own answer to the invitation: one of `RESPONSES`, or `pending` while unanswered; none when the user is not among the attendees.
+             */
+            response?: ("accepted" | "declined" | "tentative" | "pending") | null;
+            /**
+             * Start
+             * Format: date-time
+             * @description When it starts; midnight in the calendar's zone for an all-day event.
+             */
+            start: string;
+            /**
+             * Status
+             * @description State in the vendor's words, e.g. `confirmed`, `cancelled`.
+             * @default confirmed
+             */
+            status: string;
+            /**
+             * Title
+             * @description Title (summary) of the event.
+             */
+            title: string;
+            /**
+             * Url
+             * @description Where people open it; none if it has no web address.
+             */
+            url?: string | null;
+        };
+        /**
+         * CalendarWeekSelection
+         * @description Browser calendar exclusions for one week.
+         */
+        CalendarWeekSelection: {
+            /**
+             * Adapter
+             * @default
+             */
+            adapter: string;
+            /** Excluded */
+            excluded?: string[];
+            /**
+             * Offset
+             * @description Weeks before or after this week.
+             * @default 0
+             */
+            offset: number;
         };
         /**
          * CallerActivity
@@ -18728,6 +18890,10 @@ export interface components {
              */
             session_id: string;
         };
+        /** org_calendar_selection_Input */
+        org_calendar_selection_Input: {
+            selection: components["schemas"]["CalendarWeekSelection"];
+        };
         /** system_claude_acknowledge_Input */
         system_claude_acknowledge_Input: {
             /**
@@ -18846,7 +19012,10 @@ export type SchemaBindingResult = components['schemas']['BindingResult'];
 export type SchemaBookmark = components['schemas']['Bookmark'];
 export type SchemaBookmarkList = components['schemas']['BookmarkList'];
 export type SchemaCalendarReminderStatus = components['schemas']['CalendarReminderStatus'];
+export type SchemaCalendarSource = components['schemas']['CalendarSource'];
 export type SchemaCalendarWeek = components['schemas']['CalendarWeek'];
+export type SchemaCalendarWeekEvent = components['schemas']['CalendarWeekEvent'];
+export type SchemaCalendarWeekSelection = components['schemas']['CalendarWeekSelection'];
 export type SchemaCallerActivity = components['schemas']['CallerActivity'];
 export type SchemaCandidate = components['schemas']['Candidate'];
 export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
@@ -19230,6 +19399,7 @@ export type SchemaHeinzelSearchAgentConversationsInput = components['schemas']['
 export type SchemaHeinzelSearchConversationInput = components['schemas']['heinzel_search_conversation_Input'];
 export type SchemaHeinzelSetLevelInput = components['schemas']['heinzel_set_level_Input'];
 export type SchemaHeinzelShareDraftLinkInput = components['schemas']['heinzel_share_draft_link_Input'];
+export type SchemaOrgCalendarSelectionInput = components['schemas']['org_calendar_selection_Input'];
 export type SchemaSystemClaudeAcknowledgeInput = components['schemas']['system_claude_acknowledge_Input'];
 export type SchemaSystemClaudeDisableInput = components['schemas']['system_claude_disable_Input'];
 export type SchemaSystemClaudeEnableInput = components['schemas']['system_claude_enable_Input'];
@@ -22577,6 +22747,8 @@ export interface operations {
             query?: {
                 /** @description Weeks before or after this week. */
                 offset?: number;
+                /** @description Calendar exclusions and their adapter as JSON. */
+                selection?: string;
             };
             header?: never;
             path?: never;
@@ -22675,6 +22847,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    org_calendar_selection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["org_calendar_selection_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarWeek"];
                 };
             };
             /** @description Validation Error */
