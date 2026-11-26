@@ -1142,7 +1142,7 @@ struct ConnectionView: View {
 
     private var nativeFooterBottomValue: CGFloat {
         #if os(iOS)
-        nativeFooterBottom
+        WorkspaceFooterGeometry.webBottomInset(safeArea: nativeFooterBottom, hasSlot: nativeFooterSlot != nil)
         #else
         0
         #endif
