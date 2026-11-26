@@ -2408,6 +2408,11 @@ def _template_test_fixture(
         "    parent_stopped.write_text('stopped'); raise SystemExit(128 + signum)\n"
         f"signal.signal(signal.SIGTERM, {'signal.SIG_IGN' if starter_ignores_term else 'stop'})\n"
         + child_start
+        + "if child is not None:\n"
+        + "    ready = pathlib.Path(os.environ['STARTER_CHILD_READY'])\n"
+        + "    deadline = time.monotonic() + 2\n"
+        + "    while not ready.exists() and time.monotonic() < deadline: time.sleep(.01)\n"
+        + "    if not ready.exists(): raise SystemExit('starter child did not start')\n"
         + "started.write_text(str(os.getpid()))\n"
         f"if {starter_failure!r}: stop(15, None)\n"
         "while True: time.sleep(.05)\n",
