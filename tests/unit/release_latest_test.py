@@ -263,6 +263,23 @@ def test_actual_publish_shell_uses_the_verified_mode_only(tmp_path, mode, reposi
         assert ("--latest=false" in args) is deferred
 
 
+@pytest.mark.parametrize(("ref", "requested"), [("refs/heads/other", MERGE), ("refs/heads/main", HEAD)])
+def test_release_tag_dispatch_refuses_a_different_ref_or_commit(tmp_path, ref, requested):
+    script = workflow_step("release-tag.yml", "tag", "Create and push the tag")
+    env = {**os.environ, "GITHUB_REF": ref, "GITHUB_SHA": MERGE, "REQUESTED_SHA": requested}
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", "uv() { echo 0.9.56; }\n" + script],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    assert result.returncode == 1
+    assert "Release tag dispatch does not bind the exact protected main merge" in result.stderr
+
+
 @pytest.mark.parametrize(
     ("policy", "remote", "published", "expect_tag"),
     [

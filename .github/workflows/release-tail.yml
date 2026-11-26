@@ -27,8 +27,8 @@ concurrency:
 jobs:
   publish:
     name: Publish Core and compose v${{ inputs.version }}
-    # The protected queue integration must land before hosted release writes are enabled.
-    if: ${{ false }}
+    # This workflow intentionally declares no workflow_call trigger until the protected queue integration lands.
+    if: github.event_name == 'workflow_call'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:

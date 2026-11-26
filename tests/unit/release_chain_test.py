@@ -1442,14 +1442,19 @@ def test_the_token_reaches_the_probe_only_on_a_dispatched_dry_run_from_main():
 
 
 def test_hosted_release_writes_stay_inactive_until_queue_and_freeze_are_protected():
+    import yaml
+
     workflows = ROOT / ".github/workflows"
     chain_source = (workflows / "release-chain.yml").read_text()
     mode = chain_source.split("id: mode", 1)[1].split("id: plan", 1)[0]
     assert "token probes are disabled" in mode
     assert "hosted release writes require the protected freeze and queue integration" in mode
     assert "dry=false" not in mode
-    assert (workflows / "release-freeze.yml").read_text().count("if: ${{ false }}") == 2
-    assert "if: ${{ false }}" in (workflows / "release-tail.yml").read_text()
+    for workflow, job_names in (("release-freeze.yml", ("freeze", "sync")), ("release-tail.yml", ("publish",))):
+        source = yaml.load((workflows / workflow).read_text(), Loader=yaml.BaseLoader)
+        assert "workflow_call" not in source["on"]
+        for job_name in job_names:
+            assert source["jobs"][job_name]["if"] == "github.event_name == 'workflow_call'"
     publish = (workflows / "publish.yml").read_text()
     assert "DEFER_LATEST: ${{ steps.latest.outputs.defer_latest }}" in publish
     assert "true) latest=(--latest=false) ;;" in publish

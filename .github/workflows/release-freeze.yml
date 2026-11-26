@@ -16,8 +16,8 @@ permissions: {}
 jobs:
   freeze:
     name: Release freeze
-    # The protected freeze must have a single reviewed publisher before it can write checks.
-    if: ${{ false }}
+    # This workflow intentionally declares no workflow_call trigger until the protected freeze has one publisher.
+    if: github.event_name == 'workflow_call'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -38,7 +38,7 @@ jobs:
 
   sync:
     name: Post the freeze on every open PR
-    if: ${{ false }}
+    if: github.event_name == 'workflow_call'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

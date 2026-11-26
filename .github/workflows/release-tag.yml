@@ -45,9 +45,9 @@ jobs:
           REQUESTED_SHA: ${{ inputs.sha }}
         run: |
           tag="v$(uv version --short)"
-          if [ -n "$REQUESTED_SHA" ]; then
-            test "$GITHUB_REF" = refs/heads/main && test "$REQUESTED_SHA" = "$GITHUB_SHA" \
-              || { echo 'error: Release tag dispatch does not bind the exact protected main merge' >&2; exit 1; }
+          if [[ -n "$REQUESTED_SHA" && ( "$GITHUB_REF" != refs/heads/main || "$REQUESTED_SHA" != "$GITHUB_SHA" ) ]]; then
+            echo 'error: Release tag dispatch does not bind the exact protected main merge' >&2
+            exit 1
           fi
           MESSAGE="${MESSAGE:-$(git log -1 --format=%B)}" # dispatched by hand: the commit checked out
           if [[ "$MESSAGE" != "chore(release): $tag"* ]]; then
