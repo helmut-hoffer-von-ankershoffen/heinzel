@@ -270,6 +270,8 @@ function base(url: URL): { status?: number; body: unknown } | undefined {
       return { body: [installed] };
     case "/api/system/plugin/search":
       return { body: { plugins: [], warnings: [] } };
+    case "/api/system/plugin/showcase":
+      return { body: { screenshots: [], soundscapes: [] } };
     case "/api/restart":
       return { status: 202, body: { restarting: true, instance: "old", message: "Restarting" } };
     case "/api/system/info":
@@ -1556,42 +1558,7 @@ const GALLERY = {
 };
 
 describe("PluginGallery", () => {
-  it("brings a clipped preview into the settings pane without moving keyboard focus", async () => {
-    serve((url) => (url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url)));
-    const user = userEvent.setup();
-    const { container } = render(
-      <Providers client={queryClient()}>
-        <div data-settings-content>
-          <PluginGallery spec="harbor" name="Harbor" />
-        </div>
-      </Providers>,
-    );
-    const open = screen.getByRole("button", { name: "Screenshots for Harbor" });
-    await user.click(open);
-    const image = await screen.findByRole("img", { name: "Harbor in the app" });
-    const pane = container.querySelector<HTMLElement>("[data-settings-content]");
-    if (!pane) throw new Error("Gallery fixture is missing its settings pane");
-    vi.spyOn(pane, "getBoundingClientRect").mockReturnValue({ top: 80, bottom: 380 } as DOMRect);
-    const imageRect = vi.spyOn(image, "getBoundingClientRect").mockReturnValue({ top: 400, bottom: 500 } as DOMRect);
-    fireEvent.load(image);
-    expect(pane.scrollTop).toBe(128);
-    expect(open).toHaveFocus();
-    pane.scrollTop = 100;
-    imageRect.mockReturnValue({ top: 50, bottom: 200 } as DOMRect);
-    fireEvent.load(image);
-    expect(pane.scrollTop).toBe(62);
-    vi.stubGlobal(
-      "visualViewport",
-      Object.assign(new EventTarget(), { offsetLeft: 0, offsetTop: 20, width: 320, height: 240 }),
-    );
-    pane.scrollTop = 0;
-    imageRect.mockReturnValue({ top: 100, bottom: 350 } as DOMRect);
-    fireEvent.load(image);
-    expect(pane.scrollTop).toBe(98);
-    expect(open).toHaveFocus();
-  });
-
-  it("loads no metadata or images until opened, switches UI/CLI captures and keeps sound external", async () => {
+  it("shows thumbnails immediately and opens screenshots in an in-app modal", async () => {
     const calls = serve((url) => (url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url)));
     const user = userEvent.setup();
     const { container } = render(
@@ -1599,37 +1566,33 @@ describe("PluginGallery", () => {
         <PluginGallery spec="harbor" name="Harbor" />
       </Providers>,
     );
-    expect(calls).toHaveLength(0);
-    expect(screen.queryByRole("img")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
-    const gallery = await screen.findByRole("region", { name: "Screenshot gallery: Harbor" });
-    expect(await within(gallery).findByRole("img", { name: "Harbor in the app" })).toHaveAttribute(
-      "src",
-      GALLERY.screenshots[0]?.url,
-    );
+    const gallery = screen.getByRole("region", { name: "Screenshot gallery: Harbor" });
+    const screenshot = await within(gallery).findByRole("button", { name: "Open full size: Harbor in the terminal" });
+    const thumbnail = within(screenshot).getByRole("img");
+    expect(thumbnail).toHaveAttribute("loading", "lazy");
     expect(calls).toHaveLength(1);
     expect(new URL(calls[0]?.url ?? "").searchParams.get("spec")).toBe("harbor");
-    await user.click(within(gallery).getByRole("radio", { name: "CLI: Harbor in the terminal" }));
-    expect(within(gallery).getByRole("img", { name: "Harbor in the terminal" })).toHaveAttribute(
-      "src",
-      GALLERY.screenshots[1]?.url,
-    );
-    expect(within(gallery).getByRole("link", { name: "Open full size: Harbor in the terminal" })).toHaveAttribute(
-      "href",
-      GALLERY.screenshots[1]?.url,
-    );
-    const cliChoice = within(gallery).getByRole("radio", { name: "CLI: Harbor in the terminal" });
-    expect(cliChoice).toBeChecked();
-    cliChoice.focus();
-    await user.keyboard("{ArrowLeft}");
-    expect(within(gallery).getByRole("radio", { name: "UI: Harbor in the app" })).toBeChecked();
-    expect(within(gallery).getByRole("img", { name: "Harbor in the app" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await user.click(thumbnail);
+    const viewer = screen.getByRole("dialog", { name: "Harbor in the terminal" });
+    expect(viewer).toHaveAttribute("open");
+    expect(within(viewer).getByRole("img")).toHaveAttribute("src", GALLERY.screenshots[1]?.url);
+    expect(within(viewer).queryByRole("link")).not.toBeInTheDocument();
+    expect(within(viewer).getByRole("button", { name: "Close screenshot" })).toHaveFocus();
+    fireEvent(viewer, new Event("cancel", { cancelable: true }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screenshot).toHaveFocus();
+
+    await user.click(screenshot);
+    await user.click(screen.getByRole("button", { name: "Close screenshot" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screenshot).toHaveFocus();
     expect(within(gallery).getByRole("link", { name: /Harbor tide/ })).toHaveAttribute(
       "href",
       GALLERY.soundscapes[0]?.url,
     );
     expect(container.querySelector("iframe")).toBeNull();
-    expect(calls.every((call) => new URL(call.url).origin === window.location.origin)).toBe(true);
     await expectAccessible(container);
     await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
     expect(screen.queryByRole("region", { name: "Screenshot gallery: Harbor" })).not.toBeInTheDocument();
@@ -1637,13 +1600,11 @@ describe("PluginGallery", () => {
 
   it("never fetches or displays public image URLs for a private source", async () => {
     const calls = serve(base);
-    const user = userEvent.setup();
     const { container } = render(
       <Providers client={queryClient()}>
         <PluginGallery spec="private" name="Harbor" privateSource />
       </Providers>,
     );
-    await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
     expect(screen.getByText("Private previews stay in the plugin's repository.")).toBeInTheDocument();
     expect(calls).toHaveLength(0);
     expect(container.querySelectorAll("img,iframe")).toHaveLength(0);
@@ -1651,9 +1612,7 @@ describe("PluginGallery", () => {
 
   it("offers an installed plugin's exact Git source gallery without installing or changing it", async () => {
     const calls = serve((url) => (url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url)));
-    const user = userEvent.setup();
     show();
-    await user.click(await screen.findByRole("button", { name: "Screenshots for Clock" }));
     await screen.findByRole("img", { name: "Harbor in the app" });
     const previews = calls.filter((call) => new URL(call.url).pathname.endsWith("/showcase"));
     expect(new URL(previews[0]?.url ?? "").searchParams.get("spec")).toBe(
@@ -1698,9 +1657,7 @@ describe("PluginGallery", () => {
         };
       return url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url);
     });
-    const user = userEvent.setup();
     show();
-    await user.click(await screen.findByRole("button", { name: "Screenshots for Clock" }));
     await screen.findByRole("img", { name: "Harbor in the app" });
     const preview = calls.find((call) => new URL(call.url).pathname.endsWith("/showcase"));
     expect(new URL(preview?.url ?? "").searchParams.get("spec")).toBe(
@@ -1712,26 +1669,22 @@ describe("PluginGallery", () => {
   it("treats owner HTML captions as text", async () => {
     const caption = '<script>alert("no")</script>';
     serve(() => ({ body: { ...GALLERY, screenshots: [{ ...GALLERY.screenshots[0], caption }] } }));
-    const user = userEvent.setup();
     const { container } = render(
       <Providers client={queryClient()}>
         <PluginGallery spec="harbor" name="Harbor" />
       </Providers>,
     );
-    await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
     expect(await screen.findByRole("img", { name: caption })).toBeInTheDocument();
     expect(container.querySelector("script")).toBeNull();
   });
 
   it("shows a useful empty gallery without blocking installation", async () => {
     serve(() => ({ body: { ...GALLERY, screenshots: [], soundscapes: [], notice: "" } }));
-    const user = userEvent.setup();
     render(
       <Providers client={queryClient()}>
         <PluginGallery spec="harbor" name="Harbor" />
       </Providers>,
     );
-    await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
     expect(await screen.findByText("This plugin has not published screenshots yet.")).toBeInTheDocument();
   });
 
@@ -1755,13 +1708,11 @@ it("uses an installed immutable revision even when its source only names a branc
 
 it("never resolves an unknown installed source through another same-name catalog entry", async () => {
   const calls = serve(base);
-  const user = userEvent.setup();
   render(
     <Providers client={queryClient()}>
       <PluginGallery spec={null} name="Harbor" />
     </Providers>,
   );
-  await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
   expect(screen.getByText(/No public GitHub preview/)).toBeInTheDocument();
   expect(calls).toHaveLength(0);
   expect(screen.queryByRole("img")).not.toBeInTheDocument();
@@ -1770,29 +1721,25 @@ it("never resolves an unknown installed source through another same-name catalog
 it("keeps partial discovery warnings visible while useful screenshots remain available", async () => {
   const notice = "Soundscape links could not be listed right now.";
   serve(() => ({ body: { ...GALLERY, notice, soundscapes: [] } }));
-  const user = userEvent.setup();
   render(
     <Providers client={queryClient()}>
       <PluginGallery spec="harbor" name="Harbor" />
     </Providers>,
   );
-  await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
   expect(await screen.findByRole("img", { name: "Harbor in the app" })).toBeInTheDocument();
   expect(screen.getByText(notice)).toBeInTheDocument();
 });
 
 it("reports a native media handoff failure beside its functional browser link", async () => {
   serve(() => ({ body: GALLERY }));
-  const user = userEvent.setup();
   render(
     <Providers client={queryClient()}>
       <PluginGallery spec="harbor" name="Harbor" />
     </Providers>,
   );
-  await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
-  const link = await screen.findByRole("link", { name: "Open full size: Harbor in the app" });
+  const link = await screen.findByRole("link", { name: /Harbor tide/ });
   expect(link).toHaveAttribute("data-hz-public-media");
   fireEvent(link, new CustomEvent("hz-public-media-result", { detail: false }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Copy its address");
-  expect(link).toHaveAttribute("href", GALLERY.screenshots[0]?.url);
+  expect(link).toHaveAttribute("href", GALLERY.soundscapes[0]?.url);
 });

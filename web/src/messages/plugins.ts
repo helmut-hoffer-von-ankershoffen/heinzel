@@ -103,6 +103,7 @@ export const plugins = {
   "plugins.screenshotsFor": "Screenshots for {name}",
   "plugins.galleryFor": "Screenshot gallery: {name}",
   "plugins.fullSizeFor": "Open full size: {caption}",
+  "plugins.closeScreenshot": "Close screenshot",
   "plugins.chooseScreenshot": "Choose a screenshot",
   "plugins.privateGallery": "Private previews stay in the plugin's repository.",
   "plugins.unknownGallery": "No public GitHub preview. Open the plugin's repository.",
