@@ -230,14 +230,15 @@ def test_a_confirmed_add_installs_what_it_requires_first_with_one_step_each(make
         ("heinzel-github", "installed", "0.5.0"),
         ("heinzel-atlassian", "updated", "0.4.0"),  # 0.1.0 was too old for >=0.2
     ]
-    assert world.progress.events[:5] == [
+    assert world.progress.events[:6] == [
         ("requires:heinzel-github", "pending", None),
         ("requires:heinzel-atlassian", "pending", None),
         ("install", "pending", None),
         ("verify", "pending", None),
+        ("record", "pending", None),
         ("bind", "pending", None),
     ]
-    finished = [e[0] for e in world.progress.events[5:] if e[1] in {"done", "skipped"}]
+    finished = [e[0] for e in world.progress.events[6:] if e[1] in {"done", "skipped"}]
     assert finished == ["requires:heinzel-github", "requires:heinzel-atlassian", "install", "bind"]
 
 
