@@ -476,9 +476,7 @@ class Devices:
         return devices
 
     def _write(self, folder: int, devices: list[Device]) -> None:
-        data = (
-            json.dumps(_DEVICES.dump_python(devices, mode="json"), ensure_ascii=False, separators=(",", ":")) + "\n"
-        ).encode()
+        data = (json.dumps(_DEVICES.dump_python(devices, mode="json"), indent=1) + "\n").encode()
         if len(data) > MAX_STORE_BYTES:
             msg = "The paired device store exceeds its safe size; no change was saved"
             raise HeinzelError(msg)

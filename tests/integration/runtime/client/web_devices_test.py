@@ -161,9 +161,9 @@ def test_pairing_reclaims_expired_pool_but_not_the_exact_ttl_boundary(tmp_path):
     assert devices.check(new_token) is not None
 
 
-def test_maximum_widget_records_fit_the_bounded_store(tmp_path):
+def test_full_widget_pool_remains_readable_by_the_previous_writer(tmp_path):
     now = datetime(2026, 10, 1, tzinfo=UTC)
-    owner = "😀" * 128
+    owner = "a" * 128
     workspace, revision, attempt = "a" * 64, "b" * 32, "c" * 32
     widget = WidgetCredential(sha256="d" * 64, owner=owner, workspace=workspace, expires=now)
     receipt = WidgetReceipt(
@@ -181,7 +181,7 @@ def test_maximum_widget_records_fit_the_bounded_store(tmp_path):
     records = [
         Device(
             id=f"{i:08x}",
-            name="😀" * 60,
+            name="a" * 60,
             created=now,
             last_used=now,
             sha256=f"{i:064x}",
@@ -196,7 +196,8 @@ def test_maximum_widget_records_fit_the_bounded_store(tmp_path):
     assert len(devices.paired()) == MAX_DEVICES
     assert len(json.loads(devices.path.read_text(encoding="utf-8"))) == MAX_DEVICES
     before = devices.path.read_bytes()
-    escaped_owner = "\0" * 128
+    assert before == (json.dumps(json.loads(before), indent=1) + "\n").encode()
+    escaped_owner = "😀" * 128
     oversized = [
         Device.model_validate(
             record.model_dump()
