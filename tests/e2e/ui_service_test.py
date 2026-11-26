@@ -109,7 +109,7 @@ def session_headers(url):
     return {"Authorization": "Bearer " + urlsplit(url).fragment.removeprefix("token=")}
 
 
-def test_installed_supervisor_recovers_its_server_after_the_update_owner_is_killed(supervised, sandbox):
+def test_installed_supervisor_recovers_its_server_after_the_update_owner_is_killed(supervised, sandbox, monkeypatch):
     service, running = supervised
     if service.platform != sys.platform:
         pytest.skip("The installed recovery worker validates the host's own service format")
@@ -118,10 +118,23 @@ def test_installed_supervisor_recovers_its_server_after_the_update_owner_is_kill
     assert service.recovery is not None
     port = service.status().port
     assert port is not None
-    assert service.install(port).changed
+
+    # The isolated manager lets the job run after the transition fences are cleared.
+    sleep = service._sleep
+
+    def start_replacement(seconds):
+        if not running.processes:
+            running.launch()
+        sleep(seconds)
+
+    monkeypatch.setattr(service, "_sleep", start_replacement)
+    url = service.attach(port)
     assert service.recovery_interpreter() == service.recovery
-    process = running.launch()
+    process = running.processes[-1]
     first = running.ready()
+    response = httpx.get(f"http://127.0.0.1:{port}/api/lifecycle", headers=session_headers(url), timeout=2)
+    assert response.status_code == 200, response.text
+    assert response.json()["instance"] == first.instance
     process.kill()
     process.communicate(timeout=3)
     state = service.directory.parent

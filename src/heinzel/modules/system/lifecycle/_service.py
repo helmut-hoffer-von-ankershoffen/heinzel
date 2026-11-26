@@ -844,17 +844,14 @@ class WebService:
     def attach(self, port: int, *, bridge: str | None = None) -> str:
         """Ensure the one owned web service runs and return a fresh session link; never start a private server.
 
-        Installs the service when absent (at `port`), loads it when its manager lost it, and waits up to
-        `READY_SECONDS` for it. `bridge` is the desktop app's browser-bridge token, registered with the live server
-        over its owner-only control socket, never written down.
+        Installs the service when absent (at `port`), upgrades an owned launcher to support recovery, and loads it
+        when its manager lost it. It waits up to `READY_SECONDS`. `bridge` is the desktop app's browser-bridge
+        token, registered with the live server over its owner-only control socket, never written down.
 
         Raises:
             HeinzelError: If the service can't be installed, loaded, made ready or registered with.
         """
-        try:
-            self.marker.lstat()
-        except FileNotFoundError:
-            self.install(port)
+        self._prepare_attachment(port)
         deadline = self._clock() + READY_SECONDS
         loaded_once = False
         while True:
@@ -881,6 +878,26 @@ class WebService:
                 msg = "The web service refused the desktop app's browser bridge."
                 raise HeinzelError(msg)
         return url
+
+    def _prepare_attachment(self, port: int) -> None:
+        """Install a missing service or migrate the matching launcher to support recovery."""
+        try:
+            self.marker.lstat()
+        except FileNotFoundError:
+            self.install(port)
+            return
+        if self.recovery is None or not interpreter_matches(self.recovery, self.prefix):
+            return
+        record = self._record()
+        if record is None or record["uv"] != str(self.uv):
+            return
+        installed_port, generation = int(str(record["port"])), str(record["generation"])
+        profile = validated_profile(record["profile"], self.home, self.directory.parent, self.prefix, self.executable)
+        if profile is None or record["launcher"] != self._launch_content(installed_port, generation, profile):
+            return
+        with MaintenanceLocks((host_maintenance_lock(self.prefix), self.directory / "lifecycle.lock")) as locks:
+            if self._record() == record:
+                self._transition("migrate", locks=locks, port=installed_port)
 
     def _load(self) -> None:
         """Hand the exact owned unit to its manager again; the manager's KeepAlive or Restart then runs it.
