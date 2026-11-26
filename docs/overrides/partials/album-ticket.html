@@ -1,0 +1,28 @@
+<aside class="hz-album-ticket" aria-label="Latent Heinzels album release">
+  <div class="hz-album-film">
+    <a class="hz-album-band" href="https://latentheinzels.heinzel.team/">Latent Heinzels <span aria-hidden="true">↗</span></a>
+    <p class="hz-album-film-title">Berlin Evening:<br>Singularity</p>
+    <div class="hz-album-playback">
+      <a class="hz-album-play" href="https://latentheinzels.heinzel.team/singularity/" aria-label="Play Berlin Evening: Singularity (Extended Version)"><span aria-hidden="true">▶</span> Play</a>
+      <span>Extended Version · 11:16</span>
+    </div>
+  </div>
+  <div class="hz-album-stub">
+    <div class="hz-album-release">
+      <img src="{{ 'assets/website/album/cover.webp' | url }}" width="64" height="64" alt="">
+      <div>
+        <span class="hz-album-out">Out now</span>
+        <p class="hz-album-name">Dreaming of Electric Snow</p>
+      </div>
+    </div>
+    <ul class="hz-album-cities" aria-label="Cities on the album">
+      {% for city, image in [('Berlin', 'berlin'), ('Paris', 'paris'), ('San Francisco', 'san-francisco'), ('Shenzhen', 'shenzhen')] %}
+      <li><img src="{{ ('assets/website/album/' ~ image ~ '.webp') | url }}" width="240" height="240" alt=""><span>{{ city }}</span></li>
+      {% endfor %}
+    </ul>
+    <div class="hz-album-listen">
+      <a href="https://music.youtube.com/@latentheinzels">YouTube Music <span aria-hidden="true">↗</span></a>
+      <a href="https://soundcloud.com/latentheinzels/sets/dreaming-of-electric-snow">SoundCloud <span aria-hidden="true">↗</span></a>
+    </div>
+  </div>
+</aside>
