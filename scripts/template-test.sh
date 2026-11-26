@@ -64,14 +64,22 @@ trap 'on_signal 130' INT
 trap 'on_signal 143' TERM
 trap 'on_signal 129' HUP
 if command -v setsid >/dev/null 2>&1; then
-  env -u VIRTUAL_ENV -u UV_FROZEN UV_FIND_LINKS="$pyyaml_wheels" UV_CACHE_DIR="$starter_destination/uv-cache" \
-    UV_TOOL_DIR="$starter_destination/uv-tool" setsid uv run --no-project --script scripts/starter-test.py \
-    --core "$core_wheel" --template "$repo_root" --destination "$starter_destination" &
   starter_grouped=1
+  (
+    unset VIRTUAL_ENV UV_FROZEN
+    export UV_FIND_LINKS="$pyyaml_wheels" UV_CACHE_DIR="$starter_destination/uv-cache"
+    export UV_TOOL_DIR="$starter_destination/uv-tool"
+    exec setsid uv run --no-project --script scripts/starter-test.py \
+      --core "$core_wheel" --template "$repo_root" --destination "$starter_destination"
+  ) &
 else
-  env -u VIRTUAL_ENV -u UV_FROZEN UV_FIND_LINKS="$pyyaml_wheels" UV_CACHE_DIR="$starter_destination/uv-cache" \
-    UV_TOOL_DIR="$starter_destination/uv-tool" uv run --no-project --script scripts/starter-test.py \
-    --core "$core_wheel" --template "$repo_root" --destination "$starter_destination" &
+  (
+    unset VIRTUAL_ENV UV_FROZEN
+    export UV_FIND_LINKS="$pyyaml_wheels" UV_CACHE_DIR="$starter_destination/uv-cache"
+    export UV_TOOL_DIR="$starter_destination/uv-tool"
+    exec uv run --no-project --script scripts/starter-test.py \
+      --core "$core_wheel" --template "$repo_root" --destination "$starter_destination"
+  ) &
 fi
 starter_pid=$!
 
