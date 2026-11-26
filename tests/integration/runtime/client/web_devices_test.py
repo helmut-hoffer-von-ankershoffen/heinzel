@@ -148,12 +148,21 @@ def test_pairing_reclaims_expired_pool_but_not_the_exact_ttl_boundary(tmp_path):
     first, token = devices.pair("first")
     with devices._locked() as folder:
         devices._write(
-            folder, [first.model_copy(update={"id": f"{i:08x}", "sha256": f"{i:064x}"}) for i in range(MAX_DEVICES)]
+            folder,
+            [
+                first,
+                *[
+                    first.model_copy(update={"id": f"{i:08x}", "sha256": f"{i:064x}"})
+                    for i in range(MAX_DEVICES)
+                    if f"{i:08x}" != first.id
+                ][: MAX_DEVICES - 1],
+            ],
         )
     now[0] += timedelta(days=30)
     with pytest.raises(HeinzelError, match="devices are paired already"):
         devices.pair("at boundary")
     assert len(devices.paired()) == MAX_DEVICES
+    assert any(device.sha256 == digest(token) for device in devices.paired())
     now[0] += timedelta(microseconds=1)
     new, new_token = devices.pair("new")
     assert [device.id for device in devices.paired()] == [new.id]
