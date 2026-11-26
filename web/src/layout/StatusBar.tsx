@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Info as InfoIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { requestMenuAction } from "@/about/menu";
-import { useChangelog, useInfo } from "@/api/queries";
+import { useChangelog, useInfo, useReleased } from "@/api/queries";
 import { token } from "@/api/token";
 import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions";
 import { FooterItem } from "@/components/FooterItem";
@@ -15,6 +15,7 @@ import { PaneAction } from "@/components/PaneActions";
 import { Prose } from "@/components/Prose";
 import { AutoUpdate } from "@/features/runtime/updates/AutoUpdate";
 import { t } from "@/i18n";
+import { releaseTime } from "@/lib/releaseTime";
 import { zoneTime } from "@/lib/zoneTime";
 import { UpdateStatus } from "../features/runtime/UpdateStatus";
 import { CalendarGlyph } from "./CalendarGlyph";
@@ -96,6 +97,10 @@ function useDesktopVersion() {
 function ReleaseNotes({ version }: { version: string }) {
   const changelog = useChangelog(false);
   const desktop = useDesktopVersion().data;
+  const response = useReleased(version).data;
+  const time = response?.version === version ? response : undefined;
+  const publication = time?.source === "github";
+  const when = time?.source ? releaseTime(publication ? time.published_at : null, time.day) : null;
   const notes = typeof changelog.data === "string" ? installedReleaseNotes(changelog.data, version) : null;
   return (
     <div className="px-1.5 pb-1" aria-busy={changelog.isPending}>
@@ -114,6 +119,9 @@ function ReleaseNotes({ version }: { version: string }) {
           <div className="mt-1 text-[10px] leading-tight font-medium text-muted-foreground">
             <span className="block">{t("status.backend", { version })}</span>
             {desktop && <span className="block">{t("status.desktop", { version: desktop })}</span>}
+            {when && (
+              <span className="block">{t(publication ? "status.released" : "status.changelogDate", { when })}</span>
+            )}
           </div>
         </div>
         <PaneAction ghost icon={InfoIcon} onClick={() => requestMenuAction("about")}>
