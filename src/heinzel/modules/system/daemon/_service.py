@@ -42,6 +42,7 @@ from heinzel import (
     Status,
     __version__,
 )
+from heinzel._phases import Phases
 from heinzel.kernel import (
     KERNEL_SECTION,
     DaemonHandoverObservation,
@@ -148,7 +149,6 @@ from heinzel.modules.system.daemon._units import (
     systemd_service,
     systemd_timer,
 )
-from heinzel.modules.system.updater._phases import Phases
 
 if TYPE_CHECKING:
     import threading

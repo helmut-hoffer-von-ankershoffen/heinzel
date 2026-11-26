@@ -33,6 +33,7 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 from heinzel import HeinzelError, Kernel, NoticeKind, Notifications, Progress, ResolveWhen, __version__
+from heinzel._phases import Phases
 from heinzel.kernel import (
     CORE_DISTRIBUTION,
     ENTRY_POINT_GROUP,
@@ -105,7 +106,6 @@ from heinzel.modules.system.plugin._sources import (
     required_by,
     siblings_from_github,
 )
-from heinzel.modules.system.updater._phases import Phases
 
 log = get_logger("plugin")
 
