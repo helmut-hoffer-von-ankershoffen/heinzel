@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -134,6 +135,41 @@ def test_plugin_receipt_can_observe_a_busy_tick_before_claiming(guarded):
     assert not service.operation(operation_id).lifecycle_busy
     assert service.add("heinzel-demo", confirm=True, operation_id=operation_id).done
     assert service.add("heinzel-demo", confirm=True, operation_id=operation_id).done
+    assert events == ["uv", "target-probe"]
+
+
+def test_waiting_for_a_real_busy_tick_then_confirms_only_once(guarded):
+    service, _installation, daemon, events, _wrong = guarded
+    operation_id = service.add("heinzel-demo").operation_id
+    assert operation_id is not None
+    observed = threading.Event()
+    done = threading.Event()
+
+    def installer():
+        try:
+            while service.operation(operation_id).lifecycle_busy:
+                observed.set()
+                if done.wait(0.01):
+                    return
+            assert service.add("heinzel-demo", confirm=True, operation_id=operation_id).done
+            assert service.add("heinzel-demo", confirm=True, operation_id=operation_id).done
+        finally:
+            done.set()
+
+    worker = threading.Thread(target=installer)
+    try:
+        with lock(daemon.state_dir / "lifecycle.lock") as lifecycle, lock(daemon.state_dir / "tick.lock") as tick:
+            assert lifecycle
+            assert tick
+            worker.start()
+            assert observed.wait(5), "installer did not observe the held lifecycle lock"
+            assert not events
+        assert done.wait(10), "installer did not resume after the lock was released"
+    finally:
+        done.set()
+        if worker.ident is not None:
+            worker.join(timeout=1)
+    assert not worker.is_alive()
     assert events == ["uv", "target-probe"]
 
 

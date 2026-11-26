@@ -730,6 +730,39 @@ describe("PluginsSection", () => {
     expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(1);
   });
 
+  it.each(["unknown", "unavailable"])("never repeats a lost install when its receipt is %s", async (outcome) => {
+    let writes = 0;
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/add") return { body: change("add", false) };
+      if (url.pathname === "/api/stream/system/plugin/add") {
+        writes += 1;
+        throw new Error("stream lost");
+      }
+      if (url.pathname === "/api/system/plugin/operation" && writes) {
+        if (outcome === "unavailable") return { status: 503, body: { error: "receipt unavailable" } };
+        return { body: { operation_id: url.searchParams.get("operation_id"), status: "unknown", candidate } };
+      }
+      return base(url);
+    });
+    const user = userEvent.setup();
+    show({ reload: vi.fn(), restartInterval: 1 });
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
+    await user.click(screen.getByRole("button", { name: "Install" }));
+    await choose(user, /Install heinzel-crm/, "Install");
+    expect(await screen.findAllByText("stream lost")).not.toHaveLength(0);
+    await choose(user, /Installing heinzel-crm/, "Try again");
+    expect(await screen.findAllByText(/The request result is unknown/)).not.toHaveLength(0);
+    expect(writes).toBe(1);
+    expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(0);
+    await user.click(
+      within(await dialog(/Installing heinzel-crm/))
+        .getAllByRole("button", { name: "Close" })
+        .at(-1) as HTMLElement,
+    );
+    expect(await screen.findAllByRole("button", { name: "Resolve after checking" })).not.toHaveLength(0);
+  });
+
   it("shows a server-confirmed running receipt after reload without offering another install request", async () => {
     const operationId = "y".repeat(43);
     const calls = serve((url) =>

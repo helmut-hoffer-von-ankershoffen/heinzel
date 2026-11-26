@@ -290,6 +290,19 @@ export function OperationDialog() {
       onKeyDown={(event) => {
         // A dialog it covers (the setup wizard) must not close, or move the focus away, because of what is typed here.
         event.stopPropagation();
+        if (modal && event.key === "Tab") {
+          const controls = Array.from(
+            event.currentTarget.querySelectorAll<HTMLElement>(
+              'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
+            ),
+          ).filter((element) => element.getClientRects().length > 0);
+          const first = controls[0];
+          const last = controls.at(-1);
+          if (first && last && (event.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+            event.preventDefault();
+            (event.shiftKey ? last : first).focus();
+          }
+        }
         if (event.key === "Escape") {
           event.preventDefault();
           if (run.stage !== "running") close();
