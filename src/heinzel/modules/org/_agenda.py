@@ -102,8 +102,7 @@ def _week_sources(
     calendar: Calendar, window: Window, adapter: str, selection: CalendarSelection
 ) -> tuple[list[CalendarWeekEvent], list[CalendarSource] | None, list[str]]:
     try:
-        discover = getattr(calendar, "calendars", None)
-        sources = discover() if callable(discover) else None
+        sources = calendar.calendars() if callable(getattr(calendar, "calendars", None)) else None
     except NotSupportedError as exc:
         if exc.capability != "calendar" or exc.method != "calendars":
             raise
@@ -113,7 +112,7 @@ def _week_sources(
     if len(sources) > MAX_CALENDARS or len({source.id for source in sources}) != len(sources):
         msg = "The calendar connector returned too many or duplicate calendars."
         raise HeinzelError(msg)
-    ignored = set(selection.excluded) if adapter == selection.adapter else set()
+    ignored: set[str] = set(selection.excluded) if adapter == selection.adapter else set()
     events: list[CalendarWeekEvent] = []
     warnings: list[str] = []
     for source in sources:

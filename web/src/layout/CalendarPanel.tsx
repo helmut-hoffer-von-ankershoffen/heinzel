@@ -104,7 +104,7 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
   const [selection, setSelection] = useState<CalendarSelection>(() => savedSelection());
   const [showCalendars, setShowCalendars] = useState(false);
   const now = useNow(60_000);
-  const week = useQuery({
+  const week = useQuery<Week>({
     queryKey: ["org", "calendar", offset, selection],
     placeholderData: (previous, previousQuery) =>
       previousQuery?.queryKey[2] === offset && previous?.adapter === selection.adapter ? previous : undefined,
