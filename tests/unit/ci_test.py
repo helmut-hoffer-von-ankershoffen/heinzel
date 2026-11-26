@@ -133,6 +133,37 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
             "Chromium's system libraries, from the runner"
         ),
     },
+    "release-chain.yml": {
+        'test "$GITHUB_RUN_ATTEMPT" = 1': "binds the verified candidate to the exact chain before its squash merge",
+        'if [ "$EVENT" != pull_request ]': (
+            "allows a real release only from main, then chooses a dry run and its throwaway version"
+        ),
+        'tip="$(gh api': "reads main's tip, the commit the plan gates",
+        "echo /.chain/": "keeps the chain's own checkout out of the release tree",
+        'if [ -n "$RELEASE_TOKEN" ]': "commits as the owner identity the ruleset needs",
+        "git checkout -q -B main": "puts main at the gated tip, the branch release.sh prepares from",
+        "(cd .chain && uv run": "checks the release commit with the chain's own reviewed script",
+        'tip="$(GH_TOKEN=': "refuses to push a cut when main moved during it",
+        "uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py": (
+            "one step of the release chain, reading GitHub first"
+        ),
+        "newest() {": "waits for Release tag and Publish, dispatching the tag only if the merge did not",
+        'id="$(gh api --method POST': "starts the exact tail on main and uses the run ID returned by its dispatch",
+        'tag="$(gh api': "reads the newest accepted release for the dry run's tail checks",
+    },
+    "release-tail.yml": {
+        '[[ "$VERSION" =~': "refuses a tail off main, of no X.Y.Z, or of a release that is not published",
+        'if curl -fsS -o /dev/null "https://pypi.org': "dispatches PyPI on the tag unless the version is there",
+        'if gh release view "app-v': "dispatches the standard app composition unless it exists",
+        "uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py": (
+            "one tail step of the release chain, reading GitHub first"
+        ),
+    },
+    "release-freeze.yml": {
+        "uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py": (
+            "the freeze check of one PR, or of every open PR"
+        ),
+    },
     "publish.yml": {
         'node desktop/ci/release-macos.mjs "$TAG"': "archives the built app and emits its release identity",
         "uv run --no-project --frozen --no-build --python 3.15 python -I scripts/release_apps.py": (
@@ -142,6 +173,9 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         '[[ "$TAG" =~': "binds the exact core tag, checkout, caller source and main ancestry before tooling",
         "uv run --no-project --frozen --no-build --python 3.15 python scripts/pypi_release.py checkout": (
             "verifies the reviewed release source before producing its signed artifact manifest"
+        ),
+        "uv run --no-project --frozen --no-build --python 3.15 python -I scripts/release_latest.py": (
+            "binds an optional Latest deferral to the authenticated release-chain merge"
         ),
         "uv run --no-project --frozen --no-build --python 3.15 python -I scripts/acceptance/run_acceptance.py "
         "--check-foreground-ui": "checks the Core version contract without running acceptance",
@@ -353,7 +387,7 @@ def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(
     assert values["contracts"] == str(complete).lower()
     if plugin_only and not complete:
         assert values["notifier"] == values["electron"] == "false"
-    for name in ("lint", "setup", "audit", "test", "coverage", "perf", "e2e", "build", "core-wheel"):
+    for name in ("lint", "setup", "audit", "test", "coverage", "perf", "e2e", "build"):
         assert "needs.changes.outputs.core == 'true'" in jobs[name]["if"]
     assert "local-plugin-check" in jobs["ci-ok"]["needs"]
     assert "needs.changes.outputs.plugins == 'true'" in jobs["local-plugin-plan"]["if"]
@@ -1198,14 +1232,13 @@ def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
     assert '"os":"macos-latest","python":"3.15"' in jobs["test"]["strategy"]["matrix"]["include"]
 
 
-def _macos_include(matrix: dict, event: str, full: bool, *, release: bool = False, lane: str = "") -> list[dict]:
+def _macos_include(matrix: dict, event: str, *, full_ci: bool = True, lane: str = "") -> list[dict]:
     expression = re.fullmatch(r"\$\{\{ fromJSON\((.*)\) \}\}", matrix["include"].strip())
     assert expression
     context = {
         "github.event_name": event,
         "needs.changes.outputs.lane": lane or ("linux" if event == "push" else "all"),
-        "needs.changes.outputs.macos_full": str(full).lower(),
-        "needs.changes.outputs.full_ci": str(release).lower(),
+        "needs.changes.outputs.full_ci": str(full_ci).lower(),
     }
     for branch in expression[1].split(" || "):
         value = None
@@ -1262,7 +1295,7 @@ def test_candidate_and_linux_matrices_fit_without_parallel_throttling():
     matrix = test["strategy"]["matrix"]
     assert matrix["os"] == ["ubuntu-24.04"]
     assert matrix["levels"] == ["unit", "integration"]
-    macos = _macos_include(matrix, "pull_request", full=True, release=True, lane="all")
+    macos = _macos_include(matrix, "pull_request", full_ci=True, lane="all")
     assert macos == [{"os": "macos-latest", "python": "3.15", "levels": level} for level in ("unit", "integration")]
     assert e2e["strategy"]["matrix"]["suite"] == ["cli", "supervised", "web-1", "web-2", "web-3"]
     assert '\'["ubuntu-24.04","macos-latest"]\'' in e2e["strategy"]["matrix"]["os"]
@@ -1291,10 +1324,10 @@ def test_matrix_caps_keep_every_workload_and_failure_required():
 
 
 @pytest.mark.parametrize(
-    ("event", "full", "pythons"),
+    ("event", "full_ci", "pythons"),
     [
         ("pull_request", False, []),
-        ("pull_request", True, []),
+        ("pull_request", True, ["3.15"]),
         ("push", False, []),  # a push to main runs Linux; its dispatched macOS lane runs the macOS cells
         ("push", True, []),
         ("schedule", False, ["3.15"]),
@@ -1303,9 +1336,9 @@ def test_matrix_caps_keep_every_workload_and_failure_required():
         ("workflow_dispatch", True, ["3.15"]),
     ],
 )
-def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes(event, full, pythons):
-    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
-    cells = _macos_include(jobs["test"]["strategy"]["matrix"], event, full)
+def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes(event, full_ci, pythons):
+    jobs = _ci_jobs()
+    cells = _macos_include(jobs["test"]["strategy"]["matrix"], event, full_ci=full_ci)
     assert cells == [
         {"os": "macos-latest", "python": python, "levels": level}
         for python in pythons
@@ -1495,6 +1528,7 @@ def _changes_outputs(  # noqa: PLR0913 - independent changed-path, event and rel
             "PATH": f"{directory / 'bin'}:{Path(sys.executable).parent}:/usr/bin:/bin",
             "EVENT": event,
             "FULL_RELEASE": str(release).lower(),
+            "RELEASE_FULL": str(release).lower(),
             "BASE": "base",
             "GITHUB_OUTPUT": str(output),
             "CHANGED_PATHS": changed,
@@ -2009,7 +2043,7 @@ def test_every_event_tests_only_python_3_15(event, expected):
     ],
 )
 def test_plugin_macos_matrix_preserves_its_existing_python_coverage(event, expected):
-    cells = _macos_include(_generated_plugin_ci()["jobs"]["test"]["strategy"]["matrix"], event, full=False)
+    cells = _macos_include(_generated_plugin_ci()["jobs"]["test"]["strategy"]["matrix"], event)
     assert cells == [
         {"os": "macos-latest", "python": version, "levels": level}
         for version in expected
@@ -2087,8 +2121,8 @@ def test_sharded_release_acceptance_keeps_one_named_job_receipt_and_verdict_per_
 @pytest.mark.parametrize(
     "changed", ["CHANGELOG.md\npyproject.toml\n", "docs/guides/install.md\n", "plugins/example/file.py\n"]
 )
-def test_release_candidates_force_the_whole_existing_matrix_for_every_changed_scope(tmp_path, ci_paths, changed):
-    outputs = _changes_outputs(tmp_path, ci_paths, "pull_request", changed, release=True)
+def test_release_candidates_force_the_whole_matrix_for_every_changed_scope(tmp_path, ci_contexts_paths, changed):
+    outputs = _changes_outputs(tmp_path, ci_contexts_paths, "pull_request", changed, release=True)
     assert {
         "macos_full=true",
         "site_only=false",
@@ -2101,7 +2135,7 @@ def test_release_candidates_force_the_whole_existing_matrix_for_every_changed_sc
     assert _oses(jobs["test"]["strategy"]["matrix"]["python"], "pull_request", release=True) == [
         "3.15",
     ]
-    assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "pull_request", full=True, release=True)) == 2
+    assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "pull_request")) == 2
     assert _oses(jobs["e2e"]["strategy"]["matrix"]["os"], "pull_request", release=True) == [
         "ubuntu-24.04",
         "macos-latest",
@@ -2122,6 +2156,7 @@ def test_release_candidate_source_and_selector_never_reach_plugin_templates():
         "github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true'"
         in (_ci_jobs()["test"]["strategy"]["matrix"]["include"])
     )
+    assert "upgrade" not in generated
 
 
 def test_macos_cli_e2e_provisions_managed_python_in_ci_and_the_focused_diagnostic():
@@ -2424,7 +2459,7 @@ def test_the_nightly_selects_and_runs_the_full_macos_matrix_end_to_end(tmp_path,
         assert _evaluate_if(jobs[name]["if"], "schedule", outputs), name
     for name in ("setup", "e2e", "electron"):
         assert "macos-latest" in _oses(jobs[name]["strategy"]["matrix"]["os"], "schedule")
-    assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "schedule", full=True)) == 2
+    assert len(_macos_include(jobs["test"]["strategy"]["matrix"], "schedule")) == 2
     complete = next(step for step in jobs["ci-ok"]["steps"] if step.get("name", "").startswith("Require the complete"))
     assert "if" not in complete  # the nightly requires the whole direct workload, macOS lanes included
     for name in ("setup", "test", "e2e", "notifier", "macos-specific", "electron"):
@@ -2496,7 +2531,7 @@ def test_main_lanes_gate_every_platform_job():
     assert jobs["test"]["strategy"]["matrix"]["include"].startswith(
         "${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || "
     )
-    assert _macos_include(jobs["test"]["strategy"]["matrix"], "workflow_dispatch", full=True, lane="macos") == [
+    assert _macos_include(jobs["test"]["strategy"]["matrix"], "workflow_dispatch", lane="macos") == [
         {"os": "macos-latest", "python": "3.15", "levels": level} for level in ("unit", "integration")
     ]
     assert "lane" not in jobs["build"]["if"]  # the macOS lane builds the wheel with the notifier it just built
@@ -2597,11 +2632,22 @@ def _ci_ok_run(run: str, **env: str) -> tuple[int, str]:
 
 _OFF = {"NOTIFIER": "false", "ELECTRON": "false", "MACOS_FULL": "false", "CONTRACTS": "false", "PLUGIN_PATHS": "false"}
 _PROSE = {**_OFF, "SITE_ONLY": "true", "CORE": "true", "PLUGINS": "False"}
-_PROSE_JOBS = ["admission", "changes", "lint", "secrets", "setup", "audit", "site-tests", "build", "core-wheel"]
+_PROSE_JOBS = [
+    "admission",
+    "changes",
+    "lint",
+    "secrets",
+    "setup",
+    "audit",
+    "site-tests",
+    "build",
+    "core-wheel",
+    "upgrade",
+]
 PROSE_RUN = " ".join([*_PROSE_JOBS, "quarantine-registry", "commits", "dependency-review"])
 
 
-def test_a_prose_pull_request_passes_ci_ok_with_site_tests_alone():
+def test_a_prose_pull_request_passes_ci_ok_with_site_tests():
     assert _ci_ok_run(PROSE_RUN, **_PROSE)[0] == 0
 
 
@@ -2611,9 +2657,15 @@ def test_a_prose_pull_request_cannot_pass_without_its_site_tests():
     assert "site-tests" in out
 
 
-def test_a_plugins_only_pull_request_needs_no_core_job():
-    run = "admission changes secrets quarantine-registry commits dependency-review local-plugin-plan"
-    env = {**_OFF, "SITE_ONLY": "false", "CORE": "false", "PLUGIN_PATHS": "true", "PLUGINS": "False"}
+def test_a_plugins_only_pull_request_keeps_the_sdk_wheel():
+    run = "admission changes secrets quarantine-registry commits dependency-review local-plugin-plan core-wheel upgrade"
+    env = {
+        **_OFF,
+        "SITE_ONLY": "false",
+        "CORE": "false",
+        "PLUGIN_PATHS": "true",
+        "PLUGINS": "False",
+    }
     assert _ci_ok_run(run, **env)[0] == 0
     assert _ci_ok_run(run.replace("local-plugin-plan", ""), **env)[0] != 0
 
@@ -2632,8 +2684,36 @@ def test_the_macos_jobs_wait_for_a_native_path_on_ordinary_pull_requests():
     assert _evaluate_if(condition, "push", {**base, "macos_full": "false", "full_release": "false"})
 
 
-def test_a_failed_diff_keeps_the_consumers_and_the_notifier_on(tmp_path, ci_paths):
-    outputs = _changes_outputs(tmp_path, ci_paths, "pull_request", "", git_exit=1)
+@pytest.mark.parametrize(
+    "path",
+    ["src/heinzel/modules/team/_render.py", "src/heinzel/modules/system/updater/_adapter_state.py", "web/src/App.tsx"],
+)
+def test_an_ordinary_pr_runs_linux_upgrade_and_both_macos_cells(tmp_path, ci_contexts_paths, path):
+    jobs = _ci_jobs()
+    full = next(step for step in jobs["changes"]["steps"] if step.get("id") == "full")
+    assert "if" not in full
+    full_output = tmp_path / "full-output"
+    subprocess.run(
+        ["bash", "-e", "-c", full["run"]], env={"GITHUB_OUTPUT": str(full_output)}, check=True, timeout=scaled(30)
+    )
+    assert full_output.read_text() == "selected=true\n"
+    changed = path + "\n"
+    outputs = dict(
+        line.split("=", 1) for line in _changes_outputs(tmp_path, ci_contexts_paths, "pull_request", changed)
+    )
+    assert "upgrade" not in outputs
+    outputs.update(full_ci="true", lane="all")
+    assert _evaluate_if(jobs["test"]["if"], "pull_request", outputs)
+    assert _evaluate_if(jobs["upgrade"]["if"], "pull_request", outputs)
+    matrix = jobs["test"]["strategy"]["matrix"]
+    assert matrix["os"] == ["ubuntu-24.04"]
+    assert matrix["levels"] == ["unit", "integration"]
+    macos_cells = [{"os": "macos-latest", "python": "3.15", "levels": level} for level in matrix["levels"]]
+    assert _macos_include(matrix, "pull_request") == macos_cells
+
+
+def test_a_failed_diff_keeps_the_consumers_and_notifier_on(tmp_path, ci_contexts_paths):
+    outputs = _changes_outputs(tmp_path, ci_contexts_paths, "pull_request", "", git_exit=1)
     assert {"contracts=true", "notifier=true", "core=true"} <= outputs
 
 
@@ -2656,7 +2736,7 @@ def test_a_release_branch_that_is_not_the_candidate_runs_everything(tmp_path, ci
 
 def test_ci_ok_requires_everything_on_a_release_branch_and_keeps_the_plugin_check():
     assert _ci_ok_run(PROSE_RUN, **_PROSE, HEAD_REF="release/foo")[0] != 0
-    run = "admission changes secrets quarantine-registry commits dependency-review local-plugin-plan"
+    run = "admission changes secrets quarantine-registry commits dependency-review local-plugin-plan core-wheel upgrade"
     env = {**_OFF, "SITE_ONLY": "false", "CORE": "false", "PLUGIN_PATHS": "true", "PLUGINS": "True"}
     assert _ci_ok_run(run + " local-plugin-check", **env)[0] == 0
     assert _ci_ok_run(run, **env)[0] != 0
@@ -2777,6 +2857,43 @@ def test_ci_ok_requires_only_jobs_the_selection_runs(  # noqa: PLR0913,PLR0917 -
     """CI OK and the job conditions can never disagree: every job it requires is one this selection ran."""
     run = _selection_run(tmp_path, ci_contexts_paths, event, changed, release=release, plugins=plugins)
     assert run.returncode == 0, run.stderr + run.stdout
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        ("pull_request", False, "src/heinzel/modules/system/updater/_adapter_state.py\n"),
+        ("pull_request", False, "src/heinzel/modules/team/_render.py\n"),
+        ("pull_request", False, "AGENTS.md\n"),
+        ("pull_request", False, ".github/workflows/ci.yml\n"),
+        ("pull_request", True, "CHANGELOG.md\n"),
+        ("push", False, "README.md\n"),
+        ("push", False, "src/heinzel/runtime/updater/system_update.py\n"),
+        ("schedule", False, ""),
+        ("workflow_dispatch", False, ""),
+    ],
+)
+@pytest.mark.parametrize("job", ["upgrade", "core-wheel"])
+def test_ci_ok_requires_linux_upgrade_and_its_wheel(tmp_path, ci_contexts_paths, case, job):
+    event, release, changed = case
+    run = _selection_run(tmp_path, ci_contexts_paths, event, changed, release=release, skipped_job=job)
+    assert run.returncode != 0
+    assert f"did not pass: {job}" in run.stdout
+
+
+def test_upgrade_reuses_the_run_local_candidate_wheel_and_executes_the_real_scenario():
+    jobs = _ci_jobs()
+    upgrade = jobs["upgrade"]
+    assert upgrade["needs"] == ["changes", "core-wheel"]
+    assert upgrade["if"] == jobs["core-wheel"]["if"]
+    assert "outputs.lane != 'macos'" in upgrade["if"]
+    uploads = [s for s in jobs["core-wheel"]["steps"] if "actions/upload-artifact@" in s.get("uses", "")]
+    assert len(uploads) == 1
+    assert uploads[0]["with"]["name"] == "plugin-core"
+    downloads = [s for s in upgrade["steps"] if "actions/download-artifact@" in s.get("uses", "")]
+    assert len(downloads) == 1
+    assert downloads[0]["with"] == {"name": "plugin-core", "path": "dist"}
+    assert [s["run"] for s in upgrade["steps"] if "run" in s] == ["make test-upgrade"]
 
 
 def test_ci_ok_requires_macos_dispatch_on_prose_only_main_push(tmp_path, ci_contexts_paths):

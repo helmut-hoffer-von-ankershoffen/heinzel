@@ -441,7 +441,7 @@ jobs:
         # under runner contention with every test passing (#585). Each shard keeps that same cap.
         levels: [unit, integration]
         # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
-        # under that same cap. PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.
+        # under that same cap. Full PRs keep both macOS cells; main runs them in its coalesced macOS lane.
         include:
           ${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
     env:
@@ -849,12 +849,46 @@ jobs:
           name: dist
           path: dist/
 
+  upgrade:
+    permissions:
+      contents: read
+    name: Upgrade in place (published to candidate, Linux)
+    needs: [changes, core-wheel]
+    # Lane B (scripts/acceptance/scenario.py --candidate-wheel): the published release, installed
+    # with user state in a private home, updates itself in place to this change's wheel with its own updater, then the
+    # updated app serves and answers a chat. Reuse the exact workflow run's SDK wheel on every full Linux-bearing run.
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.lane != 'macos' # Core candidate-only
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: plugin-core
+          path: dist
+      - name: The published release updates in place to this wheel
+        timeout-minutes: 20
+        env:
+          TMPDIR: /tmp
+        run: make test-upgrade
+      - name: Upload the receipt, logs and the updater plan
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: upgrade-in-place
+          path: reports/acceptance/
+          if-no-files-found: warn
+          retention-days: 7
+
   core-wheel:
     permissions:
       contents: read
     name: Plugin SDK candidate
     needs: changes
-    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true') && needs.changes.outputs.lane != 'macos' # Core candidate-only
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.lane != 'macos' # Core candidate-only
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -1348,7 +1382,7 @@ jobs:
       contents: read
     name: CI OK
     if: always() && (github.event_name != 'push' || needs.admission.outputs.full != 'false')
-    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check, release-candidate-source, quarantine-registry, focused-tests, coverage-floor, sonar-ratings, macos-main]
+    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, upgrade, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check, release-candidate-source, quarantine-registry, focused-tests, coverage-floor, sonar-ratings, macos-main]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -1436,6 +1470,8 @@ jobs:
             [ "${CONTRACTS:-true}" = true ] || drop consumer-plan consumer-check
             [ "${PLUGIN_PATHS:-true}" = true ] || [ "${CONTRACTS:-true}" = true ] || drop local-plugin-plan
           fi
+          # Core upgrade lane: keep the run's wheel and upgrade proof after any ordinary inventory reset.
+          if [ "${LANE:-all}" != macos ]; then drop core-wheel; required+=(core-wheel upgrade); fi # Core upgrade lane
           # The coverage floor: on every pull request, and on a dispatched run outside the macOS main lane.
           if [ "$EVENT" = pull_request ] || { [ "$EVENT" = workflow_dispatch ] && [ "${LANE:-all}" != macos ]; }; then required+=(coverage-floor); fi # Core coverage floor
           if [ "$EVENT" = pull_request ]; then required+=(sonar-ratings); fi # Core coverage floor
