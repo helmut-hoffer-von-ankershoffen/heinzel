@@ -117,45 +117,84 @@ def commit_identity(commit: dict[str, Any], sha: str, tree: str) -> str:
     return str(parents[0]["sha"])
 
 
+def merged_release_head(tag: str, sha: str, read: Callable[[str], Any]) -> tuple[int, str]:
+    """Resolve the unique merged release PR and its exact candidate head from the tag commit.
+
+    Raises:
+        ChainError: The tag cannot be bound to an unambiguous merged release PR.
+    """
+    if not tag.startswith("v") or not VERSION.fullmatch(tag[1:]) or not SHA.fullmatch(sha):
+        msg = "invalid release tag or exact commit"
+        raise ChainError(msg)
+    rows = read(f"commits/{sha}/pulls?per_page=100")
+    if (
+        not isinstance(rows, list)
+        or len(rows) != 1
+        or not isinstance(rows[0], dict)
+        or not rows[0].get("merged_at")
+        or rows[0].get("merge_commit_sha") != sha
+        or type(rows[0].get("number")) is not int
+        or rows[0]["number"] < 1
+    ):
+        msg = "the tag commit has no unique merged release PR"
+        raise ChainError(msg)
+    number = rows[0]["number"]
+    head = str((rows[0].get("head") or {}).get("sha", ""))
+    pr = read(f"pulls/{number}") or {}
+    source, base = pr.get("head", {}), pr.get("base", {})
+    if (
+        not SHA.fullmatch(head)
+        or (pr.get("number"), pr.get("title"), pr.get("state"), pr.get("merged"), pr.get("merge_commit_sha"))
+        != (number, f"chore(release): {tag}", "closed", True, sha)
+        or (source.get("sha"), source.get("ref"), (source.get("repo") or {}).get("full_name"))
+        != (head, f"release/{tag}", REPOSITORY)
+        or (base.get("ref"), (base.get("repo") or {}).get("full_name")) != ("main", REPOSITORY)
+    ):
+        msg = "the tagged squash is not bound to the exact merged release PR head"
+        raise ChainError(msg)
+    return number, head
+
+
 def defer_latest(
     tag: str, sha: str, message: str, read: Callable[[str], Any], read_receipt: Callable[[int], dict[str, Any]]
 ) -> bool:
     """Only a protected merge matching the official pre-merge receipt may opt into delayed Latest.
 
     Raises:
-        ChainError: The commit claims deferral but the pre-merge evidence does not bind it.
+        ChainError: The release cannot be classified, or the chain evidence does not bind this merge.
     """
     chain_run = chain_run_in(message)
+    number, head = merged_release_head(tag, sha, read)
+    source = read(f"commits/{head}") or {}
+    candidate_message = (source.get("commit") or {}).get("message")
+    if source.get("sha") != head or not isinstance(candidate_message, str):
+        msg = "the exact merged release candidate message is unreadable"
+        raise ChainError(msg)
+    marked = chain.tail_required(read, head)
     if chain_run is None:
-        return False
+        if not marked and chain.DEFER_LATEST_CANDIDATE not in candidate_message.splitlines():
+            return False
+        msg = "this chain candidate has no verified defer-Latest merge trailer"
+        raise ChainError(msg)
+    if not marked:
+        msg = "the release-tail trailer has no durable status on the exact candidate head"
+        raise ChainError(msg)
     official_chain(read, chain_run)
     proof = read_receipt(chain_run)
-    version = tag.removeprefix("v")
     if (
         not isinstance(proof, dict)
-        or not tag.startswith("v")
-        or not VERSION.fullmatch(version)
-        or not SHA.fullmatch(sha)
-        or (proof.get("schema"), proof.get("version"), proof.get("chain_run")) != (1, version, chain_run)
-        or any(type(proof.get(key)) is not int or proof[key] < 1 for key in ("pr", "candidate_run"))
-        or any(not SHA.fullmatch(str(proof.get(key, ""))) for key in ("head", "tree"))
+        or (proof.get("schema"), proof.get("version"), proof.get("chain_run"), proof.get("pr"), proof.get("head"))
+        != (1, tag[1:], chain_run, number, head)
+        or type(proof.get("candidate_run")) is not int
+        or proof["candidate_run"] < 1
+        or not SHA.fullmatch(str(proof.get("tree", "")))
     ):
-        msg = "invalid defer-Latest receipt for this release version and chain run"
+        msg = "invalid defer-Latest receipt for this release version, candidate or chain run"
         raise ChainError(msg)
-    number, head, tree = proof["pr"], proof["head"], proof["tree"]
-    title = f"chore(release): {tag}"
-    pr = read(f"pulls/{number}") or {}
-    source, base = pr.get("head", {}), pr.get("base", {})
-    if (
-        message.splitlines()[0] != f"{title} (#{number})"
-        or (pr.get("number"), pr.get("title"), pr.get("state"), pr.get("merged"), pr.get("merge_commit_sha"))
-        != (number, title, "closed", True, sha)
-        or (source.get("sha"), source.get("ref"), (source.get("repo") or {}).get("full_name"))
-        != (head, f"release/{tag}", REPOSITORY)
-        or (base.get("ref"), (base.get("repo") or {}).get("full_name")) != ("main", REPOSITORY)
-        or commit_identity(read(f"commits/{head}") or {}, head, tree)
-        != commit_identity(read(f"commits/{sha}") or {}, sha, tree)
-    ):
+    tree = proof["tree"]
+    if message.splitlines()[0] != f"chore(release): {tag} (#{number})" or commit_identity(
+        source, head, tree
+    ) != commit_identity(read(f"commits/{sha}") or {}, sha, tree):
         msg = "the defer-Latest receipt does not bind this protected release squash merge"
         raise ChainError(msg)
     return True

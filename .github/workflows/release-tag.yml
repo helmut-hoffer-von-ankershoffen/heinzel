@@ -29,6 +29,7 @@ jobs:
       contents: write
       actions: read # verify the pre-merge chain receipt on a tag retry
       pull-requests: read
+      statuses: read
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
@@ -90,3 +91,4 @@ jobs:
       attestations: write
       actions: read # Publish promotes the release candidate's macOS apps from its CI run
       pull-requests: read
+      statuses: read

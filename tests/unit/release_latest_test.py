@@ -26,9 +26,11 @@ def latest(monkeypatch):
     return release_latest
 
 
-def lineage():
-    def commit(sha):
-        return {"sha": sha, "parents": [{"sha": BASE}], "commit": {"tree": {"sha": TREE}}}
+def lineage(*, marked=True, candidate_message=TITLE):
+    def commit(sha, message):
+        return {"sha": sha, "parents": [{"sha": BASE}], "commit": {"tree": {"sha": TREE}, "message": message}}
+
+    statuses = [{"context": "heinzel/release-tail-required", "state": "success"}] if marked else []
 
     return {
         "actions/runs/1729/attempts/1": {
@@ -49,8 +51,12 @@ def lineage():
             "head": {"sha": HEAD, "ref": f"release/{TAG}", "repo": {"full_name": REPO}},
             "base": {"ref": "main", "repo": {"full_name": REPO}},
         },
-        f"commits/{HEAD}": commit(HEAD),
-        f"commits/{MERGE}": commit(MERGE),
+        f"commits/{MERGE}/pulls?per_page=100": [
+            {"number": 9, "merged_at": "2026-11-26", "merge_commit_sha": MERGE, "head": {"sha": HEAD}},
+        ],
+        f"commits/{HEAD}/status?per_page=100&page=1": {"sha": HEAD, "total_count": len(statuses), "statuses": statuses},
+        f"commits/{HEAD}": commit(HEAD, candidate_message),
+        f"commits/{MERGE}": commit(MERGE, MESSAGE),
     }
 
 
@@ -70,26 +76,79 @@ def test_legacy_release_uses_the_default_even_without_the_chain_workflow(latest)
     def forbidden(*_args):
         pytest.fail("legacy release cannot depend on the new chain")
 
-    assert not latest.defer_latest(TAG, MERGE, TITLE + " (#9)\n", forbidden, forbidden)
+    assert not latest.defer_latest(TAG, MERGE, TITLE + " (#9)\n", lineage(marked=False).get, forbidden)
 
 
 def test_isolated_launcher_loads_only_the_checked_out_chain(tmp_path):
     (tmp_path / "release_chain.py").write_text('raise AssertionError("untrusted chain module")\n', encoding="utf-8")
+    gh = tmp_path / "gh"
+    gh.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
+    gh.chmod(0o755)
     head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, timeout=15).strip()
-    output = subprocess.check_output(
+    result = subprocess.run(
         [sys.executable, "-I", str(ROOT / "scripts/release_latest.py"), TAG, head],
         cwd=ROOT,
-        env={**os.environ, "PYTHONPATH": str(tmp_path)},
+        env={**os.environ, "PYTHONPATH": str(tmp_path), "PATH": f"{tmp_path}:{os.environ['PATH']}"},
         text=True,
+        capture_output=True,
+        check=False,
         timeout=15,
     )
-    assert output == "defer_latest=false\n"
+    assert result.returncode == 1
+    assert "the tag commit has no unique merged release PR" in result.stderr
 
 
 def test_the_official_first_attempt_receipt_binds_the_exact_release_squash(latest):
     fetched = []
     assert latest.defer_latest(TAG, MERGE, MESSAGE, lineage().get, lambda run: fetched.append(run) or receipt())
     assert fetched == [1729]
+
+
+@pytest.mark.parametrize("status_state", ["success", "failure", "pending", "error"])
+def test_same_head_manual_squash_is_held_even_if_the_workflow_and_receipt_are_gone(latest, status_state):
+    facts = lineage()
+    facts.pop("actions/runs/1729/attempts/1")
+    facts[f"commits/{HEAD}/status?per_page=100&page=1"]["statuses"][0].update(
+        context="HEINZEL/Release-Tail-Required", state=status_state
+    )
+    with pytest.raises(latest.ChainError, match="no verified defer-Latest merge trailer"):
+        latest.defer_latest(TAG, MERGE, TITLE + " (#9)", facts.get, lambda *_: pytest.fail("no artifact can unhold it"))
+
+
+def test_new_chain_cut_cannot_publish_in_the_gap_before_its_status_is_written(latest):
+    facts = lineage(marked=False, candidate_message=TITLE + "\n\nHeinzel-Release-Candidate: hosted-chain")
+    with pytest.raises(latest.ChainError, match="no verified defer-Latest merge trailer"):
+        latest.defer_latest(TAG, MERGE, TITLE + " (#9)", facts.get, lambda *_: pytest.fail("no artifact can unhold it"))
+
+
+def test_trailer_cannot_stand_in_for_the_durable_status(latest):
+    with pytest.raises(latest.ChainError, match="no durable status"):
+        latest.defer_latest(TAG, MERGE, MESSAGE, lineage(marked=False).get, lambda *_: pytest.fail("no durable status"))
+
+
+@pytest.mark.parametrize(
+    "defect", ["read-error", "direct-tag", "duplicate-pr", "head-changed", "missing-status", "incomplete-status"]
+)
+def test_unmarked_legacy_requires_complete_exact_pr_and_status_evidence(latest, defect):
+    facts = lineage(marked=False)
+    associated = f"commits/{MERGE}/pulls?per_page=100"
+    status = f"commits/{HEAD}/status?per_page=100&page=1"
+    if defect == "read-error":
+        facts.pop(associated)
+    elif defect == "direct-tag":
+        facts[associated] = []
+    elif defect == "duplicate-pr":
+        facts[associated].append(facts[associated][0])
+    elif defect == "head-changed":
+        facts["pulls/9"]["head"]["sha"] = MERGE
+    elif defect == "missing-status":
+        facts.pop(status)
+    else:
+        facts[status]["total_count"] = 1
+    with pytest.raises(latest.ChainError):
+        latest.defer_latest(
+            TAG, MERGE, TITLE, facts.get, lambda *_: pytest.fail("unmarked legacy must rule out a hold")
+        )
 
 
 @pytest.mark.parametrize("defect", [None, "expired", "duplicate", "different-run"])

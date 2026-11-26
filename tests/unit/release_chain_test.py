@@ -676,6 +676,11 @@ def test_merge_is_pinned_to_the_verified_candidate(monkeypatch, changed, refusal
             f"compare/{BASE}...{HEAD}": content(),
             "rules/branches/main": RULES,
             f"commits/{HEAD}/check-runs?per_page=100&page=1": {"check_runs": [check("CI OK")]},
+            f"commits/{HEAD}/status?per_page=100&page=1": {
+                "sha": HEAD,
+                "total_count": 1,
+                "statuses": [{"context": chain.DEFER_LATEST_STATUS}],
+            },
             f"commits/{HEAD}/status": {"statuses": [{"context": "SonarCloud", "state": "success"}]},
         }.get(path)
 
@@ -696,6 +701,57 @@ def test_an_unmarked_merge_cannot_resume_as_a_deferred_chain_release():
     with pytest.raises(chain.ChainError, match="does not carry"):
         chain.verified_merge(reader({f"commits/{TIP}": commit}), 9, merged, BASE, TREE, require_tail=True)
     assert chain.verified_merge(reader({f"commits/{TIP}": commit}), 9, merged, BASE, TREE) == TIP
+
+
+def test_unmarked_candidate_never_reaches_chain_squash(monkeypatch):
+    monkeypatch.setattr(chain, "run", lambda *_args, **_kwargs: pytest.fail("unmarked candidate must not be merged"))
+    facts = {
+        "pulls/9": {"head": {"sha": HEAD}},
+        f"commits/{HEAD}/status?per_page=100&page=1": {"sha": HEAD, "total_count": 0, "statuses": []},
+    }
+    with pytest.raises(chain.ChainError, match="lacks its durable defer-Latest status"):
+        chain.merge(reader(facts), 9, "0.9.54", "token", CANDIDATE_PROOF, chain_run="1729")
+
+
+@pytest.mark.parametrize("read_back", [True, False])
+def test_marks_exact_sha_and_reads_it_back_before_admission(monkeypatch, read_back):
+    posts = []
+    snapshots = []
+
+    def read(path):
+        snapshots.append(path)
+        assert path == f"commits/{HEAD}/status?per_page=100&page=1"
+        rows = [{"context": chain.DEFER_LATEST_STATUS}] if posts and read_back else []
+        return {"sha": HEAD, "total_count": len(rows), "statuses": rows}
+
+    monkeypatch.setattr(chain, "run", posts.append)
+    if read_back:
+        chain.mark_tail(read, HEAD)
+        chain.mark_tail(read, HEAD)
+    else:
+        with pytest.raises(chain.ChainError, match="not visible"):
+            chain.mark_tail(read, HEAD)
+    assert len(posts) == 1
+    assert posts[0][:5] == [
+        "gh",
+        "api",
+        "--method",
+        "POST",
+        f"repos/{chain.REPOSITORY}/statuses/{HEAD}",
+    ]
+    assert len(snapshots) == (3 if read_back else 2)
+
+
+def test_a_durable_status_on_the_last_page_never_becomes_legacy():
+    root = f"commits/{HEAD}/status?per_page=100&page="
+    facts = {
+        root + "1": {"sha": HEAD, "total_count": 101, "statuses": [{"context": f"other-{n}"} for n in range(100)]},
+        root + "2": {"sha": HEAD, "total_count": 101, "statuses": [{"context": chain.DEFER_LATEST_STATUS}]},
+    }
+    assert chain.tail_required(reader(facts), HEAD)
+    facts[root + "2"]["total_count"] += 1
+    with pytest.raises(chain.ChainError, match="incomplete or ambiguous"):
+        chain.tail_required(reader(facts), HEAD)
 
 
 def app_release(version, profile_bytes, wheel=WHEEL):
@@ -1358,3 +1414,20 @@ def test_the_tail_runs_apart_from_the_chain_so_two_releases_overlap():
     # the freeze lifts at the merge, before the tag and its tail
     merge_steps = chain_wf["jobs"]["merge"]["steps"]
     assert "freeze-sync" in merge_steps[-1]["run"]
+
+
+def test_chain_identity_precedes_pr_open_and_uses_the_real_freeze_jobs_token():
+    import yaml
+
+    jobs = yaml.safe_load((ROOT / ".github/workflows/release-chain.yml").read_text())["jobs"]
+    cut = jobs["cut"]["steps"]
+    cut_marker = next(step for step in cut if chain.DEFER_LATEST_CANDIDATE in step.get("run", ""))
+    open_pr = next(step for step in cut if step.get("id") == "open")
+    assert cut.index(cut_marker) < cut.index(open_pr)
+    assert 'if [ "$DRY" != true ]; then' in cut_marker["run"]
+    assert "statuses" not in jobs["cut"]["permissions"]
+    assert jobs["freeze"]["permissions"]["statuses"] == "write"
+    freeze = jobs["freeze"]["steps"][-1]
+    assert freeze["env"]["GH_TOKEN"] == "${{ github.token }}"
+    assert freeze["run"].index("mark-tail") < freeze["run"].index("freeze-sync")
+    assert jobs["merge"]["permissions"]["statuses"] == "read"

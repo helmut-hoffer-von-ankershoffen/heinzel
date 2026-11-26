@@ -77,6 +77,8 @@ COMBINES = re.compile(r"^Combines #(?P<number>\d+) (?P<subject>\S.*)$")
 MEMBERS = re.compile(r"^(?:Combines #(\d+)\b.*|Merged via this PR:\s*(.*))$", re.MULTILINE)
 TAIL = "release-tail.yml"
 DEFER_LATEST_TRAILER = "Heinzel-Release-Tail"
+DEFER_LATEST_STATUS = "heinzel/release-tail-required"
+DEFER_LATEST_CANDIDATE = "Heinzel-Release-Candidate: hosted-chain"
 MAX_IN_FLIGHT = 2  # releases at once: one in its tail, one at its front (cut, candidate, merge, tag)
 PASSING = ("success", "neutral", "skipped")
 PROBE_BRANCH = "release-probe/"
@@ -156,6 +158,67 @@ def get(path: str, *, repo: str = REPOSITORY) -> Any:  # noqa: ANN401 - GitHub J
         msg = f"GitHub read {path} failed: {done.stderr.strip()[-300:]}"
         raise ChainError(msg)
     return json.loads(done.stdout)
+
+
+def tail_required(read: Callable[[str], Any], head: str) -> bool:
+    """Read every current status context on the exact head; any state of the reserved context requires the tail.
+
+    Raises:
+        ChainError: The status inventory is incomplete, ambiguous or for another commit.
+    """
+    if not SHA.fullmatch(head):
+        msg = "the defer-Latest status requires an exact candidate SHA"
+        raise ChainError(msg)
+    contexts: set[str] = set()
+    count = None
+    for page in range(1, 11):
+        status = read(f"commits/{head}/status?per_page={PAGE}&page={page}")
+        if not isinstance(status, dict) or status.get("sha") != head:
+            break
+        total, rows = status.get("total_count"), status.get("statuses")
+        if type(total) is not int or total < 0 or not isinstance(rows, list):
+            break
+        count = total if count is None else count
+        if total != count or len(rows) != min(PAGE, total - len(contexts)):
+            break
+        if not all(isinstance(row, dict) and isinstance(row.get("context"), str) and row["context"] for row in rows):
+            break
+        names = {row["context"].casefold() for row in rows}
+        if len(names) != len(rows) or contexts & names:
+            break
+        contexts.update(names)
+        if len(contexts) == count:
+            return DEFER_LATEST_STATUS in contexts
+    msg = f"incomplete or ambiguous defer-Latest status inventory for {head[:9]}"
+    raise ChainError(msg)
+
+
+def mark_tail(read: Callable[[str], Any], head: str) -> None:
+    """Write and read back a restrictive marker through the chain's workflow token.
+
+    Raises:
+        ChainError: GitHub did not record or return the marker on this head.
+    """
+    if tail_required(read, head):
+        return
+    run(
+        [
+            "gh",
+            "api",
+            "--method",
+            "POST",
+            f"repos/{REPOSITORY}/statuses/{head}",
+            "-f",
+            f"context={DEFER_LATEST_STATUS}",
+            "-f",
+            "state=success",
+            "-f",
+            "description=Latest requires the release chain acceptance",
+        ]
+    )
+    if not tail_required(read, head):
+        msg = f"the defer-Latest status for {head[:9]} is not visible"
+        raise ChainError(msg)
 
 
 def vkey(version: str) -> tuple[int, int, int]:
@@ -1299,6 +1362,9 @@ def merge(  # noqa: PLR0913 - includes the optional chain run bound to the candi
     if (pr or {}).get("head", {}).get("sha") != head:
         msg = "release PR head differs from the verified candidate"
         raise ChainError(msg)
+    if chain_run and not tail_required(read, head):
+        msg = "the verified release head lacks its durable defer-Latest status"
+        raise ChainError(msg)
     if (pr or {}).get("merged"):
         return verified_merge(read, number, pr, candidate_base(read, head), tree, require_tail=bool(chain_run))
     pr = pr_of(read, number, version)
@@ -1804,6 +1870,7 @@ def parser() -> argparse.ArgumentParser:
         "freeze-sync": (),
         "need-token": (),
         "freeze-pr": (("--pr", {"type": int, "required": True}),),
+        "mark-tail": (("--pr", {"type": int, "required": True}), ("--version", {"required": True})),
         "candidate": (
             ("--pr", {"type": int}),
             ("--version", {"required": True}),
@@ -1926,6 +1993,18 @@ def cmd_merge(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_mark_tail(args: argparse.Namespace) -> int:
+    """Mark the exact head of the release PR before the candidate workflow proceeds.
+
+    Raises:
+        ChainError: The PR cannot be verified or GitHub could not confirm the status.
+    """
+    head = pr_of(get, args.pr, args.version)["head"]["sha"]
+    mark_tail(get, head)
+    say(f"ok   release tail required before Latest for {head[:9]}")
+    return 0
+
+
 def cmd_probe(args: argparse.Namespace) -> int:
     """The token probe of a dry run (workflow job "Token probe")."""
     token = os.environ.get("RELEASE_TOKEN", "")
@@ -1987,6 +2066,7 @@ COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "freeze-pr": cmd_freeze_pr,
     "candidate": cmd_candidate,
     "merge": cmd_merge,
+    "mark-tail": cmd_mark_tail,
     "core-published": cmd_core_published,
     "snapshot": cmd_snapshot,
     "probe": cmd_probe,

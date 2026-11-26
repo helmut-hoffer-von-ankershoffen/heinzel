@@ -169,6 +169,7 @@ jobs:
       attestations: write
       actions: read # bind the optional chain deferral to its first-attempt pre-merge receipt
       pull-requests: read
+      statuses: read
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
     steps:
