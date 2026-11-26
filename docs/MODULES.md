@@ -219,6 +219,7 @@ Your profile, and the team, org and company you work with.
 | Run the supervised calendar reminder worker until its periodic restart. | `hz org calendar-reminder-worker` | — | — | — | yes | expert |
 | Show a week from your connected calendar. | `hz org calendar` | `org_calendar` | — | `GET /api/org/calendar` |  | expert |
 | Show what your team recommends beside what you have; apply only what you accept, to your user file. | `hz org sync` | `org_sync` | — | — | yes |  |
+| Read a calendar week with the browser's current calendar exclusions. | — | — | — | `GET /api/org/calendar-selection` |  | expert |
 
 Settings: [`[org]`](CONFIGURATION.md#org).
 
