@@ -7,7 +7,7 @@ run-name: "Release ${{ inputs.version || 'next' }}${{ (inputs.dry_run || github.
 #
 # Every step reads GitHub state first (scripts/release_chain.py), so dispatching the workflow again continues the
 # release in flight: an open release PR resumes at its candidate, a published release without its marker and without
-# a running tail run at its tail.
+# a running tail run at its tail. Name an exact version to resume a stopped tail after acceptance if it still needs Latest.
 #
 # Pipelined: this workflow ends at the tag; the tail (compose, PyPI, acceptance, marker, Latest) is its own run of
 # release-tail.yml in a per-version concurrency group. The freeze lifts at the merge, before the tag, so while release
@@ -450,20 +450,12 @@ jobs:
       - id: tail
         name: Start the tail run of this version (PyPI, compose, acceptance, verdict, Latest); main is open again
         run: |
-          newest() { gh run list -R "$GITHUB_REPOSITORY" -w release-tail.yml -e workflow_dispatch -L 1 --json databaseId --jq '.[0].databaseId // 0'; }
-          before="$(newest)"
-          gh workflow run release-tail.yml -R "$GITHUB_REPOSITORY" --ref main -f version="$VERSION"
-          for _ in $(seq 1 18); do
-            id="$(newest)"
-            if [ "$id" -gt "$before" ]; then
-              echo "run=$id" >> "$GITHUB_OUTPUT"
-              echo "ok   tail of v$VERSION: run $id"
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "error: the dispatch of the v$VERSION tail created no new run; dispatch Release again to resume it" >&2
-          exit 1
+          id="$(gh api --method POST "repos/$GITHUB_REPOSITORY/actions/workflows/release-tail.yml/dispatches" \
+            -H 'X-GitHub-Api-Version: 2026-03-10' -f ref=main -f "inputs[version]=$VERSION" -F return_run_details=true \
+            --jq '.workflow_run_id')"
+          [[ "$id" =~ ^[1-9][0-9]*$ ]] || { echo "error: GitHub did not identify the v$VERSION tail dispatch" >&2; exit 1; }
+          echo "run=$id" >> "$GITHUB_OUTPUT"
+          echo "ok   tail of v$VERSION: run $id"
 
   probe:
     name: Token probe (dry run)

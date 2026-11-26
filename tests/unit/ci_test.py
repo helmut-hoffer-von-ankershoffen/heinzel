@@ -148,6 +148,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
             "one step of the release chain, reading GitHub first"
         ),
         "newest() {": "waits for Release tag and Publish, dispatching the tag only if the merge did not",
+        'id="$(gh api --method POST': "starts the exact tail on main and uses the run ID returned by its dispatch",
         'tag="$(gh api': "reads the newest accepted release for the dry run's tail checks",
     },
     "release-tail.yml": {

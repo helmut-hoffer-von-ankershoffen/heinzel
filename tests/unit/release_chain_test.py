@@ -113,8 +113,9 @@ def routes(*, prs=(), rels=None, runs=None, commits=None, tails=()):
     runs = runs if runs is not None else [run_row(), macos_run()]
     found = {
         "pulls": list(prs),
-        "actions/workflows/release-tail.yml/runs?per_page=100": {"workflow_runs": list(tails)},
+        "actions/workflows/release-tail.yml/runs": {"workflow_runs": list(tails), "total_count": len(tails)},
         "releases": rels,
+        "releases/latest": {"tag_name": "v0.9.53"},
         f"actions/workflows/ci.yml/runs?head_sha={TIP}&per_page=100": {"workflow_runs": runs, "total_count": len(runs)},
         "actions/runs/7/attempts/1/jobs": jobs_for(7, "ubuntu-24.04"),
         "actions/runs/9/attempts/1/jobs": jobs_for(9, "macos-latest"),
@@ -335,6 +336,87 @@ def test_plan_resumes_a_published_release_without_marker_at_its_tail():
     assert (result["phase"], result["version"]) == ("tail", "0.9.54")
     done = [tail_run("0.9.54", status="completed")]  # a stopped tail is resumed, not cut past
     assert chain.plan(reader(routes(rels=rels, tails=done)), "", auto=False, tip=TIP)["phase"] == "tail"
+
+
+@pytest.mark.parametrize(
+    ("change", "error"),
+    [
+        (None, None),
+        ("rejected", "rejected or contradicts"),
+        ("legacy", "rejected or contradicts"),
+        ("wheel", "rejected or contradicts"),
+        ("profile", "rejected or contradicts"),
+        ("digest", "provider digest"),
+        ("origin", "first-attempt tail run"),
+        ("running", "already queued or running"),
+        ("partial", "incomplete or ambiguous"),
+        ("missing-inventory-origin", "incomplete or ambiguous"),
+        ("competing", "in flight"),
+        ("missing-latest", "Latest release is unverified"),
+    ],
+)
+def test_explicit_plan_resumes_an_authenticated_accepted_tail(monkeypatch, change, error):
+    version = "0.9.54"
+    rel, raw, origin = marked_release(change)
+    prs = [pr(9, "release/v0.9.55")] if change == "competing" else []
+    tails = (
+        [tail_run(version), tail_run("0.9.540", status="completed")] if change == "running" else [tail_run("0.9.540")]
+    )
+    for idx, tail in enumerate(tails, start=1):
+        tail["id"] = idx
+    if change != "missing-inventory-origin":
+        tails.append({**tail_run(version, status="completed"), "id": origin["id"]})
+    data = routes(rels=[rel, release("0.9.53")], prs=prs, tails=tails)
+    data["actions/runs/5"] = origin
+    data[f"compare/v{version}...{TIP}"] = data[f"compare/v0.9.53...{TIP}"]
+    if change == "missing-latest":
+        del data["releases/latest"]
+    if change == "partial":
+        data["actions/workflows/release-tail.yml/runs"]["total_count"] += 1
+    monkeypatch.setattr(chain, "snapshot", lambda *_: SNAP)
+    monkeypatch.setattr(chain, "fetch", lambda _: raw)
+    read = reader(data)
+    if error:
+        with pytest.raises(chain.ChainError, match=error):
+            chain.plan(read, version, auto=False, tip=TIP)
+    else:
+        result = chain.plan(read, version, auto=False, tip=TIP)
+        assert (result["phase"], result["version"]) == ("tail", version)
+        automatic = chain.plan(read, "", auto=True, tip=TIP)
+        assert (automatic["phase"], automatic["version"]) != ("tail", version)
+
+
+@pytest.mark.parametrize("latest", ["0.9.54", "0.9.55"])
+def test_an_accepted_release_cannot_resume_after_latest_passes_it(monkeypatch, latest):
+    version = "0.9.54"
+    rel, raw, origin = marked_release(None)
+    data = routes(rels=[rel, release("0.9.53")])
+    data["actions/runs/5"] = origin
+    monkeypatch.setattr(chain, "fetch", lambda _: raw)
+
+    def verify_snapshot(*_):
+        data["releases/latest"] = {"tag_name": f"v{latest}"}
+        return SNAP
+
+    monkeypatch.setattr(chain, "snapshot", verify_snapshot)
+    assert chain.plan(reader(data), version, auto=False, tip=TIP)["phase"] == "done"
+
+
+def test_recovery_tail_inventory_reads_every_page(monkeypatch):
+    monkeypatch.setattr(chain, "PAGE", 1)
+    read = reader(
+        {
+            "actions/workflows/release-tail.yml/runs?per_page=1&page=1": {
+                "total_count": 2,
+                "workflow_runs": [{**tail_run("0.9.54", status="completed"), "id": 1}],
+            },
+            "actions/workflows/release-tail.yml/runs?per_page=1&page=2": {
+                "total_count": 2,
+                "workflow_runs": [{**tail_run("0.9.54"), "id": 2}],
+            },
+        }
+    )
+    assert chain.recovery_tail_running(read, "0.9.54", 1)
 
 
 def test_a_tail_workflow_not_yet_on_main_has_no_running_run():
@@ -948,6 +1030,9 @@ def test_latest_only_after_the_marker_never_backwards(monkeypatch):
     newer = reader({"releases/tags/v0.9.54": release("0.9.54"), "releases/latest": {"tag_name": "v0.9.55"}})
     with pytest.raises(chain.ChainError, match="newer"):
         chain.promote(newer, "0.9.54", SNAP)
+    unknown = reader({"releases/tags/v0.9.54": release("0.9.54"), "releases/latest": {"tag_name": "unknown"}})
+    with pytest.raises(chain.ChainError, match="Latest release is unverified"):
+        chain.promote(unknown, "0.9.54", SNAP)
     unmarked = reader(
         {"releases/tags/v0.9.54": release("0.9.54", marker=False), "releases/latest": {"tag_name": "v0.9.53"}}
     )
@@ -998,8 +1083,7 @@ def test_tail_promotes_only_after_its_independent_acceptance_receipts(tmp_path, 
     assert effects == [("marker", True), ("latest", True)] if accepted else effects == [("marker", False)]
 
 
-@pytest.mark.parametrize("change", [None, "rejected", "wheel", "profile", "digest", "origin", "legacy"])
-def test_resume_requires_original_accepted_marker_and_matching_bytes(monkeypatch, change):
+def marked_release(change):
     data = chain.marker("0.9.54", "5", good=True, snap=SNAP)
     if change == "rejected":
         data["accepted"] = False
@@ -1014,6 +1098,12 @@ def test_resume_requires_original_accepted_marker_and_matching_bytes(monkeypatch
     origin.update(path=".github/workflows/release-tail.yml", display_title="Release tail v0.9.54")
     if change == "origin":
         origin["run_attempt"] = 2
+    return rel, raw, origin
+
+
+@pytest.mark.parametrize("change", [None, "rejected", "wheel", "profile", "digest", "origin", "legacy"])
+def test_resume_requires_original_accepted_marker_and_matching_bytes(monkeypatch, change):
+    rel, raw, origin = marked_release(change)
     monkeypatch.setattr(chain, "fetch", lambda _: raw)
     read = reader({"releases/tags/v0.9.54": rel, "actions/runs/5": origin})
     if change is None:
@@ -1462,7 +1552,11 @@ def test_the_tail_runs_apart_from_the_chain_so_two_releases_overlap():
     assert not {"acceptance", "verdict"} & set(chain_wf["jobs"])
     assert {"publish", "acceptance", "verdict"} <= set(tail_wf["jobs"])
     steps = chain_wf["jobs"]["publish"]["steps"]
-    assert "gh workflow run release-tail.yml" in steps[-1]["run"]
+    dispatch = steps[-1]["run"]
+    assert "actions/workflows/release-tail.yml/dispatches" in dispatch
+    assert '-f ref=main -f "inputs[version]=$VERSION" -F return_run_details=true' in dispatch
+    assert ".workflow_run_id" in dispatch
+    assert "gh run list" not in dispatch
     assert not any("pypi.yml" in str(step.get("run", "")) for step in steps)
     # the freeze lifts at the merge, before the tag and its tail
     merge_steps = chain_wf["jobs"]["merge"]["steps"]

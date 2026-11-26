@@ -752,6 +752,48 @@ def tail_running(read: Callable[[str], Any], version: str) -> bool:
     )
 
 
+def recovery_tail_running(read: Callable[[str], Any], version: str, origin: int) -> bool:
+    """Check the complete tail inventory before dispatching a recovery for an exact version.
+
+    Raises:
+        ChainError: The inventory is incomplete, unreadable or inconsistent.
+    """
+    seen: dict[int, tuple[str, str]] = {}
+    count = None
+    title = f"Release tail v{version}"
+    for page in range(1, 11):
+        data = read(f"actions/workflows/{TAIL}/runs?per_page={PAGE}&page={page}")
+        if not isinstance(data, dict):
+            break
+        total, rows = data.get("total_count"), data.get("workflow_runs")
+        if type(total) is not int or total < 0 or not isinstance(rows, list):
+            break
+        count = total if count is None else count
+        if total != count or len(rows) != min(PAGE, total - len(seen)):
+            break
+        if not all(
+            isinstance(row, dict)
+            and type(row.get("id")) is int
+            and row["id"] > 0
+            and isinstance(row.get("display_title"), str)
+            and row["display_title"]
+            and isinstance(row.get("status"), str)
+            and row["status"]
+            for row in rows
+        ):
+            break
+        runs = {row["id"]: (row["display_title"], row["status"]) for row in rows}
+        if len(runs) != len(rows) or seen.keys() & runs.keys():
+            break
+        seen.update(runs)
+        if len(seen) == count:
+            if seen.get(origin) == (title, "completed"):
+                return any(name == title and status != "completed" for name, status in seen.values())
+            break
+    msg = f"incomplete or ambiguous release tail run inventory for v{version}"
+    raise ChainError(msg)
+
+
 def in_flight(read: Callable[[str], Any], requested: str, current: str) -> dict[str, str] | None:
     """The release whose front is under way (an open release PR), or one in its tail with no tail run, else None.
 
@@ -779,6 +821,42 @@ def in_flight(read: Callable[[str], Any], requested: str, current: str) -> dict[
         msg = f"v{found['version']} is in flight ({found['reason']}); finish it before {requested}"
         raise ChainError(msg)
     return found
+
+
+def marked_tail_plan(read: Callable[[str], Any], version: str, current: str) -> dict[str, str]:
+    """Plan a fresh tail only for an explicitly requested, accepted release ahead of Latest.
+
+    Raises:
+        ChainError: Latest or acceptance is unproved, or another release operation conflicts.
+    """
+    latest = latest_final_version(read)
+    if vkey(latest) >= vkey(version):
+        return step_plan(version, "done", f"v{latest} is already Latest; v{version} needs no promotion")
+    if in_flight(read, version, current) or len(in_tail(read)) >= MAX_IN_FLIGHT:
+        msg = f"another release operation is in flight; cannot resume promotion of v{version}"
+        raise ChainError(msg)
+    origin = resume_marker(read, version, snapshot(read, get_app, version, fetch))
+    latest = latest_final_version(read)
+    if vkey(latest) >= vkey(version):
+        return step_plan(version, "done", f"v{latest} became Latest; v{version} needs no promotion")
+    if recovery_tail_running(read, version, origin):
+        msg = f"the release tail of v{version} is already queued or running"
+        raise ChainError(msg)
+    return step_plan(version, "tail", f"resume: v{version} is accepted; run fresh acceptance before marking it Latest")
+
+
+def latest_final_version(read: Callable[[str], Any]) -> str:
+    """Read the exact final tag currently designated Latest.
+
+    Raises:
+        ChainError: The designated tag is missing or not a final version.
+    """
+    latest = read("releases/latest")
+    tag = latest.get("tag_name") if isinstance(latest, dict) else None
+    if not isinstance(tag, str) or not tag.startswith("v") or not VERSION.fullmatch(tag[1:]):
+        msg = "the current Latest release is unverified"
+        raise ChainError(msg)
+    return tag[1:]
 
 
 def check_unpublished_merge(read: Callable[[str], Any], commits: list[dict[str, Any]], current: str) -> None:
@@ -854,11 +932,11 @@ def plan(  # noqa: PLR0913 - the plan's inputs, all keyword-only beyond the vers
         current = final_below(read, requested)
     else:
         current = newest_final(read)
+        if requested and vkey(requested) <= vkey(current) and has_marker(release_of(read, requested)):
+            return marked_tail_plan(read, requested, current)
         if found := in_flight(read, requested, current):
             return found
     if requested and vkey(requested) <= vkey(current):
-        if has_marker(release_of(read, requested)):
-            return step_plan(requested, "done", f"v{requested} is published and has its acceptance marker")
         msg = f"{requested} is not newer than the latest release {current}"
         raise ChainError(msg)
     tails = [v for v in in_tail(read) if vkey(v) < vkey(requested or "999999.0.0")]
@@ -1758,8 +1836,8 @@ def marker(version: str, run_id: str, good: bool, snap: dict[str, str]) -> dict[
     }
 
 
-def resume_marker(read: Callable[[str], Any], version: str, snap: dict[str, str]) -> None:
-    """Authenticate an accepted marker before a fresh acceptance can resume promotion.
+def resume_marker(read: Callable[[str], Any], version: str, snap: dict[str, str]) -> int:
+    """Authenticate an accepted marker and return its originating tail run.
 
     Raises:
         ChainError: The marker, its originating run, or its byte binding is not trustworthy.
@@ -1812,6 +1890,7 @@ def resume_marker(read: Callable[[str], Any], version: str, snap: dict[str, str]
     ):
         msg = "the existing acceptance marker has no trusted first-attempt tail run"
         raise ChainError(msg)
+    return run_id
 
 
 def publish_marker(read: Callable[[str], Any], version: str, data: dict[str, Any]) -> None:
@@ -1849,23 +1928,18 @@ def promote(read: Callable[[str], Any], version: str, snap: dict[str, str], *, d
     if asset_digest(release, f"heinzel-{version}-py3-none-any.whl") != snap["wheel_sha256"]:
         msg = f"the v{version} wheel differs from the accepted one"
         raise ChainError(msg)
-    latest = (read("releases/latest") or {}).get("tag_name", "")
-    if latest == f"v{version}":
+    latest = latest_final_version(read)
+    if latest == version:
         say(f"ok   v{version} is Latest already")
         return
-    if (
-        isinstance(latest, str)
-        and latest.startswith("v")
-        and VERSION.fullmatch(latest[1:])
-        and vkey(latest[1:]) > vkey(version)
-    ):
-        msg = f"{latest} is Latest and newer; v{version} stays as it is"
+    if vkey(latest) > vkey(version):
+        msg = f"v{latest} is Latest and newer; v{version} stays as it is"
         raise ChainError(msg)
     if dry:
-        say(f"dry  would mark v{version} Latest (now {latest or 'none'})")
+        say(f"dry  would mark v{version} Latest (now v{latest})")
         return
     run(["gh", "release", "edit", f"v{version}", "--latest", "-R", REPOSITORY])
-    if (read("releases/latest") or {}).get("tag_name") != f"v{version}":
+    if latest_final_version(read) != version:
         msg = f"v{version} is still not Latest"
         raise ChainError(msg)
     say(f"ok   v{version} is Latest: the updater offers it now")
