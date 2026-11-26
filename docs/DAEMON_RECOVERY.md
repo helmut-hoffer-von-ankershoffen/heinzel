@@ -83,7 +83,7 @@ services are changed. The web service starts by itself within seconds afterwards
 The supervised web launcher checks the recovery runtime that the automatic updater staged outside the tool.
 It restores and verifies an armed rollback copy, then archives the abandoned mutation before it starts the
 web server. Any verified handover request from the same transaction stays available for the daemon.
-Older owned web launchers need migration with `hz ui install` at their recorded port before automatic updates can apply.
+For an older owned web launcher, run `hz ui install` at its recorded port before applying automatic updates.
 
 If the updater is still running or the recovery evidence is incomplete, the marker stays. For unresolved updates, check
 `hz system daemon status --json` and `hz ui status --json`, and the web server's own errors in `web.err.log` in the
