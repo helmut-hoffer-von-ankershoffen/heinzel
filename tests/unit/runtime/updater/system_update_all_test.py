@@ -18,7 +18,7 @@ from types import SimpleNamespace
 import pytest
 
 from heinzel import HeinzelError, Progress
-from heinzel.kernel import PluginRelease
+from heinzel.kernel import Installation, PluginRelease
 from heinzel.kernel._desktop_app import DesktopApp
 from heinzel.kernel._head_refresh import HeadRefresh
 from heinzel.modules import system
@@ -1114,9 +1114,14 @@ def test_the_channel_is_shown_described_and_switched_only_with_yes():
 
 
 def test_nothing_is_recovered_where_no_automatic_update_stopped_half_way(tmp_path):
-    kernel = SimpleNamespace(settings=SimpleNamespace(state_dir=tmp_path))
-    assert system.recover_announced(SimpleNamespace(is_tool=True), kernel) is False  # type: ignore[arg-type]
-    assert system.recover_announced(SimpleNamespace(is_tool=False), kernel) is False  # type: ignore[arg-type]
+    state = tmp_path / "state"
+    kernel = SimpleNamespace(settings=SimpleNamespace(state_dir=state))
+    installed = tool(tmp_path / "installed", AT_COMMIT, FakeUv("0.2.0"))
+    uninstalled = Installation(Progress(), prefix=tmp_path / "uninstalled", uv="unused")
+    for target in (installed, uninstalled):
+        service = UpdateService(target, FakeReleases("0.4.0"), state=FileInstallationState(state))
+        assert system.recover_announced(service, kernel) is False  # type: ignore[arg-type]
+    assert not state.exists()
 
 
 # Which desktop app is there: a genuine copy hz did not record is brought along; a native one updates itself.

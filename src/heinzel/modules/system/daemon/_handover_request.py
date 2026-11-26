@@ -27,6 +27,7 @@ from heinzel.modules.system.daemon._handover_files import (
 from heinzel.modules.system.daemon._handover_files import (
     verified_handover_file as _open_verified_handover_file,
 )
+from heinzel.modules.system.daemon._mutation_scope import MutationHandover
 from heinzel.modules.system.daemon._ownership import ManagerState
 from heinzel.modules.system.daemon._runtime import lock
 from heinzel.modules.system.daemon._units import LABEL, SYSTEMD_NAME
@@ -94,7 +95,9 @@ class HandoverRequests:
                 )
             return self._request_handover_locked(previous)
 
-    def _request_handover_locked(self, previous: DaemonHandoverPlan) -> DaemonHandoverRequest:
+    def _request_handover_locked(
+        self, previous: DaemonHandoverPlan, mutation: MutationHandover | None = None
+    ) -> DaemonHandoverRequest:
         """Ask only the unchanged active service to hand over; manager acceptance is not execution evidence.
 
         Raises:
@@ -125,6 +128,8 @@ class HandoverRequests:
         }
         if fence is not None:
             data.update({f"birth_{key}": value for key, value in fence.items()})
+        if mutation is not None:
+            data["mutation_binding"] = mutation.binding(data)
         self._write_state("handover-request.json", data)
         try:
             self._service_manager().kickstart(
