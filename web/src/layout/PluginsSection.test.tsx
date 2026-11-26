@@ -1563,7 +1563,7 @@ describe("PluginGallery", () => {
     const user = userEvent.setup();
     const { container } = render(
       <Providers client={queryClient()}>
-        <PluginGallery spec="harbor" name="Harbor" />
+        <PluginGallery spec="harbor" name="Harbor" privateSource={false} />
       </Providers>,
     );
     const gallery = screen.getByRole("region", { name: "Screenshot gallery: Harbor" });
@@ -1610,8 +1610,29 @@ describe("PluginGallery", () => {
     expect(container.querySelectorAll("img,iframe")).toHaveLength(0);
   });
 
-  it("offers an installed plugin's exact Git source gallery without installing or changing it", async () => {
+  it("keeps a source with unknown visibility opt-in", async () => {
     const calls = serve((url) => (url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url)));
+    const user = userEvent.setup();
+    render(
+      <Providers client={queryClient()}>
+        <PluginGallery spec="harbor" name="Harbor" />
+      </Providers>,
+    );
+    expect(calls).toHaveLength(0);
+    expect(screen.queryByRole("region", { name: "Screenshot gallery: Harbor" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
+    const gallery = await screen.findByRole("region", { name: "Screenshot gallery: Harbor" });
+    expect(await within(gallery).findByRole("img", { name: "Harbor in the app" })).toBeInTheDocument();
+    expect(calls).toHaveLength(1);
+  });
+
+  it("offers an installed plugin's exact Git source gallery without installing or changing it", async () => {
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/showcase") return { body: GALLERY };
+      if (url.pathname === "/api/system/plugin/list") return { body: [{ ...installed, private_repository: false }] };
+      return base(url);
+    });
     show();
     await screen.findByRole("img", { name: "Harbor in the app" });
     const previews = calls.filter((call) => new URL(call.url).pathname.endsWith("/showcase"));
@@ -1632,6 +1653,7 @@ describe("PluginGallery", () => {
               ...installed,
               revision,
               source_url: `https://github.com/fictional-lab/own-clock/tree/${revision}/plugins/heinzel-clock`,
+              private_repository: false,
             },
           ],
         };
@@ -1671,7 +1693,7 @@ describe("PluginGallery", () => {
     serve(() => ({ body: { ...GALLERY, screenshots: [{ ...GALLERY.screenshots[0], caption }] } }));
     const { container } = render(
       <Providers client={queryClient()}>
-        <PluginGallery spec="harbor" name="Harbor" />
+        <PluginGallery spec="harbor" name="Harbor" privateSource={false} />
       </Providers>,
     );
     expect(await screen.findByRole("img", { name: caption })).toBeInTheDocument();
@@ -1682,7 +1704,7 @@ describe("PluginGallery", () => {
     serve(() => ({ body: { ...GALLERY, screenshots: [], soundscapes: [], notice: "" } }));
     render(
       <Providers client={queryClient()}>
-        <PluginGallery spec="harbor" name="Harbor" />
+        <PluginGallery spec="harbor" name="Harbor" privateSource={false} />
       </Providers>,
     );
     expect(await screen.findByText("This plugin has not published screenshots yet.")).toBeInTheDocument();
@@ -1708,11 +1730,14 @@ it("uses an installed immutable revision even when its source only names a branc
 
 it("never resolves an unknown installed source through another same-name catalog entry", async () => {
   const calls = serve(base);
+  const user = userEvent.setup();
   render(
     <Providers client={queryClient()}>
       <PluginGallery spec={null} name="Harbor" />
     </Providers>,
   );
+  expect(screen.queryByText(/No public GitHub preview/)).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
   expect(screen.getByText(/No public GitHub preview/)).toBeInTheDocument();
   expect(calls).toHaveLength(0);
   expect(screen.queryByRole("img")).not.toBeInTheDocument();
@@ -1723,7 +1748,7 @@ it("keeps partial discovery warnings visible while useful screenshots remain ava
   serve(() => ({ body: { ...GALLERY, notice, soundscapes: [] } }));
   render(
     <Providers client={queryClient()}>
-      <PluginGallery spec="harbor" name="Harbor" />
+      <PluginGallery spec="harbor" name="Harbor" privateSource={false} />
     </Providers>,
   );
   expect(await screen.findByRole("img", { name: "Harbor in the app" })).toBeInTheDocument();
@@ -1734,7 +1759,7 @@ it("reports a native media handoff failure beside its functional browser link", 
   serve(() => ({ body: GALLERY }));
   render(
     <Providers client={queryClient()}>
-      <PluginGallery spec="harbor" name="Harbor" />
+      <PluginGallery spec="harbor" name="Harbor" privateSource={false} />
     </Providers>,
   );
   const link = await screen.findByRole("link", { name: /Harbor tide/ });

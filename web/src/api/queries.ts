@@ -329,7 +329,7 @@ export const useRefreshPluginSearch = (text: string) => {
     onSuccess: (found) => client.setQueryData(["system", "plugin", "search", text], found),
   });
 };
-/** Fetch inert media only after a person opens a plugin's gallery. */
+/** Fetch inert public media for an opened plugin gallery. */
 export const usePluginShowcase = (spec: string) =>
   useQuery({
     queryKey: ["system", "plugin", "showcase", spec],

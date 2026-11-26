@@ -1032,7 +1032,7 @@ function Yours({
                       <PluginGallery
                         spec={installedGallerySpec(plugin)}
                         name={displayName(plugin.name, plugin.summary)}
-                        privateSource={plugin.private_repository === true}
+                        privateSource={plugin.private_repository}
                       />
                       {slot?.key === rowKey && slot.node}
                     </li>
@@ -1211,7 +1211,7 @@ function Discover({
                 <PluginGallery
                   spec={plugin.install_spec}
                   name={displayName(plugin.short_name, plugin.description)}
-                  privateSource={plugin.private_repository === true}
+                  privateSource={plugin.private_repository}
                 />
                 {slot?.key === `discover:${plugin.name}` && slot.node}
               </li>
@@ -1242,17 +1242,20 @@ export function installedGallerySpec(plugin: SchemaPluginInfo): string | null {
   }
 }
 
-/** Read owner-declared media only after a person asks to see the selected plugin. */
+/** Show public previews by default; unknown source visibility requires opening the gallery. */
 export function PluginGallery({
   spec,
   name,
-  privateSource = false,
+  privateSource,
 }: {
   spec: string | null;
   name: string;
-  privateSource?: boolean;
+  privateSource?: boolean | null;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(privateSource !== undefined && privateSource !== null);
+  useEffect(() => {
+    setOpen(privateSource !== undefined && privateSource !== null);
+  }, [privateSource]);
   const galleryId = useId();
   return (
     <div className="mt-2 min-w-0">
