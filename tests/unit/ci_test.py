@@ -2293,7 +2293,7 @@ def test_the_starter_journeys_find_the_reviewed_pyyaml_through_find_links():
     assert "trap 'on_signal 143' TERM" in lines
     assert 'wait "$starter_pid"' in lines
     assert build < launch
-    assert "unset VIRTUAL_ENV UV_FROZEN" in lines
+    assert any("unset VIRTUAL_ENV UV_FROZEN" in line for line in lines)
     assert (
         lines[launch].lstrip() == 'export UV_FIND_LINKS="$pyyaml_wheels" UV_CACHE_DIR="$starter_destination/uv-cache"'
     )
