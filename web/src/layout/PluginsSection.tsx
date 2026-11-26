@@ -20,8 +20,9 @@ import {
   Sparkles,
   Trash2,
   Users,
+  X,
 } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { SchemaPluginCandidate, SchemaPluginChange, SchemaPluginInfo, SchemaPluginOperation } from "@/api/client";
 import { api, unwrap } from "@/api/client";
 import {
@@ -56,7 +57,6 @@ import {
   wasDrivenOperationDismissed,
 } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
-import { viewportBounds } from "@/lib/viewport";
 import { PluginsPending } from "./PluginsPending";
 import {
   acknowledgePluginRestart,
@@ -1103,7 +1103,7 @@ function Yours({
                       <PluginGallery
                         spec={installedGallerySpec(plugin)}
                         name={displayName(plugin.name, plugin.summary)}
-                        privateSource={plugin.private_repository === true}
+                        privateSource={plugin.private_repository}
                       />
                       {slot?.key === rowKey && slot.node}
                     </li>
@@ -1282,7 +1282,7 @@ function Discover({
                 <PluginGallery
                   spec={plugin.install_spec}
                   name={displayName(plugin.short_name, plugin.description)}
-                  privateSource={plugin.private_repository === true}
+                  privateSource={plugin.private_repository}
                 />
                 {slot?.key === `discover:${plugin.name}` && slot.node}
               </li>
@@ -1313,17 +1313,19 @@ export function installedGallerySpec(plugin: SchemaPluginInfo): string | null {
   }
 }
 
-/** Read owner-declared media only after a person asks to see the selected plugin. */
+/** Show public previews by default; unknown source visibility requires opening the gallery. */
 export function PluginGallery({
   spec,
   name,
-  privateSource = false,
+  privateSource,
 }: {
   spec: string | null;
   name: string;
-  privateSource?: boolean;
+  privateSource?: boolean | null;
 }) {
-  const [open, setOpen] = useState(false);
+  const visibility = privateSource == null ? "unknown" : privateSource;
+  const [openOverride, setOpenOverride] = useState<{ visibility: boolean | "unknown"; open: boolean } | null>(null);
+  const open = openOverride?.visibility === visibility ? openOverride.open : visibility !== "unknown";
   const galleryId = useId();
   return (
     <div className="mt-2 min-w-0">
@@ -1333,7 +1335,7 @@ export function PluginGallery({
         aria-expanded={open}
         aria-controls={open ? galleryId : undefined}
         aria-label={t("plugins.screenshotsFor", { name })}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpenOverride({ visibility, open: !open })}
       >
         {t("plugins.screenshots")}
       </Button>
@@ -1358,79 +1360,85 @@ export function PluginGallery({
 
 function GalleryContents({ spec }: { spec: string }) {
   const query = usePluginShowcase(spec);
-  const [selected, setSelected] = useState(0);
-  const choiceName = useId();
+  const [selected, setSelected] = useState<number | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    const element = dialog.current;
+    if (selected === null || !element) return;
+    element.showModal();
+    closeButton.current?.focus();
+    return () => {
+      element.close();
+      trigger.current?.focus();
+    };
+  }, [selected]);
   return (
     <Loaded query={query}>
       {(gallery) => {
         const shots = gallery.screenshots ?? [];
-        const shot = shots[selected] ?? shots[0];
+        const shot = selected === null ? undefined : shots[selected];
         return (
           <div data-plugin-gallery-content className="min-w-0 space-y-3">
-            {shot ? (
-              <>
-                <div
-                  role="radiogroup"
-                  aria-label={t("plugins.chooseScreenshot")}
-                  className="flex min-w-0 flex-wrap gap-2"
-                >
-                  {shots.map((image, index) => (
-                    <label
-                      key={`${image.url}-${image.caption}-${image.surface}`}
-                      className={cn(
-                        "min-h-11 rounded-md border border-border p-1 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring",
-                        selected === index && "ring-2 ring-ring",
-                      )}
-                    >
-                      <input
-                        type="radio"
-                        name={choiceName}
-                        checked={selected === index}
-                        aria-label={`${image.surface.toUpperCase()}: ${image.caption}`}
-                        onChange={() => setSelected(index)}
-                        className="sr-only"
-                      />
-                      <img
-                        src={image.url}
-                        alt=""
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
-                        className="h-14 w-24 rounded-sm object-contain"
-                      />
-                      <span className="block text-xs">{image.surface.toUpperCase()}</span>
-                    </label>
-                  ))}
-                </div>
-                <figure className="min-w-0">
-                  <PublicMediaLink href={shot.url} label={t("plugins.fullSizeFor", { caption: shot.caption })}>
+            {shots.length > 0 ? (
+              <fieldset aria-label={t("plugins.chooseScreenshot")} className="flex min-w-0 flex-wrap gap-2">
+                {shots.map((image, index) => (
+                  <Button
+                    key={`${image.url}-${image.caption}-${image.surface}`}
+                    variant="outline"
+                    className="h-auto min-h-11 flex-col items-start gap-1 p-1"
+                    aria-label={t("plugins.fullSizeFor", { caption: image.caption })}
+                    onClick={(event) => {
+                      trigger.current = event.currentTarget;
+                      setSelected(index);
+                    }}
+                  >
                     <img
-                      src={shot.url}
-                      alt={shot.caption}
+                      src={image.url}
+                      alt={image.caption}
+                      loading="lazy"
                       referrerPolicy="no-referrer"
-                      className="max-h-[35dvh] w-full rounded-md border border-border object-contain"
-                      onLoad={(event) => {
-                        const image = event.currentTarget;
-                        const pane = image.closest<HTMLElement>("[data-settings-content]");
-                        if (pane) {
-                          const picture = image.getBoundingClientRect();
-                          const viewport = pane.getBoundingClientRect();
-                          const visible = viewportBounds();
-                          const top = Math.max(viewport.top, visible.top);
-                          const bottom = Math.min(viewport.bottom, visible.top + visible.height);
-                          if (picture.top < top) pane.scrollTop += picture.top - top - 8;
-                          else if (picture.bottom > bottom) pane.scrollTop += picture.bottom - bottom + 8;
-                        }
-                      }}
+                      className="h-14 w-24 rounded-sm object-contain"
                     />
-                  </PublicMediaLink>
-                  <figcaption className="mt-2 break-words text-sm text-muted-foreground">
-                    <span className="mr-2 font-medium">{shot.surface.toUpperCase()}</span>
-                    {shot.caption}
-                  </figcaption>
-                </figure>
-              </>
+                    <span className="text-xs">{image.surface.toUpperCase()}</span>
+                  </Button>
+                ))}
+              </fieldset>
             ) : (
               <p className="text-sm text-muted-foreground">{t("plugins.noScreenshots")}</p>
+            )}
+            {shot && (
+              <dialog
+                ref={dialog}
+                aria-label={shot.caption}
+                aria-modal="true"
+                className="fixed inset-0 m-0 h-dvh max-h-none w-full max-w-none flex-col gap-3 bg-background p-4 text-foreground open:flex"
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") event.stopPropagation();
+                }}
+                onCancel={(event) => {
+                  event.preventDefault();
+                  setSelected(null);
+                }}
+              >
+                <Button
+                  ref={closeButton}
+                  variant="outline"
+                  className="self-end"
+                  aria-label={t("plugins.closeScreenshot")}
+                  onClick={() => setSelected(null)}
+                >
+                  <X aria-hidden />
+                </Button>
+                <img
+                  src={shot.url}
+                  alt={shot.caption}
+                  referrerPolicy="no-referrer"
+                  className="min-h-0 w-full flex-1 object-contain"
+                />
+                <p className="break-words text-center text-sm">{shot.caption}</p>
+              </dialog>
             )}
             {gallery.notice && <p className="text-sm text-muted-foreground">{gallery.notice}</p>}
             {(gallery.soundscapes?.length ?? 0) > 0 && (
