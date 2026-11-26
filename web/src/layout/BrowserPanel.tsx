@@ -138,6 +138,8 @@ export function BrowserPanel({
   const addressRevision = useRef(0);
   const navigationRevision = useRef(0);
   const [state, setState] = useState<BrowserState>({ status: "empty" });
+  const rejectedReloadTab = useRef<string | null | undefined>(undefined);
+  const [reloadRejected, setReloadRejected] = useState(false);
   const [refused, setRefused] = useState(false);
   const [externalFailed, setExternalFailed] = useState(false);
   const surface = useRef<HTMLDivElement>(null);
@@ -173,13 +175,39 @@ export function BrowserPanel({
   }, [toolsOpen]);
   const native = bridge();
   const tabs = state.tabs ?? [];
+  const reloadFailed =
+    reloadRejected &&
+    (rejectedReloadTab.current === null
+      ? state.selected === undefined
+      : rejectedReloadTab.current === state.selected);
+  const clearReloadFailure = () => {
+    rejectedReloadTab.current = undefined;
+    setReloadRejected(false);
+  };
+  const applyState = (result: BrowserState) => {
+    setState(result);
+    const failedTab = rejectedReloadTab.current;
+    const closed = failedTab !== undefined && failedTab !== null && result.tabs !== undefined &&
+      !result.tabs.some((tab) => tab.id === failedTab);
+    const sameTab = failedTab === null ? result.selected === undefined : result.selected === failedTab;
+    const progressed = result.status === "loading" || result.status === "unavailable";
+    if (failedTab !== undefined && (closed || (sameTab && progressed))) {
+      clearReloadFailure();
+    }
+  };
   // Agents' tabs have their own limit: only the person's count against the person's.
   const ownTabs = tabs.filter((tab) => !tab.agent).length;
   const request = async (command: Record<string, unknown>) => {
+    if (command.action === "reload" || command.action === "back" || command.action === "forward")
+      clearReloadFailure();
     try {
       const result = await native?.browser(command);
-      if (result) setState(result);
+      if (result) applyState(result);
     } catch {
+      if (command.action === "reload") {
+        rejectedReloadTab.current = state.selected ?? null;
+        setReloadRejected(true);
+      }
       setState((previous) => ({ ...previous, status: "unavailable" }));
     }
   };
@@ -198,7 +226,7 @@ export function BrowserPanel({
     void native
       ?.browser({ action: "tabs" })
       .then((result) => {
-        setState(result);
+        applyState(result);
         const current = result.tabs?.find((tab) => tab.selected);
         if (current?.url) setAddress(current.url);
       })
@@ -211,7 +239,7 @@ export function BrowserPanel({
     () => {
       void native
         ?.browser({ action: "state" })
-        .then(setState)
+        .then(applyState)
         .catch(() => {});
     },
     "browser",
@@ -291,6 +319,7 @@ export function BrowserPanel({
   const go = async (url: string) => {
     const submittedRevision = addressRevision.current;
     const navigation = ++navigationRevision.current;
+    clearReloadFailure();
     try {
       const result = await native?.browser({ action: "navigate", url });
       if (navigation !== navigationRevision.current) return;
@@ -298,7 +327,7 @@ export function BrowserPanel({
       if (result) {
         if (submittedRevision === addressRevision.current) setAddressEdited(false);
         if (result.selected) setShownTab(result.selected);
-        setState(result);
+        applyState(result);
       }
     } catch (error) {
       if (navigation !== navigationRevision.current) return;
@@ -315,6 +344,7 @@ export function BrowserPanel({
         : state.status === "empty"
           ? t("browser.empty")
           : t("browser.unavailable");
+  const visibleStatus = reloadFailed ? t("browser.unavailable") : status;
   return (
     <section ref={panel} aria-label={t("browser.title")} className="flex h-full min-h-0 flex-col bg-background">
       {native && (
@@ -417,7 +447,11 @@ export function BrowserPanel({
               variant="ghost"
               size="icon"
               className="size-8 shrink-0 sm:size-9"
-              aria-label={refreshName(t("browser.reload"), state.status === "loading", state.status === "unavailable")}
+              aria-label={refreshName(
+                t("browser.reload"),
+                state.status === "loading",
+                reloadFailed || state.status === "unavailable",
+              )}
               title={t("browser.reload")}
               disabled={!state.url || state.status === "loading"}
               aria-busy={state.status === "loading"}
@@ -428,7 +462,7 @@ export function BrowserPanel({
             >
               <RefreshCw
                 aria-hidden
-                className={refreshIcon(state.status === "loading", state.status === "unavailable")}
+                className={refreshIcon(state.status === "loading", reloadFailed || state.status === "unavailable")}
               />
             </Button>
           </>
@@ -546,9 +580,13 @@ export function BrowserPanel({
       {native ? (
         <>
           <output
-            className={state.status === "unavailable" ? "block px-3 py-1 text-xs text-muted-foreground" : "sr-only"}
+            className={
+              reloadFailed || state.status === "unavailable"
+                ? "block px-3 py-1 text-xs text-muted-foreground"
+                : "sr-only"
+            }
           >
-            {status}
+            {visibleStatus}
           </output>
           {bookmarks && (
             <BookmarkBar slot={starSlot} url={current?.url || state.url} title={current?.title ?? ""} tabs={tabs} />

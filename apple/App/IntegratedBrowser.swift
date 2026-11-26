@@ -210,7 +210,14 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
             clearFailed = !cleared
         case "back": pageRevision &+= 1; surface?.goBack()
         case "forward": pageRevision &+= 1; surface?.goForward()
-        case "reload": pageRevision &+= 1; surface?.reload()
+        case "reload":
+            pageRevision &+= 1
+            guard let tab = selected, let surface else { break }
+            let previous = tab.status
+            tab.status = "loading"
+            // `reload()` can return before WKWebView calls didStart; expose progress in this IPC reply.
+            // A failure callback may already have won by then, so only undo the optimistic state when it is unchanged.
+            if surface.reload() == nil, tab.status == "loading" { tab.status = previous }
         default: break
         }
 

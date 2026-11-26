@@ -8,8 +8,10 @@ afterEach(() => {
 it("shows native automatic loading and a failed reload until a successful retry", async () => {
   let status = "ready";
   let fail = true;
+  let statePolls = 0;
   const browser = vi.fn(async ({ action }: Record<string, unknown>) => {
     if (action === "reload" && fail) throw new Error("reload refused");
+    if (action === "state") statePolls += 1;
     return { status, url: "https://example.com/" };
   });
   Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
@@ -24,6 +26,9 @@ it("shows native automatic loading and a failed reload until a successful retry"
   fireEvent.click(reload);
   const failed = await screen.findByRole("button", { name: "Reload the website — Refresh failed" });
   expect(failed.querySelector("svg")).toHaveClass("text-bad");
+  const pollsAtFailure = statePolls;
+  await waitFor(() => expect(statePolls).toBeGreaterThan(pollsAtFailure), { timeout: 1500 });
+  expect(screen.getByRole("button", { name: "Reload the website — Refresh failed" })).toBeVisible();
   fail = false;
   fireEvent.click(failed);
   await waitFor(() =>
