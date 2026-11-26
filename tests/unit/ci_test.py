@@ -209,7 +209,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'auth="$(printf': "fetches the head as git objects only, never checks it out",
         'if [[ ! -f "$EXECUTION_FILE" ]]': "collects a verdict or records a confirmed provider spending limit",
         "echo 'Gate review rejected this exact head.'": "records an explicit rejection in the run history",
-        "python3 scripts/review_history.py": "authenticates prior attempts before a spending-limit skip",
+        'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"': "checks the protected base and review history",
         'if [[ "$MODE" == pass ]]': "no model call without gate paths; a gate change nobody reviewed fails",
     },
     "update-prs.yml": {
@@ -1022,10 +1022,9 @@ def test_gate_review_runs_the_base_workflow_and_never_executes_the_head():
         step for step in spec["jobs"]["gate-review"]["steps"] if "actions/checkout" in step.get("uses", "")
     )
     assert history_checkout["if"] == "needs.model.outputs.spend_limit == 'true'"
-    assert history_checkout["with"] == {
-        "ref": "${{ github.event.pull_request.base.sha }}",
-        "persist-credentials": False,
-    }
+    assert history_checkout["with"] == {"persist-credentials": False}
+    history = next(step for step in spec["jobs"]["gate-review"]["steps"] if step.get("id") == "history")
+    assert 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in history["run"]
     assert "github.event.pull_request.head.sha" not in str(checkout)
 
 

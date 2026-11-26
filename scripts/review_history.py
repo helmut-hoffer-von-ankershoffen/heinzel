@@ -26,6 +26,20 @@ def _rows(document: object, key: str) -> tuple[int, list[dict]]:
     raise ValueError(msg)
 
 
+def _workflow_identity(run: dict, head: str) -> tuple[int, int]:
+    identity, attempt = run.get("id"), run.get("run_attempt")
+    if (
+        (run.get("path"), run.get("event"), run.get("head_sha")) != (WORKFLOW, "pull_request_target", head)
+        or type(identity) is not int
+        or identity < 1
+        or type(attempt) is not int
+        or attempt < 1
+    ):
+        msg = "GitHub returned inconsistent exact-head Gate workflow identity"
+        raise ValueError(msg)
+    return identity, attempt
+
+
 def _previous_attempts(
     get: Callable[[str], object], repo: str, head: str, run_id: int, attempt: int
 ) -> list[tuple[int, int]]:
@@ -42,15 +56,8 @@ def _previous_attempts(
             msg = "the same-head Gate workflow inventory changed or is incomplete"
             raise ValueError(msg)
         for run in runs:
-            identity, version = run.get("id"), run.get("run_attempt")
-            if (
-                (run.get("path"), run.get("event"), run.get("head_sha")) != (WORKFLOW, "pull_request_target", head)
-                or type(identity) is not int
-                or identity < 1
-                or identity in known
-                or type(version) is not int
-                or version < 1
-            ):
+            identity, version = _workflow_identity(run, head)
+            if identity in known:
                 msg = "GitHub returned inconsistent exact-head Gate workflow identity"
                 raise ValueError(msg)
             known[identity] = version

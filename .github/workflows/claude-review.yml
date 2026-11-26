@@ -197,7 +197,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.model.outputs.spend_limit == 'true'
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
       - name: Check same-head Gate review history
         id: history
@@ -205,7 +204,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: python3 scripts/review_history.py
+        run: |
+          # pull_request_target checks out the triggering protected base commit by default.
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 scripts/review_history.py
       - name: Judge the review and comment
         env:
           GH_TOKEN: ${{ github.token }}
