@@ -71,6 +71,25 @@ describe("Heinzelmännchen", () => {
     expect(screen.queryByText("hz heinzel new my-first-heinzel")).not.toBeInTheDocument();
   });
 
+  it("says how to start one while keeping retired personal Heinzels visible", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/list": {
+        ...heinzelmaennchen,
+        heinzelmaennchen: [],
+        next: [{ command: "hz heinzel new my-first-heinzel", why: "a starter contract" }],
+      },
+      "/api/heinzel/sessions": {
+        sessions: [{ session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV", name: "Alpha", state: "retired" }],
+      },
+    });
+    renderAt("/heinzel");
+    const retired = within(await screen.findByRole("radio", { name: /^Alpha/ }));
+    expect(retired.getByText("Retired")).toBeInTheDocument();
+    expect(await screen.findByText("No Heinzelmännchen yet. Start one:")).toBeInTheDocument();
+    expect(screen.getByText("hz heinzel new my-first-heinzel")).toBeInTheDocument();
+  });
+
   it("doesn't flash the empty line while the personal Heinzels are still loading", async () => {
     const { calls } = mockApi({
       ...shell,
