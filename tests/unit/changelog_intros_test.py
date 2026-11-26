@@ -86,3 +86,12 @@ def test_without_an_intro_or_a_previous_changelog_the_regenerated_one_stays(tmp_
 def test_an_intro_needs_a_version(tmp_path):
     with pytest.raises(SystemExit):
         changelog_intros.main([str(tmp_path / "a.md"), str(tmp_path / "b.md"), "--intro", "Prose."])
+
+
+def test_a_heading_with_the_cut_time_keeps_introductions_and_history():
+    timed = V020.replace("2026-11-01", "2026-11-01 07:41 UTC")
+    generated = f"{HEADER}\n{timed}\n### 🐛 Bug fixes\n\n- A fix\n\n{V010}\n### ✨ Features\n\n- Foundation\n"
+    restored = changelog_intros.restore(generated, changelog_intros.intros(BEFORE))
+    assert "## [0.2.0](https://example.com/v0.2.0) - 2026-11-01 07:41 UTC" in restored
+    assert INTRO_010 in restored
+    assert changelog_intros.intros(restored) == {"0.1.0": INTRO_010}
