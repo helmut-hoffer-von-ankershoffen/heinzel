@@ -34,7 +34,7 @@ class InstalledPlugin(BaseModel):
     repository: str | None = Field(
         description="Source repository, from its Project-URL metadata; none if it names none."
     )
-    installed: dt.date | None = Field(description="The day this version was installed here; none if unknown.")
+    installed: dt.datetime | None = Field(description="The moment this version was installed here; none if unknown.")
 
 
 class SystemInfo(BaseModel):
@@ -45,8 +45,8 @@ class SystemInfo(BaseModel):
     python_version: str = Field(description="Version of the Python running hz.")
     python_executable: str = Field(description="Path of the Python interpreter running hz.")
     platform: str = Field(description="Operating system and architecture.")
-    installed: dt.date | None = Field(
-        description="The day this Heinzelmännchen version was installed here; none if unknown."
+    installed: dt.datetime | None = Field(
+        description="The moment this Heinzelmännchen version was installed here; none if unknown."
     )
     installation: Literal["uv tool", "environment"] = Field(
         description="Whether hz runs from a uv tool environment or from another Python environment."
@@ -82,11 +82,23 @@ class ReleaseNotes(BaseModel):
     """A release newer than the installed version and what it brings, from its release page."""
 
     version: str = Field(description="Version of the release.")
-    date: dt.date | None = Field(description="When it was published; none if the source didn't say.")
+    date: dt.date | None = Field(description="The day it was published; none if the source didn't say.")
+    published_at: dt.datetime | None = Field(
+        default=None, description="The moment it was published (UTC); none if the source didn't say."
+    )
     notes: str = Field(
         description="Its release notes as Markdown: third-party text, without control or bidirectional characters."
     )
     url: str | None = Field(description="Its release page, on github.com.")
+
+
+class ReleaseTime(BaseModel):
+    """The installed release's publication time or the date recorded in its changelog."""
+
+    version: str = Field(description="Version of the release.")
+    published_at: dt.datetime | None = Field(description="GitHub's publication time (UTC), if known.")
+    day: dt.date | None = Field(description="The UTC publication date or the date recorded in the changelog.")
+    source: Literal["github", "changelog"] | None = Field(description="Where the answer came from; none if unknown.")
 
 
 class PluginUpdate(BaseModel):

@@ -106,3 +106,9 @@ def test_every_commit_between_the_previous_tag_and_the_tag_is_listed(tmp_path, m
     assert "- fix: in the candidate (#886)" in release_notes.with_missing(
         "- other\n", release_notes.tag_subjects("v0.2.0")
     )
+
+
+def test_a_heading_with_the_cut_time_still_yields_its_section():
+    timed = CHANGELOG.replace("- 2026-11-01", "- 2026-11-01 07:41 UTC")
+    assert release_notes.section(timed, "v0.2.0") == "### ✨ Features\n\n- New thing\n"
+    assert release_notes.section(timed, "0.1.0") == "### 🐛 Bug fixes\n\n- Old fix\n"

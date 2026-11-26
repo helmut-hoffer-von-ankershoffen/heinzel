@@ -265,7 +265,7 @@ header = "# Changelog\n\nAll notable changes to Heinzelmännchen, newest first. 
 body = """
 {% macro remote_url() -%}https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}{%- endmacro -%}
 {% if version %}
-## [{{ version | trim_start_matches(pat="v") }}]({{ self::remote_url() }}/releases/tag/{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
+## [{{ version | trim_start_matches(pat="v") }}]({{ self::remote_url() }}/releases/tag/{{ version }}) - {{ timestamp | date(format="%Y-%m-%d %H:%M", timezone="UTC") }} UTC
 {% else %}
 ## [Unreleased]
 {% endif %}

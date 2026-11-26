@@ -2498,6 +2498,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/changelog/released": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the installed version's GitHub publication time or changelog date.
+         * @description Show the installed version's GitHub publication time or changelog date.
+         *
+         *     The GitHub publication time is cached. When unavailable, the command shows the date recorded in the changelog.
+         */
+        get: operations["system_changelog_released"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/channel": {
         parameters: {
             query?: never;
@@ -10085,7 +10107,7 @@ export interface components {
         InstalledPlugin: {
             /**
              * Installed
-             * @description The day this version was installed here; none if unknown.
+             * @description The moment this version was installed here; none if unknown.
              */
             installed: string | null;
             /**
@@ -13520,7 +13542,7 @@ export interface components {
         ReleaseNotes: {
             /**
              * Date
-             * @description When it was published; none if the source didn't say.
+             * @description The day it was published; none if the source didn't say.
              */
             date: string | null;
             /**
@@ -13529,10 +13551,41 @@ export interface components {
              */
             notes: string;
             /**
+             * Published At
+             * @description The moment it was published (UTC); none if the source didn't say.
+             */
+            published_at?: string | null;
+            /**
              * Url
              * @description Its release page, on github.com.
              */
             url: string | null;
+            /**
+             * Version
+             * @description Version of the release.
+             */
+            version: string;
+        };
+        /**
+         * ReleaseTime
+         * @description The installed release's publication time or the date recorded in its changelog.
+         */
+        ReleaseTime: {
+            /**
+             * Day
+             * @description The UTC publication date or the date recorded in the changelog.
+             */
+            day: string | null;
+            /**
+             * Published At
+             * @description GitHub's publication time (UTC), if known.
+             */
+            published_at: string | null;
+            /**
+             * Source
+             * @description Where the answer came from; none if unknown.
+             */
+            source: ("github" | "changelog") | null;
             /**
              * Version
              * @description Version of the release.
@@ -15948,7 +16001,7 @@ export interface components {
             installation: "uv tool" | "environment";
             /**
              * Installed
-             * @description The day this Heinzelmännchen version was installed here; none if unknown.
+             * @description The moment this Heinzelmännchen version was installed here; none if unknown.
              */
             installed: string | null;
             /**
@@ -19098,6 +19151,7 @@ export type SchemaReleaseCheck = components['schemas']['ReleaseCheck'];
 export type SchemaReleaseFeedBaseline = components['schemas']['ReleaseFeedBaseline'];
 export type SchemaReleaseFeedIdentity = components['schemas']['ReleaseFeedIdentity'];
 export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
+export type SchemaReleaseTime = components['schemas']['ReleaseTime'];
 export type SchemaRendererBlock = components['schemas']['RendererBlock'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
 export type SchemaResolveWhen = components['schemas']['ResolveWhen'];
@@ -23135,6 +23189,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_changelog_released: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseTime"];
                 };
             };
         };

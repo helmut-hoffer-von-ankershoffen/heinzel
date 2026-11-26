@@ -7,12 +7,13 @@ import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { recordSurface } from "@/lib/surfaceDiagnostics";
+import { zoneDateTime } from "@/lib/zoneTime";
 import { AboutDialog, clientHere, desktopApp, detailsText } from "./AboutDialog";
 import { requestMenuAction } from "./menu";
 
 const info = {
   version: "1.2.3",
-  installed: "2026-11-08",
+  installed: "2026-11-08T05:31:00Z",
   repository: "https://github.com/helmut-hoffer-von-ankershoffen/heinzel",
   python_version: "3.14.1",
   python_executable: "/py",
@@ -20,7 +21,7 @@ const info = {
   installation: "uv tool",
   latest_release: null,
   plugins: [
-    { name: "heinzel-a", version: "0.4.0", source: "PyPI", repository: null, installed: "2026-11-01" },
+    { name: "heinzel-a", version: "0.4.0", source: "PyPI", repository: null, installed: "2026-11-01T09:05:00Z" },
     {
       name: "heinzel-b",
       version: "0.4.0",
@@ -135,7 +136,7 @@ describe("About dialog", () => {
   it("gives the hz --version lines plus daemon, and the desktop app when there is one", () => {
     const text = detailsText(info as never, { version: "0.9.29", path: "/Applications/H.app" });
     expect(text).toContain("hz 1.2.3\n");
-    expect(text).toContain("installation uv tool (installed 2026-11-08)");
+    expect(text).toContain("installation uv tool (installed 2026-11-08T05:31:00Z)");
     expect(text).toContain("daemon running 1.2.3");
     expect(text).toContain("desktop Electron app 0.9.29 /Applications/H.app");
     expect(text).toContain("client Browser");
@@ -259,10 +260,26 @@ describe("About dialog", () => {
   it("shows versions with their dates, a first-party chip, and nothing for an unknown date", () => {
     show();
     act(() => requestMenuAction("about"));
-    expect(screen.getByText(/Installed Nov 8, 2026/)).toBeInTheDocument();
+    expect(screen.getByText(`Installed ${zoneDateTime(new Date(info.installed))}`)).toBeInTheDocument();
     const rows = screen.getAllByRole("row");
-    expect(within(rows[1] as HTMLElement).getByText("Nov 1, 2026")).toBeInTheDocument();
+    const installed = zoneDateTime(new Date("2026-11-01T09:05:00Z"));
+    expect(within(rows[1] as HTMLElement).getByText(installed)).toBeInTheDocument();
     expect(within(rows[2] as HTMLElement).getByText("first-party")).toBeInTheDocument();
     expect(within(rows[2] as HTMLElement).queryByText(/unknown|Nov/)).toBeNull();
+  });
+
+  it("keeps older date-only installation values as calendar days without inventing a time", () => {
+    current = { ...info, installed: "2026-11-08", plugins: [{ ...info.plugins[0], installed: "2026-11-01" }] };
+    show();
+    act(() => requestMenuAction("about"));
+    const day = (value: string) =>
+      new Date(`${value}T00:00:00Z`).toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        timeZone: "UTC",
+      });
+    expect(screen.getByText(`Installed ${day("2026-11-08")}`)).toBeInTheDocument();
+    expect(within(screen.getAllByRole("row")[1] as HTMLElement).getByText(day("2026-11-01"))).toBeInTheDocument();
   });
 });
