@@ -88,8 +88,8 @@ struct NavigationIdentity<Navigation: AnyObject> {
         return true
     }
 
-    mutating func finishSameDocument(url: URL?) -> Bool {
-        guard inFlight, expectedURL == url else { return false }
+    mutating func finishSameDocument(url: URL?, attempt: Int, isLoading: Bool) -> Bool {
+        guard attempt == generation, !isLoading, inFlight, expectedURL == url else { return false }
         awaitingStart = false
         inFlight = false
         return true

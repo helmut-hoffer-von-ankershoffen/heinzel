@@ -215,6 +215,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
     const navigation = (guest.navigationGeneration ?? 0) + 1;
     guest.navigationGeneration = navigation;
     guest.navigationURL = url;
+    guest.historyNavigation = null;
     guest.status = "loading";
     surface.revision += 1;
     const failed = (error) => {
@@ -467,11 +468,27 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         try { if (PASSKEY_PAGE.test(new URL(url).pathname)) guest.notice = "passkey"; } catch { /* not a URL */ }
       };
       contents.on("did-navigate", passkeyPage);
-      contents.on("did-navigate-in-page", passkeyPage);
+      contents.on("did-navigate-in-page", (event, url, isMainFrame) => {
+        passkeyPage(event, url);
+        const pending = guest.historyNavigation;
+        if (!isMainFrame || !pending || pending.generation !== guest.navigationGeneration || !pending.started || url !== pending.url) return;
+        guest.historyNavigation = null;
+        guest.navigationURL = url;
+        if (guest.status === "loading") { guest.status = "ready"; surfaceOf(window).revision += 1; }
+      });
       contents.on("did-start-navigation", (event, url, isSameDocument, isMainFrame) => {
         const details = navigationEvent(event, url, isSameDocument, isMainFrame);
         if (isNewDocument(details)) guest.notice = null;
+        if (details.isMainFrame && details.isSameDocument) {
+          const pending = guest.historyNavigation;
+          if (pending && pending.generation === guest.navigationGeneration) {
+            if (details.url === pending.url) pending.started = true;
+            else guest.historyNavigation = null;
+          }
+          return;
+        }
         if (!isNewDocument(details)) return;
+        guest.historyNavigation = null;
         // Electron 45 supplies the navigation event as arg 1, with `initiator` as its
         // renderer-origin signal; matching app-started URLs keep their load promise current.
         if (details.rendererInitiated || details.url !== guest.navigationURL)
@@ -839,19 +856,26 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       if (action === "hide") { surface.shown = false; apply(window, surface); }
       const history = guest.view.webContents.navigationHistory;
       if (action === "back" && history.canGoBack()) {
-        guest.navigationGeneration = (guest.navigationGeneration ?? 0) + 1;
-        guest.navigationURL = null;
+        const generation = (guest.navigationGeneration ?? 0) + 1;
+        const target = history.getEntryAtIndex(history.getActiveIndex() - 1)?.url ?? null;
+        guest.navigationGeneration = generation;
+        guest.navigationURL = target;
+        guest.historyNavigation = { generation, url: target, started: false };
         guest.status = "loading"; surface.revision += 1; history.goBack();
       }
       if (action === "forward" && history.canGoForward()) {
-        guest.navigationGeneration = (guest.navigationGeneration ?? 0) + 1;
-        guest.navigationURL = null;
+        const generation = (guest.navigationGeneration ?? 0) + 1;
+        const target = history.getEntryAtIndex(history.getActiveIndex() + 1)?.url ?? null;
+        guest.navigationGeneration = generation;
+        guest.navigationURL = target;
+        guest.historyNavigation = { generation, url: target, started: false };
         guest.status = "loading"; surface.revision += 1; history.goForward();
       }
       if (action === "reload") {
         // Report the accepted reload immediately; did-start-loading may arrive after this IPC reply.
         guest.navigationGeneration = (guest.navigationGeneration ?? 0) + 1;
         guest.navigationURL = guest.view.webContents.getURL();
+        guest.historyNavigation = null;
         guest.status = "loading";
         surface.revision += 1;
         guest.view.webContents.reload();

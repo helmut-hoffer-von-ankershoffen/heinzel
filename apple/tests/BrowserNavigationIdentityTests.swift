@@ -37,8 +37,17 @@ struct BrowserNavigationIdentityTests {
         let sameDocumentAttempt = identity.begin(target: newURL)
         let sameDocumentNavigation = Token()
         identity.attach(sameDocumentNavigation, to: sameDocumentAttempt)
-        precondition(!identity.finishSameDocument(url: oldURL), "a stale same-document history callback cannot finish the current attempt")
-        precondition(identity.finishSameDocument(url: newURL), "same-document history traversal settles the current attempt")
+        precondition(!identity.finishSameDocument(url: newURL, attempt: sameDocumentAttempt, isLoading: true),
+                     "the URL notification while WebKit is loading does not settle history")
+        precondition(!identity.finishSameDocument(url: oldURL, attempt: sameDocumentAttempt, isLoading: false),
+                     "a stale same-document history URL cannot finish the current attempt")
+        precondition(identity.finishSameDocument(url: newURL, attempt: sameDocumentAttempt, isLoading: false),
+                     "the later isLoading-only change settles the same history attempt")
+
+        let staleSameDocumentAttempt = identity.begin(target: newURL)
+        _ = identity.begin(target: newURL)
+        precondition(!identity.finishSameDocument(url: newURL, attempt: staleSameDocumentAttempt, isLoading: false),
+                     "a late KVO callback cannot settle a newer attempt at the same URL")
 
         var retired = NavigationIdentity<Token>()
         let retiredAttempt = retired.begin(target: oldURL)
