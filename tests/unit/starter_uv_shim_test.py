@@ -101,11 +101,11 @@ def test_interrupted_starter_command_terminates_its_process_group(starter, tmp_p
     child_stopped = tmp_path / "child.stopped"
     child = tmp_path / "child.py"
     child.write_text(
-        "import pathlib, signal, time\n"
+        "import os, pathlib, signal, time\n"
         f"stopped = pathlib.Path({str(child_stopped)!r})\n"
         "def stop(_signum, _frame): stopped.write_text('stopped'); raise SystemExit(0)\n"
         "signal.signal(signal.SIGTERM, stop)\n"
-        f"pathlib.Path({str(child_ready)!r}).write_text('ready')\n"
+        f"pathlib.Path({str(child_ready)!r}).write_text(str(os.getpid()))\n"
         "while True: time.sleep(.05)\n",
         encoding="utf-8",
     )

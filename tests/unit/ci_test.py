@@ -2336,9 +2336,10 @@ def _template_test_fixture(
         "    observed = {key: os.environ.get(key) for key in names}\n"
         "    pathlib.Path(os.environ['FAKE_STARTER_ENV']).write_text(json.dumps(observed))\n"
         "    os.execv(sys.executable, [sys.executable, os.environ['FAKE_STARTER']])\n"
-        "if args and args[0] == 'run' and args[-2] == '-':\n"
-        "    sys.argv = [sys.executable, *args[5:]]\n"
-        "    exec(compile(sys.stdin.read(), '<fixture-stdin>', 'exec'), {'__name__': '__main__'})\n"
+        "source = sys.stdin.read()\n"
+        "if source:\n"
+        "    sys.argv = [sys.executable, args[-1]]\n"
+        "    exec(compile(source, '<fixture-stdin>', 'exec'), {'__name__': '__main__'})\n"
         "raise SystemExit(f'unexpected uv command: {args!r}')\n",
         encoding="utf-8",
     )
