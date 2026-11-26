@@ -593,12 +593,12 @@ describe("AudioVisualizer", () => {
       const prompt = within(screen.getByRole("complementary", { name: "Let Heinzel see the music" }));
       expect(prompt.getAllByRole("button").map((button) => button.textContent)).toEqual([
         "Use system audio",
-        "Share this tab",
+        "Use workspace audio",
         "Use microphone",
         "Not now",
       ]);
       expect(captureAudio).not.toHaveBeenCalled();
-      fireEvent.click(source("Workspace audio"));
+      fireEvent.click(prompt.getByRole("button", { name: "Use workspace audio" }));
       await waitForSource("Workspace audio");
       expect(captureAudio).toHaveBeenLastCalledWith(expect.any(AbortSignal), false);
       expect(localStorage.getItem("hz.audio.source")).toBe("tab");
@@ -1112,17 +1112,15 @@ describe("AudioVisualizer", () => {
     expect(captureAudio).not.toHaveBeenCalled();
   });
 
-  it("stops offering shared audio for the session when the browser refuses it as unsupported, and listens instead", async () => {
+  it("stops offering unsupported shared audio and waits for an explicit microphone choice", async () => {
     vi.mocked(captureAudio).mockRejectedValueOnce(new DOMException("Not supported", "NotSupportedError"));
     vi.mocked(captureMicrophone).mockResolvedValueOnce(listening);
     render(<AudioVisualizer />);
     open();
     fireEvent.click(source("Shared audio"));
-    await waitForSource("Microphone");
-    expect(captureMicrophone).toHaveBeenCalledOnce();
-    expect(
-      screen.getByText("Shared audio is not offered by this browser, so Heinzel listens with the microphone."),
-    ).toBeVisible();
+    expect(await screen.findByText("Shared audio is not offered by this browser.")).toBeVisible();
+    expect(captureMicrophone).not.toHaveBeenCalled();
+    expect(source("Off")).toHaveAttribute("aria-checked", "true");
     expect(
       within(screen.getByRole("radiogroup", { name: "Listen to" })).queryByRole("radio", { name: "Shared audio" }),
     ).not.toBeInTheDocument();
@@ -1131,10 +1129,13 @@ describe("AudioVisualizer", () => {
     expect(screen.getByRole("status")).not.toHaveClass("text-bad");
     expect(screen.queryByRole("button", { name: /problem|Retry/ })).not.toBeInTheDocument();
     expect(screen.queryByText("Retry")).not.toBeInTheDocument();
+    fireEvent.click(source("Microphone"));
+    await waitForSource("Microphone");
+    expect(captureMicrophone).toHaveBeenCalledOnce();
     // A cancelled or refused prompt is not "unsupported": that keeps the choice (covered above).
   });
 
-  it("treats Safari's missing audio capture the same: hidden, the microphone instead, no error", async () => {
+  it("hides Safari's unsupported shared capture without starting the microphone", async () => {
     // What iPhone Safari answered the owner: the capture itself reports that audio sharing is unavailable.
     vi.mocked(captureAudio).mockRejectedValueOnce(
       new DOMException(
@@ -1142,11 +1143,11 @@ describe("AudioVisualizer", () => {
         "NotSupportedError",
       ),
     );
-    vi.mocked(captureMicrophone).mockResolvedValueOnce(listening);
     render(<AudioVisualizer />);
     open();
     fireEvent.click(source("Shared audio"));
-    await waitForSource("Microphone");
+    expect(await screen.findByText("Shared audio is not offered by this browser.")).toBeVisible();
+    expect(captureMicrophone).not.toHaveBeenCalled();
     expect(screen.queryByText(/Audio sharing is unavailable/)).not.toBeInTheDocument();
     expect(screen.queryByText("Retry")).not.toBeInTheDocument();
   });

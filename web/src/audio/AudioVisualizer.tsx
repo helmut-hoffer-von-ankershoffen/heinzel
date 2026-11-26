@@ -80,7 +80,7 @@ const CREW: HeinzelLook[] = [
   { age: "old", hat: "purple", shirt: "slate", build: "slim" },
 ];
 
-const FELL_BACK = "Shared audio is not offered by this browser, so Heinzel listens with the microphone.";
+const NO_SHARED = "Shared audio is not offered by this browser.";
 const UNSHARED_KEY = "hz.audio.unshared";
 const NO_SYSTEM = "System audio does not work on this computer, so it is no longer offered.";
 const NO_SYSTEM_KEY = "hz.audio.nosystem";
@@ -98,7 +98,7 @@ function markNoSystem() {
   try {
     sessionStorage.setItem(NO_SYSTEM_KEY, "1");
   } catch {
-    // not remembered: the next try fails the same way and falls back again
+    // The next try can offer system audio again.
   }
 }
 
@@ -140,7 +140,7 @@ function markUnshared() {
   try {
     sessionStorage.setItem(UNSHARED_KEY, "1");
   } catch {
-    // not remembered: the next try fails the same way and falls back again
+    // The next try can offer shared audio again.
   }
 }
 
@@ -175,8 +175,8 @@ function captureProblem(error: unknown) {
 /**
  * The audio visualizations: one analyser and one render loop feed every style that is switched on. Heinzel's own sound
  * is analysed in the page with no prompt; music in a host's frame (YouTube) needs the person's consent, asked once,
- * inline, as a tab share or the microphone. Nothing is captured before a click (a microphone already allowed may be
- * resumed), and nothing is scheduled while the sound is silent, the page hidden or every style off.
+ * inline, using an available source. Nothing is captured before a click (a microphone already allowed may be resumed),
+ * and nothing is scheduled while the sound is silent, the page hidden or every style off.
  */
 export function AudioVisualizer({
   enabled = true,
@@ -247,7 +247,6 @@ export function AudioVisualizer({
    */
   const start = useCallback(async (kind: Listening) => {
     const revision = ++generation.current;
-    const replacing = current.current !== null;
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
@@ -263,7 +262,6 @@ export function AudioVisualizer({
       }
       const previous = current.current;
       request.current = null;
-      if (kind === "mic") resumed.current = true;
       current.current = captured;
       setSession(captured);
       setHasSignal(false);
@@ -275,12 +273,10 @@ export function AudioVisualizer({
       if (generation.current !== revision) return;
       setRequesting(null);
       if (kind === "tab" && unsupported(error)) {
-        // Offered but not supported here: stop offering it and listen with the microphone instead, in one line.
+        // The person may choose another source explicitly.
         markUnshared();
         setSharing(false);
-        const fallback = !current.current && !replacing;
-        setNotice(fallback ? FELL_BACK : "Shared audio is not offered by this browser.");
-        if (fallback) void start("mic");
+        setNotice(NO_SHARED);
         return;
       }
       if (kind === "system" && systemBroken(error)) {
@@ -304,17 +300,14 @@ export function AudioVisualizer({
   const choose = useCallback(
     (source: Source) => {
       if (source === "off") {
+        resumed.current = true;
         stop();
         setProblem("");
         setRemembered("off");
         remember("off");
         return;
       }
-      if (source === "system") {
-        if (!systemOffered || current.current?.label === "System audio") return;
-        // This explicit choice takes precedence over the automatic microphone resume for this page.
-        resumed.current = true;
-      }
+      if (source === "system" && (!systemOffered || current.current?.label === "System audio")) return;
       if (source === "tab" && !canShareAudio()) {
         // The pressed choice leaves the pane; if its whole group goes with it, keep the keyboard on the trigger.
         const root = rootElement.current;
@@ -323,9 +316,11 @@ export function AudioVisualizer({
             root?.querySelector<HTMLButtonElement>("button")?.focus();
         });
         setSharing(false);
-        setNotice("Shared audio is not offered by this browser.");
+        setNotice(NO_SHARED);
         return;
       }
+      // This explicit choice takes precedence over a pending automatic microphone resume.
+      resumed.current = true;
       setNotice("");
       void start(source);
     },
@@ -363,7 +358,7 @@ export function AudioVisualizer({
   }, [session, stop]);
   // A microphone the person already allowed and chose before listens again without another question.
   const framed = own.mode === "frame";
-  // Resume at most once per page. An explicit system audio choice disables automatic microphone resume.
+  // Resume at most once per page and only before a new source is chosen.
   useEffect(() => {
     if (
       !enabled ||
@@ -901,6 +896,7 @@ export function AudioVisualizer({
           remembered={remembered}
           onSystem={systemOffered ? () => choose("system") : null}
           onTab={sharing ? () => choose("tab") : null}
+          tabLabel={workspaceAudio ? "Use workspace audio" : "Share this tab"}
           onMic={listenable ? () => choose("mic") : null}
         />
       )}
@@ -915,12 +911,14 @@ function SourcePrompt({
   remembered,
   onSystem,
   onTab,
+  tabLabel,
   onMic,
 }: {
   remembered: Remembered;
   onSystem: (() => void) | null;
   /** Null where the browser cannot share a tab's audio (every iPhone browser). */
   onTab: (() => void) | null;
+  tabLabel: string;
   /** Null when the microphone API is unavailable. */
   onMic: (() => void) | null;
 }) {
@@ -940,7 +938,7 @@ function SourcePrompt({
         )}
         {onTab && (
           <Button size="sm" variant={onSystem || remembered === "mic" ? "outline" : "default"} onClick={onTab}>
-            Share this tab
+            {tabLabel}
           </Button>
         )}
         {onMic && (
