@@ -652,8 +652,7 @@ def _wrap(
     # Not functools.wraps: it would set __wrapped__ to the bound method and with it the adapter.
     call.__name__ = name
     call.__qualname__ = f"{capability.protocol.__name__}.{name}"
-    method = capability.optional_reads.get(name) or getattr(capability.protocol, name)
-    call.__doc__ = method.__doc__
+    call.__doc__ = (capability.optional_reads.get(name) or getattr(capability.protocol, name)).__doc__
     return call
 
 
