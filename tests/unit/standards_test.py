@@ -324,15 +324,20 @@ def test_tests_and_template_use_only_variables_something_reads(make_kernel):
         for section, settings in kernel.settings_of()
         for key in type(settings).model_fields
     }
-    code = [path for path in repository_files() if path.endswith(CODE_SUFFIXES)]
     known |= HOST_GATE_ENV_READS
-    known |= {name for path in code for name in env_reads((REPO / path).read_text(encoding="utf-8"))}
-    used = {
-        (name, path)
-        for path in repository_files()
-        if path.startswith(("tests/", "template/"))
-        for name in env_names((REPO / path).read_text(encoding="utf-8", errors="ignore"))
-    }
+    used: set[tuple[str, str]] = set()
+    for path in repository_files():
+        code = path.endswith(CODE_SUFFIXES)
+        tests_or_template = path.startswith(("tests/", "template/"))
+        if not (code or tests_or_template):
+            continue
+        text = (REPO / path).read_text(encoding="utf-8", errors="strict" if code else "ignore")
+        if "HZ_" not in text:
+            continue
+        if code:
+            known.update(env_reads(text))
+        if tests_or_template:
+            used.update((name, path) for name in env_names(text))
     unknown = sorted(
         f"{path}: {name}" for name, path in used if name not in known and not name.startswith(tuple(NOT_SETTINGS))
     )
