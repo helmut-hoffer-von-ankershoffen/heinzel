@@ -1064,6 +1064,75 @@ def test_gate_review_passes_only_on_the_exact_last_line():
     assert "grep -v '^[[:space:]]*$' <<<\"$result\" | tail -n 1" in collect  # the last non-empty line
 
 
+@pytest.mark.parametrize(
+    ("changes", "previous_rejection", "skip"),
+    [
+        ({}, False, True),
+        ({"result": "You've hit your weekly spend limit. Try again later."}, False, True),
+        ({"result": "Rate limit exceeded. Try again later."}, False, False),
+        ({"api_error_status": 401}, False, False),
+        ({"api_error_origin": "other"}, False, False),
+        ({"is_error": False}, False, False),
+        ({}, True, False),
+    ],
+)
+def test_gate_review_only_waives_a_confirmed_spend_limit(tmp_path, changes, previous_rejection, skip):
+    review = _gate_review()["jobs"]
+    collect = next(step["run"] for step in review["model"]["steps"] if step.get("id") == "result")
+    execution_file = tmp_path / "execution.json"
+    output = tmp_path / "output"
+    summary = tmp_path / "summary"
+    terminal = {
+        "type": "result",
+        "is_error": True,
+        "terminal_reason": "api_error",
+        "api_error_type": "rate_limit_error",
+        "api_error_status": 429,
+        "api_error_origin": "first_party",
+        "result": "You've hit your monthly spend limit. Try again later.",
+    }
+    events = []
+    if previous_rejection:
+        events.append(
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "Finding.\nVERDICT: REJECT"}]}}
+        )
+    execution_file.write_text(json.dumps([*events, terminal | changes]), encoding="utf-8")
+    env = os.environ | {
+        "OUTCOME": "failure",
+        "CLAUDE_CONCLUSION": "failure",
+        "EXECUTION_FILE": str(execution_file),
+        "GITHUB_OUTPUT": str(output),
+    }
+    result = subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", collect], check=False, env=env, capture_output=True, text=True
+    )
+    if skip:
+        assert result.returncode == 0, result.stderr
+        assert output.read_text(encoding="utf-8") == "spend_limit=true\n"
+        judge = review["gate-review"]["steps"][0]["run"]
+        result = subprocess.run(
+            ["bash", "-e", "-o", "pipefail", "-c", judge],
+            check=False,
+            env=env
+            | {
+                "MODE": "review",
+                "MODEL": "success",
+                "SPEND_LIMIT": "true",
+                "VERDICT_LINE": "",
+                "RESULT": "",
+                "GITHUB_STEP_SUMMARY": str(summary),
+            },
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "review skipped" in summary.read_text(encoding="utf-8")
+    else:
+        assert result.returncode == 1
+        assert "Gate review failed" in result.stdout
+        assert not output.exists()
+
+
 def test_gate_review_holds_least_privilege():
     spec = _gate_review()
     for name, job in spec["jobs"].items():
