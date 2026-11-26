@@ -359,7 +359,7 @@ def test_the_next_release_is_cut_while_the_previous_tail_runs():
     assert (result["phase"], result["version"], result["previous"]) == ("cut", "0.9.54", "0.9.53")
     assert "pipelined behind v0.9.53" in result["reason"]
     # the freeze is only for an open release PR: N's tail freezes nothing
-    assert chain.freeze_targets(reader(routes(rels=rels, prs=[pr(10, "fix/x", title="fix: x")])))[1] is None
+    assert chain.freeze_targets(reader(routes(rels=rels, prs=[pr(10, "fix/x", title="fix: x")])))[2] is None
 
 
 def test_never_more_than_two_releases_in_flight():
@@ -416,9 +416,10 @@ def test_the_notes_must_name_every_commit_and_every_combine_member():
 
 def test_the_freeze_fails_every_other_pr_while_a_candidate_is_open():
     read = reader(routes(prs=[pr(9, "release/v0.9.54"), pr(10, "fix/x", title="fix: x", sha=OTHER)]))
-    targets, candidate = chain.freeze_targets(read)
+    heads, verdicts, candidate = chain.freeze_targets(read)
     assert candidate == 9
-    assert targets == [(9, HEAD, True), (10, OTHER, False)]
+    assert heads == {9: HEAD, 10: OTHER}
+    assert verdicts == {HEAD: True, OTHER: False}
     assert chain.freeze_of_pr(read, 10)[0] is False
     assert chain.freeze_of_pr(read, 9)[0] is True
     posted = []
@@ -428,8 +429,53 @@ def test_the_freeze_fails_every_other_pr_while_a_candidate_is_open():
 
 def test_no_freeze_without_a_candidate():
     read = reader(routes(prs=[pr(10, "fix/x", title="fix: x", sha=OTHER)]))
-    assert chain.freeze_targets(read) == ([(10, OTHER, True)], None)
+    assert chain.freeze_targets(read) == ({10: OTHER}, {OTHER: True}, None)
     assert chain.freeze_of_pr(read, 10)[0] is True
+    assert chain.freeze_of_pr(read, 11)[0] is False
+
+
+def test_bulk_freeze_uses_one_inventory_for_candidates_and_targets():
+    ordinary = pr(10, "fix/x", title="fix: x", sha=OTHER)
+    candidate = pr(9, "release/v0.9.54")
+    calls = []
+
+    def read(path):
+        calls.append(path)
+        return [ordinary] if len(calls) == 1 else [ordinary, candidate]
+
+    posted = []
+    chain.freeze_sync(read, lambda sha, passes, text: posted.append((sha, passes)))
+    assert calls == [f"pulls?state=open&base=main&per_page={chain.PAGE}&page=1"]
+    assert posted == [(OTHER, True)]
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("release_open", [False, True])
+def test_freeze_posts_once_and_fails_closed_for_a_shared_candidate_head(reverse, release_open):
+    ordinary = pr(10, "fix/x", title="fix: x")
+    second = pr(9, "release/v0.9.54") if release_open else pr(9, "fix/y", title="fix: y")
+    prs = [second, ordinary] if reverse else [ordinary, second]
+    reads = []
+
+    def read(path):
+        reads.append(path)
+        return prs
+
+    posted = []
+    chain.freeze_sync(read, lambda sha, passes, text: posted.append((sha, passes)))
+    expected = not release_open
+    assert posted == [(HEAD, expected)]
+    for number in (9, 10):
+        assert chain.freeze_of_pr(read, number)[0] is expected
+    assert reads == [f"pulls?state=open&base=main&per_page={chain.PAGE}&page=1"] * 3
+
+
+def test_freeze_refuses_an_ambiguous_pr_inventory_before_posting():
+    read = reader(routes(prs=[pr(9, "release/v0.9.54"), pr(9, "fix/x", title="fix: x", sha=OTHER)]))
+    posted = []
+    with pytest.raises(chain.ChainError, match="invalid or duplicate identity"):
+        chain.freeze_sync(read, lambda sha, passes, text: posted.append((sha, passes)))
+    assert posted == []
 
 
 def test_bulk_and_single_freeze_reject_competing_release_candidates():

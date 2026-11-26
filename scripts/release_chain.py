@@ -252,20 +252,21 @@ def has_marker(release: dict[str, Any] | None) -> bool:
     return bool(release) and any(a.get("name") == MARKER for a in release.get("assets", []))  # type: ignore[union-attr]
 
 
+def _is_release_pr(pr: dict[str, Any]) -> bool:
+    head = pr.get("head", {})
+    ref = head.get("ref", "")
+    version = ref.removeprefix("release/v")
+    return (
+        ref.startswith("release/v")
+        and VERSION.fullmatch(version) is not None
+        and (head.get("repo") or {}).get("full_name") == REPOSITORY
+        and pr.get("title") == f"chore(release): v{version}"
+    )
+
+
 def open_release_prs(read: Callable[[str], Any]) -> list[dict[str, Any]]:
     """Open, same-repository release PRs (head release/vX.Y.Z, title chore(release): vX.Y.Z)."""
-    found = []
-    for pr in open_prs(read):
-        ref = pr.get("head", {}).get("ref", "")
-        version = ref.removeprefix("release/v")
-        if (
-            ref.startswith("release/v")
-            and VERSION.fullmatch(version)
-            and pr.get("head", {}).get("repo", {}).get("full_name") == REPOSITORY
-            and pr.get("title") == f"chore(release): v{version}"
-        ):
-            found.append(pr)
-    return found
+    return [pr for pr in open_prs(read) if _is_release_pr(pr)]
 
 
 def open_prs(read: Callable[[str], Any]) -> list[dict[str, Any]]:
@@ -931,32 +932,60 @@ def audit_notes(cwd: Path, previous: str, base: str, version: str) -> None:
 # ------------------------------------------------------------------------------------------------ freeze
 
 
-def freeze_targets(read: Callable[[str], Any]) -> tuple[list[tuple[int, str, bool]], int | None]:
-    """(PR number, head SHA, passes) for every open PR, and the lowest open release PR number, if any."""
-    candidates = {p["number"] for p in open_release_prs(read)}
-    targets = [(p["number"], p["head"]["sha"], candidates <= {p["number"]}) for p in open_prs(read)]
-    return targets, min(candidates) if candidates else None
+def freeze_targets(read: Callable[[str], Any]) -> tuple[dict[int, str], dict[str, bool], int | None]:
+    """Read one inventory and return PR heads, verdicts per commit, and the lowest open candidate number.
+
+    Raises:
+        ChainError: The inventory does not identify each open PR and its full head SHA once.
+    """
+    prs = open_prs(read)
+    heads: dict[int, str] = {}
+    candidates: set[int] = set()
+    for pr in prs:
+        number = pr.get("number")
+        sha = pr.get("head", {}).get("sha")
+        if (
+            type(number) is not int
+            or number <= 0
+            or number in heads
+            or not isinstance(sha, str)
+            or not SHA.fullmatch(sha)
+        ):
+            msg = "the open pull request inventory contains an invalid or duplicate identity"
+            raise ChainError(msg)
+        heads[number] = sha
+        if _is_release_pr(pr):
+            candidates.add(number)
+
+    verdicts: dict[str, bool] = {}
+    for number, sha in heads.items():
+        # The check is shared by every open PR on the commit, so any failure blocks the head.
+        verdicts[sha] = verdicts.get(sha, True) and candidates <= {number}
+    return heads, verdicts, min(candidates) if candidates else None
+
+
+def _freeze_text(candidate: int | None) -> str:
+    if candidate is None:
+        return "No release candidate is open."
+    return f"Release candidate #{candidate} is open. Only an unshared, sole release candidate passes the freeze."
 
 
 def freeze_sync(read: Callable[[str], Any], post: Callable[[str, bool, str], None]) -> None:
     """Post the "Release freeze" check on every open PR head: failing while another PR is the release candidate."""
-    targets, candidate = freeze_targets(read)
-    text = (
-        f"Release candidate #{candidate} is open. A PR passes only when no other release candidate is open."
-        if candidate
-        else "No release candidate is open."
-    )
-    for number, sha, passes in targets:
+    _, verdicts, candidate = freeze_targets(read)
+    text = _freeze_text(candidate)
+    for sha, passes in verdicts.items():
         post(sha, passes, text)
-        say(f"{'pass' if passes else 'FAIL'} {FREEZE_CHECK} on #{number} ({sha[:9]})")
+        say(f"{'pass' if passes else 'FAIL'} {FREEZE_CHECK} on {sha[:9]}")
 
 
 def freeze_of_pr(read: Callable[[str], Any], number: int) -> tuple[bool, str]:
-    """The freeze verdict for one PR: it passes unless another PR is an open release candidate."""
-    others = [p["number"] for p in open_release_prs(read) if p["number"] != number]
-    if others:
-        return False, f"Release candidate #{min(others)} is open: main is frozen until it merges."
-    return True, "No other release candidate is open."
+    """The freeze verdict of the commit shared by this open PR and any others at its head."""
+    heads, verdicts, candidate = freeze_targets(read)
+    sha = heads.get(number)
+    if sha is None:
+        return False, f"Pull request #{number} is absent from the open PR inventory."
+    return verdicts[sha], _freeze_text(candidate)
 
 
 def post_check(sha: str, passes: bool, text: str) -> None:
