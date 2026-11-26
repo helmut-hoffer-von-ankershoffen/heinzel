@@ -18,6 +18,7 @@ import {
 import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
+import { refreshIcon, refreshName } from "@/lib/refreshFeedback";
 import { cn } from "@/lib/utils";
 
 /** A footer pane's way to close itself: an action that takes the person elsewhere calls it, so the pane never covers
@@ -162,6 +163,7 @@ export function PaneAction({
   ghost = false,
   leaves = false,
   spinning = false,
+  refreshFailed = false,
   to,
   href,
   className,
@@ -176,6 +178,8 @@ export function PaneAction({
     leaves?: boolean;
     /** The icon turns while the action works (a check running), and stops when it ends. */
     spinning?: boolean;
+    /** The last refresh failed; clear its error while the next read is in flight. */
+    refreshFailed?: boolean;
   }) {
   const slot = useContext(Slot);
   const leave = useContext(PaneLeave);
@@ -204,11 +208,13 @@ export function PaneAction({
       className,
     ),
     "data-pane-action": words ? "text" : "icon",
-    ...(words ? {} : { "aria-label": children, title: children }),
+    ...(!words || refreshFailed
+      ? { "aria-label": refreshName(children, spinning, refreshFailed), title: children }
+      : {}),
   };
   const body = (
     <>
-      <Icon aria-hidden className={spinning ? "animate-spin" : undefined} data-spinning={spinning ? "" : undefined} />
+      <Icon aria-hidden className={refreshIcon(spinning, refreshFailed)} data-spinning={spinning ? "" : undefined} />
       {words && children}
     </>
   );
@@ -234,7 +240,7 @@ export function PaneAction({
       </Button>
     );
   return (
-    <Button type="button" {...look} {...props}>
+    <Button type="button" {...look} aria-busy={spinning || undefined} {...props}>
       {body}
     </Button>
   );

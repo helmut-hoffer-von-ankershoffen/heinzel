@@ -708,7 +708,12 @@ describe("a stream's fades", () => {
     renderAt("/");
     await playSound(user, "Fixture radio");
     await screen.findByTitle("Fixture radio player");
-    const reload = vi.spyOn(page, "reload").mockImplementation(() => undefined);
+    const reload = vi
+      .spyOn(page, "reload")
+      .mockImplementationOnce(() => {
+        throw new Error("reload refused");
+      })
+      .mockImplementation(() => undefined);
     await act(async () => {
       const event = new Event("securitypolicyviolation") as SecurityPolicyViolationEvent;
       Object.assign(event, { effectiveDirective: "frame-src", blockedURI: `${ORIGIN}/embed/abcdefghijk` });
@@ -716,6 +721,11 @@ describe("a stream's fades", () => {
     });
     expect(screen.queryByTitle("Fixture radio player")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Reload" }));
-    expect(reload).toHaveBeenCalled();
+    const button = screen.getByRole("button", { name: "Reload — Refresh failed" });
+    expect(button.querySelector("svg")).toHaveClass("text-bad");
+    await user.click(button);
+    expect(reload).toHaveBeenCalledTimes(2);
+    expect(button).toHaveAttribute("aria-busy", "true");
+    expect(button.querySelector("svg")).toHaveClass("motion-safe:animate-spin");
   });
 });
