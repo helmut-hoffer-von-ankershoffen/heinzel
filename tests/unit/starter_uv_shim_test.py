@@ -1,10 +1,13 @@
 """Starter resolver policy stays with uv, while nested acceptance retains the reviewed wrapper."""
 
+import contextlib
 import importlib.util
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -76,6 +79,71 @@ def test_nested_uv_run_keeps_policy_out_of_child_and_retains_explicit_wrapper(st
         check=True,
         timeout=15,
     )
+
+
+def test_journey_uses_private_uv_and_state_directories(starter, tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_PRIVATE_PROBE", "caller state")
+    monkeypatch.setenv("VIRTUAL_ENV", str(tmp_path / "caller-venv"))
+    monkeypatch.delenv("UV_FIND_LINKS", raising=False)
+    destination = tmp_path / "starter"
+    environment = starter.journey_environment(destination)
+    assert environment["UV_CACHE_DIR"] == str(destination / "uv-cache")
+    assert environment["UV_TOOL_DIR"] == str(destination / "uv-tool")
+    assert "HZ_PRIVATE_PROBE" not in environment
+    assert "VIRTUAL_ENV" not in environment
+    assert environment["HZ_STATE_DIR"] == str(destination / "state" / "state_dir")
+
+
+def test_interrupted_starter_command_terminates_its_process_group(starter, tmp_path):
+    parent_ready = tmp_path / "parent.pid"
+    child_ready = tmp_path / "child.pid"
+    child_stopped = tmp_path / "child.stopped"
+    child = tmp_path / "child.py"
+    child.write_text(
+        "import pathlib, signal, time\n"
+        f"stopped = pathlib.Path({str(child_stopped)!r})\n"
+        "def stop(_signum, _frame): stopped.write_text('stopped'); raise SystemExit(0)\n"
+        "signal.signal(signal.SIGTERM, stop)\n"
+        f"pathlib.Path({str(child_ready)!r}).write_text('ready')\n"
+        "while True: time.sleep(.05)\n",
+        encoding="utf-8",
+    )
+    command = tmp_path / "command.py"
+    command.write_text(
+        "import os, pathlib, subprocess, sys, time\n"
+        f"child = subprocess.Popen([sys.executable, {str(child)!r}])\n"
+        f"pathlib.Path({str(parent_ready)!r}).write_text(str(os.getpid()))\n"
+        "while True: time.sleep(.05)\n",
+        encoding="utf-8",
+    )
+    runner = tmp_path / "runner.py"
+    runner.write_text(
+        "import importlib.util, signal, sys\n"
+        f"spec = importlib.util.spec_from_file_location('starter_for_signal', {str(starter.__file__)!r})\n"
+        "module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)\n"
+        "def abort(signum, _frame): raise SystemExit(128 + signum)\n"
+        "signal.signal(signal.SIGTERM, abort)\n"
+        f"module.run_process([sys.executable, {str(command)!r}], {str(tmp_path)!r}, "
+        "dict(__import__('os').environ), sys.stdout)\n",
+        encoding="utf-8",
+    )
+    process = subprocess.Popen([sys.executable, str(runner)], start_new_session=True, stdout=subprocess.DEVNULL)
+    try:
+        deadline = time.monotonic() + 5
+        while not child_ready.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert parent_ready.exists()
+        assert child_ready.exists()
+        process.send_signal(signal.SIGTERM)
+        assert process.wait(timeout=5) == 143
+        assert child_stopped.read_text() == "stopped"
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+        if parent_ready.exists():
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(int(parent_ready.read_text()), signal.SIGKILL)
 
 
 def test_journey_owns_its_cache_without_changing_the_callers_cache(starter, tmp_path, monkeypatch):

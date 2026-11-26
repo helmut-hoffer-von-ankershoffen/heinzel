@@ -5,9 +5,11 @@
 """Exercise fresh standalone and collection authors against installed core and toolkit artifacts."""
 
 import argparse
+import contextlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -15,12 +17,80 @@ import time
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
+from typing import TextIO
 
 TOOLKIT = (
     "heinzel-plugin-tools @ https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/"
     "tools-v0.4.1/heinzel_plugin_tools-0.4.1-py3-none-any.whl"
     "#sha256=56072dabdd2a7c94f5210b10dedb85099d6ad67f19a58e37949a05d4b830ad38"
 )
+
+
+def _process_group_exists(group: int) -> bool:
+    """Whether a POSIX child process group still has members."""
+    try:
+        os.killpg(group, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _stop_process_group(process: subprocess.Popen[str], grace: float = 2.0) -> None:
+    """Stop and reap a command and any descendants it left in its isolated session."""
+    if os.name != "posix":
+        if process.poll() is None:
+            process.terminate()
+        try:
+            process.wait(timeout=grace)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        return
+
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGTERM)
+    deadline = time.monotonic() + grace
+    while _process_group_exists(process.pid) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if _process_group_exists(process.pid):
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+    process.wait()
+
+
+def run_process(command: list[str], cwd: Path, environment: dict[str, str], output: TextIO, timeout: int = 600) -> int:
+    """Run one journey command in a private process group, cleaning descendants on interruption."""
+    process = subprocess.Popen(  # noqa: S603 - explicit tools and artifact paths, no shell
+        command,
+        cwd=cwd,
+        env=environment,
+        stdout=output,
+        stderr=subprocess.STDOUT,
+        start_new_session=os.name == "posix",
+        text=True,
+    )
+    try:
+        returncode = process.wait(timeout=timeout)
+    except BaseException:
+        _stop_process_group(process)
+        raise
+    return returncode
+
+
+def journey_environment(destination: Path) -> dict[str, str]:
+    """Build a disposable process environment for one generated plugin journey."""
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("HZ_")}
+    environment.pop("VIRTUAL_ENV", None)
+    # Tool installs hardlink cache files; a caller cache may retain unsafe modes from unrelated builds.
+    environment["UV_CACHE_DIR"] = str(destination / "uv-cache")
+    environment["UV_TOOL_DIR"] = str(destination / "uv-tool")
+    shim_find_links(environment, destination / "uv-shim")
+    environment["HZ_PLUGINS_ENABLED"] = "false"
+    for name in ("CONFIG_HOME", "DATA_DIR", "CACHE_DIR", "STATE_DIR", "LOG_DIR"):
+        environment[f"HZ_{name}"] = str(destination / "state" / name.lower())
+    return environment
 
 
 def check_layout(directory: Path, *, collection: bool) -> None:
@@ -132,14 +202,7 @@ def journey(core: str, toolkit: str | None, template: Path, destination: Path) -
     Raises:
         AssertionError: If scaffolding changes files outside its owning project directories.
     """
-    environment = {key: value for key, value in os.environ.items() if not key.startswith("HZ_")}
-    environment.pop("VIRTUAL_ENV", None)
-    # Tool installs hardlink cache files; a caller cache may retain unsafe modes from unrelated builds.
-    environment["UV_CACHE_DIR"] = str(destination / "uv-cache")
-    shim_find_links(environment, destination / "uv-shim")
-    environment["HZ_PLUGINS_ENABLED"] = "false"
-    for name in ("CONFIG_HOME", "DATA_DIR", "CACHE_DIR", "STATE_DIR", "LOG_DIR"):
-        environment[f"HZ_{name}"] = str(destination / "state" / name.lower())
+    environment = journey_environment(destination)
     timings: list[dict[str, str | float]] = []
     make = ["make", f"CORE={core}", *([f"TOOLING={toolkit}"] if toolkit else [])]
 
@@ -147,14 +210,12 @@ def journey(core: str, toolkit: str | None, template: Path, destination: Path) -
         started = time.monotonic()
         log = destination / f"{label}.log"
         with log.open("w") as stream:
-            result = subprocess.run(  # noqa: S603 - explicit tools and artifact paths, no shell
-                command, cwd=cwd, env=environment, stdout=stream, stderr=subprocess.STDOUT, timeout=600, check=False
-            )
+            returncode = run_process(command, cwd, environment, stream)
         timings.append({"step": label, "seconds": round(time.monotonic() - started, 2)})
         (destination / "timings.json").write_text(json.dumps(timings, indent=2) + "\n")
-        if result.returncode:
+        if returncode:
             print(log.read_text())
-            result.check_returncode()
+            raise subprocess.CalledProcessError(returncode, command)
         print(f"✓ {label}: {timings[-1]['seconds']}s", flush=True)
 
     for preset in ("minimal", "contributions"):
@@ -296,6 +357,12 @@ def collection_journey(
 
 def main() -> None:
     """Accept explicit candidate artifacts; normal CI consumes the versioned toolkit."""
+
+    def abort(signum: int, _frame: object) -> None:
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGINT, abort)
+    signal.signal(signal.SIGTERM, abort)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--core", required=True)
     parser.add_argument("--toolkit", default=os.environ.get("PLUGIN_TOOLKIT"))
