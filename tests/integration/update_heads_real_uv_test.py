@@ -135,7 +135,13 @@ def apply(installation, tmp_path, heads, plugins):
     announced = Announcement(
         "2.0.0", plugins, exclude_newer=now + timedelta(days=1), exclude_newer_core=now + timedelta(days=1)
     )
-    service = UpdateService(installation, None, lifecycle=heads, web=heads.web())  # type: ignore[arg-type]
+    service = UpdateService(
+        installation,
+        None,  # type: ignore[arg-type] - no release source is asked
+        lifecycle=heads,
+        web=heads.web(),
+        home=tmp_path / "home",
+    )
     return service.apply_announced(announced, current="1.0.0", folder=tmp_path / "state", trial=lambda _: True)
 
 

@@ -6,6 +6,7 @@ Stdlib only. Run isolated (`python3 -I`). Downloaded or installed code is never 
 
 import argparse
 import base64
+import csv
 import hashlib
 import json
 import os
@@ -75,6 +76,9 @@ LEGACY_BRIDGE_URL = (
 LEGACY_BRIDGE_SHA256 = "f18571dae4d3533598eaa645367cbe7432d5f915360f01814faf64352bc93b7a"
 # The plugin both plugin cases install unpinned; its expected version is bound from the index in each run.
 EXAMPLE_PLUGIN = "heinzel-example"
+# Historical user state must remain installable in the published Python 3.12 app, even when the latest plugin
+# requires a newer interpreter. This is only the upgrade fixture; current-app plugin cases still use latest.
+UPDATE_FIXTURE_PLUGIN = "heinzel-example==0.5.2"
 FOREGROUND_UI = {
     **{f"0.9.{patch}": ("ui",) for patch in range(8, 16)},
     "0.9.16": ("ui", "serve"),
@@ -116,6 +120,7 @@ FOREGROUND_UI = {
     "0.9.52": ("ui", "serve"),
     "0.9.53": ("ui", "serve"),
     "0.9.54": ("ui", "serve"),
+    "0.9.55": ("ui", "serve"),
 }
 PROFILE_FIXTURE = {
     "HZ_ORG__NAME": "Mira Example",
@@ -1911,15 +1916,17 @@ def case_update(case):
         case.env.pop("HZ_APP_PROFILE", None)
 
     def prepare():
-        hz(case, "system", "plugin", "add", "heinzel-example", "--confirm", label="user-plugin-add")
+        hz(case, "system", "plugin", "add", UPDATE_FIXTURE_PLUGIN, "--confirm", label="user-plugin-add")
+        check_installed_version(case, EXAMPLE_PLUGIN, UPDATE_FIXTURE_PLUGIN.split("==")[1], "user-plugin-version")
         if old["version"] in UPGRADES_PLUGINS_ON_ADD:
             # These releases upgrade the other plugins when one is added, so the starting state can be ahead of the
             # app profile. Record that as a finding; from the fixed release on, the exact versions are required.
             drift = {p: v["version"] for p, v in plugin_map(case, "versions-after-add").items()}
             case.notes["known_plugin_drift_on_add"] = drift
             expect_plugins(case)
-            for entry in case.plugins_expected.values():
-                entry["version"] = None
+            for name, entry in case.plugins_expected.items():
+                if name != EXAMPLE_PLUGIN:
+                    entry["version"] = None
         hz(case, "system", "plugin", "disable", "heinzel-resource", label="user-disable")
         hz(case, "system", "config", "set", "clock.zones", '["Europe/Berlin","Asia/Tokyo"]', label="user-config")
         expect_plugins(case, heinzel_example={"enabled": True}, heinzel_resource={"enabled": False})
@@ -1958,8 +1965,9 @@ def case_update(case):
         evidence["interpreter"] = verify_update_interpreter(case, migrated=migrated)
         check(snapshot_files(case.root / "config_home") == case.notes["config_before"], "Configuration changed")
         if target["mode"] == "published":
-            for entry in case.plugins_expected.values():
-                entry["version"] = None  # PyPI may be ahead of the app profile; versions are recorded, not compared
+            for name, entry in case.plugins_expected.items():
+                if name != EXAMPLE_PLUGIN:
+                    entry["version"] = None  # PyPI may be ahead of the app profile; versions are recorded, not compared
         evidence.update(verify_state(case, "after"))
         evidence["plugin_versions_after"] = {p: v["version"] for p, v in plugin_map(case, "versions-after").items()}
         return evidence
@@ -1988,8 +1996,119 @@ def case_update(case):
         return {"offline_continuity": True}
 
     case.step("updated app runs offline without any profile", offline)
+    plugin_target = case.step("bind the current user-plugin release independently", lambda: historical_plugin_target(case))
+    case.step(
+        "the current updater reconciles the historical user plugin",
+        lambda: reconcile_historical_plugin(case, target, plugin_target),
+    )
     case.step("a repeated update is a no-op", lambda: _second_update(case, target))
 
+
+
+def historical_plugin_target(case):
+    """Bind the latest public Example wheel without asking the installation under test."""
+    version = example_plugin_version(case)
+    expected = case.notes["example_install_target"]
+    index = json.loads(fetch(f"https://pypi.org/pypi/{EXAMPLE_PLUGIN}/{version}/json", 8 * 1024 * 1024))
+    check(index.get("info", {}).get("version") == version, "The user-plugin release metadata names another version")
+    wheels = [item for item in index.get("urls", []) if item.get("packagetype") == "bdist_wheel" and not item.get("yanked")]
+    check(len(wheels) == 1, "The historical user-plugin target must have one unyanked wheel")
+    wheel = wheels[0]
+    check(wheel["digests"]["sha256"] == expected["sha256"], "The user-plugin index changed its bound wheel")
+    check(urllib.parse.urlsplit(wheel["url"]).hostname == "files.pythonhosted.org", "The user-plugin wheel is not on PyPI")
+    payload = fetch(wheel["url"])
+    check(sha256(payload) == expected["sha256"], "The user-plugin wheel differs from its independent index digest")
+    path = case.root / "historical-plugin-target.whl"
+    path.write_bytes(payload)
+    return {**expected, "wheel": str(path)}
+
+
+
+def installed_distribution_records(prefix):
+    """Read canonical identity from metadata rather than guessing wheel directory spelling."""
+    records = {}
+    for path in site_packages(prefix).glob("*.dist-info/METADATA"):
+        name = re.sub(r"[-_.]+", "-", BytesParser().parsebytes(path.read_bytes())["Name"]).lower()
+        check(name not in records, f"{name}: duplicate installed distribution identity")
+        records[name] = path.parent / "RECORD"
+    return records
+
+
+def installed_distribution_names(prefix):
+    """Read distribution identity from installed metadata, without importing package code."""
+    return set(installed_distribution_records(prefix))
+
+
+def unchanged_distribution_files(prefix, names):
+    """Fingerprint every recorded file of Core and the other packages, excluding volatile bytecode."""
+    site = site_packages(prefix)
+    inventory = installed_distribution_records(prefix)
+    result = {}
+    for name in sorted(names):
+        record = inventory.get(name)
+        check(record is not None and record.is_file(), f"{name}: no unique installed file inventory")
+        files = {}
+        for row in csv.reader(record.read_text().splitlines()):
+            check(row and row[0], f"{name}: invalid installed file inventory row")
+            path = (site / row[0]).resolve()
+            if path.suffix == ".pyc" or "__pycache__" in path.parts:
+                continue
+            check(path.is_relative_to(prefix) and path.is_file(), f"{name}: recorded file is outside this installation")
+            files[str(path.relative_to(prefix))] = sha256(path.read_bytes())
+        check(files, f"{name}: empty installed file inventory")
+        result[name] = files
+    return result
+
+
+def reconcile_historical_plugin(case, target, plugin_target):
+    """Use the new CLI's documented pin-moving default once, then leave the strict no-op untouched."""
+    before = plugin_map(case, "plugins-before-reconciliation")
+    baseline = before[EXAMPLE_PLUGIN]["version"]
+    latest = plugin_target["version"]
+    check(release_key(baseline) <= release_key(latest), "The historical plugin is newer than the bound stable release")
+    prefix = case.prefix.resolve(strict=True)
+    installed = installed_distribution_names(prefix)
+    check({"heinzel", *before} <= installed, "Installed distribution inventory is incomplete")
+    unchanged = installed - {EXAMPLE_PLUGIN}
+    files = unchanged_distribution_files(prefix, unchanged)
+    config = snapshot_files(case.root / "config_home")
+    python = installed_interpreter(case)
+    moved = baseline != latest
+    if moved:
+        _, version, _ = case.run(
+            [str(prefix / "bin/python"), "-I", "-c", "import sys; print('%d.%d' % sys.version_info[:2])"],
+            "historical-plugin-python", SHORT_DEADLINE,
+        )
+        check(version.strip() == "3.15", "Historical plugin reconciliation requires managed Python 3.15")
+        result = hz(case, "system", "update", label="historical-plugin-reconciliation")
+        check(result["updated"] is True, "The stale user plugin was not reconciled")
+        check(result["before"] == result["after"] == target["version"], "Plugin reconciliation changed Core")
+        rows = {row["distribution"]: row for row in result["plugins"]}
+        check(len(rows) == len(result["plugins"]) and set(rows) == set(before), "Reconciliation changed the plugin set")
+        for name, old in before.items():
+            row = rows[name]
+            wanted = latest if name == EXAMPLE_PLUGIN else old["version"]
+            status = "upgraded" if name == EXAMPLE_PLUGIN else "unchanged"
+            check(row["status"] == status and row["before"] == old["version"] and row["after"] == wanted,
+                  f"Unexpected reconciliation result for {name}")
+            check(row.get("disabled") is False and row.get("reason") is None, f"Reconciliation failed or disabled {name}")
+            if name == EXAMPLE_PLUGIN:
+                check(row.get("pinned") is None and row.get("checked") is True,
+                      "The user plugin did not make the documented checked pin transition")
+    found = plugin_map(case, "plugins-after-reconciliation")
+    check(set(found) == set(before), "Reconciliation changed the installed plugin set")
+    for name, old in before.items():
+        expected = {**old, "version": latest} if name == EXAMPLE_PLUGIN else old
+        check(found[name] == expected, f"Reconciliation changed unexpected plugin state: {name}")
+    check(installed_distribution_names(prefix) == installed, "Reconciliation changed the dependency set")
+    check(unchanged_distribution_files(prefix, unchanged) == files, "Reconciliation changed Core or another package's files")
+    check(snapshot_files(case.root / "config_home") == config, "Reconciliation changed user configuration")
+    check(installed_interpreter(case) == python, "Reconciliation changed the managed interpreter")
+    check_installed_version(case, EXAMPLE_PLUGIN, latest, "reconciled-user-plugin")
+    count = compare_wheel(Path(plugin_target["wheel"]), site_packages(prefix), EXAMPLE_PLUGIN, latest, prefix)
+    verify_state(case, "after-user-plugin-reconciliation")
+    return {"plugin": EXAMPLE_PLUGIN, "before": baseline, "after": latest, "changed": moved,
+            "sha256": plugin_target["sha256"], "runtime_files": count}
 
 def _summarize(result):
     return {

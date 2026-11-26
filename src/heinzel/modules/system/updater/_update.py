@@ -99,7 +99,7 @@ class UpdateService(UpdateChannels):
 
         It holds the installation's update lock (`_across_processes`), so it never runs beside a `hz system update`.
         """
-        with self._across_processes():
+        with self._across_processes("automatic"):
             return self._apply_announced(announced, current=current, folder=folder, trial=trial)
 
     def _apply_announced(
@@ -400,7 +400,7 @@ class UpdateService(UpdateChannels):
         held = AGREED.set(moves)
         self._restart_daemon = daemon
         try:
-            with self._across_processes():
+            with self._across_processes("manual"):
                 return self._update_with_steps(
                     source, current, channel, shown=shown, desktop=(desktop, restart, from_app), daemon=daemon
                 )

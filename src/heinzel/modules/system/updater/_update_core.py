@@ -44,6 +44,7 @@ from heinzel.modules.system.updater._update_rules import (
 from heinzel.ports import Clock, InstallationState, ProcessRunner, ReleaseSource
 
 if TYPE_CHECKING:
+    from heinzel.modules.system.updater._adapter_state import UpdateKind
     from heinzel.modules.system.updater._update_steps import Steps
 
 
@@ -122,11 +123,11 @@ class UpdateCore:
         return lock
 
     @contextmanager
-    def _across_processes(self) -> Generator[None]:
+    def _across_processes(self, kind: "UpdateKind") -> Generator[None]:
         """Hold the state folder's `update` lock: one update or automatic update at a time on this installation.
 
-        After `UPDATE_LOCK_NOTICE` seconds it says that it waits for another update; after `UPDATE_LOCK_SECONDS` in
-        all it gives up.
+        After `UPDATE_LOCK_NOTICE` seconds it reports the holder, when known. After `UPDATE_LOCK_SECONDS` in all it
+        gives up.
 
         Raises:
             HeinzelError: If another update still holds the installation after `UPDATE_LOCK_SECONDS`.
@@ -139,17 +140,28 @@ class UpdateCore:
                 stack.enter_context(self._state.lock("update", wait=UPDATE_LOCK_NOTICE))
             except TimeoutError:
                 log_event(log, "update.lock.wait", outcome="waiting")
+                holder = self._update_lock_holder()
+                waiting_for = f"the {holder}" if holder else "another update"
                 try:
-                    with self._progress.task("Waiting for another update…"):
+                    with self._progress.task(f"Waiting for {waiting_for}…"):
                         stack.enter_context(self._state.lock("update", wait=UPDATE_LOCK_SECONDS - UPDATE_LOCK_NOTICE))
                 except TimeoutError:
                     minutes = round(UPDATE_LOCK_SECONDS / 60)
+                    holder = self._update_lock_holder()
+                    detail = f" The lock was held by the {holder}." if holder else ""
                     msg = (
-                        f"Another update has held this installation for {minutes} minutes, so this one didn't start."
-                        " Wait for it to finish, then try again."
+                        f"This update couldn't start within {minutes} minutes because another update was running."
+                        f"{detail} Wait for it to finish, then try again."
                     )
                     raise HeinzelError(msg) from None
+            if isinstance(self._state, FileInstallationState):
+                stack.enter_context(self._state.record_update_owner(kind))
             yield
+
+    def _update_lock_holder(self) -> str | None:
+        if isinstance(self._state, FileInstallationState):
+            return self._state.update_owner()
+        return None
 
     def _found_app(self) -> DesktopApp | None:
         """The app in Applications, whoever installed it; with a `home` (a test) only in that home's folder."""
