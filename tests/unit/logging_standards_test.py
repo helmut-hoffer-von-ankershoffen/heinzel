@@ -24,6 +24,7 @@ FORMATTED_ALLOWED: dict[str, int] = {
     "src/heinzel/modules/heinzel/_service.py": 2,
     "src/heinzel/modules/system/updater/_schedule.py": 12,
 }
+SOURCE_PATHS = {path.relative_to(REPO).as_posix() for path in SOURCE.rglob("*.py")}
 
 
 def _is_logger(node: ast.expr) -> bool:
@@ -66,15 +67,6 @@ def formatted_logger_calls(source: str) -> list[int]:
     return lines
 
 
-def _counts() -> dict[str, int]:
-    counts = {}
-    for path in sorted(SOURCE.rglob("*.py")):
-        found = formatted_logger_calls(path.read_text(encoding="utf-8"))
-        if found:
-            counts[path.relative_to(REPO).as_posix()] = len(found)
-    return counts
-
-
 @pytest.mark.parametrize(
     "call",
     [
@@ -109,12 +101,13 @@ def test_leaves_structured_and_plain_calls_alone(call):
     assert formatted_logger_calls(call) == []
 
 
-def test_new_code_logs_structured_events():
-    counts = _counts()
-    grown = {path: count for path, count in counts.items() if count > FORMATTED_ALLOWED.get(path, 0)}
-    assert not grown, (
-        "These files format logger messages; log an event name with fields instead "
-        f"(`log_event`/`step` in heinzel.kernel._logging, CODING_STANDARDS 'Structured logging'): {grown}"
+@pytest.mark.parametrize("path", sorted(SOURCE_PATHS | FORMATTED_ALLOWED.keys()))
+def test_new_code_logs_structured_events(path: str):
+    """Check each file once, including stale entries for deleted files."""
+    lines = formatted_logger_calls((REPO / path).read_text(encoding="utf-8")) if path in SOURCE_PATHS else []
+    allowed = FORMATTED_ALLOWED.get(path, 0)
+    assert len(lines) <= allowed, (
+        f"{path}: log an event name with fields (`log_event`/`step` in heinzel.kernel._logging); "
+        f"found {len(lines)} formatted calls on lines {lines}, allowed {allowed}"
     )
-    stale = {path: allowed for path, allowed in FORMATTED_ALLOWED.items() if counts.get(path, 0) < allowed}
-    assert not stale, f"Lower these counts in FORMATTED_ALLOWED to what the files still have: {stale} now {counts}"
+    assert len(lines) >= allowed, f"Lower FORMATTED_ALLOWED for {path} from {allowed} to {len(lines)}"
