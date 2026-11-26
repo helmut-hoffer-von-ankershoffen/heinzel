@@ -82,16 +82,15 @@ def test_nested_uv_run_keeps_policy_out_of_child_and_retains_explicit_wrapper(st
 
 
 def test_journey_uses_private_uv_and_state_directories(starter, tmp_path, monkeypatch):
-    monkeypatch.setenv("HZ_PRIVATE_PROBE", "caller state")
+    monkeypatch.setenv("HZ_STATE_DIR", str(tmp_path / "caller-state"))
     monkeypatch.setenv("VIRTUAL_ENV", str(tmp_path / "caller-venv"))
     monkeypatch.delenv("UV_FIND_LINKS", raising=False)
     destination = tmp_path / "starter"
     environment = starter.journey_environment(destination)
     assert environment["UV_CACHE_DIR"] == str(destination / "uv-cache")
     assert environment["UV_TOOL_DIR"] == str(destination / "uv-tool")
-    assert "HZ_PRIVATE_PROBE" not in environment
-    assert "VIRTUAL_ENV" not in environment
     assert environment["HZ_STATE_DIR"] == str(destination / "state" / "state_dir")
+    assert "VIRTUAL_ENV" not in environment
 
 
 def test_interrupted_starter_command_terminates_its_process_group(starter, tmp_path):
