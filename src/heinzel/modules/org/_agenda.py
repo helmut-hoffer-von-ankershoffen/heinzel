@@ -5,7 +5,7 @@ or an adapter error (an expired sign-in) comes back as `problem`, with the comma
 """
 
 from datetime import UTC, datetime, time, timedelta
-from typing import Annotated, Protocol
+from typing import Annotated, Protocol, cast
 from zoneinfo import ZoneInfo
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
@@ -24,7 +24,7 @@ from heinzel import (
     StatusItem,
     Window,
 )
-from heinzel.kernel import Requirement, clean_text, link_problem
+from heinzel.kernel import CalendarSources, Requirement, clean_text, link_problem
 from heinzel.modules.org._discovery import local_timezone
 
 CALENDAR = Requirement.parse("calendar:read")
@@ -101,8 +101,9 @@ class CalendarSelection(BaseModel):
 def _week_sources(
     calendar: Calendar, window: Window, adapter: str, selection: CalendarSelection
 ) -> tuple[list[CalendarWeekEvent], list[CalendarSource] | None, list[str]]:
+    source_reader = cast("CalendarSources", calendar)
     try:
-        sources = calendar.calendars() if callable(getattr(calendar, "calendars", None)) else None
+        sources = source_reader.calendars() if callable(getattr(source_reader, "calendars", None)) else None
     except NotSupportedError as exc:
         if exc.capability != "calendar" or exc.method != "calendars":
             raise
@@ -119,7 +120,7 @@ def _week_sources(
         if source.id in ignored:
             continue
         try:
-            found = calendar.events_for(source.id, window)
+            found = source_reader.events_for(source.id, window)
             events.extend(
                 CalendarWeekEvent.model_validate(event.model_dump() | {"calendar_id": source.id}) for event in found
             )

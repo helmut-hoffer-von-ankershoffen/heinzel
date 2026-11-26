@@ -654,6 +654,18 @@ class CalendarSource(BaseModel):
     primary: bool = Field(default=False, description="Whether this is the owner's primary calendar.")
 
 
+class CalendarSources(Protocol):
+    """Optional source-aware reads alongside the calendar provider contract."""
+
+    def calendars(self) -> list[CalendarSource]:
+        """List readable calendars with stable ids. Mode: read."""
+        ...
+
+    def events_for(self, calendar: str, window: Window) -> list[Event]:
+        """Read occurrences from the exact calendar id returned by calendars. Mode: read."""
+        ...
+
+
 class Calendar(Protocol):
     """The user's calendar, such as Google Calendar (capability `calendar`).
 
@@ -667,14 +679,6 @@ class Calendar(Protocol):
 
         Mode: read.
         """
-        ...
-
-    def calendars(self) -> list[CalendarSource]:
-        """List readable calendars with stable ids. Mode: read."""
-        ...
-
-    def events_for(self, calendar: str, window: Window) -> list[Event]:
-        """Read occurrences from the exact calendar id returned by calendars. Mode: read."""
         ...
 
     def free_busy(self, people: str, window: Window) -> list[FreeBusy]:

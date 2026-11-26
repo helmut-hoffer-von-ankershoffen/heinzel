@@ -102,8 +102,6 @@ def test_chat_meetings_and_calendar_read_in_windows_and_meetings_only_read():
     assert CAPABILITIES["meetings"].methods == {"ended": "read", "transcripts": "read", "transcript": "read"}
     assert CAPABILITIES["calendar"].methods == {
         "events": "read",
-        "calendars": "read",
-        "events_for": "read",
         "free_busy": "read",
         "create_event": "write",
         "update_event": "write",
@@ -112,7 +110,9 @@ def test_chat_meetings_and_calendar_read_in_windows_and_meetings_only_read():
     }
     assert CAPABILITIES["chat"].protocol is Chat
     assert CAPABILITIES["meetings"].protocol is Meetings
-    assert CAPABILITIES["calendar"].protocol is Calendar
+    calendar = CAPABILITIES["calendar"]
+    assert calendar.protocol is Calendar
+    assert calendar.handle_methods == {**calendar.methods, "calendars": "read", "events_for": "read"}
 
 
 @pytest.mark.parametrize("name", sorted(set(CAPABILITIES) - {"agent-runner"}))
@@ -145,7 +145,6 @@ def test_contract_shaped_reads_take_a_window_and_id_reads_serve_operations():
     }
     assert by_window == {
         ("calendar", "events"),
-        ("calendar", "events_for"),
         ("calendar", "free_busy"),
         ("chat", "messages"),
         ("code-host", "merged_pull_requests"),
