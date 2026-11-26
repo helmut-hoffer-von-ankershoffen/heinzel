@@ -245,58 +245,61 @@ export function AudioVisualizer({
    * Listen to `kind`, switching live: the new source is asked for first, and the one running is stopped only once the
    * new one is granted, so a cancelled or refused prompt leaves the old source playing.
    */
-  const start = useCallback(async (kind: Listening) => {
-    const revision = ++generation.current;
-    request.current?.abort();
-    const controller = new AbortController();
-    request.current = controller;
-    setRequesting(kind);
-    setProblem("");
-    try {
-      const captured = await (kind === "mic"
-        ? captureMicrophone(controller.signal)
-        : captureAudio(controller.signal, kind === "system"));
-      if (generation.current !== revision || controller.signal.aborted) {
-        captured.stop();
-        return;
-      }
-      const previous = current.current;
-      request.current = null;
-      current.current = captured;
-      setSession(captured);
-      setHasSignal(false);
-      previous?.stop();
-      setRequesting(null);
-      setRemembered(kind);
-      remember(kind);
-    } catch (error) {
-      if (generation.current !== revision) return;
-      setRequesting(null);
-      if (kind === "tab" && unsupported(error)) {
-        // The person may choose another source explicitly.
-        markUnshared();
-        setSharing(false);
-        setNotice(NO_SHARED);
-        return;
-      }
-      if (kind === "system" && systemBroken(error)) {
-        // Offered but not working here (unsupported, no audio track, device error): no retry dead end; the other
-        // sources come back with one line. A prior microphone choice must not turn this failure into a new capture.
-        if (!current.current) {
-          setRemembered("off");
-          remember("off");
+  const start = useCallback(
+    async (kind: Listening) => {
+      const revision = ++generation.current;
+      request.current?.abort();
+      const controller = new AbortController();
+      request.current = controller;
+      setRequesting(kind);
+      setProblem("");
+      try {
+        const captured = await (kind === "mic"
+          ? captureMicrophone(controller.signal)
+          : captureAudio(controller.signal, kind === "system"));
+        if (generation.current !== revision || controller.signal.aborted) {
+          captured.stop();
+          return;
         }
-        markNoSystem();
-        setSystem(false);
-        setProblem("");
-        setNotice(NO_SYSTEM);
-        return;
+        const previous = current.current;
+        request.current = null;
+        current.current = captured;
+        setSession(captured);
+        setHasSignal(false);
+        previous?.stop();
+        setRequesting(null);
+        setRemembered(kind);
+        remember(kind);
+      } catch (error) {
+        if (generation.current !== revision) return;
+        setRequesting(null);
+        if (kind === "tab" && unsupported(error)) {
+          // The person may choose another source explicitly.
+          markUnshared();
+          setSharing(false);
+          setNotice(NO_SHARED);
+          return;
+        }
+        if (kind === "system" && systemBroken(error)) {
+          // Offered but not working here (unsupported, no audio track, device error): no retry dead end; the other
+          // sources come back with one line. A prior microphone choice must not turn this failure into a new capture.
+          if (remembered === "system") {
+            setRemembered("off");
+            remember("off");
+          }
+          markNoSystem();
+          setSystem(false);
+          setProblem("");
+          setNotice(NO_SYSTEM);
+          return;
+        }
+        setProblem(
+          kind === "system" ? systemProblem(error) : kind === "mic" ? microphoneProblem(error) : captureProblem(error),
+        );
       }
-      setProblem(
-        kind === "system" ? systemProblem(error) : kind === "mic" ? microphoneProblem(error) : captureProblem(error),
-      );
-    }
-  }, []);
+    },
+    [remembered],
+  );
   const choose = useCallback(
     (source: Source) => {
       if (source === "off") {
