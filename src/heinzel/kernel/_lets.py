@@ -153,6 +153,11 @@ class OperationLet(Let):
     request_body_limit: int | None = None
     """Maximum JSON request bytes on a private operation's HTTP routes. Opts its normal route into POST."""
 
+    @property
+    def http_method(self) -> Literal["GET", "POST"]:
+        """The normal HTTP method, including private reads with a bounded JSON body."""
+        return "GET" if self.read_only and self.request_body_limit is None else "POST"
+
     def __post_init__(self) -> None:
         """Refuse a read-only operation that declares a write.
 

@@ -170,7 +170,7 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
         app.router.add_api_route(
             "/" + "/".join(item.path),
             endpoint(kernel, item, body_parameters=body_parameters),
-            methods=["GET" if item.operation.read_only and limit is None else "POST"],
+            methods=[item.operation.http_method],
             summary=item.operation.summary,
             description=inspect.getdoc(item.operation.func) or "",
             response_model=returns,
@@ -313,7 +313,7 @@ def _split(host: str) -> tuple[str, str]:
 
 
 def _normal_body(item: Exposed) -> bool:
-    return item.operation.private and (not item.operation.read_only or item.operation.request_body_limit is not None)
+    return item.operation.private and item.operation.http_method == "POST"
 
 
 def endpoint(

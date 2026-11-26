@@ -52,6 +52,11 @@ def test_head_columns_say_where_an_operation_runs(built_ins):
     init = by_name["system.config", "init"]
     assert init.heads.rest == "POST /system/config/init"
     assert not init.read_only
+    calendar = by_name["org", "calendar"]
+    assert calendar.heads.web == "GET /api/org/calendar"
+    selection = by_name["org", "calendar-selection"]
+    assert selection.heads.web == "POST /api/org/calendar-selection"
+    assert selection.read_only
     # An operation only the web app reaches has no CLI command, no MCP tool and no REST endpoint.
     web_only = [e for e in tools(built_ins) if e.heads.web and not (e.heads.cli or e.heads.mcp or e.heads.rest)]
     assert web_only
