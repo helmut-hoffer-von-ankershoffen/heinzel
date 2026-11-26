@@ -1,6 +1,7 @@
 """Service of the system module."""
 
 import contextlib
+import hashlib
 import importlib.metadata
 import json
 import logging
@@ -387,13 +388,14 @@ def release_time(
     installation: Installation, cache_dir: Path, version: str, changelog: str, token: SecretStr | None = None
 ) -> ReleaseTime:
     """The cached GitHub publication time or the date recorded in the changelog."""
-    cached = cache_dir / f"release-time-{version}.json"
+    repository = installed_releases(installation).repository
+    identity = hashlib.sha256(repository.encode("utf-8")).hexdigest()
+    cached = cache_dir / f"release-time-{identity}-{version}.json"
     try:
         moment = _moment(json.loads(cached.read_text(encoding="utf-8")).get("published_at"))
     except (OSError, ValueError, AttributeError):
         moment = None
     if moment is None:
-        repository = installed_releases(installation).repository
         try:
             answer = _github.get_json(
                 f"{_github.GITHUB_API}/repos/{repository}/releases/tags/v{version}", token, RELEASE_TIMEOUT

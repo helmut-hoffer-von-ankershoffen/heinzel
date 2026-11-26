@@ -267,4 +267,19 @@ describe("About dialog", () => {
     expect(within(rows[2] as HTMLElement).getByText("first-party")).toBeInTheDocument();
     expect(within(rows[2] as HTMLElement).queryByText(/unknown|Nov/)).toBeNull();
   });
+
+  it("keeps older date-only installation values as calendar days without inventing a time", () => {
+    current = { ...info, installed: "2026-11-08", plugins: [{ ...info.plugins[0], installed: "2026-11-01" }] };
+    show();
+    act(() => requestMenuAction("about"));
+    const day = (value: string) =>
+      new Date(`${value}T00:00:00Z`).toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        timeZone: "UTC",
+      });
+    expect(screen.getByText(`Installed ${day("2026-11-08")}`)).toBeInTheDocument();
+    expect(within(screen.getAllByRole("row")[1] as HTMLElement).getByText(day("2026-11-01"))).toBeInTheDocument();
+  });
 });

@@ -319,6 +319,34 @@ def test_release_time_prefers_github_caches_it_and_falls_back_offline(monkeypatc
     assert str(render_released(cut)) == "The changelog for hz 0.9.54 is dated 2026-11-22."
 
 
+def test_release_time_cache_is_bound_to_repository_and_version(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from heinzel.modules.system import _service
+
+    repository = {"value": "one/heinzel"}
+    calls = []
+    monkeypatch.setattr(
+        _service, "installed_releases", lambda _installation: SimpleNamespace(repository=repository["value"])
+    )
+
+    def answer(url, _token, _timeout):
+        calls.append(url)
+        return {"published_at": "2026-11-23T08:15:30Z" if "one/heinzel" in url else "2026-11-24T09:00:00Z"}
+
+    monkeypatch.setattr(_service._github, "get_json", answer)
+    installation = Installation(Progress(), prefix=tmp_path, uv="uv")
+    one = _service.release_time(installation, tmp_path, "0.9.54", HEADED)
+    repository["value"] = "two/heinzel"
+    two = _service.release_time(installation, tmp_path, "0.9.54", HEADED)
+    assert one.day.isoformat() == "2026-11-23"
+    assert two.day.isoformat() == "2026-11-24"
+    assert len(calls) == 2
+    repository["value"] = "one/heinzel"
+    assert _service.release_time(installation, tmp_path, "0.9.54", HEADED) == one
+    assert len(calls) == 2
+
+
 @contextmanager
 def local_zone(monkeypatch, zone):
     """Set the process timezone and restore it after the environment is restored."""

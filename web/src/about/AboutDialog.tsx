@@ -8,7 +8,7 @@ import { HeinzelSwarm } from "@/components/HeinzelSwarm";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { loadedFrontend, surfaceDetails } from "@/lib/surfaceDiagnostics";
-import { zoneDateTime } from "@/lib/zoneTime";
+import { installedTime } from "@/lib/zoneTime";
 import { onMenuAction } from "./menu";
 
 const REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel";
@@ -197,7 +197,7 @@ export function AboutDialog() {
                   hz {data.version}
                   {data.installed && (
                     <span className="block text-xs text-muted-foreground">
-                      {t("about.installedOn", { date: zoneDateTime(new Date(data.installed)) })}
+                      {t("about.installedOn", { date: installedTime(data.installed) })}
                     </span>
                   )}
                 </Row>
@@ -242,7 +242,7 @@ export function AboutDialog() {
                             </span>
                           )}
                         </td>
-                        <td className="py-1">{plugin.installed ? zoneDateTime(new Date(plugin.installed)) : ""}</td>
+                        <td className="py-1">{plugin.installed ? installedTime(plugin.installed) : ""}</td>
                       </tr>
                     ))}
                   </tbody>

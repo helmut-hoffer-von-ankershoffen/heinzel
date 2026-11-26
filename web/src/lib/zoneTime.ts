@@ -30,3 +30,16 @@ export function zoneDateTime(date: Date, zone?: string): string {
   const day = date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric", timeZone: zone });
   return `${day}, ${zoneTime(date, zone)}`;
 }
+
+/** Older servers report installation dates without a time or time zone. */
+export function installedTime(value: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(`${value}T00:00:00Z`).toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+  }
+  return zoneDateTime(new Date(value));
+}
