@@ -1167,7 +1167,7 @@ describe("PluginsSection", () => {
       "Restarting hz",
       "Waiting for hz to come back",
       "Reloading the page",
-      "Verifying the plugin installation",
+      "Checking that the plugin is installed",
     ];
     expect(steps).toHaveLength(plan.length);
     expect(steps.map((step, index) => step.textContent?.startsWith(plan[index] ?? "-"))).toEqual(plan.map(() => true));
@@ -1683,7 +1683,8 @@ describe("PluginGallery", () => {
       </Providers>,
     );
     const gallery = screen.getByRole("region", { name: "Screenshot gallery: Harbor" });
-    const screenshot = await within(gallery).findByRole("button", { name: "Open full size: Harbor in the terminal" });
+    const screenshots = await within(gallery).findByRole("list", { name: "Choose a screenshot" });
+    const screenshot = within(screenshots).getByRole("button", { name: "Open full size: Harbor in the terminal" });
     const thumbnail = within(screenshot).getByRole("img");
     expect(thumbnail).toHaveAttribute("loading", "lazy");
     expect(calls).toHaveLength(1);

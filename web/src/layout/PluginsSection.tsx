@@ -1393,29 +1393,30 @@ function GalleryContents({ spec }: { spec: string }) {
         return (
           <div data-plugin-gallery-content className="min-w-0 space-y-3">
             {shots.length > 0 ? (
-              <fieldset aria-label={t("plugins.chooseScreenshot")} className="flex min-w-0 flex-wrap gap-2">
+              <ul aria-label={t("plugins.chooseScreenshot")} className="flex min-w-0 flex-wrap gap-2">
                 {shots.map((image, index) => (
-                  <Button
-                    key={`${image.url}-${image.caption}-${image.surface}`}
-                    variant="outline"
-                    className="h-auto min-h-11 flex-col items-start gap-1 p-1"
-                    aria-label={t("plugins.fullSizeFor", { caption: image.caption })}
-                    onClick={(event) => {
-                      trigger.current = event.currentTarget;
-                      setSelected(index);
-                    }}
-                  >
-                    <img
-                      src={image.url}
-                      alt={image.caption}
-                      loading="lazy"
-                      referrerPolicy="no-referrer"
-                      className="h-14 w-24 rounded-sm object-contain"
-                    />
-                    <span className="text-xs">{image.surface.toUpperCase()}</span>
-                  </Button>
+                  <li key={`${image.url}-${image.caption}-${image.surface}`}>
+                    <Button
+                      variant="outline"
+                      className="h-auto min-h-11 flex-col items-start gap-1 p-1"
+                      aria-label={t("plugins.fullSizeFor", { caption: image.caption })}
+                      onClick={(event) => {
+                        trigger.current = event.currentTarget;
+                        setSelected(index);
+                      }}
+                    >
+                      <img
+                        src={image.url}
+                        alt={image.caption}
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                        className="h-14 w-24 rounded-sm object-contain"
+                      />
+                      <span className="text-xs">{image.surface.toUpperCase()}</span>
+                    </Button>
+                  </li>
                 ))}
-              </fieldset>
+              </ul>
             ) : (
               <p className="text-sm text-muted-foreground">{t("plugins.noScreenshots")}</p>
             )}

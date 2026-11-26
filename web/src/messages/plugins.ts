@@ -99,7 +99,7 @@ export const plugins = {
   "plugins.doneTitle.remove": "Removed {name}",
   "plugins.doneTitle.enable": "Enabled {name}",
   "plugins.doneTitle.disable": "Disabled {name}",
-  "plugins.check.add": "Verifying the plugin installation",
+  "plugins.check.add": "Checking that the plugin is installed",
   "plugins.check.remove": "Checking that it is gone",
   "plugins.check.enable": "Checking that it is on",
   "plugins.check.disable": "Checking that it is off",
