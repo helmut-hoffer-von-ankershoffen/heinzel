@@ -68,6 +68,10 @@ module.service(CalendarMaintenance)
 module.service(SyncService)
 
 CalendarOffset = Annotated[int, Field(ge=-52, le=52, description="Weeks before or after this week.")]
+CALENDAR_QUERY_LIMIT = 32_768
+# An ASCII-escaped supplementary Unicode code point can take 12 bytes; 100 full-length IDs plus the adapter
+# and JSON framing fit in 2 MiB even when the ASCII adapter name is also escaped.
+CALENDAR_STREAM_BODY_LIMIT = 2 * 1024 * 1024
 
 
 # Your name and email are in it; a web page can reach a local REST server, so the CLI, MCP and the web head (which
@@ -149,7 +153,7 @@ def calendar(
     settings: OrgSettings,
     offset: CalendarOffset = 0,
     selection: Annotated[
-        str, Field(max_length=32768, description="Calendar exclusions and their adapter as JSON.")
+        str, Field(max_length=CALENDAR_QUERY_LIMIT, description="Calendar exclusions and their adapter as JSON.")
     ] = "",
 ) -> CalendarWeek:
     """Show a week from your connected calendar.
@@ -168,11 +172,15 @@ def calendar(
 class CalendarWeekSelection(CalendarSelection):
     """Browser calendar exclusions for one week."""
 
+    # Use the adapter slug grammar of Module.provides. An empty name still means no adapter selected.
+    adapter: str = Field(default="", pattern=r"^(?:[a-z][a-z0-9-]*)?$", max_length=CALENDAR_QUERY_LIMIT)
     offset: CalendarOffset = 0
 
 
 # The web stream accepts large selections in its authenticated JSON body without putting opaque IDs in the URL.
-@module.operation(private=True, heads={"web"}, requires=["calendar:read"], optional=True)
+@module.operation(
+    private=True, heads={"web"}, requires=["calendar:read"], optional=True, stream_body_limit=CALENDAR_STREAM_BODY_LIMIT
+)
 def calendar_selection(
     calendar: Calendar,
     view: CapabilityView,

@@ -21,18 +21,20 @@ events as it runs
 
 import hmac
 import inspect
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal, get_args, get_origin
 
-from fastapi import Body, Depends, FastAPI, Query, Request, Response
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from fastapi.security import HTTPBearer
 from pydantic import ConfigDict, create_model
 from pydantic.fields import FieldInfo
 from starlette.datastructures import Headers
+from starlette.types import Message
 
 from heinzel import __version__
 from heinzel.heads._exposure import API_PRIVATE, Exposed, exposed
@@ -180,11 +182,13 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
             operation_id=item.name,
         )
         if token is not None or credentials is not None:  # Streams retain the authenticated call context.
-            app.add_api_route(
+            limit = item.operation.stream_body_limit
+            app.router.add_api_route(
                 "/stream/" + "/".join(item.path),
                 stream_endpoint(kernel, item, body_parameters=body_parameters),
                 methods=["POST"],
                 include_in_schema=False,
+                route_class_override=_bounded_body_route(limit) if limit is not None else None,
             )
     return app
 
@@ -329,6 +333,32 @@ def endpoint(
     )
     run.__name__ = item.name
     return run
+
+
+def _bounded_body_route(limit: int) -> type[APIRoute]:
+    """Limit bytes as the router reads them, including chunked requests and JSON padding."""
+
+    class BoundedBodyRoute(APIRoute):
+        def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+            handler = super().get_route_handler()
+
+            async def bounded(request: Request) -> Response:
+                size = 0
+
+                async def receive() -> Message:
+                    nonlocal size
+                    message = await request.receive()
+                    if message["type"] == "http.request":
+                        size += len(message.get("body", b""))
+                        if size > limit:
+                            raise HTTPException(status_code=413, detail="Request body too large.")
+                    return message
+
+                return await handler(Request(request.scope, receive=receive))
+
+            return bounded
+
+    return BoundedBodyRoute
 
 
 def stream_endpoint(

@@ -29683,6 +29683,8 @@
             "required": false,
             "schema": {
               "default": "",
+              "maxLength": 32768,
+              "pattern": "^(?:[a-z][a-z0-9-]*)?$",
               "title": "Adapter",
               "type": "string"
             }

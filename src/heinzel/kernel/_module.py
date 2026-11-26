@@ -201,6 +201,7 @@ class Module:
         audience: Audience = "expert",
         aliases: Iterable[str] = (),
         agents: AgentWrites | ByArguments | None = None,
+        stream_body_limit: int | None = None,
     ) -> Callable[[F], F]: ...
 
     def operation[F: Callable[..., Any]](  # noqa: PLR0913 - keyword-only options of a decorator
@@ -220,6 +221,7 @@ class Module:
         audience: Audience = "expert",
         aliases: Iterable[str] = (),
         agents: AgentWrites | ByArguments | None = None,
+        stream_body_limit: int | None = None,
     ) -> F | Callable[[F], F]:
         """Advertise a function as an operation. Its docstring is required: it becomes the help text.
 
@@ -249,6 +251,7 @@ class Module:
                 publishing, credentials, installing code), `"never"` is the person's own (confirming, approving),
                 `"propose"` or nothing keeps the behaviour before the policy. `ByArguments` makes some calls
                 stricter. Mark it as strict as everything the operation can trigger.
+            stream_body_limit: Maximum bytes in the private HTTP stream request body, before decoding.
 
         Raises:
             ValueError: If the docstring is missing, the audience unknown, a requirement is malformed or writes from
@@ -281,6 +284,7 @@ class Module:
                     audience=audience,
                     aliases=tuple(" ".join(a.split()) for a in old_paths),
                     agents=agents,
+                    stream_body_limit=stream_body_limit,
                 )
             )
             return target

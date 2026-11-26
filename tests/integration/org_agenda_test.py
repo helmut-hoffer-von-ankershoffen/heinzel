@@ -148,7 +148,7 @@ def test_week_reads_selected_calendars_through_read_only_capability(make_kernel)
 
 
 def test_calendar_selection_accepts_all_maximum_length_ids_in_the_authenticated_body(make_kernel):
-    ids = [f"{index:03}" + ('"\\😀' * 341)[:1021] for index in range(100)]
+    ids = [f'{index:03}"\\' + "😀" * 1019 for index in range(100)]
 
     class Multiple(Diary):
         calls: ClassVar[list[str]] = []
@@ -169,9 +169,11 @@ def test_calendar_selection_accepts_all_maximum_length_ids_in_the_authenticated_
     path = "/api/stream/org/calendar-selection"
     selection = {"adapter": "diary", "excluded": ids, "offset": 0}
     assert all(len(identifier) == 1024 for identifier in ids)
-    assert len(json.dumps(selection)) > 32768
+    wire = json.dumps({"selection": selection}, ensure_ascii=True).encode()
+    assert len(wire) > 1_200_000
     assert web_client.post(path, json={"selection": selection}).status_code == 401
-    response = web_client.post(path, json={"selection": selection}, headers=AUTH)
+    headers = AUTH | {"Content-Type": "application/json"}
+    response = web_client.post(path, content=wire, headers=headers)
     assert response.status_code == 200
     (result,) = [
         json.loads(block.removeprefix("event: result\ndata: "))
@@ -186,3 +188,13 @@ def test_calendar_selection_accepts_all_maximum_length_ids_in_the_authenticated_
         refused = web_client.post(path, json={"selection": selection | {"excluded": invalid}}, headers=AUTH)
         assert refused.status_code == 422
         assert Multiple.calls == []
+    for adapter in ("Invalid Name", "a" * 32_769):
+        refused = web_client.post(path, json={"selection": selection | {"adapter": adapter}}, headers=AUTH)
+        assert refused.status_code == 422
+        assert Multiple.calls == []
+
+    # Valid JSON whose padding puts it over the wire limit, supplied without Content-Length.
+    padded = web_client.post(path, content=iter([wire, b" " * (2 * 1024 * 1024)]), headers=headers)
+    assert "content-length" not in padded.request.headers
+    assert padded.status_code == 413
+    assert Multiple.calls == []

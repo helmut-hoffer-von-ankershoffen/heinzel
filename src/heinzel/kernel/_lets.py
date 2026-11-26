@@ -150,13 +150,15 @@ class OperationLet(Let):
     """What an agent's call of this write does (ADR 0162): `direct` runs, `approve` waits for the person, `never` is
     the person's own, `propose` is the behaviour before the policy. None, the default, is treated as `propose`.
     As strict as everything the operation can trigger. Write operations only."""
+    stream_body_limit: int | None = None
+    """Maximum bytes in a private HTTP stream request body, enforced before decoding."""
 
     def __post_init__(self) -> None:
         """Refuse a read-only operation that declares a write.
 
         Raises:
             ValueError: If a read-only operation requires a `write` mode or carries an `agents` marker, the marker
-                or the audience is unknown, or a publish operation is optional.
+                or the audience is unknown, a publish operation is optional, or a stream body limit is invalid.
         """
         if self.read_only and (writes := [str(r) for r in self.requires if "write" in r.modes]):
             msg = (
@@ -178,6 +180,9 @@ class OperationLet(Let):
             raise ValueError(msg)
         if self.audience not in AUDIENCES:
             msg = f"Operation {self.name!r} has audience {self.audience!r}; use one of {', '.join(sorted(AUDIENCES))}"
+            raise ValueError(msg)
+        if self.stream_body_limit is not None and (not self.private or self.stream_body_limit <= 0):
+            msg = f"Operation {self.name!r} needs a private stream and a positive request body limit."
             raise ValueError(msg)
 
     def signature(self) -> inspect.Signature:
