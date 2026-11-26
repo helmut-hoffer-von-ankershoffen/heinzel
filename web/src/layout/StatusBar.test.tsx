@@ -1,6 +1,7 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { queryClient } from "@/app/providers";
 import { releaseTime } from "@/lib/releaseTime";
 import { shell } from "@/test/fixtures";
 import { expectPane } from "@/test/pane";
@@ -521,5 +522,27 @@ describe("Footer items are icons with a state and a pane", () => {
     const pane = await screen.findByRole("region", { name: "v0.4.0" });
     expect(await within(pane).findByText("Changelog dated 24 Oct 2026")).toBeInTheDocument();
     expect(within(pane).queryByText(/^Released /)).not.toBeInTheDocument();
+  });
+
+  it("fetches release metadata for the shown version and hides a mismatched response", async () => {
+    const current = states["/api/system/changelog/released"];
+    const previous = { ...current, version: "0.3.9", published_at: "2026-10-20T07:41:00Z", day: "2026-10-20" };
+    const client = queryClient();
+    client.setQueryData(["system", "changelog", "released", previous.version], previous);
+    mockApi(states);
+    window.innerWidth = 1280;
+    renderAt("/doctor", client);
+    await userEvent
+      .setup()
+      .click(await within(await screen.findByRole("contentinfo")).findByRole("button", { name: "v0.4.0" }));
+    const pane = await screen.findByRole("region", { name: "v0.4.0" });
+    const when = releaseTime(current.published_at, current.day);
+    expect(await within(pane).findByText(`Released ${when}`)).toBeInTheDocument();
+
+    mockApi({ ...states, "/api/system/changelog/released": previous });
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["system", "changelog", "released", current.version], exact: true });
+    });
+    await waitFor(() => expect(within(pane).queryByText(/^Released /)).not.toBeInTheDocument());
   });
 });

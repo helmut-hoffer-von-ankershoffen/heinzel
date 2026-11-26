@@ -97,7 +97,8 @@ function useDesktopVersion() {
 function ReleaseNotes({ version }: { version: string }) {
   const changelog = useChangelog(false);
   const desktop = useDesktopVersion().data;
-  const time = useReleased().data;
+  const response = useReleased(version).data;
+  const time = response?.version === version ? response : undefined;
   const publication = time?.source === "github";
   const when = time?.source ? releaseTime(publication ? time.published_at : null, time.day) : null;
   const notes = typeof changelog.data === "string" ? installedReleaseNotes(changelog.data, version) : null;
