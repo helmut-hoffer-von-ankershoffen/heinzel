@@ -7,8 +7,8 @@ run-name: "Release tail v${{ inputs.version }}"
 #
 # Pipelining: each version has its own concurrency group, apart from the chain's group, so while this tail runs main
 # is open and the next release can be cut and run its candidate CI. At most two releases are in flight (the plan
-# refuses a third). A newer tail waits only at its verdict until every older release is terminal: ACCEPTED, or not
-# accepted and so absorbed by the newer one. A rerun of failed jobs never counts as acceptance: dispatch again.
+# refuses a third). A newer tail waits until every older release is terminal before entering the shared queue for
+# verdict writes. A rerun of failed jobs never counts as acceptance: dispatch again.
 
 on:
   workflow_dispatch:
@@ -105,13 +105,39 @@ jobs:
       expected_profile_sha256: ${{ needs.publish.outputs.profile }}
       release_attempt: release-tail-${{ github.run_id }}
 
-  verdict:
-    name: Verdict, marker, Latest
+  wait-for-older:
+    name: Wait for older release tails
     needs: [publish, acceptance]
     if: ${{ !cancelled() && needs.publish.result == 'success' && needs.acceptance.result != 'skipped' }}
     runs-on: ubuntu-24.04
-    # Judged at once; the marker and Latest wait (up to 230 min) until every older release in its tail is terminal.
     timeout-minutes: 240
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-uv
+        with:
+          enable-cache: false
+      - name: Wait until every older release has an acceptance verdict
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py wait-older \
+            --version "$VERSION" --wait 13800
+
+  verdict:
+    name: Verdict, marker, Latest
+    needs: [publish, wait-for-older]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.publish.result == 'success' && needs.wait-for-older.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    concurrency:
+      group: core-release-latest
+      cancel-in-progress: false
+      queue: max
     permissions:
       contents: write
       actions: read
@@ -126,7 +152,7 @@ jobs:
         with:
           pattern: acceptance-result-*
           path: receipts
-      - name: Judge both receipts, write the marker, then mark the release Latest
+      - name: Recheck the receipts, published bytes and older tails before writing the marker and Latest
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
@@ -137,4 +163,4 @@ jobs:
         run: |
           uv run --no-project --frozen --no-build --python 3.15 python scripts/release_chain.py verdict \
             --version "$VERSION" --receipts receipts --run-id "$RUN_ID" --attempt "$ATTEMPT" \
-            --wheel-sha256 "$WHEEL" --profile-sha256 "$PROFILE" --wait 13800
+            --wheel-sha256 "$WHEEL" --profile-sha256 "$PROFILE"

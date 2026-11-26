@@ -21,7 +21,9 @@ Order and rules (they are the rules the local driver kept):
 - compose: dispatched once PyPI and the tag agree on the published Core wheel.
 - snapshot: after the GitHub release, PyPI and the composed app exist: the wheel and profile digests, with the
   GitHub and PyPI wheel equal.
-- verdict: both acceptance receipts of this run's first attempt prove those digests; then the marker; then Latest.
+- wait-older: wait for older release tails before entering the shared writer queue.
+- verdict: recheck older tails, the published bytes and this run's first-attempt acceptance receipts under one writer;
+  then the marker, then Latest.
   Each receipt is the reduction of the sharded acceptance (acceptance.yml, every shard of its OS, same attempt).
 - dry run: plan (optionally pinned to a given cut SHA on main) and the candidate verdict of that version's release
   PR, read-only: nothing is pushed, merged or published (`plan --dry-run`, `candidate --dry-run`).
@@ -2021,6 +2023,7 @@ def parser() -> argparse.ArgumentParser:
         "probe": (("--repo", {"type": Path, "default": Path()}),),
         "core-published": (("--version", {"required": True}), ("--wait", {"type": float, "default": 300})),
         "snapshot": (("--version", {"required": True}), ("--wait", {"type": float, "default": 3600})),
+        "wait-older": (("--version", {"required": True}), ("--wait", {"type": float, "default": 13800})),
         "verdict": (
             ("--version", {"required": True}),
             ("--receipts", {"type": Path, "required": True}),
@@ -2029,7 +2032,6 @@ def parser() -> argparse.ArgumentParser:
             ("--wheel-sha256", {"required": True}),
             ("--profile-sha256", {"required": True}),
             ("--dry-run", {"action": "store_true"}),
-            ("--wait", {"type": float, "default": 4 * 3600}),
         ),
     }
     for name, flags in options.items():
@@ -2167,11 +2169,18 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_wait_older(args: argparse.Namespace) -> int:
+    """Wait for older tails in the read-only job, outside the shared writer queue."""
+    vkey(args.version)
+    poll("older release", lambda: older_open(get, args.version), args.wait)
+    return 0
+
+
 def cmd_verdict(args: argparse.Namespace) -> int:
     """Judge the receipts, then the marker, then Latest.
 
     Raises:
-        ChainError: A fresh rejection cannot resume an existing marker.
+        ChainError: An older tail is pending, published bytes changed, or fresh acceptance rejects an existing marker.
     """
     snap = {"version": args.version, "wheel_sha256": args.wheel_sha256, "profile_sha256": args.profile_sha256}
     good, lines = judge(args.receipts, snap, args.run_id, args.attempt)
@@ -2185,7 +2194,11 @@ def cmd_verdict(args: argparse.Namespace) -> int:
             say(f"dry  would wait: {exc}")
         promote(get, args.version, snap, dry=True)
         return 0 if good else 1
-    poll("older release", lambda: older_open(get, args.version), args.wait)
+    published = snapshot(get, get_app, args.version, fetch)
+    if any(published.get(name) != expected for name, expected in snap.items()):
+        msg = "the current published wheel or profile differs from the acceptance snapshot"
+        raise ChainError(msg)
+    older_open(get, args.version)
     if has_marker(release_of(get, args.version)):
         if not good:
             msg = "fresh acceptance rejected; an existing marker cannot authorize Latest"
@@ -2213,6 +2226,7 @@ COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "mark-tail": cmd_mark_tail,
     "core-published": cmd_core_published,
     "snapshot": cmd_snapshot,
+    "wait-older": cmd_wait_older,
     "probe": cmd_probe,
     "verdict": cmd_verdict,
 }

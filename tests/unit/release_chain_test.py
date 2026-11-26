@@ -1063,6 +1063,7 @@ def test_the_marker_is_written_once(monkeypatch):
 def test_tail_promotes_only_after_its_independent_acceptance_receipts(tmp_path, monkeypatch, accepted):
     write_receipts(tmp_path, **({} if accepted else {"macOS": {"verdict": "REJECTED"}}))
     effects = []
+    monkeypatch.setattr(chain, "snapshot", lambda *_: SNAP)
     monkeypatch.setattr(chain, "older_open", lambda *_: None)
     monkeypatch.setattr(chain, "release_of", lambda *_: None)
     monkeypatch.setattr(
@@ -1075,12 +1076,45 @@ def test_tail_promotes_only_after_its_independent_acceptance_receipts(tmp_path, 
         run_id="5",
         attempt="1",
         version="0.9.54",
-        wait=0,
         wheel_sha256=SNAP["wheel_sha256"],
         profile_sha256=SNAP["profile_sha256"],
     )
     assert chain.cmd_verdict(args) == (0 if accepted else 1)
     assert effects == [("marker", True), ("latest", True)] if accepted else effects == [("marker", False)]
+
+
+@pytest.mark.parametrize(
+    ("change", "diagnostic"),
+    [
+        ("wheel", "differs from the acceptance snapshot"),
+        ("profile", "differs from the acceptance snapshot"),
+        ("older", "is still in its tail"),
+    ],
+)
+def test_serial_verdict_rechecks_before_any_write_and_never_waits(tmp_path, monkeypatch, change, diagnostic):
+    write_receipts(tmp_path)
+    current = SNAP if change == "older" else {**SNAP, f"{change}_sha256": "0" * 64}
+    monkeypatch.setattr(chain, "snapshot", lambda *_: current)
+    rels = [release("0.9.54", marker=False), release("0.9.53", marker=False)]
+    monkeypatch.setattr(chain, "get", reader(routes(rels=rels)))
+    monkeypatch.setattr(chain, "poll", lambda *_: pytest.fail("the shared writer cannot wait"))
+    monkeypatch.setattr(chain, "publish_marker", lambda *_: pytest.fail("an unverified verdict cannot write a marker"))
+    monkeypatch.setattr(chain, "promote", lambda *_: pytest.fail("an unverified verdict cannot promote"))
+    args = SimpleNamespace(receipts=tmp_path, dry_run=False, run_id="5", attempt="1", **SNAP)
+    with pytest.raises(chain.ChainError, match=diagnostic):
+        chain.cmd_verdict(args)
+
+
+def test_the_read_only_wait_can_poll_an_older_tail(monkeypatch):
+    open_release = [release("0.9.53", marker=False)]
+    completed_release = [release("0.9.53")]
+    inventories = iter([open_release, completed_release])
+    monkeypatch.setattr(chain, "get", lambda path: next(inventories) if path == "releases?per_page=100" else None)
+    sleeps = []
+    monkeypatch.setattr(chain.time, "sleep", sleeps.append)
+    monkeypatch.setattr(chain, "run", lambda *_a, **_kw: pytest.fail("the older-tail wait tried a command write"))
+    assert chain.main(["wait-older", "--version", "0.9.54", "--wait", "60"]) == 0
+    assert sleeps == [chain.POLL]
 
 
 def marked_release(change):
@@ -1117,6 +1151,7 @@ def test_resume_requires_original_accepted_marker_and_matching_bytes(monkeypatch
 def test_retry_rechecks_acceptance_before_resuming_latest(tmp_path, monkeypatch, accepted):
     write_receipts(tmp_path, **({} if accepted else {"macOS": {"verdict": "REJECTED"}}))
     effects = []
+    monkeypatch.setattr(chain, "snapshot", lambda *_: SNAP)
     monkeypatch.setattr(chain, "older_open", lambda *_: None)
     monkeypatch.setattr(chain, "release_of", lambda *_: release("0.9.54"))
     monkeypatch.setattr(chain, "resume_marker", lambda *_: effects.append("authenticated"))
@@ -1127,7 +1162,6 @@ def test_retry_rechecks_acceptance_before_resuming_latest(tmp_path, monkeypatch,
         run_id="5",
         attempt="1",
         version="0.9.54",
-        wait=0,
         wheel_sha256=WHEEL,
         profile_sha256=PROFILE,
     )
@@ -1561,6 +1595,23 @@ def test_the_tail_runs_apart_from_the_chain_so_two_releases_overlap():
     # the freeze lifts at the merge, before the tag and its tail
     merge_steps = chain_wf["jobs"]["merge"]["steps"]
     assert "freeze-sync" in merge_steps[-1]["run"]
+
+
+def test_the_older_tail_wait_never_holds_the_shared_latest_writer():
+    import yaml
+
+    jobs = yaml.safe_load((ROOT / ".github/workflows/release-tail.yml").read_text())["jobs"]
+    wait = jobs["wait-for-older"]
+    verdict = jobs["verdict"]
+    assert wait["needs"] == ["publish", "acceptance"]
+    assert wait["permissions"] == {"contents": "read"}
+    assert "scripts/release_chain.py wait-older" in wait["steps"][-1]["run"]
+    assert verdict["needs"] == ["publish", "wait-for-older"]
+    assert "needs.wait-for-older.result == 'success'" in verdict["if"]
+    assert verdict["concurrency"] == {"group": "core-release-latest", "cancel-in-progress": False, "queue": "max"}
+    assert [name for name, job in jobs.items() if "concurrency" in job] == ["verdict"]
+    assert [name for name, job in jobs.items() if job["permissions"].get("contents") == "write"] == ["verdict"]
+    assert "--wait" not in verdict["steps"][-1]["run"]
 
 
 def test_chain_identity_precedes_pr_open_and_uses_the_real_freeze_jobs_token():
