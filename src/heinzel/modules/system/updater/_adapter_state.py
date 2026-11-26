@@ -6,18 +6,22 @@ import contextlib
 import fcntl
 import os
 import re
+import tempfile
 import time
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterator
 
-__all__ = ["FileInstallationState"]
+__all__ = ["FileInstallationState", "UpdateKind"]
 
 _NAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
+_UPDATE_OWNER = "update.owner"
+_OWNER_RECORD = re.compile(rb"(manual|automatic) ([1-9][0-9]{0,18})\n")
 OWNER_ONLY_DIRECTORY = 0o700
 OWNER_ONLY_FILE = 0o600
+type UpdateKind = Literal["manual", "automatic"]
 
 
 def _checked(name: str) -> str:
@@ -81,6 +85,38 @@ class FileInstallationState:
             yield
         finally:
             os.close(descriptor)  # closing releases the lock
+
+    @contextlib.contextmanager
+    def record_update_owner(self, kind: UpdateKind) -> Generator[None]:
+        """Publish the update holder for as long as the caller still holds the update lock."""
+        with contextlib.ExitStack() as stack:
+            with contextlib.suppress(OSError):
+                record = stack.enter_context(tempfile.NamedTemporaryFile(dir=self._folder, delete=False))
+                try:
+                    record.write(f"{kind} {os.getpid()}\n".encode("ascii"))
+                    record.flush()
+                    # Lock the exact inode we publish so a waiter can rule out a record left by an old holder.
+                    fcntl.flock(record.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    Path(record.name).replace(self._folder / _UPDATE_OWNER)
+                finally:
+                    Path(record.name).unlink(missing_ok=True)
+            yield
+
+    def update_owner(self) -> str | None:
+        """Describe a live update holder, if it published a readable owner record."""
+        with contextlib.suppress(OSError):
+            descriptor = os.open(self._folder / _UPDATE_OWNER, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            try:
+                match = _OWNER_RECORD.fullmatch(os.read(descriptor, 64))
+                if match:
+                    try:
+                        fcntl.flock(descriptor, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        kind, pid = match.groups()
+                        return f"{kind.decode('ascii')} update (PID {pid.decode('ascii')})"
+            finally:
+                os.close(descriptor)
+        return None
 
     def journal(self, name: str) -> Iterator[str]:
         """The lines of `<name>.journal`, oldest first; none if it was never written."""

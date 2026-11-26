@@ -429,6 +429,8 @@ jobs:
     # Integration runs two sequential sessions, each still capped at 420 seconds; allow setup and cleanup too.
     timeout-minutes: ${{ matrix.levels == 'integration' && 15 || 10 }}
     strategy:
+      # Only the coalesced macOS main lane limits concurrent cells; other runs keep their full matrix. # main lanes
+      max-parallel: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.lane == 'macos' && 1 || 256 }} # main lanes
       fail-fast: false # every red cell shows in one run, so one fix covers them all
       matrix:
         exclude: ${{ fromJSON(needs.changes.outputs.lane_exclude || '[]') }} # main lanes
@@ -581,6 +583,7 @@ jobs:
     env:
       HZ_TEST_TIMEOUT_SCALE: "${{ contains(matrix.os, 'macos') && '3' || '1' }}"
     strategy:
+      max-parallel: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.lane == 'macos' && 2 || 256 }} # main lanes
       fail-fast: false
       matrix:
         exclude: ${{ fromJSON(needs.changes.outputs.lane_exclude || '[]') }} # main lanes
