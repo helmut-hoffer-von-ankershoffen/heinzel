@@ -2336,10 +2336,11 @@ def _template_test_fixture(
         "    observed = {key: os.environ.get(key) for key in names}\n"
         "    pathlib.Path(os.environ['FAKE_STARTER_ENV']).write_text(json.dumps(observed))\n"
         "    os.execv(sys.executable, [sys.executable, os.environ['FAKE_STARTER']])\n"
-        "source = sys.stdin.read()\n"
-        "if source:\n"
-        "    sys.argv = [sys.executable, args[-1]]\n"
-        "    exec(compile(source, '<fixture-stdin>', 'exec'), {'__name__': '__main__'})\n"
+        "if args and args[-1].endswith('.whl'):\n"
+        "    path = pathlib.Path('pyproject.toml')\n"
+        "    local = f'\"heinzel @ {pathlib.Path(args[-1]).as_uri()}\"'\n"
+        "    path.write_text(__import__('re').sub(r'\"heinzel==[^\"]*\"', local, path.read_text()))\n"
+        "    raise SystemExit(0)\n"
         "raise SystemExit(f'unexpected uv command: {args!r}')\n",
         encoding="utf-8",
     )
