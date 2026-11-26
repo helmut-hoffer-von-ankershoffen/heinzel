@@ -52,10 +52,6 @@ def _without_upgrade_lane(text: str) -> str:
     text = text.replace(" test-upgrade", "")
     text = re.sub(r"\nUPGRADE_RECEIPT :=[^\n]*\ntest-upgrade:.*?\n(?:\t.*\n)+", "\n", text)
     text = re.sub(r"\n  upgrade:\n.*?(?=\n  [a-z-]+:)", "", text, flags=re.DOTALL)
-    text = text.replace(
-        " || github.event_name == 'pull_request' && needs.changes.outputs.upgrade == 'false' && '[]'", ""
-    )
-    text = text.replace("|upgrade)=(true|false)", ")=(true|false)")
     return re.sub(r"(?m)^[^\n]*# Core upgrade lane(?::[^\n]*)?\n", "", text)
 
 
@@ -341,7 +337,7 @@ def ci_workflow() -> str:
     # Plugins have no changed-path job; preserve their existing macOS matrix.
     text = _without_upgrade_lane(_without_release_candidate(_without_core_node_selection(text)))
     text = text.replace(
-        "PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.",
+        "Full PRs keep both macOS cells; main runs them in its coalesced macOS lane.",
         "PRs run the newest version; non-PR runs cover all versions.",
     )
     text = re.sub(r"\n  template:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
