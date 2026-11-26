@@ -6,6 +6,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from heinzel import HeinzelError
 from heinzel.kernel import DaemonHandoverPlan, DaemonHandoverRequest
@@ -29,9 +30,13 @@ class MutationHandover:
     def matches(self, raw: bytes) -> bool:
         """Check the exact writer's format and binding for a request captured from disk."""
         try:
-            request = json.loads(raw)
-            if not isinstance(request, dict) or not all(type(value) in (str, int) for value in request.values()):
+            parsed = json.loads(raw)
+            if not isinstance(parsed, dict):
                 return False
+            values = cast("dict[str, object]", parsed)
+            if not all(type(value) in (str, int) for value in values.values()):
+                return False
+            request = cast("dict[str, str | int]", values)
             if raw != (json.dumps(request, indent=2) + "\n").encode():
                 return False
             binding = request.pop("mutation_binding", None)

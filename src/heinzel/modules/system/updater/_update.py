@@ -38,15 +38,15 @@ from heinzel.modules.system._service import RELEASE_TIMEOUT
 from heinzel.modules.system.updater._announced import (
     Announcement,
     ToolSnapshot,
-    _sync_tree,
     allows_core,
     environment_versions,
     installed_commit,
     installed_identity,
     plugin_commit,
+    sync_tree,
 )
 from heinzel.modules.system.updater._plugin_releases import PinnedPlugins
-from heinzel.modules.system.updater._recovery_worker import supervised_recovery
+from heinzel.modules.system.updater._recovery_staging import supervised_recovery
 from heinzel.modules.system.updater._update_channels import UpdateChannels
 from heinzel.modules.system.updater._update_heads import recorded_flavor
 from heinzel.modules.system.updater._update_rules import (
@@ -129,7 +129,7 @@ class UpdateService(UpdateChannels):
         pin, core_requirement, plugin_pins, names = selection.pin, selection.core, selection.plugins, selection.names
         prefix = self._installation.prefix.resolve(strict=True)
         with (
-            supervised_recovery(self._installation, folder),
+            supervised_recovery(self._installation, folder, self._web.recovery_ready if self._web else None),
             self._interpreter_for(announced.core),
             self._mutation() as scope,
         ):
@@ -187,7 +187,7 @@ class UpdateService(UpdateChannels):
                     message="",
                     next=[],
                 )
-                _sync_tree(prefix)
+                sync_tree(prefix)
                 if scope is not None and plan is not None:
                     self._finish_mutation(scope, plan, generation, result, before_handover=snapshot.discard)
                 else:

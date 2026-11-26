@@ -164,7 +164,7 @@ class Evidence:
     exists: Callable[[int], bool] = process_exists
 
 
-def _owner_ended(owner: MutationOwner, marker: RecoveryFile, evidence: Evidence) -> str | None:
+def owner_ended(owner: MutationOwner, marker: RecoveryFile, evidence: Evidence) -> str | None:
     """Why the owner can no longer run, or None when that isn't proven."""
     by_identity = (
         None
@@ -223,7 +223,7 @@ def _assess(state: Path, installation: Installation, observe: Callable[[], Evide
         if owner is None:
             return None
         evidence = observe()
-        reason = _owner_ended(owner, marker, evidence)
+        reason = owner_ended(owner, marker, evidence)
         if reason is None or not _other_gates_absent(state, installation):
             return None
         generation = _verified_generation(installation)

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from heinzel import HeinzelError
 from heinzel.kernel.install._installation_continuity import tool_python
-from heinzel.modules.system.lifecycle import _recovery_boot
+from heinzel.modules.system import _recovery_boot
 
 MODE = "# sealed-recovery-v1 "
 _PATH_LIMIT = 4096

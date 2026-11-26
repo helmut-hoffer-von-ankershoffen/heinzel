@@ -79,7 +79,7 @@ def _web_head_refresh(kernel: Kernel) -> WebHeadRefresh:
         )
         return WebHeadRefresh(refresh=lambda _target: result)
 
-    return WebHeadRefresh(refresh=service.refresh)
+    return WebHeadRefresh(refresh=service.refresh, recovery_ready=service.recovery_ready)
 
 
 module.service(WebHeadRefresh, _web_head_refresh)

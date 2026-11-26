@@ -349,9 +349,9 @@ def test_restore_sync_failure_keeps_the_gate_and_resumes_verification(tmp_path, 
     snapshot = folder / "before-update"
     marker = folder / "after-update" / announced.MOVED_ASIDE
     method, fail_at = {
-        "before phase marker": ("_sync_directory", tool.prefix),
+        "before phase marker": ("sync_directory", tool.prefix),
         "phase marker": ("_sync_file", marker),
-        "after restoring": ("_sync_directory", snapshot),
+        "after restoring": ("sync_directory", snapshot),
     }[phase]
     sync = getattr(announced, method)
 

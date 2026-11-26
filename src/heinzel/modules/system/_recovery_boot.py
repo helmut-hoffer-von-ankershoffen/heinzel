@@ -15,6 +15,19 @@ _PROOF_LIMIT = 8192
 _FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
 
 
+def path_absent(path: Path) -> bool:
+    """Require a missing entry, rejecting a dangling link.
+
+    Raises:
+        OSError: If the entry cannot be inspected.
+    """
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return True
+    return False
+
+
 def owned_path(path: Path, *, private: bool = False) -> os.stat_result:
     """Accept a physical path controlled by this user or the OS.
 
@@ -122,7 +135,7 @@ def _proof(path: Path) -> tuple[str, str, str, str]:
 
 _WORKER = (
     "import sys; site, *target = sys.argv[1:]; sys.argv[1:] = target; sys.path.append(site); "
-    "from heinzel.modules.system.updater._recovery_worker import main; sys.exit(main())"
+    "from heinzel.modules.system._auto_recovery_worker import main; sys.exit(main())"
 )
 
 

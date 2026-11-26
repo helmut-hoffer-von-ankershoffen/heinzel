@@ -349,6 +349,15 @@ class WebService:
         record = self._record()
         return None if record is None else recover_config(str(record["launcher"]))
 
+    def recovery_ready(self, state: Path) -> bool:
+        """Verify that this state directory's owned launcher can run the recovery worker."""
+        selected = self.recovery_interpreter()
+        return (
+            self.directory.parent.resolve() == state
+            and selected is not None
+            and interpreter_matches(selected, self.prefix)
+        )
+
     def valid_record_value(self, value: dict[str, JsonValue]) -> bool:
         """Validate only exact current or historical tuples; this does not authorize files, a manager or effects."""
         if set(value) != {

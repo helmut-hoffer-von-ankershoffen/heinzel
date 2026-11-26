@@ -29,16 +29,19 @@ from pathlib import Path
 from heinzel import Progress
 from heinzel.kernel import Installation, private_lock, private_write
 from heinzel.modules.system.daemon._abandoned_mutation import host_boot, mutation_record
+from heinzel.modules.system.lifecycle._service import WebService
 from heinzel.modules.system.updater._adapter_state import FileInstallationState
 from heinzel.modules.system.updater._announced import ToolSnapshot
-from heinzel.modules.system.updater._recovery_worker import supervised_recovery
+from heinzel.modules.system.updater._recovery_staging import supervised_recovery
 
 state, prefix = (Path(value).resolve() for value in sys.argv[1:])
 installation = Installation(Progress(), prefix=prefix)
 installation.record_startup_state(expected=installation.startup_fingerprint())
+_, binary = installation.tool_destination()
+web = WebService(state, Path.home(), binary / "hz", prefix=prefix, uv=prefix / "bin/uv")
 with (
     private_lock(state / "web" / "auto-update-apply.lock"),
-    supervised_recovery(installation, state / "auto-update"),
+    supervised_recovery(installation, state / "auto-update", web.recovery_ready),
     FileInstallationState(state).lock("update"),
     private_lock(state / "daemon/lifecycle.lock"),
 ):

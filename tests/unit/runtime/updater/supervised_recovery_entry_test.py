@@ -12,10 +12,10 @@ import pytest
 
 from heinzel import HeinzelError, Progress
 from heinzel.kernel import Installation, host_maintenance_lock, private_write
-from heinzel.modules.system.lifecycle._recovery_boot import NAME
+from heinzel.modules.system._recovery_boot import NAME
 from heinzel.modules.system.lifecycle._recovery_launcher import interpreter
 from heinzel.modules.system.lifecycle._service import WebService
-from heinzel.modules.system.updater import _recovery_worker
+from heinzel.modules.system.updater import _recovery_staging
 
 pytestmark = pytest.mark.unit
 
@@ -74,8 +74,8 @@ entrypoints = [{{ name = "hz", install-path = "{executable}" }}]
         if directory == library:
             break
         (directory / "__init__.py").touch()
-    worker = packages / "_recovery_worker.py"
-    command = "import sys; from heinzel.modules.system.updater._recovery_worker import main; sys.exit(main())"
+    worker = library / "heinzel/modules/system/_auto_recovery_worker.py"
+    command = "import sys; from heinzel.modules.system._auto_recovery_worker import main; sys.exit(main())"
     worker.write_text(
         "import os, sys\n\n"
         "def main():\n"
@@ -127,7 +127,7 @@ def test_update_holds_first_install_locks_even_without_a_registered_web_service(
     state = web.directory.parent
     assert not web.marker.exists()
     paths = (host_maintenance_lock(installation.prefix), web.directory / "lifecycle.lock")
-    with _recovery_worker.supervised_recovery(installation, state / "auto-update"):
+    with _recovery_staging.supervised_recovery(installation, state / "auto-update", web.recovery_ready):
         for path in paths:
             with path.open("rb+") as contender, pytest.raises(BlockingIOError):
                 fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -139,7 +139,7 @@ def test_legacy_launcher_refuses_new_updates_and_keeps_its_original_guard(instal
     state = web.directory.parent
     with (
         pytest.raises(HeinzelError, match="Migrate the owned web launcher"),
-        _recovery_worker.supervised_recovery(installation, state / "auto-update"),
+        _recovery_staging.supervised_recovery(installation, state / "auto-update", web.recovery_ready),
     ):
         pytest.fail("the older launcher admitted an automatic update")
     assert not (state / "auto-update" / "before-update").exists()
@@ -157,7 +157,7 @@ def test_sealed_worker_restores_checkpoint_before_launcher_enters_the_tool(insta
     command = _launch(web, recovery=selected)
     state = web.directory.parent
     assert subprocess.run(command, check=True, capture_output=True, timeout=5).stdout == b"old generation started\n"
-    with _recovery_worker.supervised_recovery(installation, state / "auto-update"):
+    with _recovery_staging.supervised_recovery(installation, state / "auto-update", web.recovery_ready):
         _interrupt(web)
     staged = state / NAME / "site" / worker
     trusted = staged.read_text()
@@ -183,10 +183,10 @@ def test_insufficient_recovery_space_refuses_before_arming_any_update(installed_
     assert selected is not None
     _launch(web, recovery=selected)
     state = web.directory.parent
-    monkeypatch.setattr(_recovery_worker.shutil, "disk_usage", lambda _: SimpleNamespace(free=0))
+    monkeypatch.setattr(_recovery_staging.shutil, "disk_usage", lambda _: SimpleNamespace(free=0))
     with (
         pytest.raises(HeinzelError, match="insufficient space"),
-        _recovery_worker.supervised_recovery(installation, state / "auto-update"),
+        _recovery_staging.supervised_recovery(installation, state / "auto-update", web.recovery_ready),
     ):
         pytest.fail("an update began without space for verified recovery")
     assert not (state / "auto-update" / "before-update").exists()

@@ -181,7 +181,7 @@ class ToolSnapshot:
         snapshot._clean_discarded()
         partial = snapshot._partial
         folder.mkdir(parents=True, exist_ok=True)
-        _sync_directory(folder.parent)
+        sync_directory(folder.parent)
         if folder.stat().st_dev != prefix.stat().st_dev:
             msg = "The state folder is on another disk than hz, so an update couldn't be put back; nothing installed."
             raise HeinzelError(msg)
@@ -194,13 +194,13 @@ class ToolSnapshot:
                 shutil.copytree(source, target, symlinks=True)
             else:
                 shutil.copy2(source, target, follow_symlinks=False)
-        _sync_tree(partial)
+        sync_tree(partial)
         if content is not None:
             proof = snapshot._proof
             private_write(proof, f"{content}\n{prefix}")
-            _sync_directory(proof.parent)
+            sync_directory(proof.parent)
         partial.rename(snapshot.copy)  # only a complete copy is ever put back
-        _sync_directory(folder)
+        sync_directory(folder)
         return snapshot
 
     def restore(self, *, discard: bool = True) -> None:
@@ -232,7 +232,7 @@ class ToolSnapshot:
             msg = "An unfinished automatic update needs verified recovery."
             raise HeinzelError(msg)
         self.aside.mkdir(exist_ok=True)
-        _sync_directory(self.aside.parent)
+        sync_directory(self.aside.parent)
         moved_in = self.aside / MOVED_ASIDE
         if not moved_in.exists():
             if os.path.lexists(self.prefix / MOVED_ASIDE):
@@ -241,16 +241,16 @@ class ToolSnapshot:
             for entry in sorted(self.prefix.iterdir()):
                 if entry.name not in KEPT:
                     entry.rename(self.aside / entry.name)
-            _sync_directory(self.aside)
-            _sync_directory(self.prefix)
+            sync_directory(self.aside)
+            sync_directory(self.prefix)
             moved_in.touch(exist_ok=False)
         _sync_file(moved_in)
-        _sync_directory(self.aside)
+        sync_directory(self.aside)
         for entry in sorted(self.copy.iterdir()):
             entry.rename(self.prefix / entry.name)
-        _sync_directory(self.prefix)
-        _sync_directory(self.prefix.parent)
-        _sync_directory(self.copy)
+        sync_directory(self.prefix)
+        sync_directory(self.prefix.parent)
+        sync_directory(self.copy)
         if discard:
             self.discard()
 
@@ -318,7 +318,7 @@ class ToolSnapshot:
         # Disarm rollback atomically. A process killed while deleting an obsolete copy must not leave a partial
         # before-update that the next process mistakes for a complete rollback.
         self.copy.rename(self._retired)
-        _sync_directory(self.copy.parent)
+        sync_directory(self.copy.parent)
         self._clean_discarded()
 
     def _clean_discarded(self) -> None:
@@ -326,12 +326,12 @@ class ToolSnapshot:
             with contextlib.suppress(FileNotFoundError):
                 shutil.rmtree(folder)
         if self._retired.is_dir():
-            _sync_directory(self.copy.parent)
+            sync_directory(self.copy.parent)
             shutil.rmtree(self._retired)
-            _sync_directory(self.copy.parent)
+            sync_directory(self.copy.parent)
 
 
-def _sync_directory(path: Path) -> None:
+def sync_directory(path: Path) -> None:
     descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         os.fsync(descriptor)
@@ -354,7 +354,7 @@ def _raise_walk_error(error: OSError) -> None:
     raise error
 
 
-def _sync_tree(root: Path) -> None:
+def sync_tree(root: Path) -> None:
     """Make the staged bytes and directory entries durable before publishing the copy.
 
     Raises:
@@ -366,7 +366,7 @@ def _sync_tree(root: Path) -> None:
             path = Path(directory, name)
             if not stat.S_ISLNK(path.lstat().st_mode):
                 _sync_file(path)
-        _sync_directory(Path(directory))
+        sync_directory(Path(directory))
 
 
 TRIAL_SECONDS = 90.0
