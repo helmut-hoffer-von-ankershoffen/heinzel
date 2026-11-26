@@ -129,7 +129,7 @@ class UpdateService(UpdateChannels):
         pin, core_requirement, plugin_pins, names = selection.pin, selection.core, selection.plugins, selection.names
         prefix = self._installation.prefix.resolve(strict=True)
         with (
-            supervised_recovery(self._installation, folder, self._web.recovery_ready if self._web else None),
+            supervised_recovery(self._installation, folder, getattr(self._web, "recovery_ready", None)),
             self._interpreter_for(announced.core),
             self._mutation() as scope,
         ):

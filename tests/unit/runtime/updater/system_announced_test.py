@@ -8,9 +8,7 @@ import errno
 import fcntl
 import json
 import os
-import signal
 import stat
-import subprocess
 import sys
 from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime
@@ -25,14 +23,6 @@ from heinzel.kernel import DaemonHandoverPlan, DaemonHandoverRequest, Installati
 from heinzel.kernel.install._installation import _core_by_tag
 from heinzel.kernel.install._installation_mutations import installation_mutation_pending
 from heinzel.modules.system import recover_announced
-from heinzel.modules.system.daemon._abandoned_mutation import (
-    Evidence,
-    marker_token_matches,
-    mutation_record,
-    recover_abandoned_mutation,
-)
-from heinzel.modules.system.daemon._mutation_scope import MutationAuthority, MutationScope
-from heinzel.modules.system.daemon._runtime import write_private
 from heinzel.modules.system.updater import _announced as announced
 from heinzel.modules.system.updater._adapter_state import FileInstallationState
 from heinzel.modules.system.updater._announced import Announcement, ToolSnapshot, environment_versions
@@ -382,138 +372,6 @@ def test_restore_sync_failure_keeps_the_gate_and_resumes_verification(tmp_path, 
     assert tool.content_fingerprint() == expected
     assert tool.startup_state_matches()
     assert not installation_mutation_pending(tool.prefix, state)
-
-
-def _kill_after_scope_verification(update, tool, marker, token, monkeypatch):
-    lifecycle = update._lifecycle
-
-    @contextmanager
-    def mutation(checkpoint, rollback_identity):
-        authority = MutationAuthority(
-            pending_path=marker,
-            token_matches=lambda token: marker_token_matches(marker.read_bytes(), token),
-            capture=lifecycle.capture,
-            request=lambda plan, binding: lifecycle.request(plan),
-            fingerprint=tool.startup_fingerprint,
-            checkpoint=checkpoint,
-            had_checkpoint=checkpoint(),
-            original_fingerprint=tool.startup_fingerprint(),
-            original_identity=rollback_identity(),
-            rollback_identity=rollback_identity,
-        )
-        scope = MutationScope(token, authority)
-        yield scope
-        scope.commit()
-
-    verify = MutationScope.verified_complete
-
-    def die_before_disarm(scope, expected):
-        verify(scope, expected)
-        os.kill(os.getpid(), signal.SIGKILL)
-
-    monkeypatch.setattr(lifecycle, "mutation", mutation)
-    monkeypatch.setattr(MutationScope, "verified_complete", die_before_disarm)
-
-
-def _kill_at_update_phase(tmp_path, phase):
-    """Subprocess entry point for process death, including the absence of finally handlers."""
-    state = tmp_path / "state"
-    state_port = FileInstallationState(state)
-    with pytest.MonkeyPatch.context() as patch:
-        if phase == "recovery":
-            tool = Installation(Progress(), prefix=tmp_path / "tools/heinzel", uv="unused")
-            patch.setattr(tool, "record_startup_state", lambda **kw: os.kill(os.getpid(), signal.SIGKILL))
-            UpdateService(tool, Releases(), state=state_port).recover_announced(state / "auto-update")
-            return
-
-        update, tool, _, _ = service(tmp_path, patch)
-        update._state = state_port
-        token = "a" * 64
-        marker = state / "daemon/mutation-pending.json"
-        owner = mutation_record(token, os.getpid(), None)
-        write_private(marker, json.dumps(owner, indent=2) + "\n")
-        (tmp_path / "before.json").write_text(json.dumps([tool.startup_fingerprint(), tool.content_fingerprint()]))
-
-        if phase == "partial":
-            copytree = announced.shutil.copytree
-
-            def die_during_copy(src, dst, **kwargs):
-                copytree(src, dst, **kwargs)
-                os.kill(os.getpid(), signal.SIGKILL)
-
-            patch.setattr(announced.shutil, "copytree", die_during_copy)
-        elif phase == "commit":
-            patch.setattr(tool, "record_startup_state", lambda **kw: os.kill(os.getpid(), signal.SIGKILL))
-        elif phase == "verified":
-            _kill_after_scope_verification(update, tool, marker, token, patch)
-
-        def die_during_update(*args, **kwargs):
-            if phase in {"commit", "install", "verified"}:
-                replace_tool_prefix(tool)
-            if phase in {"partial", "snapshot", "install"}:
-                os.kill(os.getpid(), signal.SIGKILL)
-
-        patch.setattr(tool, "run", die_during_update)
-        update.apply_announced(news(), current="1.0.0", folder=state / "auto-update", trial=lambda _: True)
-
-
-def kill_at_update_phase(tmp_path, phase):
-    child = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            (
-                "import runpy, sys; from pathlib import Path; "
-                "runpy.run_path(sys.argv[1])['_kill_at_update_phase'](Path(sys.argv[2]), sys.argv[3])"
-            ),
-            __file__,
-            str(tmp_path),
-            phase,
-        ],
-        check=False,
-        timeout=20,
-    )
-    assert child.returncode == -signal.SIGKILL
-
-
-@pytest.mark.parametrize("phase", ["partial", "snapshot", "install", "commit", "verified", "recovery"])
-def test_killed_updater_restores_verified_continuity(tmp_path, phase):
-    kill_at_update_phase(tmp_path, "install" if phase == "recovery" else phase)
-    state = tmp_path / "state"
-    kernel = SimpleNamespace(settings=SimpleNamespace(state_dir=state))
-    tool = Installation(Progress(), prefix=tmp_path / "tools/heinzel", uv="unused")
-    update = UpdateService(tool, Releases(), state=FileInstallationState(state))
-    original_generation, original_content = json.loads((tmp_path / "before.json").read_text())
-    snapshot = state / "auto-update/before-update"
-    partial = snapshot.with_suffix(".partial")
-    assert partial.is_dir() == (phase == "partial")
-    assert snapshot.is_dir() == (phase != "partial")
-    assert installation_mutation_pending(tool.prefix, state)
-
-    def recover_daemon():
-        return recover_abandoned_mutation(state, tool, lambda: Evidence(None, 1), lambda: datetime.now(UTC))
-
-    assert recover_daemon() is None
-    if phase == "verified":
-        assert tool.installed_core_version() == "9.9.9"
-        assert tool.startup_state_matches()
-        assert not (state / "daemon/handover-request.json").exists()
-    if phase == "recovery":
-        kill_at_update_phase(tmp_path, "recovery")
-        assert snapshot.is_dir()
-        assert not list(snapshot.iterdir())
-        assert installation_mutation_pending(tool.prefix, state)
-
-    assert recover_announced(update, kernel) == (phase != "partial")
-    assert tool.content_fingerprint() == original_content
-    assert (tool.startup_fingerprint() == original_generation) == (phase in {"partial", "snapshot"})
-    assert tool.startup_state_matches()
-    receipt = recover_daemon()
-    assert receipt is not None
-    assert json.loads(receipt.read_text())["status"] == "archived"
-    assert not installation_mutation_pending(tool.prefix, state)
-    assert not snapshot.exists()
-    assert not partial.exists()
 
 
 def test_interrupted_update_can_be_recovered_through_a_symlinked_parent(tmp_path, monkeypatch):

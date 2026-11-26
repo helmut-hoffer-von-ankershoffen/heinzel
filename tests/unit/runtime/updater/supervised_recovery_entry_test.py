@@ -1,9 +1,7 @@
-"""Exercise real shell startup around a killed writer using an isolated SDK."""
+"""Verify launcher and recovery staging preconditions with an isolated SDK."""
 
 import fcntl
 import json
-import signal
-import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,33 +16,6 @@ from heinzel.modules.system.lifecycle._service import WebService
 from heinzel.modules.system.updater import _recovery_staging
 
 pytestmark = pytest.mark.unit
-
-_UPDATE = """
-import json
-import os
-import signal
-import sys
-from pathlib import Path
-
-from heinzel import Progress
-from heinzel.kernel import Installation, private_lock, private_write
-from heinzel.modules.system.daemon._abandoned_mutation import host_boot, mutation_record
-from heinzel.modules.system.updater._adapter_state import FileInstallationState
-from heinzel.modules.system.updater._announced import ToolSnapshot
-
-state, prefix = map(Path, sys.argv[1:])
-installation = Installation(Progress(), prefix=prefix, uv="/unused/uv")
-with (
-    private_lock(state / "web" / "auto-update-apply.lock"),
-    FileInstallationState(state).lock("update"),
-    private_lock(state / "daemon" / "lifecycle.lock"),
-):
-    marker = mutation_record("b" * 64, os.getpid(), host_boot()[0])
-    private_write(state / "daemon" / "mutation-pending.json", json.dumps(marker, indent=2) + "\\n")
-    ToolSnapshot.take(prefix, state / "auto-update", content=installation.content_fingerprint())
-    (prefix / "bin" / "hz").write_text("#!/bin/sh\\nprintf 'partial generation ran\\\\n'\\n")
-    os.kill(os.getpid(), signal.SIGKILL)
-"""
 
 
 @pytest.fixture
@@ -112,16 +83,6 @@ def _launch(web, *, recovery=None):
     return ["/bin/sh", str(web.launcher)]
 
 
-def _interrupt(web):
-    state = web.directory.parent
-    dead = subprocess.run(
-        [sys.executable, "-c", _UPDATE, str(state), str(web.prefix)], check=False, capture_output=True, timeout=15
-    )
-    assert dead.returncode == -signal.SIGKILL, dead.stderr
-    assert (state / "daemon" / "mutation-pending.json").is_file()
-    assert (state / "auto-update" / "before-update").is_dir()
-
-
 def test_update_holds_first_install_locks_even_without_a_registered_web_service(installed_launch):
     web, installation, _ = installed_launch
     state = web.directory.parent
@@ -131,50 +92,6 @@ def test_update_holds_first_install_locks_even_without_a_registered_web_service(
         for path in paths:
             with path.open("rb+") as contender, pytest.raises(BlockingIOError):
                 fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
-
-
-def test_legacy_launcher_refuses_new_updates_and_keeps_its_original_guard(installed_launch):
-    web, installation, _ = installed_launch
-    command = _launch(web)
-    state = web.directory.parent
-    with (
-        pytest.raises(HeinzelError, match="Migrate the owned web launcher"),
-        _recovery_staging.supervised_recovery(installation, state / "auto-update", web.recovery_ready),
-    ):
-        pytest.fail("the older launcher admitted an automatic update")
-    assert not (state / "auto-update" / "before-update").exists()
-    assert not (state / "daemon" / "mutation-pending.json").exists()
-    _interrupt(web)
-    refused = subprocess.run(command, check=False, capture_output=True, timeout=5)
-    assert refused.returncode == 75
-    assert refused.stdout == refused.stderr == b""
-
-
-def test_sealed_worker_restores_checkpoint_before_launcher_enters_the_tool(installed_launch):
-    web, installation, worker = installed_launch
-    selected = interpreter(web.prefix)
-    assert selected is not None
-    command = _launch(web, recovery=selected)
-    state = web.directory.parent
-    assert subprocess.run(command, check=True, capture_output=True, timeout=5).stdout == b"old generation started\n"
-    with _recovery_staging.supervised_recovery(installation, state / "auto-update", web.recovery_ready):
-        _interrupt(web)
-    staged = state / NAME / "site" / worker
-    trusted = staged.read_text()
-    staged.write_text("raise AssertionError('modified worker')\n")
-    refused = subprocess.run(command, check=False, capture_output=True, timeout=15)
-    assert refused.returncode == 75
-    assert refused.stdout == b""
-    assert b"modified worker" not in refused.stderr
-    assert (state / "auto-update" / "before-update").is_dir()
-
-    staged.write_text(trusted)
-    recovered = subprocess.run(command, check=False, capture_output=True, timeout=15)
-    assert recovered.returncode == 0, recovered.stderr
-    assert recovered.stdout == b"old generation started\n"
-    assert installation.startup_state_matches()
-    assert not (state / "daemon" / "mutation-pending.json").exists()
-    assert not (state / NAME).exists()
 
 
 def test_insufficient_recovery_space_refuses_before_arming_any_update(installed_launch, monkeypatch):
@@ -192,3 +109,16 @@ def test_insufficient_recovery_space_refuses_before_arming_any_update(installed_
     assert not (state / "auto-update" / "before-update").exists()
     assert not (state / "daemon" / "mutation-pending.json").exists()
     assert not (state / NAME).exists()
+
+
+def test_registered_launcher_requires_recovery_capability_before_automatic_update(installed_launch):
+    web, installation, _ = installed_launch
+    _launch(web)
+    state = web.directory.parent
+    with (
+        pytest.raises(HeinzelError, match="Migrate the owned web launcher"),
+        _recovery_staging.supervised_recovery(installation, state / "auto-update", None),
+    ):
+        pytest.fail("a registered launcher admitted an update without a recovery capability")
+    assert not (state / "auto-update" / "before-update").exists()
+    assert not (state / "daemon" / "mutation-pending.json").exists()

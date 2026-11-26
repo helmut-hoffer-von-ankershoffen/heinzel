@@ -81,6 +81,7 @@ def test_web_refresh_survives_real_mixed_generation_import(tmp_path, monkeypatch
 
     kernel = Kernel()
     refresh = _web_head_refresh(kernel)
+    assert refresh.recovery_ready is None
     installed["path"] = new
     with pytest.raises(ImportError, match=new_export):
         kernel.resolve(WebService)
