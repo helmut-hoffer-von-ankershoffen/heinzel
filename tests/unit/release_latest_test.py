@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -70,6 +71,19 @@ def test_legacy_release_uses_the_default_even_without_the_chain_workflow(latest)
         pytest.fail("legacy release cannot depend on the new chain")
 
     assert not latest.defer_latest(TAG, MERGE, TITLE + " (#9)\n", forbidden, forbidden)
+
+
+def test_isolated_launcher_loads_only_the_checked_out_chain(tmp_path):
+    (tmp_path / "release_chain.py").write_text('raise AssertionError("untrusted chain module")\n', encoding="utf-8")
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, timeout=15).strip()
+    output = subprocess.check_output(
+        [sys.executable, "-I", str(ROOT / "scripts/release_latest.py"), TAG, head],
+        cwd=ROOT,
+        env={**os.environ, "PYTHONPATH": str(tmp_path)},
+        text=True,
+        timeout=15,
+    )
+    assert output == "defer_latest=false\n"
 
 
 def test_the_official_first_attempt_receipt_binds_the_exact_release_squash(latest):

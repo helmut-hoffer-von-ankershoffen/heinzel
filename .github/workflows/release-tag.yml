@@ -54,7 +54,7 @@ jobs:
             exit 0
           fi
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          policy="$(uv run --no-project --frozen --no-build --python 3.15 python scripts/release_latest.py "$tag" "$GITHUB_SHA")"
+          policy="$(uv run --no-project --frozen --no-build --python 3.15 python -I scripts/release_latest.py "$tag" "$GITHUB_SHA")"
           if git ls-remote --exit-code --tags origin "$tag" >/dev/null; then
             if [ "$policy" = defer_latest=false ]; then
               echo "Already tagged $tag; nothing to do."

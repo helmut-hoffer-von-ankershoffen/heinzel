@@ -1,7 +1,12 @@
+# /// script
+# requires-python = ">=3.15"
+# dependencies = []
+# ///
 """Validate the hosted chain's pre-merge receipt before deferring the GitHub Latest designation."""
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import sys
@@ -9,10 +14,21 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from release_chain import DEFER_LATEST_TRAILER, REPOSITORY, SHA, VERSION, ChainError, get, run
-
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+# The checkout has already been pinned by the caller. Load its exact sibling even under Python -I.
+CHAIN_SPEC = importlib.util.spec_from_file_location(
+    "_release_latest_chain", Path(__file__).with_name("release_chain.py")
+)
+if CHAIN_SPEC is None or CHAIN_SPEC.loader is None:
+    msg = "cannot load the checked-out Core release chain"
+    raise ImportError(msg)
+chain = importlib.util.module_from_spec(CHAIN_SPEC)
+sys.modules[CHAIN_SPEC.name] = chain
+CHAIN_SPEC.loader.exec_module(chain)
+DEFER_LATEST_TRAILER, REPOSITORY, SHA, VERSION = chain.DEFER_LATEST_TRAILER, chain.REPOSITORY, chain.SHA, chain.VERSION
+ChainError, get, run = chain.ChainError, chain.get, chain.run
 
 RECEIPT = "release-defer-latest"
 WORKFLOW = ".github/workflows/release-chain.yml"

@@ -196,7 +196,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
-        run: uv run --no-project --frozen --no-build --python 3.15 python scripts/release_latest.py "$TAG" "$SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
+        run: uv run --no-project --frozen --no-build --python 3.15 python -I scripts/release_latest.py "$TAG" "$SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
       - name: Check that the tag matches the project version
         run: test "v$(uv version --short)" = "$TAG"
       - name: Check the Core foreground UI release contract

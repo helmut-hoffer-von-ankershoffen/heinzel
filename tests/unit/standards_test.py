@@ -139,6 +139,7 @@ CORE_ONLY = {  # path: why plugins don't get it
     ".github/workflows/release-tail.yml": "the tail run of one Core release (release-chain.yml); plugins have none",
     ".github/workflows/release-freeze.yml": "freezes Core's main for its release candidate; plugins have no candidate",
     "scripts/release_chain.py": "the steps of Core's release chain (release-chain.yml), which plugins don't get",
+    "scripts/release_latest.py": "binds deferred Latest to Core's release chain; plugins publish independently",
     ".github/workflows/edge.yml": "releases the core's edge channel from its green main (ADR 0114)",
     "scripts/release_channel.py.lock": "locks that script for the edge workflow (ADR 0114)",
     "scripts/check_confidentiality.py.lock": "locks the term scan for the edge workflow (ADR 0114)",

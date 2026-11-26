@@ -173,7 +173,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv run --no-project --frozen --no-build --python 3.15 python scripts/pypi_release.py checkout": (
             "verifies the reviewed release source before producing its signed artifact manifest"
         ),
-        "uv run --no-project --frozen --no-build --python 3.15 python scripts/release_latest.py": (
+        "uv run --no-project --frozen --no-build --python 3.15 python -I scripts/release_latest.py": (
             "binds an optional Latest deferral to the authenticated release-chain merge"
         ),
         "uv run --no-project --frozen --no-build --python 3.15 python -I scripts/acceptance/run_acceptance.py "
