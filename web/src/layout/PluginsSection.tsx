@@ -1252,10 +1252,9 @@ export function PluginGallery({
   name: string;
   privateSource?: boolean | null;
 }) {
-  const [open, setOpen] = useState(privateSource !== undefined && privateSource !== null);
-  useEffect(() => {
-    setOpen(privateSource !== undefined && privateSource !== null);
-  }, [privateSource]);
+  const visibility = privateSource == null ? "unknown" : privateSource;
+  const [openOverride, setOpenOverride] = useState<{ visibility: boolean | "unknown"; open: boolean } | null>(null);
+  const open = openOverride?.visibility === visibility ? openOverride.open : visibility !== "unknown";
   const galleryId = useId();
   return (
     <div className="mt-2 min-w-0">
@@ -1265,7 +1264,7 @@ export function PluginGallery({
         aria-expanded={open}
         aria-controls={open ? galleryId : undefined}
         aria-label={t("plugins.screenshotsFor", { name })}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpenOverride({ visibility, open: !open })}
       >
         {t("plugins.screenshots")}
       </Button>

@@ -1610,6 +1610,22 @@ describe("PluginGallery", () => {
     expect(container.querySelectorAll("img,iframe")).toHaveLength(0);
   });
 
+  it("does not fetch if a previously private source becomes unknown", () => {
+    const calls = serve((url) => (url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url)));
+    const view = render(
+      <Providers client={queryClient()}>
+        <PluginGallery spec="private" name="Harbor" privateSource />
+      </Providers>,
+    );
+    view.rerender(
+      <Providers client={queryClient()}>
+        <PluginGallery spec="private" name="Harbor" privateSource={null} />
+      </Providers>,
+    );
+    expect(calls).toHaveLength(0);
+    expect(screen.queryByRole("region", { name: "Screenshot gallery: Harbor" })).not.toBeInTheDocument();
+  });
+
   it("keeps a source with unknown visibility opt-in", async () => {
     const calls = serve((url) => (url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url)));
     const user = userEvent.setup();
