@@ -11,9 +11,9 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal, cast
 
+from heinzel.kernel._calendar_sources import CalendarSources
 from heinzel.kernel._protocols import (
     Calendar,
-    CalendarSources,
     Chat,
     CodeHost,
     Directory,
