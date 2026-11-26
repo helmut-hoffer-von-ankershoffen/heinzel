@@ -3,6 +3,7 @@ import Foundation
 @main struct WorkspaceFooterGeometryTests {
     @MainActor static func main() async throws {
         verifyFooterHandoff()
+        verifyFooterReceiver()
         let viewport = CGSize(width: 390, height: 844)
         let valid: [String: NSNumber] = ["x": 0, "y": 762, "width": 100, "height": 48,
                                                 "viewportWidth": 390, "viewportHeight": 844]
@@ -77,6 +78,36 @@ import Foundation
             precondition(WorkspaceFooterGeometry.slot(fallback, viewport: integratedViewport, width: 100, bottom: integratedBottom) == nil)
             precondition(WorkspaceFooterGeometry.slot(integrated, viewport: fallbackViewport, width: 100, bottom: fallbackBottom) == nil)
         }
+    }
+
+    private static func verifyFooterReceiver() {
+        let viewport = CGSize(width: 390, height: 844)
+        let valid: [String: Any] = ["revision": 9, "generation": 4, "x": 0, "y": 762,
+            "width": 100, "height": 48, "viewportWidth": 390, "viewportHeight": 844]
+        var slot: CGRect?
+        var updates = 0
+        func receive(_ values: [String: Any]) -> Bool {
+            WorkspaceFooterGeometry.receive(values, viewport: viewport, width: 100, bottom: 34,
+                revision: 9, generation: 4) {
+                slot = $0
+                updates += 1
+            }
+        }
+        precondition(receive(valid))
+        let accepted = CGRect(x: 0, y: 762, width: 100, height: 48)
+        precondition(slot == accepted && updates == 1)
+        for (key, value) in [("revision", 8), ("generation", 3)] {
+            var stale = valid
+            stale[key] = value
+            stale["viewportHeight"] = 762
+            precondition(!receive(stale) && slot == accepted && updates == 1)
+        }
+        var unversioned = valid
+        unversioned.removeValue(forKey: "generation")
+        precondition(!receive(unversioned) && slot == accepted && updates == 1)
+        var invalid = valid
+        invalid["y"] = "invalid"
+        precondition(!receive(invalid) && slot == nil && updates == 2)
     }
 
     private static func verifyCloudSyncPreference() {
