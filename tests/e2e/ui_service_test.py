@@ -59,6 +59,7 @@ with (
 
 _INTERRUPT_REAL_UPDATE = """
 import os
+import shutil
 import signal
 import sys
 from pathlib import Path
@@ -76,6 +77,17 @@ from heinzel.modules.system.updater._update import UpdateService
 
 state, prefix, home, wheels, uv, real_uv = (Path(sys.argv[i]).resolve() for i in (1, 2, 3, 5, 6, 7))
 binary = Path(sys.argv[4])  # Keep the owned uv entrypoint path, not its resolved target.
+interrupt = sys.argv[8]
+
+if interrupt == 'snapshot':
+    copytree = shutil.copytree
+    def stop_after_snapshot_entry(source, target, *args, **kwargs):
+        result = copytree(source, target, *args, **kwargs)
+        if Path(target).parent == state / 'auto-update/before-update.partial':
+            os.kill(os.getpid(), signal.SIGKILL)
+        return result
+    shutil.copytree = stop_after_snapshot_entry
+
 def runner(command, environment=None):
     install = command[1:3] == ['tool', 'install']
     result = _run([*command, '--no-index', '--find-links', str(wheels)] if install else command, environment)
@@ -93,7 +105,30 @@ updater = UpdateService(installation, None, lifecycle=_installation_lifecycle(da
                         state=FileInstallationState(state), home=home)
 updater.apply_announced(Announcement('999.0.0', {}), current=installation.installed_core_version(),
                         folder=state / 'auto-update', trial=lambda _: False)
-raise AssertionError('real uv did not replace the tool')
+raise AssertionError(f'the updater did not reach the {interrupt} interrupt')
+"""
+
+_INTERRUPT_RECOVERY_WORKER = """
+import os
+import signal
+import sys
+from pathlib import Path
+
+prefix, state = (Path(value).resolve() for value in sys.argv[1:3])
+staged = state / 'supervised-recovery'
+snapshot = state / 'auto-update/before-update'
+sys.path.append(str(staged / 'site'))
+from heinzel.modules.system._auto_recovery_worker import main
+
+rename = Path.rename
+def stop_after_restore_entry(source, target):
+    result = rename(source, target)
+    if source.parent == snapshot and Path(target).parent == prefix:
+        os.kill(os.getpid(), signal.SIGKILL)
+    return result
+
+Path.rename = stop_after_restore_entry
+sys.exit(main())
 """
 
 
@@ -215,12 +250,8 @@ def test_installed_supervisor_recovers_its_server_after_the_update_owner_is_kill
     assert json.loads(heartbeat.read_text())["outcome"] == "completed"
 
 
-@pytest.mark.timeout(300)
-def test_historical_migration_recovers_interrupted_real_uv_replacement(supervised, sandbox, tmp_path):
-    service, running = supervised
-    if service.platform != sys.platform:
-        pytest.skip("The installed recovery worker validates the host's own service format")
-
+def prepare_historical_recovery(service, sandbox):
+    """Set up normal continuity and migrate an independently pinned old launcher."""
     # This fixture's diagnostic .pth executes code at startup, which the real updater correctly refuses.
     [site] = list((service.prefix / "lib").glob("python*/site-packages"))
     for suffix in (".pth", ".py"):
@@ -234,7 +265,6 @@ def test_historical_migration_recovers_interrupted_real_uv_replacement(supervise
     )
     installation = Installation(Progress(), prefix=service.prefix)
     installation.record_startup_state(expected=installation.startup_fingerprint())
-    original = installation.content_fingerprint()
     state = service.directory.parent
 
     # Recreate the published launcher with its independently pinned renderer, then use the supported migration.
@@ -250,7 +280,19 @@ def test_historical_migration_recovers_interrupted_real_uv_replacement(supervise
     service.install(port)
     assert not service.historical_record(json.loads(service.marker.read_text()))
     assert service.recovery_ready(state)
+    return site, installation
 
+
+@pytest.mark.timeout(300)
+@pytest.mark.parametrize("interrupt", ["snapshot", "install", "recovery"])
+def test_historical_migration_recovers_interrupted_real_uv_replacement(supervised, sandbox, tmp_path, interrupt):
+    service, running = supervised
+    if service.platform != sys.platform:
+        pytest.skip("The installed recovery worker validates the host's own service format")
+
+    site, installation = prepare_historical_recovery(service, sandbox)
+    original = installation.content_fingerprint()
+    state = service.directory.parent
     running.launch()
     first = running.ready()
     wheels = tmp_path / "replacement-wheels"
@@ -272,6 +314,7 @@ def test_historical_migration_recovers_interrupted_real_uv_replacement(supervise
             wheels,
             service.uv,
             real_uv,
+            "snapshot" if interrupt == "snapshot" else "install",
         ],
         env={**sandbox.env, "HOME": str(service.home)},
         capture_output=True,
@@ -279,20 +322,44 @@ def test_historical_migration_recovers_interrupted_real_uv_replacement(supervise
         timeout=180,
     )
     assert interrupted.returncode == -signal.SIGKILL, interrupted.stderr.decode(errors="replace")
-    [replacement] = importlib.metadata.distributions(path=[str(site)], name="heinzel")
-    assert replacement.version == "999.0.0"
-    assert (state / "auto-update/before-update").is_dir()
-    assert (state / "daemon/mutation-pending.json").is_file()
+    snapshot = state / "auto-update/before-update"
+    partial = snapshot.with_suffix(".partial")
+    pending = state / "daemon/mutation-pending.json"
+    assert pending.is_file()
+    if interrupt == "snapshot":
+        assert any(partial.iterdir())
+        assert not snapshot.exists()
+        assert installation.content_fingerprint() == original
+    else:
+        [replacement] = importlib.metadata.distributions(path=[str(site)], name="heinzel")
+        assert replacement.version == "999.0.0"
+        assert snapshot.is_dir()
     running.processes[-1].kill()
     running.processes[-1].communicate(timeout=3)
+    if interrupt == "recovery":
+        # Fault-inject the staged worker in its own process without changing its sealed files.
+        # The real launcher below must authenticate the same staging and finish the interrupted restore.
+        recovering = subprocess.run(
+            [service.recovery[0], "-I", "-S", "-B", "-c", _INTERRUPT_RECOVERY_WORKER, service.prefix, state, original],
+            env={"HOME": str(service.home)},
+            capture_output=True,
+            check=False,
+            timeout=90,
+        )
+        assert recovering.returncode == -signal.SIGKILL, recovering.stderr.decode(errors="replace")
+        assert (state / "auto-update/after-update").is_dir()
+        assert snapshot.is_dir()
+        assert pending.is_file()
     process = running.launch()
     recovered = running.ready(first.instance)
     assert recovered.pid == process.pid
     assert recovered.version == first.version
     assert installation.content_fingerprint() == original
     assert installation.startup_state_matches()
-    assert not (state / "daemon/mutation-pending.json").exists()
-    assert not (state / "auto-update/before-update").exists()
+    assert not pending.exists()
+    assert not snapshot.exists()
+    assert not partial.exists()
+    assert not (state / "auto-update/after-update").exists()
 
 
 def test_installed_server_keeps_session_on_update_exec_and_pairing_after_cold_restart(supervised, sandbox, wheel):
