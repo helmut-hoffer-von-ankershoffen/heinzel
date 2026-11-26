@@ -106,6 +106,8 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
   const now = useNow(60_000);
   const week = useQuery({
     queryKey: ["org", "calendar", offset, selection],
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[2] === offset && previous?.adapter === selection.adapter ? previous : undefined,
     // The query aborts its older read when it is cancelled or superseded, so a stale response never overwrites newer data.
     queryFn: async ({ signal }): Promise<Week> => {
       const url = new URL("/api/org/calendar", window.location.origin);
@@ -161,10 +163,13 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
     refetchInterval: 60_000,
     retry: false,
   });
-  const chosen = week.data?.events.find((event) => eventKey(event) === selected);
   const data = week.data && !week.data.problem ? week.data : undefined;
+  const events = week.isPlaceholderData
+    ? data?.events.filter((event) => !event.calendar_id || !selection.excluded.includes(event.calendar_id))
+    : data?.events;
+  const chosen = events?.find((event) => eventKey(event) === selected);
   const days = data
-    ? groupWeek({ events: data.events, since: data.since, until: data.until, now, tz: data.timezone })
+    ? groupWeek({ events: events ?? [], since: data.since, until: data.until, now, tz: data.timezone })
     : [];
   const today = days.find((day) => day.relation === "today");
   // Missing reminders on this computer are the one thing to do here, so turning them on leads the row in words.
@@ -221,7 +226,7 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
           </fieldset>
         </details>
       )}
-      {!!week.data?.warnings?.length && (
+      {!week.isPlaceholderData && !!week.data?.warnings?.length && (
         <div role="status" className="border-b border-border px-3 py-2 text-sm">
           <p>{t("calendar.partialRead")}</p>
           <ul>

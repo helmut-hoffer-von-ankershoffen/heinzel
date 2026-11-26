@@ -85,15 +85,20 @@ it("combines readable calendars and preserves an explicit exclusion on reopen", 
     { ...baseEvent, calendar_id: "personal", title: "Personal meeting" },
     { ...baseEvent, calendar_id: "family", title: "Family meeting" },
   ];
+  let finishSelection: (() => void) | undefined;
   const { calls } = mockApi({
     "/api/org/calendar": (request: Request) => {
       const value = new URL(request.url).searchParams.get("selection");
       const selection = value ? JSON.parse(value) : null;
-      return {
+      const week = {
         ...weekOf(entries.filter((event) => !selection?.excluded.includes(event.calendar_id))),
         calendars,
         adapter: "google",
       };
+      if (!selection || finishSelection) return week;
+      return new Promise((resolve) => {
+        finishSelection = () => resolve(week);
+      });
     },
     "/api/org/calendar-reminders-status": { enabled: false, service: "not installed" },
   });
@@ -110,9 +115,14 @@ it("combines readable calendars and preserves an explicit exclusion on reopen", 
   expect(await screen.findByRole("checkbox", { name: "Family" })).toBeChecked();
   expect(await screen.findByRole("button", { name: /Family meeting/ })).toBeInTheDocument();
   await expectAccessible(view.container);
-  await user.click(screen.getByRole("checkbox", { name: "Family" }));
-  await waitFor(() => expect(screen.queryByRole("button", { name: /Family meeting/ })).not.toBeInTheDocument());
-  expect(await screen.findByRole("button", { name: /Personal meeting/ })).toBeInTheDocument();
+  const family = screen.getByRole("checkbox", { name: "Family" });
+  await user.click(family);
+  expect(family).toHaveFocus();
+  expect(family).not.toBeChecked();
+  expect(screen.queryByRole("button", { name: /Family meeting/ })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Personal meeting/ })).toBeInTheDocument();
+  expect(finishSelection).toBeDefined();
+  await act(async () => finishSelection?.());
   expect(JSON.parse(localStorage.getItem("hz.calendar.excluded.google") ?? "[]")).toEqual(["family"]);
   view.unmount();
   render(
