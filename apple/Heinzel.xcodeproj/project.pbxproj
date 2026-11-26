@@ -65,6 +65,7 @@
     };};
 000000000000000000000075 = {isa = XCBuildConfiguration; name = Release; buildSettings = {
         APPLICATION_EXTENSION_API_ONLY = YES; CODE_SIGN_STYLE = Automatic;
+        "PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "$(HEINZEL_MAC_WIDGET_PROFILE)";
         CODE_SIGN_ENTITLEMENTS = Shared/WidgetActivity.entitlements; ALWAYS_SEARCH_USER_PATHS = NO;
         CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0;
         GENERATE_INFOPLIST_FILE = YES; INFOPLIST_FILE = Widgets/Info.plist;
@@ -130,6 +131,7 @@
 00000000000000000000000D = {isa = XCBuildConfiguration; name = Release; buildSettings = {HEINZEL_MAC_WIDGET_GROUP = "$(DEVELOPMENT_TEAM).team.heinzel.apple.activity"; HEINZEL_MAC_WIDGET_ENTITLEMENTS = Widgets/MacWidget.entitlements;};};
 00000000000000000000000F = {isa = XCBuildConfiguration; name = Release; buildSettings = {
         PRODUCT_NAME = Heinzel; PRODUCT_BUNDLE_IDENTIFIER = team.heinzel.apple;
+        "PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = "$(HEINZEL_MAC_PROFILE)";
         SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator"; SDKROOT = auto;
         IPHONEOS_DEPLOYMENT_TARGET = 18.0; MACOSX_DEPLOYMENT_TARGET = 15.0;
         TARGETED_DEVICE_FAMILY = "1,2"; SWIFT_VERSION = 6.0; ALWAYS_SEARCH_USER_PATHS = NO;
