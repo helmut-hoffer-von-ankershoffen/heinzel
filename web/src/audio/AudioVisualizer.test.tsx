@@ -736,6 +736,46 @@ describe("AudioVisualizer", () => {
     }
   });
 
+  it.each(["NotAllowedError", "AbortError"])(
+    "keeps a pending remembered microphone off after a system audio %s",
+    async (errorName) => {
+      localStorage.setItem("hz.audio.source", "mic");
+      vi.stubGlobal("heinzelDesktop", { workspaceAudio: true, systemAudio: vi.fn() });
+      vi.mocked(systemAudioAvailable).mockResolvedValue(true);
+      vi.mocked(captureMicrophone).mockResolvedValue(listening);
+      let grantMicrophone: (status: { state: string }) => void = () => undefined;
+      const pendingMicrophone = new Promise<{ state: string }>((resolve) => (grantMicrophone = resolve));
+      let rejectSystem: (error: Error) => void = () => undefined;
+      vi.mocked(captureAudio).mockImplementationOnce(() => new Promise((_resolve, reject) => (rejectSystem = reject)));
+      const realPermissions = Object.getOwnPropertyDescriptor(navigator, "permissions");
+      const query = vi.fn().mockReturnValueOnce(pendingMicrophone).mockResolvedValue({ state: "granted" });
+      Object.defineProperty(navigator, "permissions", { configurable: true, value: { query } });
+      try {
+        render(<AudioVisualizer />);
+        act(() => publishOwnAudio({ mode: "frame", label: "Hyper Focus" }));
+        const prompt = within(await screen.findByRole("complementary", { name: "Let Heinzel see the music" }));
+        fireEvent.click(await prompt.findByRole("button", { name: "Use system audio" }));
+        expect(query).toHaveBeenCalledOnce();
+        expect(captureAudio).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal), true);
+        await act(async () => grantMicrophone({ state: "granted" }));
+        expect(captureMicrophone).not.toHaveBeenCalled();
+        await act(async () => rejectSystem(new DOMException("Declined system audio", errorName)));
+        expect(captureMicrophone).not.toHaveBeenCalled();
+        expect(query).toHaveBeenCalledOnce();
+        open();
+        expect(await pane().findByText("System audio was not allowed.")).toBeVisible();
+        expect(localStorage.getItem("hz.audio.source")).toBe("mic");
+        fireEvent.click(source("Microphone"));
+        await waitForSource("Microphone");
+        expect(captureMicrophone).toHaveBeenCalledOnce();
+      } finally {
+        if (realPermissions) Object.defineProperty(navigator, "permissions", realPermissions);
+        else delete (navigator as { permissions?: Permissions }).permissions;
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
   it("lets the iOS app retry a transient system audio failure", async () => {
     vi.stubGlobal("heinzelDesktop", { mobileWorkspace: true, workspaceAudio: false, systemAudio: vi.fn() });
     vi.mocked(systemAudioAvailable).mockResolvedValue(true);

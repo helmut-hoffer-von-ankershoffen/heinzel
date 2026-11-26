@@ -310,7 +310,11 @@ export function AudioVisualizer({
         remember("off");
         return;
       }
-      if (source === "system" && (!systemOffered || current.current?.label === "System audio")) return;
+      if (source === "system") {
+        if (!systemOffered || current.current?.label === "System audio") return;
+        // This explicit choice takes precedence over the automatic microphone resume for this page.
+        resumed.current = true;
+      }
       if (source === "tab" && !canShareAudio()) {
         // The pressed choice leaves the pane; if its whole group goes with it, keep the keyboard on the trigger.
         const root = rootElement.current;
@@ -359,7 +363,7 @@ export function AudioVisualizer({
   }, [session, stop]);
   // A microphone the person already allowed and chose before listens again without another question.
   const framed = own.mode === "frame";
-  // Once per page: a stopped or ended microphone never restarts itself.
+  // Resume at most once per page. An explicit system audio choice disables automatic microphone resume.
   useEffect(() => {
     if (
       !enabled ||
@@ -376,7 +380,7 @@ export function AudioVisualizer({
     void navigator.permissions
       ?.query({ name: "microphone" as PermissionName })
       .then((status) => {
-        if (cancelled || status.state !== "granted") return;
+        if (cancelled || resumed.current || status.state !== "granted") return;
         resumed.current = true;
         void start("mic");
       })
