@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import { onlineManager } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -1439,6 +1440,31 @@ describe("PluginsSection", () => {
     await waitFor(() =>
       expect(searches().some((call) => new URL(call.url).searchParams.get("refresh") === "true")).toBe(true),
     );
+  });
+
+  it("keeps a Discover refresh failure with the submitted search", async () => {
+    window.history.replaceState(null, "", "/");
+    serve((url) => {
+      if (url.pathname !== "/api/system/plugin/search") return base(url);
+      return url.searchParams.has("refresh")
+        ? { status: 503, body: { error: "GitHub is unavailable" } }
+        : { body: { plugins: [], warnings: [] } };
+    });
+    const user = userEvent.setup();
+    show();
+    await user.click(screen.getByRole("tab", { name: "Discover" }));
+    const refresh = await screen.findByRole("button", { name: "Refresh" });
+    await waitFor(() => expect(refresh).toBeEnabled());
+    await user.click(refresh);
+    expect(await screen.findByRole("button", { name: /Refresh.*failed/i })).toBeInTheDocument();
+    // An uncached search can remain paused after connectivity drops.
+    act(() => onlineManager.setOnline(false));
+    try {
+      await user.type(screen.getByRole("searchbox", { name: "Search plugins" }), "weather");
+      expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
+    } finally {
+      act(() => onlineManager.setOnline(true));
+    }
   });
 
   it("keeps the tab in the address so a reload returns to it", async () => {

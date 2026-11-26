@@ -11,8 +11,10 @@ import {
   sameNotificationPolicy,
   validNotificationPolicy,
 } from "@/chat/ScheduledNotificationConsent";
+import { RefreshGlyph } from "@/components/RefreshGlyph";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
+import { refreshName } from "@/lib/refreshFeedback";
 
 async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
   const { data, error, response } = await call;
@@ -299,7 +301,15 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
           <p>{t("schedules.intro")}</p>
           <section className="space-y-2 rounded border border-border p-2" aria-label="Chat schedule suggestion">
             <p className="font-medium">Chat schedule suggestion</p>
-            <Button type="button" size="sm" variant="outline" onClick={() => void suggestion.refetch()}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-busy={suggestion.isFetching}
+              aria-label={refreshName("Refresh suggestion", suggestion.isFetching, suggestion.isError)}
+              onClick={() => void suggestion.refetch()}
+            >
+              <RefreshGlyph busy={suggestion.isFetching} failed={suggestion.isError} />
               Refresh suggestion
             </Button>
             {suggestion.isError && <p role="alert">The suggestion could not be verified.</p>}

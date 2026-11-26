@@ -1,6 +1,6 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/app/providers";
 import { doctor } from "@/test/fixtures";
 import { expectPane } from "@/test/pane";
@@ -22,6 +22,59 @@ function show(report: unknown = doctor) {
   };
 }
 describe("footer system health", () => {
+  it("spins for the scheduled 30-second refresh without a click", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      show();
+      fireEvent.click(await screen.findByRole("button", { name: "System health, warning" }));
+      let finish!: (value: unknown) => void;
+      mockApi({
+        "/api/system/doctor": () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_100);
+      });
+      const refresh = screen.getByRole("button", { name: "Refresh health checks" });
+      expect(refresh).toHaveAttribute("aria-busy", "true");
+      expect(refresh.querySelector("svg")).toHaveClass("motion-safe:animate-spin");
+      await act(async () => {
+        finish(doctor);
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      expect(refresh).not.toHaveAttribute("aria-busy", "true");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("shows automatic and manual refresh, a failed read, and recovery without treating degraded health as a failed read", async () => {
+    const { client } = show();
+    fireEvent.click(await screen.findByRole("button", { name: "System health, warning" }));
+    let finish!: (value: unknown) => void;
+    mockApi({
+      "/api/system/doctor": () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    });
+    void client.refetchQueries({ queryKey: ["system", "doctor"] });
+    const refresh = screen.getByRole("button", { name: "Refresh health checks" });
+    await waitFor(() => expect(refresh).toHaveAttribute("aria-busy", "true"));
+    expect(refresh.querySelector("svg")).toHaveClass("motion-safe:animate-spin");
+    act(() => finish({ status: 500, body: { error: "unavailable" } }));
+    const failed = await screen.findByRole("button", { name: "Refresh health checks — Refresh failed" });
+    expect(failed.querySelector("svg")).toHaveClass("text-bad");
+    mockApi({ "/api/system/doctor": doctor });
+    fireEvent.click(failed);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Refresh health checks" })).not.toHaveAttribute("aria-busy", "true"),
+    );
+    expect(screen.getByRole("button", { name: "Refresh health checks" }).querySelector("svg")).not.toHaveClass(
+      "text-bad",
+    );
+  });
   it("shows actionable degraded checks and a keyboard-accessible Doctor link", async () => {
     const { container } = show();
     const trigger = await screen.findByRole("button", { name: "System health, warning" });
