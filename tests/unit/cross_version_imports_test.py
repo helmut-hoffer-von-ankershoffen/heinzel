@@ -5,7 +5,7 @@ Two kinds of code run across a version boundary:
 - `hz system update` replaces the installed files while the published process keeps its booted modules in
   memory. Each import that process makes later, inside a function, loads a file of the new tree, and that file
   takes names from the old modules in memory. The manifests in `tests/fixtures/published_resident/` record, per
-  published version (the legacy fixture's 0.9.14 and 0.9.15, and the 0.9.52 to 0.9.54 users update from), the
+  published version (the legacy fixture's 0.9.14 and 0.9.15, and the 0.9.52 to 0.9.55 users update from), the
   modules in memory after boot with their runtime names, the classes each of them defines (from 0.9.52 on), and
   the imports made inside functions (`record.py` says how to record one).
 - A class that moved keeps one identity: a published process that holds it from the old file must never load a
@@ -32,9 +32,9 @@ SOURCE = REPO / "src"
 MANIFESTS = REPO / "tests/fixtures/published_resident"
 FIXTURE = REPO / "tests/fixtures/legacy_recovery_manager.py"
 # The legacy fixture's versions and what users update from.
-VERSIONS = ("0.9.14", "0.9.15", "0.9.52", "0.9.53", "0.9.54")
+VERSIONS = ("0.9.14", "0.9.15", "0.9.52", "0.9.53", "0.9.54", "0.9.55")
 FIXTURE_VERSIONS = ("0.9.14", "0.9.15")
-DEFINING = ("0.9.52", "0.9.53", "0.9.54")  # recorded with their `define` lines
+DEFINING = ("0.9.52", "0.9.53", "0.9.54", "0.9.55")  # recorded with their `define` lines
 # Packages the kernel move (KERNEL-HARNESS-056) fills: only facades import them, so a published process never
 # loads them after a swap, until the facades go with the oldest supported version.
 FACADE_ONLY = ("heinzel.spec", "heinzel.services")
@@ -55,6 +55,7 @@ KNOWN_BROKEN: dict[str, set[str]] = {
     "0.9.52": set(),
     "0.9.53": set(),
     "0.9.54": set(),
+    "0.9.55": set(),
 }
 
 # Files #895 (published in 0.9.54) moved into kernel subpackages without a file at the old path: after a swap, a
@@ -69,7 +70,12 @@ _MOVED_BY_895 = {
     "heinzel.kernel.session._chat_tools",
     "heinzel.kernel.session._presence",
 }
-KNOWN_SPLIT: dict[str, set[str]] = {"0.9.52": _MOVED_BY_895, "0.9.53": _MOVED_BY_895, "0.9.54": set()}
+KNOWN_SPLIT: dict[str, set[str]] = {
+    "0.9.52": _MOVED_BY_895,
+    "0.9.53": _MOVED_BY_895,
+    "0.9.54": set(),
+    "0.9.55": set(),
+}
 
 
 @dataclass
@@ -84,7 +90,9 @@ class Published:
 
 def published(version: str) -> Published:
     record = Published()
-    for line in gzip.decompress((MANIFESTS / f"{version}.txt.gz").read_bytes()).decode().splitlines():
+    header, *lines = gzip.decompress((MANIFESTS / f"{version}.txt.gz").read_bytes()).decode().splitlines()
+    assert header == f"version {version}", f"record {version} again with record.py"
+    for line in lines:
         kind, *rest = line.split(" ")
         if kind == "resident":
             record.resident[rest[0]] = set(rest[1:])
@@ -315,7 +323,7 @@ def test_a_moved_class_is_the_same_object_at_its_old_path(version: str) -> None:
     assert split == []
 
 
-@pytest.mark.parametrize("version", ["0.9.54"])
+@pytest.mark.parametrize("version", ["0.9.54", "0.9.55"])
 def test_the_kernel_entry_keeps_every_name_the_published_updater_holds(version: str) -> None:
     """`heinzel.kernel` stays a re-export of all its published names while the code behind it moves."""
     import heinzel.kernel
@@ -451,6 +459,7 @@ def test_the_kept_mcp_tokens_path_answers_with_the_client_context() -> None:
     [
         ("heinzel.modules.system.updater._phases", "heinzel._phases"),
         ("heinzel.heads.cli._serve", "heinzel.heads._compose"),
+        ("heinzel.kernel._signals", "heinzel.spec._signals"),
     ],
 )
 def test_a_moved_module_keeps_its_old_path_with_the_same_objects(old: str, new: str) -> None:
@@ -469,3 +478,15 @@ def test_the_rest_head_keeps_the_authority_names_the_kit_now_owns() -> None:
     names = ("API_HOST_HELP", "DEFAULT_PORTS", "FORBIDDEN", "LOOPBACK", "WEB_HOST_HELP", "refusal", "request_refusal")
     for name in names:
         assert getattr(api, name) is getattr(_kit, name), name
+
+
+def test_the_published_055_process_cannot_load_spec_errors_directly() -> None:
+    """A post-swap renderer must use resident errors, even if their new file preserves the old pickle path."""
+    old, tree = published("0.9.55"), Tree(SOURCE)
+    renderer = "heinzel.modules.system._render"
+    original, package = tree.modules[renderer]
+    direct = ast.parse("from heinzel.spec._errors import HeinzelError").body
+    tree.modules[renderer] = (ast.Module(body=[*original.body, *direct], type_ignores=[]), package)
+    found = {line for lines in swap_identity_problems(old, tree).values() for line in lines}
+    assert "heinzel.spec._errors is facade-only and loads fresh" in found
+    assert "heinzel.spec._errors defines HeinzelError again; the process holds it from heinzel.kernel._errors" in found

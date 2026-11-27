@@ -12,7 +12,7 @@
 
 [context.spec]
 summary = "lets, protocols, errors, settings, Module, the public `heinzel` names"
-src = ["src/_heinzel_launcher.py", "src/heinzel/*.py", "src/heinzel/py.typed", "src/heinzel/kernel/**", "src/heinzel/connectors/**"]
+src = ["src/_heinzel_launcher.py", "src/heinzel/*.py", "src/heinzel/py.typed", "src/heinzel/kernel/**", "src/heinzel/connectors/**", "src/heinzel/spec/**"]
 exclude = ["src/heinzel/_lifecycle_control.py"]
 tests = ["tests/unit/kernel/**"]
 

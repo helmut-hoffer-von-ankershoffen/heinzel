@@ -4,6 +4,7 @@ Each check comes with a test that feeds it a violation, so a check that silently
 """
 
 import ast
+import gzip
 import importlib.util
 import re
 import subprocess
@@ -680,18 +681,25 @@ BINARY = (".gif", ".webp", ".mp4", ".png", ".woff2", ".jpg", ".ico")
 """Recordings and images: their bytes aren't words, and a GIF holds any three letters somewhere."""
 
 
+def repository_text(path: Path) -> str:
+    if path.name.endswith(".txt.gz"):
+        with gzip.open(path, "rt", encoding="utf-8") as manifest:
+            return manifest.read()
+    return path.read_text(encoding="utf-8", errors="ignore")
+
+
+def test_finds_the_old_name_in_compressed_text(tmp_path):
+    path = tmp_path / "manifest.txt.gz"
+    path.write_bytes(gzip.compress(b"the old " + b"j" + b"oy name"))
+    assert OLD_NAME.search(repository_text(path))
+
+
 def test_the_working_title_is_gone():
     found = [
         path
         for path in repository_files()
         if not path.startswith(OLD_NAME_ALLOWED)
-        and (
-            OLD_NAME.search(path)
-            or (
-                not path.endswith(BINARY)
-                and OLD_NAME.search((REPO / path).read_text(encoding="utf-8", errors="ignore"))
-            )
-        )
+        and (OLD_NAME.search(path) or (not path.endswith(BINARY) and OLD_NAME.search(repository_text(REPO / path))))
     ]
     assert found == [], "say Heinzelmännchen, hz or heinzel"
 

@@ -142,6 +142,13 @@ def contracts_block(config: dict[str, Any]) -> str:
         f"modules = {heads!r}\n".replace("'", '"')
         + _ignores(allow.get("heads", [])),
     ]
+    if "src/heinzel/spec/**" in contexts["spec"]["src"]:
+        blocks.append(
+            "[[tool.importlinter.contracts]]\n"
+            'name = "Kernel composition depends on declarative spec (contexts.toml)"\n'
+            'type = "layers"\n'
+            'layers = ["heinzel.kernel", "heinzel.spec"]\n'
+        )
     return "\n".join([BEGIN, "", *["\n".join(b.rstrip("\n").split("\n")) + "\n" for b in blocks], END, ""])
 
 
