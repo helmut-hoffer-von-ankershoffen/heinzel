@@ -43,7 +43,10 @@ const emit = () => {
 };
 
 /** Latest request wins; leaving the album context invalidates pending answers. */
-export async function albumAction(action: AlbumAction, geometry?: AlbumWatchGeometry): Promise<AlbumSnapshot | undefined> {
+export async function albumAction(
+  action: AlbumAction,
+  geometry?: AlbumWatchGeometry,
+): Promise<AlbumSnapshot | undefined> {
   const desktop = bridge();
   if (!desktop?.album) return;
   const request = ++generation;

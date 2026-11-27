@@ -26,8 +26,18 @@ export function RecentClients() {
   return (
     <section className="mt-4 min-w-0" aria-label="Recent workspace use">
       <h3 className="font-medium">Recent workspace use</h3>
-      <p className="text-muted-foreground">Aggregate authenticated API use of this workspace server since its last start. Fresh means within two hours; stale means within 30 days. This does not show live connections. Client type, OS flavor, version and app capabilities are unknown.</p>
-      {query.isError ? <p>Client observations unavailable.</p> : !query.data ? <p>Loading…</p> : query.data.length === 0 ? <p>No recent use observed in this server lifetime. Earlier activity is unknown.</p> : (
+      <p className="text-muted-foreground">
+        Aggregate authenticated API use of this workspace server since its last start. Fresh means within two hours;
+        stale means within 30 days. This does not show live connections. Client type, OS flavor, version and app
+        capabilities are unknown.
+      </p>
+      {query.isError ? (
+        <p>Client observations unavailable.</p>
+      ) : !query.data ? (
+        <p>Loading…</p>
+      ) : query.data.length === 0 ? (
+        <p>No recent use observed in this server lifetime. Earlier activity is unknown.</p>
+      ) : (
         <ul>
           {query.data.map((client) => (
             <li key={client.presence} className="mt-2 break-words">

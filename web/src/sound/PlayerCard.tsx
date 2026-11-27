@@ -206,14 +206,18 @@ export function PlayerCard({ title, watchUrl, host, children, headerAction, onCl
           element.scrollLeft = event.key === "Home" ? 0 : element.scrollWidth;
         }
       }}
-      style={docked ? style : {
-        ...style,
-        width: geometry.width,
-        maxWidth: geometry.width,
-        borderWidth: geometry.border,
-        ...(narrow ? { maxHeight: "none", overflow: "visible" } : {}),
-        ...(subminimum ? { maxHeight: viewport.height, overflow: "auto" } : {}),
-      }}
+      style={
+        docked
+          ? style
+          : {
+              ...style,
+              width: geometry.width,
+              maxWidth: geometry.width,
+              borderWidth: geometry.border,
+              ...(narrow ? { maxHeight: "none", overflow: "visible" } : {}),
+              ...(subminimum ? { maxHeight: viewport.height, overflow: "auto" } : {}),
+            }
+      }
       hidden={compact}
       className={cn(
         "viewport-popover fixed z-(--layer-media) overflow-y-auto bg-popover",
@@ -225,58 +229,58 @@ export function PlayerCard({ title, watchUrl, host, children, headerAction, onCl
       {/* Keep this wrapper mounted through every mode: moving an iframe would restart playback. Native guests
           outside the viewport are hidden by useNativeSurface; their existing header help remains reachable here. */}
       <div style={subminimum ? { minWidth: 200 } : undefined}>
-      <header
-        onPointerDown={down}
-        onPointerMove={move}
-        onPointerUp={up}
-        onPointerCancel={() => {
-          drag.current = null;
-          setOffset(null);
-        }}
-        className="flex flex-wrap cursor-grab touch-none items-center gap-1 px-3 py-1.5 active:cursor-grabbing"
-      >
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-ui-sm font-medium">{title}</p>
-          <p className="truncate text-xs text-muted-foreground">{t("sound.playsFrom", { host })}</p>
-        </div>
-        <div data-pane-chrome="" className="flex flex-wrap items-center gap-1.5">
-          {headerAction}
-          {!docked && (
-            <PaneAction ghost icon={GripHorizontal} data-player-drag-handle onKeyDown={key}>
-              {t("sound.move")}
-            </PaneAction>
-          )}
-          {docked ? (
-            <PaneAction
-              ghost
-              icon={PanelLeftOpen}
-              onClick={() => {
-                const rect = card.current?.getBoundingClientRect();
-                if (!rect) return setDocked(false);
-                const at = clampToWindow(rect.right + 16, rect.top, size());
-                setFloating(at.x, at.y);
-              }}
-            >
-              {t("sound.popOut")}
-            </PaneAction>
-          ) : (
-            slot && (
-              <PaneAction ghost icon={PanelLeftClose} onClick={() => setDocked(true)}>
-                {t("sound.dock")}
+        <header
+          onPointerDown={down}
+          onPointerMove={move}
+          onPointerUp={up}
+          onPointerCancel={() => {
+            drag.current = null;
+            setOffset(null);
+          }}
+          className="flex flex-wrap cursor-grab touch-none items-center gap-1 px-3 py-1.5 active:cursor-grabbing"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-ui-sm font-medium">{title}</p>
+            <p className="truncate text-xs text-muted-foreground">{t("sound.playsFrom", { host })}</p>
+          </div>
+          <div data-pane-chrome="" className="flex flex-wrap items-center gap-1.5">
+            {headerAction}
+            {!docked && (
+              <PaneAction ghost icon={GripHorizontal} data-player-drag-handle onKeyDown={key}>
+                {t("sound.move")}
               </PaneAction>
-            )
-          )}
-          {watchUrl && (
-            <PaneAction ghost icon={ExternalLink} href={watchUrl} onClick={stop}>
-              {t("sound.openOn", { host: "YouTube" })}
+            )}
+            {docked ? (
+              <PaneAction
+                ghost
+                icon={PanelLeftOpen}
+                onClick={() => {
+                  const rect = card.current?.getBoundingClientRect();
+                  if (!rect) return setDocked(false);
+                  const at = clampToWindow(rect.right + 16, rect.top, size());
+                  setFloating(at.x, at.y);
+                }}
+              >
+                {t("sound.popOut")}
+              </PaneAction>
+            ) : (
+              slot && (
+                <PaneAction ghost icon={PanelLeftClose} onClick={() => setDocked(true)}>
+                  {t("sound.dock")}
+                </PaneAction>
+              )
+            )}
+            {watchUrl && (
+              <PaneAction ghost icon={ExternalLink} href={watchUrl} onClick={stop}>
+                {t("sound.openOn", { host: "YouTube" })}
+              </PaneAction>
+            )}
+            <PaneAction ghost icon={X} onClick={onClose}>
+              {t("sound.close")}
             </PaneAction>
-          )}
-          <PaneAction ghost icon={X} onClick={onClose}>
-            {t("sound.close")}
-          </PaneAction>
-        </div>
-      </header>
-      {children}
+          </div>
+        </header>
+        {children}
       </div>
     </section>
   );

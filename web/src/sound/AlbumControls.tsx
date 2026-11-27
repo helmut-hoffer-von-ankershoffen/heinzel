@@ -29,11 +29,18 @@ export function AlbumControls() {
             Latent Heinzels
           </PaneAction>
         </PaneActions>
-        <PaneAction ghost icon={ExternalLink} disabled={!album} onClick={() => {
+        <PaneAction
+          ghost
+          icon={ExternalLink}
+          disabled={!album}
+          onClick={() => {
             const width = dock.current?.getBoundingClientRect().width;
-            void albumAction("openVideo", width && Number.isFinite(width)
-              ? { width, viewportWidth: window.innerWidth } : undefined);
-          }}>
+            void albumAction(
+              "openVideo",
+              width && Number.isFinite(width) ? { width, viewportWidth: window.innerWidth } : undefined,
+            );
+          }}
+        >
           Open video
         </PaneAction>
       </div>

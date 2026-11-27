@@ -16,7 +16,12 @@ const REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel";
 const loadedAsset = loadedFrontend(document);
 
 type Desktop = { version: string; path: string };
-type Bridge = { about?: () => Promise<Desktop>; clientFlavor?: "native" | "electron"; workspaceAudio?: boolean; remoteWorkspace?: boolean };
+type Bridge = {
+  about?: () => Promise<Desktop>;
+  clientFlavor?: "native" | "electron";
+  workspaceAudio?: boolean;
+  remoteWorkspace?: boolean;
+};
 
 const desktopBridge = (): Bridge | undefined => (window as Window & { heinzelDesktop?: Bridge }).heinzelDesktop;
 

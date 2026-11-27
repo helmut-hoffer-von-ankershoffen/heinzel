@@ -7,7 +7,9 @@ import { renderAt } from "@/test/renderApp";
 
 vi.mock("@/features/runtime/lifecycle/RestartAndApply", () => ({
   RestartAndApply: ({ onUnsupported }: { onUnsupported: () => Promise<void> }) => (
-    <button type="button" onClick={onUnsupported}>Save staged setting</button>
+    <button type="button" onClick={onUnsupported}>
+      Save staged setting
+    </button>
   ),
 }));
 

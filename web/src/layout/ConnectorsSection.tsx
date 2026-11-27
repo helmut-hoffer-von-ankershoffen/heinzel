@@ -7,8 +7,8 @@ import type { SchemaSettingInfo } from "@/api/client";
 import { useCapabilities, useConnectorReport } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
-import { PluginsPending } from "./PluginsPending";
 import { ConnectorSignIn } from "./ConnectorSignIn";
+import { PluginsPending } from "./PluginsPending";
 import { BINDINGS, group, type SettingsNav } from "./settingsSections";
 
 type Connector = SettingsNav["connectors"][number];
