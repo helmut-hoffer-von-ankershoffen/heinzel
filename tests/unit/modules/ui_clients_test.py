@@ -2,7 +2,7 @@
 
 import json
 from http.client import HTTPException
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from threading import Thread
 from unittest.mock import Mock
 
@@ -10,6 +10,7 @@ import pytest
 
 from heinzel.modules.system.lifecycle._service import WebStatus
 from heinzel.modules.ui import _clients
+from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 
 pytestmark = pytest.mark.unit
 
@@ -32,7 +33,7 @@ def local_endpoint():
         def log_message(self, *args):
             pass
 
-    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+    with LoopbackThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
         thread = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
         thread.start()
         service = Mock()
