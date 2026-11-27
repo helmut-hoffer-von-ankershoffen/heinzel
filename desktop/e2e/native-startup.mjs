@@ -4,12 +4,12 @@ import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { createConnection, createServer as createControlServer } from "node:net";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { delimiter, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const electronCli = join(packageRoot, "node_modules", "electron", "cli.js");
 const packagedExecutable = process.env.HEINZEL_ELECTRON_EXECUTABLE;
 if (packagedExecutable && !(process.env.CI === "true" && process.env.HZ_DISPOSABLE_NATIVE_CI === "1"))
   throw new Error("Packaged native smoke requires an explicitly disposable CI environment; profile isolation is unverified.");
@@ -82,7 +82,8 @@ let fixtureDir;
 let child;
 const stdout = boundedCapture(OUTPUT_LIMIT);
 const stderr = boundedCapture(OUTPUT_LIMIT);
-let exited = Promise.resolve(null);
+let exited;
+let outputClosed;
 let timer;
 let outcome;
 let shutdownError;
@@ -111,8 +112,8 @@ try {
   await writeFile(join(receiptDir, "desktop-use.lock"), "", { mode: 0o600 });
   await writeFile(join(receiptDir, "desktop-owned-cli.json"), JSON.stringify({ version: 1, executable: fixtureCli }), { mode: 0o600 });
   child = spawn(
-    packagedExecutable ?? process.execPath,
-    packagedExecutable ? [] : [electronCli, join(packageRoot, "e2e", "real-backend-bootstrap.mjs")],
+    packagedExecutable ?? createRequire(import.meta.url)("electron"),
+    packagedExecutable ? [] : [join(packageRoot, "e2e", "real-backend-bootstrap.mjs")],
     {
       cwd: packageRoot,
       env: {
@@ -132,35 +133,37 @@ try {
   );
   child.stdout.on("data", stdout.append);
   child.stderr.on("data", stderr.append);
-  exited = new Promise((resolve) => {
-    child.once("close", (code, signal) => resolve({ code, signal }));
+  exited = new Promise((resolve) => child.once("exit", (code, signal) => resolve({ code, signal })));
+  const failed = new Promise((resolve) => {
+    child.once("error", (error) => resolve({ kind: "error", message: error.message }));
   });
+  outputClosed = new Promise((resolve) => child.once("close", resolve));
   outcome = await Promise.race([
     request.then((authenticated) => ({ kind: "request", authenticated })),
     exited.then((result) => ({ kind: "exit", ...result })),
+    failed,
     new Promise((resolve) => {
       timer = setTimeout(() => resolve({ kind: "timeout" }), 15_000);
     }),
   ]);
 } finally {
   clearTimeout(timer);
-  if (child && child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
-  if (child) {
-    const stopped = await Promise.race([
-      exited.then(() => true),
-      new Promise((resolve) => setTimeout(() => resolve(false), 5_000)),
-    ]);
-    if (!stopped) child.kill("SIGKILL");
-    const forceStopped = await Promise.race([
-      exited.then(() => true),
-      new Promise((resolve) => setTimeout(() => resolve(false), 2_000)),
-    ]);
-    if (!forceStopped) {
-      child.stdout.destroy();
-      child.stderr.destroy();
-      child.unref();
-      shutdownError = new Error("Electron child did not close after SIGKILL within 2 seconds.");
+  if (child?.pid !== undefined) {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+    let stopped = await settlesWithin(exited, 5_000);
+    if (!stopped) {
+      child.kill("SIGKILL");
+      stopped = await settlesWithin(exited, 2_000);
     }
+    if (!stopped) {
+      child.unref();
+      shutdownError = "Electron process did not exit after SIGKILL within 2 seconds.";
+    }
+  }
+  // Electron helpers can inherit its pipes. Drain output separately from direct process exit.
+  if (child && !(await settlesWithin(outputClosed, 500))) {
+    child.stdout.destroy();
+    child.stderr.destroy();
   }
   if (controlSocket && !controlSocket.destroyed) {
     controlSocket.write(`STOP ${controlToken}\n`);
@@ -172,11 +175,12 @@ try {
   for (const socket of controlSockets) socket.destroy();
   if (controlServer.listening) await new Promise((resolve) => controlServer.close(resolve));
   if (server.listening) await new Promise((resolve) => server.close(resolve));
-  if (fixtureDir) await rm(fixtureDir, { recursive: true, force: true });
+  if (fixtureDir && !shutdownError) await rm(fixtureDir, { recursive: true, force: true });
 }
 
 const diagnostics = childDiagnostics(stdout.read(), stderr.read());
-if (shutdownError) throw shutdownError;
+if (shutdownError)
+  throw new Error(`${shutdownError} Startup result: ${JSON.stringify(outcome)}. Fixture retained at ${fixtureDir}.${diagnostics}`);
 assert.equal(
   outcome.kind,
   "request",
@@ -188,6 +192,18 @@ assert.equal(
   `Electron did not preserve the authenticated loopback connection.${diagnostics}`,
 );
 console.log("Electron 45 rendered the native UI fixture and made its authenticated lifecycle request.");
+
+async function settlesWithin(promise, timeoutMs) {
+  let deadline;
+  try {
+    return await Promise.race([
+      promise.then(() => true),
+      new Promise((resolve) => { deadline = setTimeout(() => resolve(false), timeoutMs); }),
+    ]);
+  } finally {
+    clearTimeout(deadline);
+  }
+}
 
 function boundedCapture(limit) {
   let chunks = [];
@@ -231,7 +247,8 @@ function boundedCapture(limit) {
 function childDiagnostics(stdoutResult, stderrResult) {
   const output = (name, result) => {
     const note = result.truncated ? `[earlier ${name} omitted; showing last ${OUTPUT_LIMIT} bytes]` : "";
-    return `--- Electron ${name} ---\n${note}\n${escapeTerminalControls(result.text)}`;
+    const text = result.text.replaceAll(token, "[redacted]").replaceAll(controlToken, "[redacted]");
+    return `--- Electron ${name} ---\n${note}\n${escapeTerminalControls(text)}`;
   };
   return [
     "",

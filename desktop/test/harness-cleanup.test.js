@@ -84,3 +84,66 @@ test("retained evidence fails the run without masking the error already propagat
   assert.equal(passed.status, 1);
   assert.match(passed.stderr, /evidence retained at \/x/);
 });
+
+test("native smoke accepts a terminated Electron child while its fixture still holds the output pipes", async (t) => {
+  const { spawnSync } = await import("node:child_process");
+  const { mkdtempSync, readFileSync, rmSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const dir = mkdtempSync(join(tmpdir(), "heinzel-native-process-test-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const executable = join(dir, "electron-fixture");
+  const stoppedReceipt = join(dir, "descendant-stopped");
+  const fixture = join(dir, "descendant.mjs");
+
+  // The test-owned descendant retains both inherited pipes until the harness sends STOP.
+  writeFileSync(fixture, `
+    import { createConnection } from "node:net";
+    import { writeFileSync } from "node:fs";
+    const token = process.env.HZ_TEST_CONTROL_TOKEN;
+    const control = createConnection({ host: "127.0.0.1", port: Number(process.env.HZ_TEST_CONTROL_PORT) });
+    let input = "";
+    control.on("connect", () => control.write(\`HELLO \${token}\\n\`));
+    control.on("data", (chunk) => {
+      input += chunk;
+      if (input.includes(\`READY \${token}\\n\`)) {
+        input = "";
+        process.send("ready");
+        process.disconnect();
+      } else if (input.includes(\`STOP \${token}\\n\`)) {
+        writeFileSync(${JSON.stringify(stoppedReceipt)}, "stopped");
+        control.end();
+      }
+    });
+    setTimeout(() => control.destroy(), 10_000).unref();
+  `);
+  writeFileSync(executable, `#!${process.execPath}
+    const {spawn} = require("node:child_process");
+    const {once} = require("node:events");
+    (async () => {
+      const fixture = spawn(process.execPath, [${JSON.stringify(fixture)}], {
+        stdio: ["ignore", "inherit", "inherit", "ipc"],
+      });
+      const [state] = await once(fixture, "message");
+      if (state !== "ready") process.exit(2);
+      const address = new URL(process.env.HZ_TEST_URL);
+      const token = new URLSearchParams(address.hash.slice(1)).get("token");
+      const response = await fetch(new URL("/native-ready", address), {
+        headers: { Authorization: "Bearer " + token },
+      });
+      if (!response.ok) process.exit(3);
+    })().catch((error) => { console.error(error); process.exit(4); });
+  `, { mode: 0o700 });
+
+  const script = fileURLToPath(new URL("../e2e/native-startup.mjs", import.meta.url));
+  const result = spawnSync(process.execPath, [script], {
+    env: { ...process.env, HEINZEL_ELECTRON_EXECUTABLE: executable, CI: "true", HZ_DISPOSABLE_NATIVE_CI: "1" },
+    encoding: "utf8",
+    timeout: 12_000,
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /made its authenticated lifecycle request/);
+  assert.equal(readFileSync(stoppedReceipt, "utf8"), "stopped");
+});
