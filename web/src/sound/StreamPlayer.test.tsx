@@ -248,7 +248,7 @@ describe("stream recovery", () => {
 });
 
 describe("video link placement", () => {
-  it("retains the header link in a browser and no bottom row", () => {
+  it("keeps the browser link in the header and only the width control below the video", () => {
     mount();
     const link = screen.getByRole("link", { name: "Open on YouTube" });
     const card = screen.getByRole("region", { name: "FM player" });
@@ -259,11 +259,12 @@ describe("video link placement", () => {
     expect(link).toHaveAttribute("href", stream.watch_url);
     expect(link).toHaveAttribute("title", "Open on YouTube");
     expect(link.textContent?.trim()).toBe("");
-    // The wider-view wrapper keeps the header and video together without adding controls below the video.
     const video = player().parentElement as HTMLElement;
     expect(card.lastElementChild).toContainElement(video);
     expect(header?.nextElementSibling).toBe(video);
-    expect(video.nextElementSibling).toBeNull();
+    const width = screen.getByRole("slider", { name: "Player width" });
+    expect(video.nextElementSibling).toContainElement(width);
+    expect(video.nextElementSibling?.nextElementSibling).toBeNull();
     expect(card.querySelector("[data-pane-actions]")).toBeNull();
     expect(
       [...card.querySelectorAll("button, a[href]")].every(

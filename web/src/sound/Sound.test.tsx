@@ -654,6 +654,50 @@ describe("a layered soundscape", () => {
 });
 
 describe("a stream's fades", () => {
+  it.each(["iframe", "desktop"])("syncs the footer speaker with YouTube controls in the %s", async (surface) => {
+    let state = 1;
+    if (surface === "desktop") {
+      vi.stubGlobal("heinzelDesktop", {
+        lifecycle: vi.fn(),
+        player: vi.fn(async () => ({ status: "ready", ready: true, state })),
+      });
+    }
+    try {
+      soundApi("fixture-radio");
+      const user = userEvent.setup();
+      renderAt("/");
+      await playSound(user, "Fixture radio");
+      const frame = surface === "iframe" ? await screen.findByTitle<HTMLIFrameElement>("Fixture radio player") : null;
+      const report = (next: number) => {
+        state = next;
+        if (frame) {
+          act(() => {
+            window.dispatchEvent(
+              new MessageEvent("message", {
+                data: { event: "infoDelivery", info: { playerState: next } },
+                origin: ORIGIN,
+                source: frame.contentWindow,
+              }),
+            );
+          });
+        }
+      };
+      if (frame) report(1);
+      else await screen.findByRole("img", { name: "Fixture radio player" });
+      expect(speakerIcon()).toBe("volume-2");
+      report(2);
+      await waitFor(() => expect(speakerIcon()).toBe("volume-x"));
+      report(1);
+      await waitFor(() => expect(speakerIcon()).toBe("volume-2"));
+      await user.click(screen.getByRole("button", { name: "Pause Fixture radio" }));
+      report(2);
+      report(1);
+      expect(speakerIcon()).toBe("volume-x");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("leaves iPhone volume to the device even when saved volume is zero, and mutes while recording voice", async () => {
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone) AppleWebKit/605.1.15");
     mockApi({ ...shell, "/api/system/sound/list": soundList("fixture-radio", { volume: 0 }) });

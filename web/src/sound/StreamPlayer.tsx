@@ -11,7 +11,7 @@ import { refreshName } from "@/lib/refreshFeedback";
 import { PlayerCard } from "./PlayerCard";
 import { PlayerHelp } from "./PlayerHelp";
 import { page } from "./queries";
-import { stop } from "./store";
+import { pause, resume, soundState, stop } from "./store";
 import {
   ACCOUNT_SANDBOX,
   accountStream,
@@ -122,16 +122,39 @@ function Player({
     [guest, origin],
   );
   const sawReady = useRef(false);
+  const providerPlaying = useRef(false);
+  const pausedInPlayer = useRef(false);
+  const observePlayback = useCallback(
+    (state: unknown) => {
+      if (state === 1) setHasPlayed(true);
+      if (state !== 1 && state !== 2) return;
+      const playing = state === 1;
+      if (providerPlaying.current === playing) return;
+      providerPlaying.current = playing;
+      const sound = soundState();
+      if (!sound.started || sound.albumSelected || (sound.soundscape && sound.soundscape !== soundscape.name)) return;
+      if (!playing && sound.playing) {
+        pausedInPlayer.current = true;
+        pause();
+      } else if (playing && pausedInPlayer.current) {
+        pausedInPlayer.current = false;
+        if (!sound.playing) resume(soundscape.name);
+      }
+    },
+    [soundscape.name],
+  );
   const stateRequest = useRef(0);
   const appliedState = useRef(0);
   const openPending = useRef(false);
+  const guestActive = useRef(false);
   const onGuestState = useCallback(
     (next: GuestState) => {
+      if (!guestActive.current) return;
       if (next.status === "unavailable") setGuestUnavailable(true);
       else if (next.status === "loading" || next.status === "ready") setGuestUnavailable(false);
       if (next.status === "unavailable") setHelp(true);
       if (next.error) setHelp(true);
-      if (next.state === 1) setHasPlayed(true);
+      observePlayback(next.state);
       if (next.ready && !sawReady.current) {
         sawReady.current = true;
         // The guest starts silent, like the frame, so the fade decides what is heard.
@@ -139,10 +162,11 @@ function Player({
         setReady(true);
       }
     },
-    [guest],
+    [guest, observePlayback],
   );
   useEffect(() => {
     if (!guest || !src) return;
+    guestActive.current = true;
     openPending.current = true;
     void guest({ action: "open", video: stream.video })
       .then(onGuestState)
@@ -154,6 +178,7 @@ function Player({
         openPending.current = false;
       });
     return () => {
+      guestActive.current = false;
       void guest({ action: "close" }).catch(() => {});
     };
   }, [guest, src, stream.video, onGuestState]);
@@ -198,7 +223,7 @@ function Player({
           : data.info && typeof data.info === "object" && "playerState" in data.info
             ? data.info.playerState
             : undefined;
-      if (state === 1) setHasPlayed(true);
+      observePlayback(state);
       if (data.event !== "onReady" && data.event !== "initialDelivery") return;
       // The frame starts silent so a retry cannot jump to YouTube's own volume.
       if (deviceVolume) command(frame.current, origin, volume.current === 0 ? "mute" : "unMute");
@@ -214,7 +239,7 @@ function Player({
       window.removeEventListener("message", onMessage);
       document.removeEventListener("securitypolicyviolation", onViolation);
     };
-  }, [origin, deviceVolume]);
+  }, [origin, deviceVolume, observePlayback]);
 
   useEffect(() => {
     if (!level.playing || hasPlayed || blocked) return;
@@ -231,6 +256,7 @@ function Player({
 
   useEffect(() => {
     if (!ready) return;
+    if (level.playing) pausedInPlayer.current = false;
     const target = Math.round(level.gain * 100);
     // iOS owns media volume; mute and pause still work, so meetings and Pause must not depend on a fade.
     if (deviceVolume) {
