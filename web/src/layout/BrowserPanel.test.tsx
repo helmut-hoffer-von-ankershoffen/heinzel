@@ -423,6 +423,43 @@ it("shows the tabs the desktop holds when the panel opens again, and switches an
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(1));
 });
 
+it("keeps the remaining tab ready when the closed tab's reload rejects", async () => {
+  const [first, second] = TABS;
+  let rejectReload!: (error: Error) => void;
+  let tabs = TABS;
+  let selected = first;
+  let revision = 1;
+  const browser = vi.fn(async ({ action }: Record<string, unknown>) => {
+    if (action === "reload") {
+      return await new Promise<never>((_resolve, reject) => {
+        rejectReload = reject;
+      });
+    }
+    if (action === "close-tab") {
+      selected = { ...second, selected: true };
+      tabs = [selected];
+      revision += 1;
+    }
+    return { status: selected.status, url: selected.url, selected: selected.id, tabs, revision };
+  });
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  const reload = await screen.findByRole("button", { name: "Reload the website" });
+  await waitFor(() => expect(reload).toBeEnabled());
+  fireEvent.click(reload);
+  expect(browser).toHaveBeenCalledWith({ action: "reload" });
+  fireEvent.click(screen.getByRole("button", { name: "Close tab One" }));
+  expect(browser).toHaveBeenCalledWith({ action: "close-tab", tab: first.id });
+  await waitFor(() =>
+    expect(screen.getByRole("tab", { name: "two.example.com" })).toHaveAttribute("aria-selected", "true"),
+  );
+  await act(async () => rejectReload(new Error("closed tab's reload refused")));
+  expect(screen.getAllByRole("tab")).toHaveLength(1);
+  expect(screen.getByRole("textbox", { name: "Website address" })).toHaveValue(second.url);
+  expect(screen.getByRole("button", { name: "Reload the website" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: /Refresh failed/ })).not.toBeInTheDocument();
+});
+
 it("a new tab opens from the plus button and from Ctrl-T; Ctrl-W closes the selected tab", async () => {
   const browser = tabBridge();
   render(<BrowserPanel active onClose={vi.fn()} />);
