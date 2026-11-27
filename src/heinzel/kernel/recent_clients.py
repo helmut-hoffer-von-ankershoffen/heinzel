@@ -47,7 +47,7 @@ def parse_client_labels(headers: Mapping[str, str]) -> ClientLabels | None:
         if (
             separator
             and re.fullmatch(r"[\w .()'\u2019+-]{1,64}", value)
-            and not re.search(r"hzd_|hzw_|bearer|[A-Za-z0-9_-]{32,}", value, re.IGNORECASE)
+            and not re.search(r"hzd_|hzw_|bearer|[a-z0-9_-]{32,}", value, re.IGNORECASE)
         ):
             values[key] = value
     if values.get("flavor") not in {"native", "electron"}:

@@ -363,13 +363,13 @@ jobs:
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
         run: |
-          uv run --script scripts/check_confidentiality.py
-          uv run --script scripts/release_policy.py --check
-          uv run --script scripts/sync_template.py --check
-          uv run zizmor --offline --quiet .github/workflows
-          uv run --script scripts/tools.py run actionlint
-          uv run typos
-          uv run --script scripts/check_docs.py
+          uv run --no-build --script scripts/check_confidentiality.py
+          uv run --no-build --script scripts/release_policy.py --check
+          uv run --no-build --script scripts/sync_template.py --check
+          uv tool run --no-build --from zizmor==1.32.0 zizmor --offline --quiet .github/workflows
+          uv run --no-build --script scripts/tools.py run actionlint
+          uv tool run --no-build --from typos==1.51.1 typos
+          uv run --no-build --script scripts/check_docs.py
       - run: make lint
         if: needs.changes.outputs.homepage_only != 'true'
         env:

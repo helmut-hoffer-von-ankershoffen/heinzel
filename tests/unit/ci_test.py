@@ -1822,7 +1822,7 @@ def _changes_outputs(  # noqa: PLR0913 - independent changed-path, event and rel
             "EVENT": event,
             "FULL_RELEASE": str(release).lower(),
             "RELEASE_FULL": str(release).lower(),
-            "BASE": "base",
+            "BASE": "a" * 40,
             "GITHUB_OUTPUT": str(output),
             "CHANGED_PATHS_FILE": str(listing),
             "DIFF_EXIT": str(git_exit),
@@ -3363,7 +3363,7 @@ def test_a_release_branch_that_is_not_the_candidate_runs_everything(tmp_path, ci
         ["bash", "-c", script],
         env={
             "PATH": f"{directory / 'bin'}:/usr/bin:/bin", "EVENT": "pull_request", "FULL_RELEASE": "false",
-            "HEAD_REF": "release/foo", "BASE": "base", "GITHUB_OUTPUT": str(output),
+            "HEAD_REF": "release/foo", "BASE": "a" * 40, "GITHUB_OUTPUT": str(output),
             "CHANGED_PATHS": "docs/guides/install.md\n", "DIFF_EXIT": "0",
         },
         cwd=directory, check=True, timeout=scaled(30),
@@ -3681,8 +3681,8 @@ def test_homepage_scope_rejects_large_changes_and_batches(tmp_path, ci_paths, ev
         env={
             "PATH": f"{directory / 'bin'}:{Path(sys.executable).parent}:/usr/bin:/bin",
             "EVENT": event,
-            "BASE": "base",
-            "BATCH_BASE": "base",
+            "BASE": "a" * 40,
+            "BATCH_BASE": "a" * 40,
             "CHANGED_PATHS": HOMEPAGE_PATHS,
             "DIFF_EXIT": "0",
             "GITHUB_OUTPUT": str(output),
@@ -3701,6 +3701,7 @@ def test_homepage_lint_steps_keep_policy_and_skip_app_commands():
     ]
     assert not any("make " in run for run in runs)
     policy = next(step["run"] for step in steps if step.get("name") == "Check homepage policy")
+    assert all("--no-build" in command.split() for command in policy.splitlines() if command)
     for command in (
         "check_confidentiality.py",
         "release_policy.py",
@@ -3878,6 +3879,15 @@ def test_real_git_option_like_base_is_rejected(homepage_git_repo, event, base):
     assert result.returncode != 0
     assert result.stdout == ""
     assert not (repo / "unexpected-output").exists()
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+def test_real_git_diff_rejects_symbolic_base(homepage_git_repo, event):
+    repo, git = homepage_git_repo
+    git("tag", "homepage-base")
+    result = _homepage_git_diff(repo, event, "homepage-base")
+    assert result.returncode != 0
+    assert result.stdout == ""
 
 
 @pytest.mark.parametrize("event", ["pull_request", "push", "schedule", "workflow_dispatch"])

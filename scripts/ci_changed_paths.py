@@ -4,6 +4,7 @@
 # ///
 """Enumerate every changed endpoint for CI; invalid comparisons fail closed at the caller."""
 
+import re
 import subprocess
 import sys
 
@@ -11,9 +12,10 @@ import sys
 def main() -> int:
     """Use the PR merge base or the actual push before tree, with no rename collapsing."""
     event, base = sys.argv[1:]
-    if not base:
+    if not re.fullmatch(r"[0-9a-f]{40}", base):
         return 1
-    revisions = [f"{base}...HEAD"] if event == "pull_request" else [base, "HEAD"]
+    base_commit = f"{int(base, 16):040x}"
+    revisions = [f"{base_commit}...HEAD"] if event == "pull_request" else [base_commit, "HEAD"]
     result = subprocess.run(  # noqa: S603 - revisions follow end-of-options
         ["git", "diff", "--name-only", "--no-renames", "-z", "--end-of-options", *revisions, "--"],  # noqa: S607
         capture_output=True,
