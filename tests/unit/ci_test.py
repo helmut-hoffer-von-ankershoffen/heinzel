@@ -2621,7 +2621,7 @@ def test_the_documented_app_launch_never_inherits_the_reviewed_pyyaml_find_links
 
 def test_the_starter_journeys_find_the_reviewed_pyyaml_through_find_links():
     lines = (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8").splitlines()
-    build = next(i for i, line in enumerate(lines) if "bootstrap-pyyaml.sh --wheel-dir" in line)
+    build = next(i for i, line in enumerate(lines) if "bootstrap-pyyaml.sh --plugin-wheel-dir" in line)
     launch = next(i for i, line in enumerate(lines) if 'UV_FIND_LINKS="$pyyaml_wheels"' in line)
     wheel = next(i for i, line in enumerate(lines) if "scripts/build.py --wheel" in line)
     setup = next(i for i, line in enumerate(lines) if line.strip() == "make setup")
@@ -2695,7 +2695,7 @@ def _template_test_fixture(
         f"#!{sys.executable}\n"
         "import os, pathlib, sys\n"
         "if sys.argv[1].endswith('scripts/bootstrap-pyyaml.sh'):\n"
-        "    directory = pathlib.Path(sys.argv[sys.argv.index('--wheel-dir') + 1])\n"
+        "    directory = pathlib.Path(sys.argv[sys.argv.index('--plugin-wheel-dir') + 1])\n"
         "    directory.mkdir(parents=True, exist_ok=True)\n"
         "    (directory / 'pyyaml.whl').write_text('fixture')\n"
         "else:\n"
