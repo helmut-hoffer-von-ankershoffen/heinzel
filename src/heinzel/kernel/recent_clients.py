@@ -43,11 +43,13 @@ def parse_client_labels(headers: Mapping[str, str]) -> ClientLabels | None:
         if key in seen:
             return None
         seen.add(key)
+        folded = value.casefold()
         # Do not reflect credential-shaped values, controls or markup into readouts.
         if (
             separator
             and re.fullmatch(r"[\w .()'\u2019+-]{1,64}", value)
-            and not re.search(r"hzd_|hzw_|bearer|[a-z0-9_-]{32,}", value, re.IGNORECASE)
+            and not any(marker in folded for marker in ("hzd_", "hzw_", "bearer"))
+            and not re.search(r"[a-z0-9_-]{32,}", value, re.IGNORECASE)
         ):
             values[key] = value
     if values.get("flavor") not in {"native", "electron"}:

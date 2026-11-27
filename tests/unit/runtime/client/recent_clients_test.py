@@ -30,7 +30,15 @@ def test_labels_are_bounded_untrusted_and_do_not_reflect_credentials():
     for text in ("", "x" * (MAX_HEADER + 1), "flavor=browser", "flavor=native;flavor=electron"):
         assert parse_client_labels({"x-heinzel-client": text}) is None
     assert parse_client_labels({"user-agent": "HeinzelClient(flavor=native)"}) is None
-    for value in ("hzd_" + "x" * 40, "Bearer secret", "%0Ahello", "<script>", "x" * 65):
+    for value in (
+        "hzd_" + "x" * 40,
+        "HZw_demo",
+        "Bearer secret",
+        "label " + "x" * 32,
+        "%0Ahello",
+        "<script>",
+        "x" * 65,
+    ):
         result = parse_client_labels({"x-heinzel-client": f"flavor=native;machine={value};app={value}"})
         assert result is not None
         assert result.machine == result.app_version == "unknown"

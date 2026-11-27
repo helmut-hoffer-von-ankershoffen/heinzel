@@ -49,7 +49,7 @@ def decide(tmp_path, changed, **options):
         "EVENT": event,
         "FULL_RELEASE": "true",  # what the workflow sets today: the real flag is RELEASE_FULL
         "RELEASE_FULL": release_full,
-        "BASE": "base",
+        "BASE": "a" * 40,
         "BATCH_BASE": batch,
         "HEAD_REF": head_ref,
     }
