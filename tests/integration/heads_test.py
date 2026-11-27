@@ -12,7 +12,7 @@ from heinzel import Check, HeinzelError, Module, ModuleRecord, Status
 from heinzel.heads import api, mcp
 from heinzel.kernel import Origin
 from heinzel.ports import ProcessRunner
-from heinzel.testing import ScriptedProcessRunner
+from heinzel.testing import ScriptedProcessRunner, scaled
 from heinzel.testing.heads import HEADS, FakeKernel, OperationNotExposedError, operate
 
 pytestmark = pytest.mark.integration
@@ -65,7 +65,7 @@ def test_declared_process_fake_is_used_by_every_head(settings, make_kernel, hz_h
     @module.operation
     def echo(runner: ProcessRunner, text: str, upper: bool = False) -> Greeting:
         """Call an injected process runner and return the scripted text."""
-        result = runner.run(("synthetic-probe", text.upper() if upper else text), timeout=1)
+        result = runner.run(("synthetic-probe", text.upper() if upper else text), timeout=scaled(1))
         return Greeting(text=result.stdout)
 
     fake_runner, real_runner = [
