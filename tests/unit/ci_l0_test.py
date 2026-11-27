@@ -29,9 +29,16 @@ def decide(tmp_path, changed, **options):
     head_ref, batch = options.get("head_ref", "feature/x"), options.get("batch", "")
     stub = tmp_path / "bin"
     stub.mkdir(exist_ok=True)
-    listing = tmp_path / "changed.txt"
-    listing.write_text("\n".join(changed) + "\n", encoding="utf-8")
-    (stub / "git").write_text(f'#!/bin/sh\nif [ "$1" = diff ]; then cat "{listing}"; else exec /usr/bin/git "$@"; fi\n')
+    listing = tmp_path / "changed.bin"
+    listing.write_bytes(b"".join(path.encode("utf-8") + b"\0" for path in changed))
+    (stub / "git").write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = diff ]; then\n'
+        '  [ "$2" = --name-only ] && [ "$3" = --no-renames ] && [ "$4" = -z ] '
+        '&& [ "$5" = --end-of-options ] || exit 2\n'
+        f'  cat "{listing}"\n'
+        'else exec /usr/bin/git "$@"; fi\n'
+    )
     (stub / "git").chmod(0o755)
     out = tmp_path / "out.txt"
     out.write_text("")
@@ -161,3 +168,10 @@ def test_the_evaluator_sees_a_job_that_core_gates():
     assert evaluate(
         "needs.changes.outputs.core == 'true' || needs.changes.outputs.surface_only == 'true'", {"surface_only": "true"}
     )
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize("separator", ["\n", "\r"])
+def test_ambiguous_homepage_filename_keeps_complete_run(tmp_path, event, separator):
+    got = decide(tmp_path, [f"docs/assets/website/a{separator}docs/assets/website/b.webp"], event=event)
+    assert (got["homepage_only"], got["site_only"], got["core"]) == ("false", "false", "true")

@@ -287,7 +287,7 @@ jobs:
       actions: write
     name: Dispatch the coalesced macOS main run
     needs: changes
-    if: needs.changes.outputs.homepage_only != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.lane == 'linux'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.lane == 'linux' && needs.changes.outputs.homepage_only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:

@@ -372,6 +372,8 @@ def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(
         )
 
     git("init", "--quiet")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "ci_changed_paths.py").write_bytes((REPO / "scripts/ci_changed_paths.py").read_bytes())
     (tmp_path / "README.md").write_text("fixture")
     git("add", ".")
     git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "--quiet", "-m", "chore: init")
@@ -402,6 +404,7 @@ def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(
     complete = batch_base or event != "pull_request" or not plugin_only  # CI OK demands every job outside a PR
     assert values["core"] == str(complete).lower()
     assert values["plugins"] == str(plugin_only).lower()
+    assert values["homepage_only"] == "false"
     assert values["contracts"] == str(complete).lower()
     if plugin_only and not complete:
         assert values["notifier"] == values["electron"] == "false"
@@ -1780,7 +1783,15 @@ def _make_ci_paths(tmp_path_factory, *, with_contexts):
     stubs = directory / "bin"
     stubs.mkdir()
     git = stubs / "git"
-    git.write_text('#!/bin/sh\nprintf "%s" "$CHANGED_PATHS" | tr "\\n" "\\000"\nexit "$DIFF_EXIT"\n')
+    git.write_text(
+        "#!/bin/sh\n"
+        '[ "$1" = diff ] && [ "$2" = --name-only ] && [ "$3" = --no-renames ] '
+        '&& [ "$4" = -z ] && [ "$5" = --end-of-options ] || exit 2\n'
+        'if [ -n "$CHANGED_PATHS_FILE" ]; then cat "$CHANGED_PATHS_FILE"; '
+        # Direct shell callers below supply simple line-separated names only.
+        'else printf "%s" "$CHANGED_PATHS" | tr "\\n" "\\000"; fi\n'
+        'exit "$DIFF_EXIT"\n'
+    )
     git.chmod(0o700)
     (directory / "desktop").mkdir()
     (directory / "desktop" / "package.json").write_text("{}")
@@ -1788,10 +1799,13 @@ def _make_ci_paths(tmp_path_factory, *, with_contexts):
 
 
 def _changes_outputs(  # noqa: PLR0913 - independent changed-path, event and release-selection fixture inputs
-    tmp_path, ci_paths, event: str, changed: str, git_exit: int = 0, *, release: bool = False
+    tmp_path, ci_paths, event: str, changed: str | list[str], git_exit: int = 0, *, release: bool = False
 ) -> set[str]:
     script, directory = ci_paths
     output = tmp_path / "output"
+    listing = tmp_path / "changed.bin"
+    paths = changed.splitlines() if isinstance(changed, str) else changed
+    listing.write_bytes(b"".join(path.encode("utf-8") + b"\0" for path in paths))
     subprocess.run(
         ["bash", "-c", script],
         env={
@@ -1801,7 +1815,7 @@ def _changes_outputs(  # noqa: PLR0913 - independent changed-path, event and rel
             "RELEASE_FULL": str(release).lower(),
             "BASE": "base",
             "GITHUB_OUTPUT": str(output),
-            "CHANGED_PATHS": changed,
+            "CHANGED_PATHS_FILE": str(listing),
             "DIFF_EXIT": str(git_exit),
         },
         cwd=directory,
@@ -2144,6 +2158,12 @@ def test_scheduled_jobs_keep_maintenance_separate_from_full_and_focused_tests():
         if name in (*SCHEDULED_REQUIRED, "ci-ok"):
             continue
         condition = job["if"]
+        if name == "site-tests":
+            assert condition == (
+                "(needs.changes.outputs.full_ci == 'true' || needs.changes.outputs.homepage_only == 'true') "
+                "&& (needs.changes.outputs.site_only == 'true') && needs.changes.outputs.lane != 'macos'"
+            )
+            continue
         assert condition.startswith(
             (
                 "needs.changes.outputs.full_ci == 'true'",
@@ -2158,6 +2178,18 @@ def test_scheduled_jobs_keep_maintenance_separate_from_full_and_focused_tests():
             )
         ), name
     assert "scheduled_maintenance" not in _template_sync_module().ci_workflow()
+
+
+def test_nightly_uses_the_normal_full_workload_with_separate_maintenance(tmp_path, ci_contexts_paths):
+    selected = dict(line.split("=", 1) for line in _changes_outputs(tmp_path, ci_contexts_paths, "schedule", ""))
+    assert selected["homepage_only"] == selected["site_only"] == "false"
+    assert selected["core"] == selected["upgrade"] == "true"
+    outputs = {"changes": {**selected, "scheduled_maintenance": "true", "full_ci": "true", "lane": "all"}}
+    jobs = _ci_jobs()
+    for name in ("lint", "audit", "template", "build", "core-wheel"):
+        assert _evaluate_job_if(jobs[name]["if"], "schedule", outputs, lambda _: "success"), name
+    for name in ("macos-main", "site-tests"):
+        assert not _evaluate_job_if(jobs[name]["if"], "schedule", outputs, lambda _: "success"), name
 
 
 @pytest.mark.parametrize(
@@ -3072,6 +3104,22 @@ def test_main_lanes_gate_every_platform_job():
     assert "lane" not in jobs["macos-smoke"]["if"]  # pull requests only
 
 
+@pytest.mark.parametrize(
+    ("event", "ref", "lane", "homepage", "selected"),
+    [
+        ("push", "refs/heads/main", "linux", "false", True),
+        ("push", "refs/heads/main", "linux", "true", False),
+        ("push", "refs/heads/topic", "linux", "false", False),
+        ("pull_request", "refs/heads/main", "linux", "false", False),
+        ("schedule", "refs/heads/main", "linux", "false", False),
+        ("workflow_dispatch", "refs/heads/main", "macos", "false", False),
+    ],
+)
+def test_macos_dispatch_retains_event_and_homepage_boundaries(event, ref, lane, homepage, selected):
+    outputs = {"changes": {"lane": lane, "homepage_only": homepage}}
+    assert _evaluate_job_if(_ci_jobs()["macos-main"]["if"], event, outputs, lambda _: "success", ref) is selected
+
+
 def test_a_push_to_main_dispatches_the_coalesced_macos_run():
     workflow = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
     jobs = workflow["jobs"]
@@ -3079,8 +3127,8 @@ def test_a_push_to_main_dispatches_the_coalesced_macos_run():
     assert job["permissions"] == {"actions": "write"}
     assert job["needs"] == "changes"
     assert job["if"] == (
-        "needs.changes.outputs.homepage_only != 'true' && github.event_name == 'push' "
-        "&& github.ref == 'refs/heads/main' && needs.changes.outputs.lane == 'linux'"
+        "github.event_name == 'push' && github.ref == 'refs/heads/main' "
+        "&& needs.changes.outputs.lane == 'linux' && needs.changes.outputs.homepage_only != 'true'"
     )
     assert [step["run"] for step in job["steps"]] == [
         'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f lane=macos'
@@ -3758,3 +3806,62 @@ def test_homepage_pull_request_requires_remaining_policy(tmp_path, ci_contexts_p
     run = _selection_run(tmp_path, ci_contexts_paths, "pull_request", HOMEPAGE_PATHS, plugins="False", skipped_job=job)
     assert run.returncode != 0
     assert job in run.stdout
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize("separator", ["\n", "\r"])
+def test_shared_selector_rejects_ambiguous_homepage_filename(tmp_path, ci_paths, event, separator):
+    paths = [f"docs/assets/website/a{separator}docs/assets/website/b.webp"]
+    assert {"homepage_only=false", "site_only=false", "core=true"} <= _changes_outputs(tmp_path, ci_paths, event, paths)
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize("separator", ["\n", "\r"])
+def test_real_git_ambiguous_filename_fails_closed(homepage_git_repo, event, separator):
+    repo, git = homepage_git_repo
+    base = git("rev-parse", "HEAD")
+    path = repo / f"docs/assets/website/a{separator}b.webp"
+    path.write_bytes(b"image")
+    git("add", ".")
+    git("commit", "-m", "ambiguous filename")
+    result = _homepage_git_diff(repo, event, base)
+    assert result.returncode != 0
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize("base", ["--stat", "--output=unexpected-output", "--no-index"])
+def test_real_git_option_like_base_is_rejected(homepage_git_repo, event, base):
+    repo, _ = homepage_git_repo
+    result = _homepage_git_diff(repo, event, base)
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert not (repo / "unexpected-output").exists()
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push", "schedule", "workflow_dispatch"])
+@pytest.mark.parametrize(
+    ("workload", "selected"),
+    [
+        (("true", "false", "true", "all"), True),
+        (("false", "true", "true", "linux"), True),
+        (("false", "false", "true", "all"), False),
+        (("true", "false", "false", "all"), False),
+        (("false", "true", "false", "linux"), False),
+        (("true", "false", "true", "macos"), False),
+        (("false", "true", "true", "macos"), False),
+    ],
+)
+@pytest.mark.parametrize("maintenance", ["", "true"])
+def test_site_tests_guard_requires_site_and_workload_independent_of_maintenance(event, workload, selected, maintenance):
+    full, homepage, site, lane = workload
+    outputs = {
+        "changes": {
+            "full_ci": full,
+            "homepage_only": homepage,
+            "site_only": site,
+            "lane": lane,
+            "scheduled_maintenance": maintenance,
+        }
+    }
+    assert _evaluate_job_if(_ci_jobs()["site-tests"]["if"], event, outputs, lambda _: "success") is selected
