@@ -5,6 +5,8 @@ import sys
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 OLD_PATH = "heinzel.kernel._errors"
@@ -41,6 +43,10 @@ assert issubclass(first.SubscriptionUsageLimitError, first.HeinzelError)
 @pytest.mark.parametrize(("first", "second"), [(OLD_PATH, NEW_PATH), (NEW_PATH, OLD_PATH)])
 def test_fresh_process_import_order_and_published_pickle_names(first: str, second: str) -> None:
     result = subprocess.run(
-        [sys.executable, "-I", "-c", PROBE, first, second], capture_output=True, text=True, check=False, timeout=15
+        [sys.executable, "-I", "-c", PROBE, first, second],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=scaled(15),
     )
     assert result.returncode == 0, result.stderr

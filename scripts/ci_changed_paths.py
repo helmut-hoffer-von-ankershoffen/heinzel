@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.15"
+# dependencies = []
+# ///
 """Enumerate every changed endpoint for CI; invalid comparisons fail closed at the caller."""
 
 import subprocess

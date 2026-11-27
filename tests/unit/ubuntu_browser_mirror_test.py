@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts/ubuntu_browser_mirror.py"
@@ -216,7 +218,7 @@ def test_host_installs_apt_source_scope_after_validating_archive():
         ["make", "--no-print-directory", "-n", "-f", "scripts/ubuntu_browser_mirror.mk"],
         cwd=root,
         text=True,
-        timeout=10,
+        timeout=scaled(10),
     ).splitlines()
     validate, install = map(shlex.split, plan)
     assert validate == ["sudo", "python3", "-I", "scripts/ubuntu_browser_mirror.py"]
@@ -261,7 +263,7 @@ def test_new_apt_process_uses_only_ubuntu_including_security(tmp_path):
     env = {"APT_CONFIG": str(bootstrap), "PATH": os.defpath, "LC_ALL": "C"}
 
     def fetch_plan():
-        return subprocess.check_output([apt, "--print-uris", "update"], env=env, text=True, timeout=10)
+        return subprocess.check_output([apt, "--print-uris", "update"], env=env, text=True, timeout=scaled(10))
 
     before = fetch_plan()
     assert "unrelated.invalid" in before
