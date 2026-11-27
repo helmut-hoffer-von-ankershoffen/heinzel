@@ -106,12 +106,14 @@ jobs:
       core: ${{ steps.paths.outputs.core }}
       plugins: ${{ steps.paths.outputs.plugins }}
       site_only: ${{ steps.paths.outputs.site_only }}
+      homepage_only: ${{ steps.paths.outputs.homepage_only }}
       surface_only: ${{ steps.paths.outputs.surface_only }}
       upgrade: ${{ steps.paths.outputs.upgrade }} # Core upgrade lane
       macos_full: ${{ steps.paths.outputs.macos_full }}
       scheduled_maintenance: ${{ steps.maintenance.outputs.selected }}
       full_release: ${{ steps.release.outputs.full_release }}
-      full_ci: ${{ steps.full.outputs.selected }}
+      # Select the normal app workload once; site and policy jobs have their own gates.
+      full_ci: ${{ steps.full.outputs.selected == 'true' && steps.paths.outputs.homepage_only != 'true' }}
       # Keep the legacy skipped job names for existing candidate inventory readers.
       focused_mode: ""
       focused_matrix: '{"include":[]}'
@@ -170,7 +172,7 @@ jobs:
           RELEASE_FULL: ${{ steps.release.outputs.full_release }}
           HEAD_REF: ${{ github.head_ref }}
         run: |
-          changed="$(git diff --name-only "$BASE...HEAD")" || changed=""
+          changed="$(python3 -I scripts/ci_changed_paths.py "$EVENT" "$BASE")" || changed=""
           full_release="${FULL_RELEASE:-false}"
           # Any release/* branch gets the complete run, the canonical candidate or not.
           [[ "${HEAD_REF:-}" != release/* ]] || full_release=true
@@ -190,6 +192,17 @@ jobs:
             && ! grep -qE '^(CHANGELOG|README)\.md$|^docs/.*\.sh$' <<< "$changed"; then
             site_only=true
           fi
+          # Only presentation assets/templates qualify for the homepage lane on both events.
+          # A missing/failed/empty diff and candidate/manual/full lanes retain app coverage.
+          homepage_only=false
+          if { [ "$EVENT" = pull_request ] || [ "$EVENT" = push ]; } \
+            && [ "$full_release" != true ] && [ -z "${BATCH_BASE:-}" ] \
+            && [ -n "$changed" ] && [ "$(printf '%s\n' "$changed" | wc -l)" -lt 200 ] \
+            && ! grep -qvE '^(docs/README\.md|docs/assets/hero-(dark|light)\.svg|docs/assets/website/([^/]+\.(css|js|svg|png|jpg|webp)|album/([^/]+\.(svg|png|jpg|webp)|ARTWORK\.txt))|docs/overrides/(partials/)?[^/]+\.html)$' <<< "$changed"; then
+            homepage_only=true
+            site_only=true
+          fi
+          echo "homepage_only=$homepage_only" >> "$GITHUB_OUTPUT"
           echo "site_only=$site_only" >> "$GITHUB_OUTPUT"
           # Pull requests never run the macOS setup, e2e and Electron lanes (a release PR keeps them): those run on main, schedule
           # and dispatch.
@@ -274,7 +287,7 @@ jobs:
       actions: write
     name: Dispatch the coalesced macOS main run
     needs: changes
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.lane == 'linux'
+    if: needs.changes.outputs.homepage_only != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.lane == 'linux'
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -324,7 +337,7 @@ jobs:
       contents: read
     name: Lint, contracts and types
     needs: changes
-    if: (needs.changes.outputs.core == 'true' || needs.changes.outputs.surface_only == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '') && needs.changes.outputs.lane != 'macos' # Core focused structural
+    if: (needs.changes.outputs.homepage_only == 'true' || needs.changes.outputs.core == 'true' || needs.changes.outputs.surface_only == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '') && needs.changes.outputs.lane != 'macos' # Core focused structural
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -342,15 +355,30 @@ jobs:
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
         run: uv run --no-project --frozen --no-build --python 3.15 python scripts/check_confidentiality.py --require --text ""
+      - name: Check homepage policy
+        if: needs.changes.outputs.homepage_only == 'true'
+        env:
+          CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
+        run: |
+          uv run --script scripts/check_confidentiality.py
+          uv run --script scripts/release_policy.py --check
+          uv run --script scripts/sync_template.py --check
+          uv run zizmor --offline --quiet .github/workflows
+          uv run --script scripts/tools.py run actionlint
+          uv run typos
+          uv run --script scripts/check_docs.py
       - run: make lint
+        if: needs.changes.outputs.homepage_only != 'true'
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
       - run: make managed-backend-setup # private Node process owner
+        if: needs.changes.outputs.homepage_only != 'true'
       - run: make managed-backend-static
-        if: needs.changes.outputs.full_ci != 'true'
+        if: needs.changes.outputs.full_ci != 'true' && needs.changes.outputs.homepage_only != 'true'
       - run: make managed-backend-check
         if: needs.changes.outputs.full_ci == 'true'
       - run: make typecheck
+        if: needs.changes.outputs.homepage_only != 'true'
       - if: needs.changes.outputs.full_ci == 'true'
         run: make test-web # full candidate component suite
 
@@ -412,7 +440,7 @@ jobs:
     permissions:
       contents: read
     needs: changes
-    if: (needs.changes.outputs.core == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '') && needs.changes.outputs.lane != 'macos' # Core focused structural
+    if: (needs.changes.outputs.homepage_only == 'true' || needs.changes.outputs.core == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '') && needs.changes.outputs.lane != 'macos' # Core focused structural
     name: Dependency audit
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -566,7 +594,7 @@ jobs:
     permissions:
       contents: read
     needs: changes
-    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.site_only == 'true') && needs.changes.outputs.lane != 'macos' # Core candidate-only
+    if: (needs.changes.outputs.full_ci == 'true' || needs.changes.outputs.homepage_only == 'true') && (needs.changes.outputs.site_only == 'true') && needs.changes.outputs.lane != 'macos' # Core candidate-only
     name: Site tests
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -580,6 +608,7 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: false
           python-version: "3.15"
+      - run: make docs-site # strict build of the exact checked-out homepage
       - run: make test-site # the tests that read documents and the site
 
   e2e:
@@ -1437,6 +1466,7 @@ jobs:
           FULL_RELEASE: ${{ needs.changes.outputs.full_release }}
           HEAD_REF: ${{ github.head_ref }}
           SITE_ONLY: ${{ needs.changes.outputs.site_only }}
+          HOMEPAGE_ONLY: ${{ needs.changes.outputs.homepage_only }}
           CORE: ${{ needs.changes.outputs.core }}
           NOTIFIER: ${{ needs.changes.outputs.notifier }}
           ELECTRON: ${{ needs.changes.outputs.electron }}
@@ -1484,6 +1514,10 @@ jobs:
           # The coverage floor: on every pull request, and on a dispatched run outside the macOS main lane.
           if [ "$EVENT" = pull_request ] || { [ "$EVENT" = workflow_dispatch ] && [ "${LANE:-all}" != macos ]; }; then required+=(coverage-floor); fi # Core coverage floor
           if [ "$EVENT" = pull_request ]; then required+=(sonar-ratings); fi # Core coverage floor
+          if [ "${HOMEPAGE_ONLY:-false}" = true ]; then
+            required=(admission changes lint secrets audit quarantine-registry site-tests)
+            if [ "$EVENT" = pull_request ]; then required+=(commits dependency-review sonar-ratings); fi
+          fi
           for job in "${required[@]}"; do
             jq -e --arg job "$job" '.[$job].result == "success"' <<< "$RESULTS" >/dev/null \
               || { echo "::error::Required full CI job did not pass: $job"; exit 1; }

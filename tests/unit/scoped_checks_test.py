@@ -858,3 +858,17 @@ def test_check_push_target_refuses_the_whole_suite_and_keeps_check_fast_for_huma
     assert "check-push needs UNIT_TARGETS" in makefile
     assert "WEB_TESTS= MANAGED_CHECK= UNIT_STOP=" in makefile
     assert "\ncheck-fast: " in "\n" + makefile
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "docs/README.md",
+        "docs/overrides/home.html",
+        "docs/assets/website/cover.webp",
+        "docs/assets/website/album/berlin.webp",
+        "docs/assets/website/album/ARTWORK.txt",
+    ],
+)
+def test_owned_homepage_inputs_keep_existing_document_push_plan(path):
+    assert scoped.scoped_steps([path]) == scoped.DOCS_STEPS

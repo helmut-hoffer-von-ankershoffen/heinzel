@@ -68,6 +68,9 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
+        "uv run --script scripts/check_confidentiality.py": (
+            "runs bounded site policy checks while the app workload is omitted"
+        ),
         'version="$(sed -n': "archives a release candidate's desktop apps under its version for Publish to promote",
         "echo 'DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer'": "selects the installed Xcode for macOS CI",
         "python3 -I scripts/release_candidate.py": "records release source",
@@ -97,7 +100,9 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "bash scripts/bootstrap-pyyaml.sh --wheel-dir": (
             "builds the reviewed PyYAML wheel the plugin tooling finds through UV_FIND_LINKS; installs nothing"
         ),
-        'changed="$(git diff --name-only': "decides from the changed paths whether a pull request builds the macOS app",
+        'changed="$(python3 -I scripts/ci_changed_paths.py': (
+            "decides from the changed paths whether a pull request builds the macOS app"
+        ),
         "if compgen -G ": "selects the built core candidate or an independently released artifact for source plugins",
         "jq -r 'to_entries[]": "the CI OK gate names each failed job with its verdict, then aggregates the results",
         "uv run --no-build coverage report --format=total": "hands the measured total to the Coverage floor job",
@@ -327,7 +332,9 @@ def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templ
     assert "lint" in jobs["ci-ok"]["needs"]
     runs = {step["run"]: step.get("if") for step in jobs["lint"]["steps"] if "run" in step}
     assert list(runs).index("make managed-backend-setup") < list(runs).index("make typecheck")
-    assert runs["make managed-backend-static"] == "needs.changes.outputs.full_ci != 'true'"
+    assert runs["make managed-backend-static"] == (
+        "needs.changes.outputs.full_ci != 'true' && needs.changes.outputs.homepage_only != 'true'"
+    )
     assert runs["make managed-backend-check"] == "needs.changes.outputs.full_ci == 'true'"
     for name in ("Makefile", ".github/workflows/ci.yml.jinja"):
         assert "managed-backend" not in (REPO / "template" / name).read_text()
@@ -1767,10 +1774,13 @@ def _make_ci_paths(tmp_path_factory, *, with_contexts):
     directory = tmp_path_factory.mktemp("ci-paths")
     if with_contexts:
         (directory / "scripts").symlink_to(REPO / "scripts", target_is_directory=True)
+    else:
+        (directory / "scripts").mkdir()
+        (directory / "scripts" / "ci_changed_paths.py").symlink_to(REPO / "scripts" / "ci_changed_paths.py")
     stubs = directory / "bin"
     stubs.mkdir()
     git = stubs / "git"
-    git.write_text('#!/bin/sh\nprintf "%s" "$CHANGED_PATHS"\nexit "$DIFF_EXIT"\n')
+    git.write_text('#!/bin/sh\nprintf "%s" "$CHANGED_PATHS" | tr "\\n" "\\000"\nexit "$DIFF_EXIT"\n')
     git.chmod(0o700)
     (directory / "desktop").mkdir()
     (directory / "desktop" / "package.json").write_text("{}")
@@ -1981,9 +1991,10 @@ def test_site_only_skips_exactly_the_app_test_jobs_and_ci_ok_waits_for_site_test
             + (f" && needs.changes.outputs.lane != '{lane}'" if lane else "")
         )
     for name in ("lint", "build"):
-        assert "site_only" not in jobs[name]["if"]
+        assert "needs.changes.outputs.site_only" not in jobs[name]["if"]
     assert jobs["site-tests"]["if"] == (
-        "needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.site_only == 'true')"
+        "(needs.changes.outputs.full_ci == 'true' || needs.changes.outputs.homepage_only == 'true') "
+        "&& (needs.changes.outputs.site_only == 'true')"
         " && needs.changes.outputs.lane != 'macos'"
     )
     assert "site-tests" in jobs["ci-ok"]["needs"]
@@ -2088,7 +2099,9 @@ def test_changed_paths_event_policy(event, candidate, selected):
     assert all("if" not in step for step in changes["steps"] if "uses" in step)
     assert changes["outputs"]["scheduled_maintenance"] == "${{ steps.maintenance.outputs.selected }}"
     assert changes["outputs"]["full_release"] == "${{ steps.release.outputs.full_release }}"
-    assert changes["outputs"]["full_ci"] == "${{ steps.full.outputs.selected }}"
+    assert changes["outputs"]["full_ci"] == (
+        "${{ steps.full.outputs.selected == 'true' && steps.paths.outputs.homepage_only != 'true' }}"
+    )
     assert not any("FOCUSED_CI_PLANS" in str(step) for step in changes["steps"])
 
 
@@ -3066,7 +3079,8 @@ def test_a_push_to_main_dispatches_the_coalesced_macos_run():
     assert job["permissions"] == {"actions": "write"}
     assert job["needs"] == "changes"
     assert job["if"] == (
-        "github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.lane == 'linux'"
+        "needs.changes.outputs.homepage_only != 'true' && github.event_name == 'push' "
+        "&& github.ref == 'refs/heads/main' && needs.changes.outputs.lane == 'linux'"
     )
     assert [step["run"] for step in job["steps"]] == [
         'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main -f lane=macos'
@@ -3325,7 +3339,7 @@ def _selection_run(  # noqa: PLR0913 - independent event, path and job fixture i
         "changes": {
             **selected,
             "lane": lane,
-            "full_ci": "true",
+            "full_ci": str(selected["homepage_only"] != "true").lower(),
             "full_release": str(release).lower(),
             "focused_mode": "",
             "scheduled_maintenance": "true" if event == "schedule" else "",
@@ -3363,6 +3377,7 @@ def _selection_run(  # noqa: PLR0913 - independent event, path and job fixture i
         "FULL_RELEASE": changes["full_release"],
         "HEAD_REF": "docs/x",
         "SITE_ONLY": changes["site_only"],
+        "HOMEPAGE_ONLY": changes["homepage_only"],
         "CORE": changes["core"],
         "NOTIFIER": changes["notifier"],
         "ELECTRON": changes["electron"],
@@ -3378,6 +3393,7 @@ def _selection_run(  # noqa: PLR0913 - independent event, path and job fixture i
 
 
 SELECTION_PATHS = [
+    "docs/assets/website/album-ticket.css\ndocs/overrides/partials/album-ticket.html\n",
     "AGENTS.md\n",  # a docs-only change: site_only and surface_only together (PR 955)
     "docs/guides/install.md\nREADME.md\n",
     "docs/install.sh\n",
@@ -3462,3 +3478,283 @@ def test_ci_ok_requires_macos_dispatch_on_prose_only_main_push(tmp_path, ci_cont
     run = _selection_run(tmp_path, ci_contexts_paths, "push", "README.md\n", plugins="False", skipped_job="macos-main")
     assert run.returncode == 1
     assert "Required full CI job did not pass: macos-main" in run.stdout
+
+
+HOMEPAGE_PATHS = "docs/assets/website/album-ticket.css\ndocs/overrides/partials/album-ticket.html\n"
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+def test_real_homepage_paths_select_site_and_require_its_build(tmp_path, ci_contexts_paths, event):
+    outputs = _changes_outputs(tmp_path, ci_contexts_paths, event, HOMEPAGE_PATHS)
+    assert {"homepage_only=true", "site_only=true"} <= outputs
+    selection = dict(line.split("=", 1) for line in outputs)
+    selection.update(full_ci="false", lane="linux" if event == "push" else "all")
+    for job in (
+        "setup",
+        "test",
+        "coverage",
+        "perf",
+        "e2e",
+        "template",
+        "notifier",
+        "macos-specific",
+        "macos-main",
+        "electron",
+        "build",
+        "core-wheel",
+        "upgrade",
+        "local-plugin-plan",
+        "consumer-plan",
+        "coverage-floor",
+    ):
+        assert not _evaluate_job_if(_ci_jobs()[job]["if"], event, {"changes": selection}, lambda _: "success"), job
+    run = _selection_run(tmp_path, ci_contexts_paths, event, HOMEPAGE_PATHS, plugins="False")
+    assert run.returncode == 0, run.stdout + run.stderr
+    run = _selection_run(tmp_path, ci_contexts_paths, event, HOMEPAGE_PATHS, plugins="False", skipped_job="site-tests")
+    assert run.returncode != 0
+    assert "site-tests" in run.stdout
+    assert any(s.get("run", "").startswith("make docs-site") for s in _ci_jobs()["site-tests"]["steps"])
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push", "workflow_dispatch", "schedule"])
+@pytest.mark.parametrize("extra", ["src/heinzel/__init__.py\n", "docs/install.sh\n", "unknown/file\n", ""])
+def test_homepage_lane_preserves_mixed_and_full_events(tmp_path, ci_paths, event, extra):
+    outputs = _changes_outputs(tmp_path, ci_paths, event, HOMEPAGE_PATHS + extra, release=True)
+    assert "homepage_only=false" in outputs
+    if extra or event in {"workflow_dispatch", "schedule"}:
+        assert "homepage_only=false" in _changes_outputs(tmp_path, ci_paths, event, HOMEPAGE_PATHS + extra)
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize(("changed", "exit_code"), [("", 0), (HOMEPAGE_PATHS, 1), ("unknown/file\n", 0)])
+def test_homepage_diff_fallbacks_keep_app_coverage(tmp_path, ci_paths, event, changed, exit_code):
+    assert {"homepage_only=false", "site_only=false", "core=true"} <= _changes_outputs(
+        tmp_path, ci_paths, event, changed, git_exit=exit_code
+    )
+
+
+def test_homepage_paths_trigger_docs_build_and_leave_acceptance_harness_scope_intact():
+    docs = yaml.safe_load((REPO / ".github/workflows/docs.yml").read_text())
+    for event in ("pull_request", "push"):
+        assert "docs/**" in docs[True][event]["paths"]
+    assert any(s.get("run") == "make docs-publish-check" for s in docs["jobs"]["site"]["steps"])
+    acceptance = yaml.safe_load((REPO / ".github/workflows/acceptance.yml").read_text())
+    assert acceptance[True]["pull_request"]["paths"] == [
+        ".github/workflows/acceptance.yml",
+        "scripts/acceptance/**",
+        "tests/unit/acceptance_test.py",
+    ]
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize("job", ["lint", "secrets", "audit", "quarantine-registry"])
+def test_homepage_ci_ok_keeps_security_and_policy_guards(tmp_path, ci_contexts_paths, event, job):
+    run = _selection_run(tmp_path, ci_contexts_paths, event, HOMEPAGE_PATHS, plugins="False", skipped_job=job)
+    assert run.returncode != 0
+    assert job in run.stdout
+
+
+HOME_INPUTS = [
+    "docs/assets/hero-dark.svg",
+    "docs/assets/hero-light.svg",
+    "docs/README.md",
+    "docs/overrides/home.html",
+    "docs/assets/website/album-ticket.css",
+    "docs/overrides/partials/album-ticket.html",
+    "docs/assets/website/album/ARTWORK.txt",
+    *[str(path.relative_to(REPO)) for path in (REPO / "docs/assets/website/album").glob("*.webp")],
+    "docs/assets/website/cover.webp",
+]
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize("paths", [[path] for path in HOME_INPUTS] + [HOME_INPUTS])
+def test_all_owned_homepage_inputs_select_bounded_site_work(tmp_path, ci_paths, event, paths):
+    assert "homepage_only=true" in _changes_outputs(tmp_path, ci_paths, event, "\n".join(paths))
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize(
+    "extra",
+    [
+        "docs/assets/website/ARTWORK.txt",
+        "docs/assets/website/album/run.py",
+        "docs/assets/website/album/nested/cover.webp",
+        "docs/OTHER.md",
+    ],
+)
+def test_homepage_scope_rejects_unowned_paths(tmp_path, ci_paths, event, extra):
+    assert "homepage_only=false" in _changes_outputs(tmp_path, ci_paths, event, HOMEPAGE_PATHS + extra)
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+def test_homepage_scope_rejects_large_changes_and_batches(tmp_path, ci_paths, event):
+    paths = "\n".join(f"docs/assets/website/image-{number}.webp" for number in range(200))
+    assert "homepage_only=false" in _changes_outputs(tmp_path, ci_paths, event, paths)
+    script, directory = ci_paths
+    output = tmp_path / "batch-output"
+    subprocess.run(
+        ["bash", "-c", script],
+        cwd=directory,
+        check=True,
+        timeout=scaled(30),
+        env={
+            "PATH": f"{directory / 'bin'}:{Path(sys.executable).parent}:/usr/bin:/bin",
+            "EVENT": event,
+            "BASE": "base",
+            "BATCH_BASE": "base",
+            "CHANGED_PATHS": HOMEPAGE_PATHS,
+            "DIFF_EXIT": "0",
+            "GITHUB_OUTPUT": str(output),
+        },
+    )
+    assert "homepage_only=false" in output.read_text().splitlines()
+
+
+def test_homepage_lint_steps_keep_policy_and_skip_app_commands():
+    steps = _ci_jobs()["lint"]["steps"]
+    outputs = {"changes": {"homepage_only": "true", "full_ci": "false"}}
+    runs = [
+        step["run"]
+        for step in steps
+        if "run" in step and ("if" not in step or _evaluate_job_if(step["if"], "push", outputs, lambda _: "success"))
+    ]
+    assert not any("make " in run for run in runs)
+    policy = next(step["run"] for step in steps if step.get("name") == "Check homepage policy")
+    for command in (
+        "check_confidentiality.py",
+        "release_policy.py",
+        "sync_template.py",
+        "zizmor",
+        "actionlint",
+        "typos",
+        "check_docs.py",
+    ):
+        assert command in policy
+    plugin = _generated_plugin_ci()
+    assert any(step.get("run") == "make typecheck" for step in plugin["jobs"]["lint"]["steps"])
+
+
+@pytest.fixture
+def homepage_git_repo(tmp_path):
+    """A committed app and homepage asset, with a real Git command runner."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        return subprocess.check_output(["git", *args], cwd=repo, text=True, timeout=scaled(30)).strip()
+
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.invalid")
+    git("config", "user.name", "Test")
+    (repo / "app.py").write_text("app")
+    site = repo / "docs/assets/website/cover.webp"
+    site.parent.mkdir(parents=True)
+    site.write_text("image")
+    git("add", ".")
+    git("commit", "-m", "initial")
+    return repo, git
+
+
+@pytest.fixture
+def homepage_diverged_repo(homepage_git_repo):
+    """Topic changes the homepage while main independently changes the app."""
+    repo, git = homepage_git_repo
+    git("checkout", "-b", "topic")
+    (repo / "docs/assets/website/cover.webp").write_text("topic")
+    git("commit", "-am", "topic")
+    git("checkout", "main")
+    (repo / "app.py").write_text("main")
+    git("commit", "-am", "main")
+    base = git("rev-parse", "HEAD")
+    git("checkout", "topic")
+    return repo, git, base
+
+
+def _homepage_git_diff(repo, event, base):
+    return subprocess.run(
+        [sys.executable, "-I", str(REPO / "scripts/ci_changed_paths.py"), event, base],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=scaled(30),
+    )
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize(
+    ("source", "destination"),
+    [("app.py", "docs/assets/website/new.webp"), ("docs/assets/website/cover.webp", "new.py")],
+    ids=["rename-in", "rename-out"],
+)
+def test_homepage_diff_keeps_both_rename_endpoints(homepage_git_repo, event, source, destination):
+    repo, git = homepage_git_repo
+    base = git("rev-parse", "HEAD")
+    git("mv", source, destination)
+    git("commit", "-am", "rename")
+    result = _homepage_git_diff(repo, event, base)
+    assert result.returncode == 0, result.stderr
+    assert set(result.stdout.splitlines()) == {source, destination}
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+def test_homepage_diff_keeps_deleted_asset(homepage_git_repo, event):
+    repo, git = homepage_git_repo
+    base = git("rev-parse", "HEAD")
+    git("rm", "docs/assets/website/cover.webp")
+    git("commit", "-am", "delete")
+    result = _homepage_git_diff(repo, event, base)
+    assert result.returncode == 0, result.stderr
+    assert set(result.stdout.splitlines()) == {"docs/assets/website/cover.webp"}
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+def test_homepage_diff_compares_merge_result(homepage_diverged_repo, event):
+    repo, git, _ = homepage_diverged_repo
+    git("merge", "--no-edit", "main")
+    base = git("rev-parse", "HEAD~1")
+    result = _homepage_git_diff(repo, event, base)
+    assert result.returncode == 0, result.stderr
+    assert set(result.stdout.splitlines()) == {"app.py"}
+
+
+@pytest.mark.parametrize(
+    ("event", "expected"),
+    [("pull_request", {"docs/assets/website/cover.webp"}), ("push", {"app.py", "docs/assets/website/cover.webp"})],
+)
+def test_homepage_diff_uses_event_specific_diverged_base(homepage_diverged_repo, event, expected):
+    repo, _, base = homepage_diverged_repo
+    result = _homepage_git_diff(repo, event, base)
+    assert result.returncode == 0, result.stderr
+    assert set(result.stdout.splitlines()) == expected
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+def test_homepage_diff_rejects_unavailable_base(homepage_git_repo, event):
+    repo, _ = homepage_git_repo
+    result = _homepage_git_diff(repo, event, "0" * 40)
+    assert result.returncode != 0
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize("result", ["success", "failure", "cancelled"])
+def test_generated_plugin_ci_aggregate_runtime(result):
+    job = _generated_plugin_ci()["jobs"]["ci-ok"]
+    step = next(step for step in job["steps"] if "RESULTS" in step.get("env", {}))
+    run = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=scaled(30),
+        env={**os.environ, "RESULTS": result, "NEEDS": json.dumps({"test": {"result": result, "outputs": {}}})},
+    )
+    assert (run.returncode == 0) is (result == "success")
+
+
+@pytest.mark.parametrize("job", ["commits", "dependency-review", "sonar-ratings"])
+def test_homepage_pull_request_requires_remaining_policy(tmp_path, ci_contexts_paths, job):
+    run = _selection_run(tmp_path, ci_contexts_paths, "pull_request", HOMEPAGE_PATHS, plugins="False", skipped_job=job)
+    assert run.returncode != 0
+    assert job in run.stdout

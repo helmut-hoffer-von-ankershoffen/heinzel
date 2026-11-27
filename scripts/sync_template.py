@@ -322,11 +322,21 @@ def _without_main_lanes(text: str) -> str:
     return text.replace(", focused-tests, macos-main]", ", focused-tests]")
 
 
+def _without_homepage_routing(text: str) -> str:
+    # Homepage routing belongs to Core. Remove its policy step as a complete YAML step;
+    # independent plugins keep their normal lint/types workload without path guards.
+    text = re.sub(r"\n      - name: Check homepage policy\n.*?(?=\n      - )", "", text, flags=re.DOTALL)
+    text = re.sub(r"(?m)^        if: needs\.changes\.outputs\.homepage_only != 'true'\n", "", text)
+    return text.replace(" && needs.changes.outputs.homepage_only != 'true'", "")
+
+
 def ci_workflow() -> str:
     """The CI workflow without the template job; the build check looks for the plugin package."""
     text = _without_focused_admission(
         _without_main_lanes(
-            _without_core_coverage_floor((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+            _without_core_coverage_floor(
+                _without_homepage_routing((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+            )
         )
     )
     # Batch admission is core queue coordination; plugins retain their complete workflow.
