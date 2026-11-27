@@ -77,13 +77,24 @@ def _make(tmp_path, platform, levels, *, execute=False, fail_serial=False):
     return result, plan["timeout"], commands, calls
 
 
-@pytest.mark.parametrize("platform", ["Linux", "Darwin"])
-@pytest.mark.parametrize("levels", ["unit", "integration", "unit or integration"])
-def test_owning_commands_serialize_only_linux_unit_retirement(tmp_path, platform, levels):
+@pytest.mark.parametrize(
+    ("platform", "levels", "expected_supervisor", "expected_session"),
+    [
+        ("Linux", "unit", "420", "420"),
+        ("Linux", "integration", "420", "420"),
+        ("Linux", "unit or integration", "420", "420"),
+        ("Darwin", "unit", "660", "600"),
+        ("Darwin", "integration", "77", "420"),
+        ("Darwin", "unit or integration", "77", "420"),
+    ],
+)
+def test_owning_commands_serialize_only_linux_unit_retirement(
+    tmp_path, platform, levels, expected_supervisor, expected_session
+):
     result, timeout, commands, _ = _make(tmp_path, platform, levels)
     assert result.returncode == 0, result.stderr
     split = platform == "Linux" and levels != "integration"
-    assert timeout == ("420" if platform == "Linux" else "77")
+    assert timeout == expected_supervisor
     serial = [
         "uv",
         "run",
@@ -102,7 +113,14 @@ def test_owning_commands_serialize_only_linux_unit_retirement(tmp_path, platform
     parallel = ["uv", "run", "pytest", "-m", f"({levels}) and not perf"]
     if split:
         parallel.append(f"--ignore={RETIREMENT}")
-    parallel += ["-n", "4" if platform == "Linux" else "3", "-x", "-q", "--session-timeout=420", "--durations=20"]
+    parallel += [
+        "-n",
+        "4" if platform == "Linux" else "3",
+        "-x",
+        "-q",
+        f"--session-timeout={expected_session}",
+        "--durations=20",
+    ]
     if levels == "integration":  # two sequential sessions, each with its own cap, -n and -x
         halves = [[*parallel[:5], f"--integration-half={half}", *parallel[5:]] for half in (1, 2)]
         assert commands == halves
