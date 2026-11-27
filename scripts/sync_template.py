@@ -235,6 +235,12 @@ def _without_release_candidate(text: str) -> str:
     text = text.replace(
         " && matrix.levels == 'unit' # a cell every pull request runs", " # a cell every pull request runs"
     )
+    text = re.sub(
+        r"(?m)^ {10}# Reduce contention with subprocesses and test I/O on four-CPU Linux unit runners.\n"
+        r" {10}MAKEFLAGS: [^\n]*PARALLEL_WORKERS=3[^\n]*\n",
+        "",
+        text,
+    )
     text = text.replace(
         "    # Integration runs two 420-second sessions; macOS unit allows 600 seconds plus reporting and setup.\n"
         "    timeout-minutes: ${{ (matrix.levels == 'integration' || "
