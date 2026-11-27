@@ -2,6 +2,7 @@
 // and community plugins), "Add" installs from a name or a git URL. Installing runs code, so it takes two steps: the
 // backend first answers what a spec would install (source, version, publisher, pinned), and only the confirm sends
 // that pinned requirement with `confirm=true` (ADR 0047). The app then restarts `hz ui` itself and reloads.
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import {
   BookOpen,
   Download,
@@ -479,7 +480,14 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     window.history.replaceState(window.history.state, "", `${address.pathname}${address.search}${address.hash}`);
   };
   const [query, setQuery] = useState("");
-  const refresh = useRefreshPluginSearch(query);
+  const refresh = useRefreshPluginSearch();
+  const queryClient = useQueryClient();
+  const searchFetching = useIsFetching({ queryKey: ["system", "plugin", "search", query] }) > 0;
+  const searchState = queryClient.getQueryState(["system", "plugin", "search", query]);
+  const refreshing = refresh.isPending || searchFetching;
+  const refreshFailed =
+    searchState?.status === "error" ||
+    (refresh.isError && refresh.variables === query && refresh.submittedAt >= (searchState?.dataUpdatedAt ?? 0));
   const [adding, setAdding] = useState(false);
   const [spec, setSpec] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
@@ -848,9 +856,10 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
           <PaneAction
             ghost
             icon={RefreshCw}
-            className={refresh.isPending ? "[&_svg]:motion-safe:animate-spin" : undefined}
-            disabled={frozen || refresh.isPending}
-            onClick={() => refresh.mutate()}
+            spinning={refreshing}
+            refreshFailed={refreshFailed}
+            disabled={frozen || refreshing}
+            onClick={() => refresh.mutate(query)}
           >
             {t("plugins.refresh")}
           </PaneAction>

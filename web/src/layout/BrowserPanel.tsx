@@ -10,7 +10,7 @@ import {
   Settings,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MENU_EVENT } from "@/about/menu";
 import { BookmarkBar } from "@/bookmarks/BookmarkStar";
 import { Favicon } from "@/bookmarks/Favicon";
@@ -19,6 +19,7 @@ import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { useNativeSurface } from "@/lib/nativeSurface";
+import { refreshIcon, refreshName } from "@/lib/refreshFeedback";
 
 type BrowserTab = {
   id: string;
@@ -41,6 +42,8 @@ const MAX_TABS = 8;
 type BrowserState = {
   tabs?: BrowserTab[];
   selected?: string | null;
+  /** Monotone desktop snapshot revision; older poll replies cannot roll back a newer browser action. */
+  revision?: number;
   status: string;
   url?: string;
   canGoBack?: boolean;
@@ -136,7 +139,11 @@ export function BrowserPanel({
   const [addressEdited, setAddressEdited] = useState(false);
   const addressRevision = useRef(0);
   const navigationRevision = useRef(0);
+  const browserRequestRevision = useRef(0);
+  const observedBrowserRevision = useRef(-1);
   const [state, setState] = useState<BrowserState>({ status: "empty" });
+  const rejectedReloadTab = useRef<string | null | undefined>(undefined);
+  const [reloadRejected, setReloadRejected] = useState(false);
   const [refused, setRefused] = useState(false);
   const [externalFailed, setExternalFailed] = useState(false);
   const surface = useRef<HTMLDivElement>(null);
@@ -172,14 +179,48 @@ export function BrowserPanel({
   }, [toolsOpen]);
   const native = bridge();
   const tabs = state.tabs ?? [];
+  const reloadFailed =
+    reloadRejected &&
+    (rejectedReloadTab.current === null ? state.selected === undefined : rejectedReloadTab.current === state.selected);
+  const clearReloadFailure = () => {
+    rejectedReloadTab.current = undefined;
+    setReloadRejected(false);
+  };
+  const applyState = useCallback((result: BrowserState, requestRevision?: number) => {
+    if (requestRevision !== undefined && requestRevision !== browserRequestRevision.current) return false;
+    if (result.revision !== undefined && result.revision < observedBrowserRevision.current) return false;
+    if (result.revision !== undefined) observedBrowserRevision.current = result.revision;
+    setState(result);
+    const failedTab = rejectedReloadTab.current;
+    const failedTabClosed =
+      failedTab !== undefined &&
+      failedTab !== null &&
+      result.tabs !== undefined &&
+      !result.tabs.some((tab) => tab.id === failedTab);
+    const selectionChanged =
+      failedTab === null ? result.selected !== undefined : failedTab !== undefined && result.selected !== failedTab;
+    if (failedTabClosed || selectionChanged) {
+      rejectedReloadTab.current = undefined;
+      setReloadRejected(false);
+    }
+    return true;
+  }, []);
   // Agents' tabs have their own limit: only the person's count against the person's.
   const ownTabs = tabs.filter((tab) => !tab.agent).length;
   const request = async (command: Record<string, unknown>) => {
+    const revision = ++browserRequestRevision.current;
+    if (command.action === "reload" || command.action === "back" || command.action === "forward") clearReloadFailure();
+    else if (["navigate", "select-tab", "new-tab", "close-tab"].includes(String(command.action))) clearReloadFailure();
     try {
       const result = await native?.browser(command);
-      if (result) setState(result);
+      if (result) applyState(result, revision);
     } catch {
-      setState((previous) => ({ ...previous, status: "unavailable" }));
+      if (revision !== browserRequestRevision.current) return;
+      if (command.action === "reload") {
+        rejectedReloadTab.current = state.selected ?? null;
+        setReloadRejected(true);
+      }
+      if (command.action !== "reload") setState((previous) => ({ ...previous, status: "unavailable" }));
     }
   };
   useEffect(() => {
@@ -194,23 +235,25 @@ export function BrowserPanel({
   }, []);
   // Tabs live in the desktop, not in this panel: closing the panel only hides them, and reopening shows them again.
   useEffect(() => {
+    const revision = browserRequestRevision.current;
     void native
       ?.browser({ action: "tabs" })
       .then((result) => {
-        setState(result);
+        if (!applyState(result, revision)) return;
         const current = result.tabs?.find((tab) => tab.selected);
         if (current?.url) setAddress(current.url);
       })
       .catch(() => {});
-  }, [native]);
+  }, [native, applyState]);
   const surfaceFailed = useNativeSurface(
     surface,
     active,
     native?.browser,
     () => {
+      const revision = browserRequestRevision.current;
       void native
         ?.browser({ action: "state" })
-        .then(setState)
+        .then((result) => applyState(result, revision))
         .catch(() => {});
     },
     "browser",
@@ -290,17 +333,19 @@ export function BrowserPanel({
   const go = async (url: string) => {
     const submittedRevision = addressRevision.current;
     const navigation = ++navigationRevision.current;
+    const requestRevision = ++browserRequestRevision.current;
+    clearReloadFailure();
     try {
       const result = await native?.browser({ action: "navigate", url });
-      if (navigation !== navigationRevision.current) return;
+      if (navigation !== navigationRevision.current || requestRevision !== browserRequestRevision.current) return;
       setRefused(false);
       if (result) {
         if (submittedRevision === addressRevision.current) setAddressEdited(false);
         if (result.selected) setShownTab(result.selected);
-        setState(result);
+        applyState(result, requestRevision);
       }
     } catch (error) {
-      if (navigation !== navigationRevision.current) return;
+      if (navigation !== navigationRevision.current || requestRevision !== browserRequestRevision.current) return;
       if (String(error).includes("public HTTPS")) {
         if (submittedRevision === addressRevision.current) setRefused(true);
       } else setState((previous) => ({ ...previous, status: "unavailable" }));
@@ -314,6 +359,7 @@ export function BrowserPanel({
         : state.status === "empty"
           ? t("browser.empty")
           : t("browser.unavailable");
+  const visibleStatus = reloadFailed ? t("browser.unavailable") : status;
   return (
     <section ref={panel} aria-label={t("browser.title")} className="flex h-full min-h-0 flex-col bg-background">
       {native && (
@@ -416,12 +462,23 @@ export function BrowserPanel({
               variant="ghost"
               size="icon"
               className="size-8 shrink-0 sm:size-9"
-              aria-label={t("browser.reload")}
+              aria-label={refreshName(
+                t("browser.reload"),
+                state.status === "loading",
+                reloadFailed || state.status === "unavailable",
+              )}
               title={t("browser.reload")}
               disabled={!state.url || state.status === "loading"}
-              onClick={() => void request({ action: "reload" })}
+              aria-busy={state.status === "loading"}
+              onClick={() => {
+                setState((previous) => ({ ...previous, status: "loading" }));
+                void request({ action: "reload" });
+              }}
             >
-              <RefreshCw aria-hidden className={state.status === "loading" ? "animate-spin" : undefined} />
+              <RefreshCw
+                aria-hidden
+                className={refreshIcon(state.status === "loading", reloadFailed || state.status === "unavailable")}
+              />
             </Button>
           </>
         )}
@@ -538,9 +595,13 @@ export function BrowserPanel({
       {native ? (
         <>
           <output
-            className={state.status === "unavailable" ? "block px-3 py-1 text-xs text-muted-foreground" : "sr-only"}
+            className={
+              reloadFailed || state.status === "unavailable"
+                ? "block px-3 py-1 text-xs text-muted-foreground"
+                : "sr-only"
+            }
           >
-            {status}
+            {visibleStatus}
           </output>
           {bookmarks && (
             <BookmarkBar slot={starSlot} url={current?.url || state.url} title={current?.title ?? ""} tabs={tabs} />

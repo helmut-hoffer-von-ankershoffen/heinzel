@@ -2,7 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
 import { api, type SchemaChatSession, unwrap } from "@/api/client";
 import { token } from "@/api/token";
+import { RefreshGlyph } from "@/components/RefreshGlyph";
 import { Button } from "@/components/ui/button";
+import { refreshName } from "@/lib/refreshFeedback";
 
 const statusLabel = {
   draft: "Awaiting review",
@@ -125,7 +127,15 @@ export function CapturedWriteActivity({
                 Older
               </Button>
             )}
-            <Button size="sm" variant="outline" disabled={query.isFetching} onClick={() => void query.refetch()}>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={query.isFetching}
+              aria-busy={query.isFetching}
+              aria-label={refreshName("Refresh", query.isFetching, query.isError)}
+              onClick={() => void query.refetch()}
+            >
+              <RefreshGlyph busy={query.isFetching} failed={query.isError} />
               Refresh
             </Button>
           </div>
