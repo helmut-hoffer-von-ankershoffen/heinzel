@@ -79,6 +79,21 @@ def test_exact_adhoc_widget_stops_before_replacement(model):
     assert model.signaled == [model.process]
 
 
+def test_widgetkit_relaunch_gets_one_new_identity_check_and_graceful_exit(model, monkeypatch):
+    first = model.process
+    replacement = replace(first, pid=42, unique_id=101)
+
+    def request(process):
+        model.signaled.append(process)
+        model.rows = [replace(model.rows[0], pid=42, unique_id=101)] if process == first else []
+        return True
+
+    monkeypatch.setattr(model.native, "process", {first.pid: first, replacement.pid: replacement}.__getitem__)
+    monkeypatch.setattr(model.native, "request_exit", request)
+    assert widget.quiesce(model.bundle)
+    assert model.signaled == [first, replacement]
+
+
 @pytest.mark.parametrize("case", ["main", "helper", "foreign", "translocated", "saved-uid", "signature", "metadata"])
 def test_forbidden_targets_never_receive_a_signal(model, monkeypatch, case):
     row = model.rows[0]

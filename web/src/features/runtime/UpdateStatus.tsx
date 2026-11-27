@@ -6,6 +6,7 @@ import type { SchemaUpdatePlan } from "@/api/client";
 import { FooterItem } from "@/components/FooterItem";
 import { PaneAction } from "@/components/PaneActions";
 import { Progress, type ProgressSegment } from "@/components/Progress";
+import { Button } from "@/components/ui/button";
 import { AutoUpdateToggle } from "@/features/runtime/updates/AutoUpdateToggle";
 import { autoLoadInstalledCore } from "@/features/runtime/updates/autoLoad";
 import { checkNow, KEY, useAutoUpdateStatus } from "@/features/runtime/updates/autoUpdateApi";
@@ -20,10 +21,11 @@ import {
   type UpdateAnswers,
   updateDesktopApp,
 } from "@/features/runtime/updates/controller";
+import { desktopRestartTarget, localMacClient, useDesktopCountdown } from "@/features/runtime/updates/desktopCountdown";
 import { PluginUnpin } from "@/features/runtime/updates/PluginUnpin";
 import { UpdatePlanDetails } from "@/features/runtime/updates/UpdatePlanDetails";
 import { describe, partSegments } from "@/features/runtime/updates/updateState";
-import { reloadHeld, workOnScreen } from "@/features/runtime/updates/work";
+import { reloadHeld, saveOpenWork, workOnScreen } from "@/features/runtime/updates/work";
 import { t } from "@/i18n";
 import { type Phase, requestDrivenOperation } from "@/lib/operationRun";
 import { zoneDateTime } from "@/lib/zoneTime";
@@ -48,14 +50,16 @@ function updateRecoveryState(): "none" | "inspect" | "verify" {
 
 /** Inspect the pane first; its update button uses the existing installer and verified lifecycle. */
 export function UpdateStatus() {
+  const planQuery = useAutoUpdateStatus();
+  const plan = planQuery.data;
+  const watchDesktop = Boolean(plan?.enabled && localMacClient());
   const query = useQuery({
     queryKey: ["web", "update-status"],
     queryFn: ({ signal }) => readUpdateStatus(signal),
-    refetchInterval: 60_000,
+    refetchInterval: watchDesktop ? 2_000 : 60_000,
+    refetchIntervalInBackground: watchDesktop,
     retry: false,
   });
-  const planQuery = useAutoUpdateStatus();
-  const plan = planQuery.data;
   const queryClient = useQueryClient();
   const active = useRef<AbortController | null>(null);
   const mounted = useRef(true);
@@ -92,10 +96,15 @@ export function UpdateStatus() {
   const { mutate: runCheck } = check;
   // The desktop app older than this server: the server quits, replaces and reopens it on its own.
   const desktopUpdate = useMutation({
-    mutationFn: () => updateDesktopApp(AbortSignal.timeout(15_000)),
+    mutationFn: (automatic: boolean) => {
+      saveOpenWork();
+      return updateDesktopApp(AbortSignal.timeout(15_000), automatic);
+    },
     onSuccess: () => console.info(JSON.stringify({ event: "web.update.desktop", outcome: "started" })),
     onError: () => console.info(JSON.stringify({ event: "web.update.desktop", outcome: "failed" })),
   });
+  const { mutate: runDesktopUpdate } = desktopUpdate;
+  const restartDesktop = useCallback(() => runDesktopUpdate(true), [runDesktopUpdate]);
   // "Check for Updates…" in the desktop app menu opens this pane and does the same check.
   useEffect(
     () =>
@@ -217,6 +226,20 @@ export function UpdateStatus() {
     };
   }, [run]);
   const status = query.data;
+  const desktopTarget = desktopRestartTarget(status);
+  const countdown = useDesktopCountdown(
+    desktopTarget,
+    !query.isError &&
+      !planQuery.isError &&
+      plan?.enabled === true &&
+      status?.current === plan.version &&
+      plan.phase === "idle" &&
+      !busy &&
+      !desktopUpdate.isPending &&
+      !desktopUpdate.isSuccess,
+    status?.idle !== false,
+    restartDesktop,
+  );
   // A newer core is installed but this server still runs the old one (a restart was missed): load it on its own once
   // per version across windows, when the server is idle, nothing is open or running here and no other window acts.
   const installedCore = status?.installed ?? null;
@@ -273,12 +296,17 @@ export function UpdateStatus() {
   const canLoad = installedCore !== null && !busy && recovery === "none";
   const desktop = status?.desktop?.behind ? status.desktop : null;
   const canUpdateDesktop = desktop !== null && !busy && !desktopUpdate.isPending && !desktopUpdate.isSuccess;
-  const label = view.available || desktop ? t("updates.availableLabel") : t("updates.title");
-  return (
+  const manualRestart = Boolean(desktopTarget && countdown.manual && !desktopUpdate.isSuccess);
+  const label = manualRestart
+    ? t("updates.desktopRestartRequired")
+    : view.available || desktop
+      ? t("updates.availableLabel")
+      : t("updates.title");
+  const footer = (
     <FooterItem
       label={label}
       state={view.tone}
-      icon={busy ? LoaderCircle : Download}
+      icon={busy || desktopUpdate.isPending ? LoaderCircle : Download}
       className={
         (view.available || desktop) && !problem ? "animate-pulse text-bad" : view.allCurrent ? "text-ok" : undefined
       }
@@ -298,8 +326,15 @@ export function UpdateStatus() {
             </PaneAction>
           )}
           {canUpdateDesktop && (
-            <PaneAction icon={Download} primary={view.count === 0} onClick={() => desktopUpdate.mutate()}>
-              {t("updates.desktopAction")}
+            <PaneAction
+              icon={manualRestart ? RotateCcw : Download}
+              primary={view.count === 0}
+              onClick={() => {
+                countdown.cancel();
+                runDesktopUpdate(false);
+              }}
+            >
+              {t(manualRestart ? "updates.desktopRestartAction" : "updates.desktopAction")}
             </PaneAction>
           )}
           {canUpdate && (
@@ -355,7 +390,11 @@ export function UpdateStatus() {
                 ? t("updates.desktopStarted")
                 : t("updates.desktopBehind", { app: desktop.version ?? "", version: status.current })}
             </p>
-            {!desktopUpdate.isSuccess && <p className="text-xs text-muted-foreground">{t("updates.desktopHow")}</p>}
+            {!desktopUpdate.isSuccess && (
+              <p className="text-xs text-muted-foreground">
+                {t(manualRestart ? "updates.desktopRestartManual" : "updates.desktopHow")}
+              </p>
+            )}
             {desktopUpdate.error && (
               <p role="alert" className="text-bad">
                 {desktopUpdate.error.message}
@@ -377,5 +416,22 @@ export function UpdateStatus() {
         )}
       </div>
     </FooterItem>
+  );
+  return (
+    <>
+      {countdown.seconds !== null && (
+        <section
+          aria-label={t("updates.desktopRestartTitle")}
+          className="fixed top-16 right-4 z-[calc(var(--layer-modal,60)_+_10)] w-[min(24rem,calc(var(--hz-viewport-width,100vw)_-_2rem))] space-y-2 rounded-xl border border-foreground/20 bg-background p-4 text-sm text-foreground shadow-lg"
+        >
+          <h2 className="font-medium">{t("updates.desktopRestartTitle")}</h2>
+          <p role="timer">{t("updates.desktopRestartCountdown", { seconds: countdown.seconds })}</p>
+          <Button size="sm" variant="outline" onClick={countdown.cancel}>
+            {t("updates.desktopRestartCancel")}
+          </Button>
+        </section>
+      )}
+      {footer}
+    </>
   );
 }

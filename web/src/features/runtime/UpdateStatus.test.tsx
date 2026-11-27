@@ -629,3 +629,33 @@ it("offers no desktop update when the desktop app is current", async () => {
   expect(screen.queryByRole("button", { name: "Update desktop app" })).not.toBeInTheDocument();
   expect(screen.queryByText(/is older than Heinzel/)).not.toBeInTheDocument();
 });
+
+it.each(["native", "electron"])("offers a manual restart in the %s footer after cancel", async (clientFlavor) => {
+  vi.stubGlobal("heinzelDesktop", { ...(clientFlavor === "native" ? { clientOS: "macOS" } : {}), clientFlavor });
+  const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+  vi.mocked(updateDesktopApp).mockClear();
+  mockApi({
+    ...shell,
+    "/api/auto-update": { enabled: true, phase: "idle", version: status.current },
+    "/api/update-status": {
+      ...status,
+      available: false,
+      idle: true,
+      desktop: { version: "0.0.9", variant: clientFlavor, behind: true },
+    },
+  });
+  const user = userEvent.setup();
+  try {
+    renderAt("/");
+    expect(await screen.findByRole("timer")).toHaveTextContent("30s");
+    await user.click(screen.getByRole("button", { name: "Cancel restart" }));
+    expect(updateDesktopApp).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: /Desktop app out of date/ }));
+    await user.click(screen.getByRole("button", { name: "Restart to update" }));
+    expect(updateDesktopApp).toHaveBeenCalledWith(expect.any(AbortSignal), false);
+  } finally {
+    localStorage.removeItem("hz.update.desktopCountdown");
+    platform.mockRestore();
+    vi.unstubAllGlobals();
+  }
+});

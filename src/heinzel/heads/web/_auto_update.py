@@ -18,6 +18,7 @@ from fastapi import FastAPI, HTTPException, Response
 
 from heinzel import HeinzelError
 from heinzel.heads._stream import WORK
+from heinzel.heads.web._updates import DESKTOP_UPDATE_PATH
 from heinzel.kernel import Installation
 from heinzel.modules.system.client import open_updater_file, private_directory
 from heinzel.modules.system.updater.api import Activity, AutoUpdateStatus, Schedule, StateFiles
@@ -153,4 +154,5 @@ def counts_as_work(method: str, path: str) -> bool:
     """Whether a request to the web head's API changes state and so holds off an update while it runs."""
     if method in {"GET", "HEAD", "OPTIONS"}:
         return False
-    return not path.startswith(f"/api{AUTO_UPDATE_PATH}")
+    # The desktop restart checks existing activity itself; it must not count its own request.
+    return path != f"/api{DESKTOP_UPDATE_PATH}" and not path.startswith(f"/api{AUTO_UPDATE_PATH}")

@@ -7,13 +7,15 @@ import platform
 import re
 import stat
 import sys
+import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from importlib import metadata
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, Field
 
@@ -22,6 +24,9 @@ from heinzel._adapter_system import SYSTEM_CLOCK, SYSTEM_RUNNER
 from heinzel.kernel import HeinzelError, Installation, Kernel, ReleaseCache, subprocess_environment
 from heinzel.kernel._desktop_app import DesktopVariant, desktop_app_here
 from heinzel.kernel._logging import log_event
+
+if TYPE_CHECKING:
+    from heinzel.ports import RunningProcess
 
 _log = logging.getLogger(__name__)
 MAX_FILES = 128
@@ -221,15 +226,16 @@ def _desktop_status() -> DesktopAppStatus | None:
 
 
 DESKTOP_COMMAND = "hz app install --restart"
+DESKTOP_UPDATE_PATH = "/update-status/desktop"
 
 
-def _start_desktop_update() -> None:
+def _start_desktop_update() -> "RunningProcess":
     """Run this hz's `hz app install --restart` in its own session, so it outlives the app it quits and reopens.
 
     The installer asks the app to quit, waits, never forces it, replaces it and opens it again; it logs every step.
     """
     flags = ["-I", "-B"] if sys.dont_write_bytecode else ["-I"]
-    SYSTEM_RUNNER.spawn(
+    return SYSTEM_RUNNER.spawn(
         [sys.executable, *flags, "-m", "heinzel", "app", "install", "--restart"],
         env=subprocess_environment() | {"HZ_UPDATE_CHECK": "false"},
         detached=True,
@@ -248,6 +254,7 @@ def add_updates(
     frontend = _frontend(static)
     installation = kernel.resolve(Installation)
     installed_at = _installed_at(installation)
+    _add_desktop_update(app, kernel, restartable=restartable, busy=busy)
 
     @app.get("/update-status", tags=["web"])
     def status(response: Response) -> UpdateStatus:
@@ -285,8 +292,21 @@ def add_updates(
             desktop=_desktop_status(),
         )
 
-    @app.post("/update-status/desktop", tags=["web"], status_code=202)
-    def update_desktop() -> DesktopUpdateStarted:
+    @app.get("/frontend", tags=["web"])
+    def build(response: Response) -> Frontend:
+        if frontend is None:
+            raise HTTPException(status_code=409, detail="This server has no verifiable installed frontend build.")
+        response.headers["Cache-Control"] = "no-store"
+        return frontend
+
+
+def _add_desktop_update(app: FastAPI, kernel: Kernel, *, restartable: bool, busy: Callable[[], bool]) -> None:
+    """Register the detached desktop installer and coalesce concurrent requests."""
+    desktop_update_lock = threading.Lock()
+    desktop_update_process: RunningProcess | None = None
+
+    @app.post(DESKTOP_UPDATE_PATH, tags=["web"], status_code=202)
+    def update_desktop(request: Request, automatic: bool = False) -> DesktopUpdateStarted:
         """Update the desktop app to this server's release: quit it, replace it and open it again.
 
         \f
@@ -294,22 +314,31 @@ def add_updates(
         Raises:
             HTTPException: 409 without an out-of-date desktop app here, 500 if the update can't be started.
         """  # noqa: D301 - FastAPI ends the description at a real form feed
-        desktop = _desktop_status()
-        if platform.system() != "Darwin" or desktop is None:
-            raise HTTPException(status_code=409, detail="There is no desktop app here to update.")
-        if not desktop.behind:
-            raise HTTPException(status_code=409, detail=f"The desktop app is already at {desktop.version}.")
-        try:
-            _start_desktop_update()
-        except OSError as exc:
-            log_event(_log, "web.update.desktop", outcome="error", error=type(exc).__name__)
-            raise HTTPException(status_code=500, detail="The desktop app update couldn't be started.") from exc
+        nonlocal desktop_update_process
+        with desktop_update_lock:
+            desktop = _desktop_status()
+            if platform.system() != "Darwin" or desktop is None:
+                raise HTTPException(status_code=409, detail="There is no desktop app here to update.")
+            if not desktop.behind:
+                raise HTTPException(status_code=409, detail=f"The desktop app is already at {desktop.version}.")
+            if automatic:
+                settings = kernel.fresh_settings()
+                if request.url.hostname not in {"127.0.0.1", "localhost", "::1"}:
+                    raise HTTPException(status_code=409, detail="Only the local workspace can restart the Mac app.")
+                if not (
+                    restartable
+                    and settings.auto_update
+                    and settings.update_check
+                    and settings.update_channel == "stable"
+                ):
+                    raise HTTPException(status_code=409, detail="Automatic desktop updates are off.")
+                if busy():
+                    raise HTTPException(status_code=409, detail="Heinzel is busy. Restart the app when ready.")
+            if desktop_update_process is None or desktop_update_process.poll() is not None:
+                try:
+                    desktop_update_process = _start_desktop_update()
+                except OSError as exc:
+                    log_event(_log, "web.update.desktop", outcome="error", error=type(exc).__name__)
+                    raise HTTPException(status_code=500, detail="The desktop app update couldn't be started.") from exc
         log_event(_log, "web.update.desktop", outcome="started", before=desktop.version, target=__version__)
         return DesktopUpdateStarted(started=True, command=DESKTOP_COMMAND)
-
-    @app.get("/frontend", tags=["web"])
-    def build(response: Response) -> Frontend:
-        if frontend is None:
-            raise HTTPException(status_code=409, detail="This server has no verifiable installed frontend build.")
-        response.headers["Cache-Control"] = "no-store"
-        return frontend
