@@ -16,7 +16,6 @@ REPO = Path(__file__).resolve().parents[2]
 SOURCE = REPO / "src" / "heinzel"
 LEVELS = {"debug", "info", "warning", "warn", "error", "exception", "critical", "fatal"}
 LOGGER_NAMES = {"log", "logger", "_log", "_logger", "LOG", "LOGGER", "_LOG", "_LOGGER", "logging"}
-LOGGER_SPELLINGS = LOGGER_NAMES | {"getLogger", "get_logger"}
 
 FORMATTED_ALLOWED: dict[str, int] = {
     # Formatted logger calls from before ADR 0138; migrate to `log_event`/`step` and lower the count. Never add.
@@ -24,7 +23,6 @@ FORMATTED_ALLOWED: dict[str, int] = {
     "src/heinzel/modules/heinzel/_service.py": 2,
     "src/heinzel/modules/system/updater/_schedule.py": 12,
 }
-SOURCE_PATHS = {path.relative_to(REPO).as_posix() for path in SOURCE.rglob("*.py")}
 
 
 def _is_logger(node: ast.expr) -> bool:
@@ -50,12 +48,8 @@ def _is_formatted(message: ast.expr) -> bool:
 
 def formatted_logger_calls(source: str) -> list[int]:
     """Lines of logger calls whose message is an f-string, `%`, `+` or `.format`, or that pass `%`-arguments."""
-    tree = ast.parse(source)
-    # Non-ASCII identifiers can normalize to a logger spelling during parsing.
-    if source.isascii() and not any(name in source for name in LOGGER_SPELLINGS):
-        return []
     lines = []
-    for node in ast.walk(tree):
+    for node in ast.walk(ast.parse(source)):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and _is_logger(node.func.value)):
             continue
         method = node.func.attr
@@ -65,6 +59,15 @@ def formatted_logger_calls(source: str) -> list[int]:
         if arguments and (_is_formatted(arguments[0]) or len(arguments) > 1):
             lines.append(node.lineno)
     return lines
+
+
+def _counts() -> dict[str, int]:
+    counts = {}
+    for path in sorted(SOURCE.rglob("*.py")):
+        found = formatted_logger_calls(path.read_text(encoding="utf-8"))
+        if found:
+            counts[path.relative_to(REPO).as_posix()] = len(found)
+    return counts
 
 
 @pytest.mark.parametrize(
@@ -79,8 +82,6 @@ def formatted_logger_calls(source: str) -> list[int]:
         'get_logger("plugin").info(f"{name}")',
         'self._log.exception("failed: %s", exc)',
         'log.log(logging.INFO, "installed %s", name)',
-        'LOGGER.info(f"installed {name}")',
-        '\N{SCRIPT SMALL L}og.info(f"installed {name}")',
     ],
 )
 def test_finds_formatted_logger_calls(call):
@@ -101,13 +102,16 @@ def test_leaves_structured_and_plain_calls_alone(call):
     assert formatted_logger_calls(call) == []
 
 
-@pytest.mark.parametrize("path", sorted(SOURCE_PATHS | FORMATTED_ALLOWED.keys()))
-def test_new_code_logs_structured_events(path: str):
-    """Check each file once, including stale entries for deleted files."""
-    lines = formatted_logger_calls((REPO / path).read_text(encoding="utf-8")) if path in SOURCE_PATHS else []
-    allowed = FORMATTED_ALLOWED.get(path, 0)
-    assert len(lines) <= allowed, (
-        f"{path}: log an event name with fields (`log_event`/`step` in heinzel.kernel._logging); "
-        f"found {len(lines)} formatted calls on lines {lines}, allowed {allowed}"
+def test_new_code_logs_structured_events():
+    counts = _counts()
+    grown = {path: count for path, count in counts.items() if count > FORMATTED_ALLOWED.get(path, 0)}
+    assert not grown, (
+        "These files format logger messages; log an event name with fields instead "
+        f"(`log_event`/`step` in heinzel.kernel._logging, CODING_STANDARDS 'Structured logging'): {grown}"
     )
-    assert len(lines) >= allowed, f"Lower FORMATTED_ALLOWED for {path} from {allowed} to {len(lines)}"
+
+
+def test_the_allowlist_only_shrinks():
+    counts = _counts()
+    stale = {path: allowed for path, allowed in FORMATTED_ALLOWED.items() if counts.get(path, 0) < allowed}
+    assert not stale, f"Lower these counts in FORMATTED_ALLOWED to what the files still have: {stale} now {counts}"

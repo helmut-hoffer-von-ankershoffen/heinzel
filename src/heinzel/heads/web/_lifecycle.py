@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from heinzel import __version__
 from heinzel.kernel import CurrentUser, HeinzelError, Kernel
-from heinzel.modules.system.lifecycle.api import (
+from heinzel.modules.system.lifecycle._verify import (
     ExpectedLifecycle,
     Lifecycle,
     LifecycleVerified,

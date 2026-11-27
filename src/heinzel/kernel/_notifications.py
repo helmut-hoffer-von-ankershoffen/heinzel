@@ -11,26 +11,12 @@ holds, the notice is resolved and disappears from the list, Today and the unread
 history. Resolution never marks anything read: only the person does that (ADR 0043, amendment 2026-11-07).
 """
 
-from collections.abc import Callable, Generator, Sequence
-from contextlib import contextmanager
-from contextvars import ContextVar
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, model_validator
-
-_notice_producer: ContextVar[str | None] = ContextVar("heinzel_notice_producer", default=None)
-
-
-@contextmanager
-def notice_producer_scope(producer: str | None) -> Generator[None]:
-    """Bind a registered notice producer for a kernel dispatch."""
-    token = _notice_producer.set(producer)
-    try:
-        yield
-    finally:
-        _notice_producer.reset(token)
 
 
 class NoticeKind(StrEnum):
@@ -160,14 +146,6 @@ class Notice(BaseModel):
     route: str = Field(description="Where the web app shows it, a path such as `/doctor`.")
     command: str = Field(description="The command that shows it in a terminal, such as `hz system doctor`.")
     key: str = Field(description="What makes two notices the same, so a repeat within the window is dropped.")
-    replaces: str | None = Field(
-        default=None,
-        description="The replacement group within the registered producer, notice kind, route and command.",
-    )
-    producer: str | None = Field(
-        default=None,
-        description="The registered distribution and module for a replacement group, assigned by the kernel.",
-    )
     urgent: bool = Field(default=False, description="Whether it may interrupt outside working hours.")
     at: AwareDatetime = Field(description="When it was recorded.")
     due: AwareDatetime = Field(description="When it may pop up: `at`, or the next start of your working hours.")
@@ -193,11 +171,6 @@ class Notifications:
     method raises `NotImplementedError` here.
     """
 
-    @staticmethod
-    def _current_producer() -> str | None:
-        """Return the registered producer to the SDK service implementation."""
-        return _notice_producer.get()
-
     def enabled(self, kind: NoticeKind) -> bool:
         """Whether a user has enabled recording this kind of notice."""
         raise NotImplementedError
@@ -214,12 +187,8 @@ class Notifications:
         urgent: bool = False,
         helper: NoticeHelper | None = None,
         resolve_when: ResolveWhen | None = None,
-        replaces: str | None = None,
     ) -> Notice | None:
         """Record a notice under the policy; the recorded one (or the earlier one it repeats), None if its kind is off.
-
-        A nonempty `replaces` resolves older notices from the same registered module, kind, route, command and group.
-        Unregistered calls and older notices without an assigned producer are outside replacement groups.
 
         With `resolve_when`, a notice whose condition already holds is not recorded (None), and one that is recorded
         disappears once it holds. Never raises for a full or unwritable store: a lost notice must not fail the job

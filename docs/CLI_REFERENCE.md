@@ -1905,7 +1905,6 @@ $ hz org calendar [OPTIONS]
 **Options**:
 
 * `--offset <int>`: Weeks before or after this week.  [default: 0]
-* `--selection <str>`: Calendar exclusions and their adapter as JSON.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

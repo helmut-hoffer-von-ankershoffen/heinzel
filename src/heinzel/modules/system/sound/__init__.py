@@ -1,8 +1,7 @@
 """The sound module of system: soundscapes for the web app, chosen like a theme but on their own (ADR 0058).
 
 A soundscape is data a plugin offers with `module.soundscape(...)`: licensed audio files the web app mixes live, each
-layer following a signal such as the part of the day, a stream in the official player of an allowed host, or ordered
-tracks on an allowed media host (ADR 0166, dark behind `native_audio`).
+layer following a signal such as the part of the day, or a stream in the official player of an allowed host.
 Installed plugins own the soundscape content. Sound is off until the person picks a soundscape and presses Play;
 `hz system sound use <name>` picks one, `off` is none.
 """
@@ -23,7 +22,6 @@ from heinzel.modules.system.sound._models import (
     SoundscapeView,
     SoundSettings,
     SoundStreamView,
-    SoundTrackView,
 )
 from heinzel.modules.system.sound._service import SoundService
 
@@ -34,12 +32,8 @@ module.service(SoundAssets, SoundService)  # the web head serves audio and sets 
 
 
 def _kind(view: SoundscapeView) -> str:
-    stream = f"stream ({view.stream.provider})" if view.stream else ""
-    if view.tracks:
-        tracks = "1 track" if len(view.tracks) == 1 else f"{len(view.tracks)} tracks"
-        return f"{tracks}, {stream}" if stream else tracks
     if view.stream is not None:
-        return stream
+        return f"stream ({view.stream.provider})"
     if view.kind != "layers":
         return ""
     return "1 layer" if len(view.layers) == 1 else f"{len(view.layers)} layers"
@@ -97,7 +91,6 @@ __all__ = [
     "SoundService",
     "SoundSettings",
     "SoundStreamView",
-    "SoundTrackView",
     "SoundscapeView",
     "module",
 ]

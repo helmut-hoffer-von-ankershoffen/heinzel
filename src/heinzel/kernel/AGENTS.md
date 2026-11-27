@@ -15,8 +15,7 @@ purpose and ADR; read it before editing.
 - `jsonable` refuses values with no JSON form; don't stringify them.
 - Only `boot()` ties configuration, discovery and the kernel together.
 - Themes and soundscapes are data plugins ship: pass values through the grammar and file checks in `_themes.py` and
-  `_soundscapes.py` before they become CSS or audio; stream hosts come only from `STREAM_PROVIDERS`, track hosts from
-  `MEDIA_ORIGINS` (ADR 0044, 0058, 0166).
+  `_soundscapes.py` before they become CSS or audio; stream hosts come only from `STREAM_PROVIDERS` (ADR 0044, 0058).
 - `ORG_SITE_PRECEDENCE` in `_layers.py` is the one private seam for the open org-site question (ADR 0040).
 - Fields a project `hz.toml` can't set are listed in `ignored_in_project` (`_settings.py`).
 - Chat agents only propose calls (`ActionGate`, `ProposedCall`); the person's confirmation runs them (ADR 0045).

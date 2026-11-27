@@ -44,7 +44,6 @@ from heinzel.kernel._credentials import subprocess_environment
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._progress import Progress
 from heinzel.kernel.install import _installation_continuity, _installed_metadata, _tool_python
-from heinzel.kernel.install._receipt_overrides import OVERRIDE_ERROR, without_verified_overrides
 from heinzel.kernel.install._uv_locate import find_uv, missing_uv_message, with_search_path
 
 RECEIPT_FILENAME = "uv-receipt.toml"
@@ -270,6 +269,7 @@ def _constraints_from_receipt(data: dict[str, Any]) -> list[str]:
     return result
 
 
+_OVERRIDE_ERROR = "The uv receipt overrides do not match the verified artifacts; inspect the installation manually."
 _CONSTRAINT_ERROR = "The uv receipt constraints changed unexpectedly; inspect the installation manually."
 
 
@@ -532,6 +532,63 @@ def _core_by_tag(raw: bytes, commit: str, tag: str) -> bytes:
         return replacement
 
 
+def _expected_overrides(overrides: Mapping[str, Path]) -> dict[str, str]:
+    expected: dict[str, str] = {}
+    for name, path in overrides.items():
+        normalized = canonicalize_name(name, validate=True)
+        if normalized in expected or not path.is_absolute() or ".." in path.parts:
+            raise HeinzelError(_OVERRIDE_ERROR)
+        expected[normalized] = str(path)
+    if not expected or len(set(expected.values())) != len(expected):
+        raise HeinzelError(_OVERRIDE_ERROR)
+    return expected
+
+
+def _receipt_overrides(entries: object) -> dict[str, str]:
+    if not isinstance(entries, list):
+        raise HeinzelError(_OVERRIDE_ERROR)
+    actual: dict[str, str] = {}
+    for entry in cast("list[object]", entries):
+        if not isinstance(entry, dict):
+            raise HeinzelError(_OVERRIDE_ERROR)
+        values = cast("dict[str, Any]", entry)
+        if (
+            set(values) != {"name", "path"}
+            or not isinstance(values["name"], str)
+            or not isinstance(values["path"], str)
+        ):
+            raise HeinzelError(_OVERRIDE_ERROR)
+        normalized = canonicalize_name(values["name"], validate=True)
+        if normalized in actual:
+            raise HeinzelError(_OVERRIDE_ERROR)
+        actual[normalized] = values["path"]
+    return actual
+
+
+def _without_verified_overrides(raw: bytes, overrides: Mapping[str, Path]) -> bytes:
+    """Remove only an exact set of named file overrides, preserving every other parsed receipt value.
+
+    Raises:
+        HeinzelError: If the receipt or the expected overrides cannot be verified.
+    """
+    try:
+        expected = _expected_overrides(overrides)
+        original = tomllib.loads(raw.decode("utf-8"))
+        tool = original["tool"]
+        actual = _receipt_overrides(tool["overrides"])
+        document = tomlkit.parse(raw.decode("utf-8"))
+        table = cast("MutableMapping[str, Any]", document["tool"])
+        del table["overrides"]
+        replacement = tomlkit.dumps(document).encode("utf-8")
+        del tool["overrides"]
+        preserved = tomllib.loads(replacement.decode("utf-8")) == original
+    except (KeyError, TypeError, ValueError, UnicodeError) as exc:
+        raise HeinzelError(_OVERRIDE_ERROR) from exc
+    if actual != expected or not preserved:
+        raise HeinzelError(_OVERRIDE_ERROR)
+    return replacement
+
+
 EDGE_WHEEL_PREFIX = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/download/edge-v"
 """Where edge wheels live; a pin elsewhere is someone's own choice and stays theirs."""
 
@@ -661,9 +718,7 @@ class Installation:
             uv: Path to the uv executable; defaults to the one on `PATH` or in uv's standard install directories.
         """
         self._progress = progress
-        running = Path(sys.prefix)
-        # The running interpreter may have been reached through a home-directory alias.
-        self.prefix = prefix or running.parent.resolve() / running.name
+        self.prefix = prefix or Path(sys.prefix)
         self._runner = runner
         self._exact_runner: Runner = _run_exact
         self._uv = uv or find_uv()
@@ -722,8 +777,8 @@ class Installation:
             try:
                 receipt = _read_tool_receipt_bytes(self.prefix)
             except ValueError as exc:
-                raise HeinzelError(OVERRIDE_ERROR) from exc
-            return without_verified_overrides(receipt, overrides)
+                raise HeinzelError(_OVERRIDE_ERROR) from exc
+            return _without_verified_overrides(receipt, overrides)
 
         return _installation_continuity.replace_receipt(self.prefix, self._continuity_authority, expected, transform)
 
@@ -1000,13 +1055,6 @@ class Installation:
         except (OSError, HeinzelError):
             return False
         return self.startup_state_matches()
-
-    def for_interrupted_update(self) -> "Installation":
-        """Resolve parent aliases for snapshot recovery while retaining the tool directory itself."""
-        prefix = self.prefix.parent.resolve() / self.prefix.name
-        if prefix == self.prefix:
-            return self
-        return Installation(self._progress, prefix=prefix, runner=self._runner, uv=self._uv)
 
     def verify_tool_destination(self, store: Path, binary: Path) -> None:
         """Verify requested uv store and executable directory against this tool's receipt.

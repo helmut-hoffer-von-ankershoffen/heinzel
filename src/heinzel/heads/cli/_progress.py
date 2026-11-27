@@ -282,7 +282,7 @@ class StepReporter:
 
 
 PHASE = "phase"
-"""The kind of event `Phases` streams for each step (`heinzel._phases.EVENT`)."""
+"""The kind of event `Phases` streams for each step (`heinzel.modules.system.updater._phases.EVENT`)."""
 BAR_WIDTH = 40
 """Cells of the download bar."""
 

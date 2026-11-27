@@ -310,7 +310,7 @@ class DocsService:
             _parameter(name, properties.get(name, {}), name in required, parameter)
             for name, parameter in ((p.name, p) for p in item.parameters)
         ]
-        verb = operation.http_method
+        verb = "GET" if operation.read_only else "POST"
         path = "/".join(item.path)
         description = _description(inspect.getdoc(operation.func) or "")
         in_head = {head: any(o.operation is operation for o in surfaces[head]) for head in HEADS}

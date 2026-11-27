@@ -5,18 +5,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from heinzel import (
-    CalendarSource,
-    Event,
-    FreeBusy,
-    HeinzelError,
-    LiveTime,
-    LiveUntil,
-    NotSupportedError,
-    OpenUrl,
-    RunCommand,
-    Window,
-)
+from heinzel import Event, FreeBusy, HeinzelError, LiveTime, LiveUntil, OpenUrl, RunCommand, Window
 from heinzel.kernel import Requirement
 from heinzel.modules.org import _agenda as agenda_module
 from heinzel.modules.org._agenda import Agenda, local_now, read_agenda, status_item
@@ -206,7 +195,7 @@ def test_week_includes_all_day_and_overlap_but_excludes_cancelled_and_outside():
     outside = event("Outside", "2026-11-02T00:00")
     calendar = FakeCalendar(outside, cancelled, holiday, overlap)
     result = read_week(calendar, FakeBindings(), NOW, 0)
-    assert [item.id for item in result.events] == [overlap.id, holiday.id]
+    assert result.events == [overlap, holiday]
     assert result.since == datetime(2026, 10, 26, tzinfo=BERLIN)
     assert result.until == datetime(2026, 11, 2, tzinfo=BERLIN)
     assert calendar.windows == [Window(since=result.since, until=result.until)]
@@ -223,34 +212,6 @@ def test_week_uses_local_midnights_across_daylight_saving_and_reports_errors():
     assert read_week(FakeCalendar(error=RuntimeError("secret")), FakeBindings(), NOW, 0).problem == (
         "Reading your calendar failed: RuntimeError"
     )
-
-
-def test_week_does_not_hide_calendar_discovery_or_read_failures():
-    from heinzel.modules.org._agenda import read_week
-
-    class Broken(FakeCalendar):
-        def calendars(self):
-            msg = "Calendar list unavailable"
-            raise HeinzelError(msg)
-
-    broken = Broken(event("Legacy", "2026-10-26T10:00"))
-    assert read_week(broken, FakeBindings(), NOW, 0).problem == "Calendar list unavailable"
-    assert broken.windows == []
-
-    class Partial(FakeCalendar):
-        def calendars(self):
-            return [CalendarSource(id="one", title="One")]
-
-        def events_for(self, calendar, window):
-            capability = "calendar"
-            raise NotSupportedError(capability, "events_for")
-
-    partial = Partial(event("Legacy", "2026-10-26T10:00"))
-    result = read_week(partial, FakeBindings(), NOW, 0)
-    assert result.problem is None
-    assert "can't events for" in result.warnings[0]
-    assert result.calendars[0].id == "one"
-    assert partial.windows == []
 
 
 def test_agenda_selects_the_correct_occurrence_during_the_repeated_dst_hour():

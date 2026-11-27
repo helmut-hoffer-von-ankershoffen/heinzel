@@ -62,8 +62,7 @@ Only the latest release receives security fixes while the project is on 0.x; upd
 - **Sound in the web app is off until you press Play.** A stream soundscape (Claude FM or a plugin's)
   plays in its host's own player; the default is YouTube's privacy-enhanced `youtube-nocookie.com`, named
   in code, never by a plugin or a configuration file. Nothing of it loads before you press Play, and the page's CSP
-  admits YouTube's two fixed player origins only while a stream is the soundscape in effect (and, with the preview
-  described below, one media origin while tracks are). “Use YouTube sign-in”
+  admits YouTube's two fixed player origins only while a stream is the soundscape in effect. “Use YouTube sign-in”
   switches to the regular `youtube.com` player and remembers this browser's choice. It can use your YouTube account
   when the browser allows it; “Use private player” reverses the choice
   ([ADR 0092](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/adr/0092-youtube-sign-in-is-an-explicit-player-choice.md)).
@@ -71,14 +70,6 @@ Only the latest release receives security fixes while the project is on 0.x; upd
   your IP address and the app's local address (`http://127.0.0.1:<port>`), and may keep storage in its frame. A
   repository's `hz.toml` can't switch sound on
   ([ADR 0058](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/adr/0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md)).
-  A preview feature, `native_audio`, is off unless your user or site configuration or the environment switches it on;
-  a repository's `hz.toml` can't. With it, a soundscape's tracks play in the page from a media host named in code:
-  `media.heinzel.team`, which the project plans to run on Cloudflare and which doesn't serve audio yet. Nothing of it
-  loads before Play. From then on the host sees your IP address, your browser and system (the desktop app adds its
-  name and version), your language, which tracks and byte ranges load and when, and any cookie that host or
-  `heinzel.team` had set. It gets no referrer and not the app's address. The page's CSP admits that one origin only
-  while such a soundscape is in effect
-  ([ADR 0166](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/adr/0166-soundscapes-may-play-native-tracks-from-an-allowlisted-media-host.md)).
 - `hz system serve mcp|api` listens on `127.0.0.1` unless you pass another `--host`; the servers have no
   authentication, so don't expose them to a network you don't trust. The REST server answers only requests to
   `localhost`, `127.0.0.1` or `[::1]` on its port (or names you list in `[hz] api_allowed_hosts`) and refuses

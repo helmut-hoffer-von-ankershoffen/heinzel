@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal, cast
 
-from heinzel.kernel._calendar_sources import CalendarSources
 from heinzel.kernel._protocols import (
     Calendar,
     Chat,
@@ -45,9 +44,7 @@ class Capability:
     protocol: type[Any]
     summary: str
     methods: Mapping[str, Mode] = field(default_factory=lambda: MappingProxyType({}))
-    """The published protocol methods with the mode a handle needs to call each one."""
-    optional_reads: Mapping[str, Callable[..., object]] = field(default_factory=lambda: MappingProxyType({}))
-    """Read extensions whose absence does not change the published provider contract."""
+    """Every method of the protocol with the mode a handle needs to call it."""
     checks: Mapping[tuple[str, str], Callable[[str], object]] = field(default_factory=lambda: MappingProxyType({}))
     """Checks of `str` arguments by (method, argument), raising `ValueError`: what a contract's `args` are held to
     before any run, e.g. a mail query's syntax."""
@@ -83,9 +80,6 @@ class Capability:
     """With several adapters: read methods that return a list, asked of every adapter at once and merged."""
 
     def __post_init__(self) -> None:
-        if not self.methods.keys().isdisjoint(self.optional_reads):
-            msg = f"Capability {self.name!r} read extensions must differ from published methods"
-            raise ValueError(msg)
         if not (self.optional | self.core_only) <= set(self.methods):
             msg = f"Capability {self.name!r} optional and core-only methods must be declared methods"
             raise ValueError(msg)
@@ -98,11 +92,6 @@ class Capability:
         if not set(self.routes).isdisjoint(self.fan_out) or not set(self.routes) <= set(self.methods):
             msg = f"Capability {self.name!r}: routed and fan-out methods must be distinct declared methods"
             raise ValueError(msg)
-
-    @property
-    def handle_methods(self) -> Mapping[str, Mode]:
-        """Modes available on the scoped handle, including optional reads."""
-        return {**self.methods, **dict.fromkeys(self.optional_reads, "read")} if self.optional_reads else self.methods
 
     @property
     def modes(self) -> frozenset[Mode]:
@@ -157,9 +146,6 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                         "cancel_event": "write",
                         "respond": "write",
                     }
-                ),
-                optional_reads=MappingProxyType(
-                    {"calendars": CalendarSources.calendars, "events_for": CalendarSources.events_for}
                 ),
                 checks=MappingProxyType({("free_busy", "people"): free_busy_people}),
             ),
@@ -278,7 +264,7 @@ def declared_unsupported(adapter: object, capability: Capability) -> frozenset[s
     declared: object = getattr(adapter, "unsupported", ())
     if isinstance(declared, str | bytes) or not isinstance(declared, Iterable):
         return absent
-    return absent | frozenset(name for name in cast("Iterable[object]", declared) if name in capability.handle_methods)  # type: ignore[misc]
+    return absent | frozenset(name for name in cast("Iterable[object]", declared) if name in capability.methods)  # type: ignore[misc]
 
 
 def capability_of(protocol: Any) -> Capability | None:  # noqa: ANN401 - any annotation

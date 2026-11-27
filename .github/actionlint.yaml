@@ -1,5 +1,0 @@
-# Remove this exception when the pinned actionlint supports GitHub's concurrency.queue (rhysd/actionlint#657).
-paths:
-  .github/workflows/release-tail.yml:
-    ignore:
-      - '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'

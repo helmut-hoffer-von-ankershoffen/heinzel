@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 pytestmark = [
-    pytest.mark.real_system,
     pytest.mark.integration,
     pytest.mark.macos_specific,
     pytest.mark.skipif(sys.platform != "darwin", reason="The Swift app requires macOS"),

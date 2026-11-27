@@ -5,13 +5,13 @@ import webbrowser
 from collections.abc import Callable
 from pathlib import Path
 
-from heinzel.modules.system.lifecycle.api import (
+from heinzel.modules.system.lifecycle._supervision import (
     SUPERVISED_LOG,
     SupervisedWeb,
     redirect_supervised_log,
     restart_when_settled,
 )
-from heinzel.modules.system.lifecycle.api import WebPublication as _WebPublication
+from heinzel.modules.system.lifecycle._supervision import WebPublication as _WebPublication
 
 __all__ = ["SUPERVISED_LOG", "SupervisedWeb", "WebPublication", "redirect_supervised_stderr", "restart_when_settled"]
 

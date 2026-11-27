@@ -1,11 +1,10 @@
 """Soundscapes: background sound for the web app, as data a plugin ships, chosen like a theme (ADR 0058).
 
 A soundscape is either layered audio, licensed files in the plugin that the web app mixes live (each layer's gain bound
-to a signal by a curve), or a programme: a stream in the official player of a host `STREAM_PROVIDERS` allows, ordered
-tracks on a host `MEDIA_ORIGINS` allows (ADR 0166), or both. No host is data: a stream names a provider and an id, a
-track's URL must be on an origin listed here, and the page's CSP takes its origins only from these tables. Audio files
-are checked at import and again when the web head serves them, like a theme's fonts: inside the soundscape's
-directory, a regular file, within the size limits, and of the type its signature says.
+to a signal by a curve), or a stream in the official player of a host `STREAM_PROVIDERS` allows. No URL or host is
+data: a stream names a provider and an id, and the frame origin comes from the table here. Audio files are checked at
+import and again when the web head serves them, like a theme's fonts: inside the soundscape's directory, a regular
+file, within the size limits, and of the type its signature says.
 """
 
 import hashlib
@@ -35,9 +34,6 @@ MAX_LINE = 200
 MAX_LAYERS = 8
 MAX_PAIRS = 8
 MAX_CURVE = 8
-MAX_TRACKS = 50
-MAX_TRACK_URL = 300
-MAX_TRACK_SECONDS = 3 * 60 * 60
 MAX_ASSET_BYTES = 2 * 1024 * 1024
 """The largest audio file a soundscape may ship, 2 MB."""
 MAX_SOUNDSCAPE_BYTES = 8 * 1024 * 1024
@@ -50,11 +46,6 @@ SOUND_ROUTE = "/sound-assets"
 SOUND_CSP = "default-src 'none'; sandbox"
 """The Content Security Policy of a served audio file: opened on its own, it loads and runs nothing."""
 VIDEO = r"^[A-Za-z0-9_-]{11}$"
-MEDIA_ORIGINS = ("https://media.heinzel.team",)
-"""The origins a track may come from, in code: a plugin or a configuration file can't add one (ADR 0166)."""
-TRACK_URL = re.compile(r"(https://[a-z0-9.-]+)((?:/[A-Za-z0-9_][A-Za-z0-9._-]*){1,8})\.(mp3|m4a)")
-"""A track's URL: an origin without port or credentials and plain names; no query, fragment or escape."""
-_TRACK_TYPES = {"mp3": "audio/mpeg", "m4a": "audio/mp4"}
 _OGG = b"OggS"
 _ID3 = b"ID3"
 _MP3_FRAME_HEADER = 4
@@ -223,44 +214,8 @@ class SoundStream(BaseModel):
     video: str = Field(pattern=VIDEO, description="The video's id, e.g. `abcdefghijk`.")
 
 
-def _track_url(value: str) -> str:
-    found = TRACK_URL.fullmatch(value)
-    if found is None or found.group(1) not in MEDIA_ORIGINS:
-        msg = (
-            f"a plain https URL of an .mp3 or .m4a file on {', '.join(MEDIA_ORIGINS)}, e.g. "
-            f"{MEDIA_ORIGINS[0]}/album/track-1.mp3, without a query, fragment, port or credentials"
-        )
-        raise ValueError(msg)
-    return value
-
-
-class SoundTrack(BaseModel):
-    """One track of a soundscape, played by the web app from a host of `MEDIA_ORIGINS` (ADR 0166)."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
-
-    title: Line = Field(min_length=1, description="What the player and the lock screen show, e.g. `Morning tide`.")
-    url: Annotated[str, AfterValidator(_track_url)] = Field(
-        max_length=MAX_TRACK_URL, description="The file's https URL on a host of `MEDIA_ORIGINS`, without a query."
-    )
-    type: Literal["audio/mpeg", "audio/mp4"] = Field(
-        description="Its media type: `audio/mpeg` for `.mp3`, `audio/mp4` for `.m4a`."
-    )
-    duration_seconds: int = Field(
-        ge=1, le=MAX_TRACK_SECONDS, strict=True, description="How long it is, in whole seconds, at most 3 hours."
-    )
-
-    @model_validator(mode="after")
-    def _typed(self) -> Self:
-        expected = _TRACK_TYPES[self.url.rpartition(".")[2]]
-        if self.type != expected:
-            msg = f"the type of that file is {expected}"
-            raise ValueError(msg)
-        return self
-
-
 class Soundscape(BaseModel):
-    """Background sound for the web app: layered audio files, or a stream, tracks or both (ADR 0058, ADR 0166)."""
+    """Background sound for the web app: layered audio files or a stream (ADR 0058)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
 
@@ -268,9 +223,7 @@ class Soundscape(BaseModel):
     title: Annotated[str, AfterValidator(_one_line)] = Field(
         min_length=1, max_length=MAX_TITLE, description="What people pick it by, e.g. `Rainy study`."
     )
-    kind: Literal["layers", "stream"] = Field(
-        description="`layers`: audio files mixed live; `stream`: a stream, tracks or both."
-    )
+    kind: Literal["layers", "stream"] = Field(description="`layers`: audio files mixed live; `stream`: a stream.")
     pairs_with: tuple[Annotated[str, Field(pattern=NAME, max_length=MAX_NAME)], ...] = Field(
         default=(),
         max_length=MAX_PAIRS,
@@ -285,19 +238,14 @@ class Soundscape(BaseModel):
         description="Short sounds by notice kind (`draft`, `failed`, ...), for a layered soundscape.",
     )
     stream: SoundStream | None = Field(default=None, description="The stream of a stream soundscape.")
-    tracks: tuple[SoundTrack, ...] = Field(
-        default=(),
-        max_length=MAX_TRACKS,
-        description="Tracks of a stream soundscape, played in this order, beside or instead of its stream; up to 50.",
-    )
 
     @model_validator(mode="after")
     def _kind(self) -> Self:
-        if self.kind == "layers" and (self.stream is not None or self.tracks or not self.layers):
-            msg = "a layered soundscape has 1 to 8 [[layers]] and no [stream] or [[tracks]]"
+        if self.kind == "layers" and (self.stream is not None or not self.layers):
+            msg = "a layered soundscape has 1 to 8 [[layers]] and no [stream]"
             raise ValueError(msg)
-        if self.kind == "stream" and ((self.stream is None and not self.tracks) or self.layers or self.earcons):
-            msg = "a stream soundscape has a [stream], [[tracks]] or both, and no [[layers]] or [earcons]"
+        if self.kind == "stream" and (self.stream is None or self.layers or self.earcons):
+            msg = "a stream soundscape has a [stream] and no [[layers]] or [earcons]"
             raise ValueError(msg)
         return self
 
@@ -447,10 +395,6 @@ class SoundAssets:
     def stream_provider(self) -> str | None:
         """The provider of the stream soundscape in effect, a key of `STREAM_PROVIDERS`; None for none or layers."""
         raise NotImplementedError
-
-    def media_origins(self) -> tuple[str, ...]:
-        """The origins of the tracks of the soundscape in effect, of `MEDIA_ORIGINS`; none unless overridden."""
-        return ()
 
 
 class ThemeChoice:

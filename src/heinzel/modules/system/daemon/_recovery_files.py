@@ -12,9 +12,6 @@ from typing import Never
 from pydantic import JsonValue
 
 from heinzel import HeinzelError
-from heinzel.modules.system._recovery_boot import path_absent
-
-__all__ = ["LIMIT", "RecoveryFile", "path_absent", "recovery_file", "rename_exclusive"]
 
 LIMIT = 256 * 1024
 
@@ -76,6 +73,19 @@ def recovery_file(path: Path, *, private: bool = True) -> RecoveryFile:
         if len(content) > LIMIT or _file_identity(info) != _file_identity(after):
             _refuse()
         return RecoveryFile(path, content, _file_identity(info))
+
+
+def path_absent(path: Path) -> bool:
+    """Require a missing entry, rejecting a dangling link.
+
+    Raises:
+        OSError: If the entry cannot be inspected.
+    """
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return True
+    return False
 
 
 def rename_exclusive(source: Path, destination: Path, *, expected_source: RecoveryFile | None = None) -> None:

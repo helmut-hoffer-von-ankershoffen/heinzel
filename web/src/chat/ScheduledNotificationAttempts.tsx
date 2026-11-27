@@ -2,9 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { api, problem } from "@/api/client";
 import type { components } from "@/api/schema";
-import { RefreshGlyph } from "@/components/RefreshGlyph";
 import { Button } from "@/components/ui/button";
-import { refreshName } from "@/lib/refreshFeedback";
 
 async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
   const { data, error, response } = await call;
@@ -116,15 +114,12 @@ export function ScheduledNotificationAttempts({ sessionId }: { sessionId: string
         type="button"
         size="sm"
         variant="outline"
-        aria-busy={page.isFetching}
-        aria-label={refreshName("Refresh activity", page.isFetching, page.isError)}
         onClick={() => {
           setAck(null);
           if (cursor === 0) void page.refetch();
           else setCursor(0);
         }}
       >
-        <RefreshGlyph busy={page.isFetching} failed={page.isError} />
         Refresh activity
       </Button>
       {page.isPending && <p>Loading notification activity…</p>}

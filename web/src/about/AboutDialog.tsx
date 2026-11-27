@@ -15,18 +15,16 @@ const REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel";
 const loadedAsset = loadedFrontend(document);
 
 type Desktop = { version: string; path: string };
-type Bridge = { about?: () => Promise<Desktop>; clientFlavor?: "native" | "electron"; workspaceAudio?: boolean };
+type Bridge = { about?: () => Promise<Desktop> };
 
 const desktopBridge = (): Bridge | undefined => (window as Window & { heinzelDesktop?: Bridge }).heinzelDesktop;
 
 type Info = NonNullable<ReturnType<typeof useInfo>["data"]>;
 export type Client = "native" | "electron" | "browser";
 
-/** The older Native bridge advertised no workspace audio, even when it offered local About details. */
-export const clientHere = (bridge: Bridge | undefined = desktopBridge()): Client => {
-  if (!bridge) return "browser";
-  return bridge.clientFlavor ?? (bridge.workspaceAudio === false || !bridge.about ? "native" : "electron");
-};
+/** Which client shows this page: the Electron app's bridge offers `about`, the native app's bridge does not. */
+export const clientHere = (bridge: Bridge | undefined = desktopBridge()): Client =>
+  bridge ? (bridge.about ? "electron" : "native") : "browser";
 
 const clientLabel = (client: Client) =>
   t(client === "native" ? "about.nativeApp" : client === "electron" ? "about.electronApp" : "about.browser");
@@ -38,9 +36,7 @@ export function desktopApp(info: Info, desktop: Desktop | null): { name: string;
     const variant = app.variant ? clientLabel(app.variant) : t("about.desktop");
     return { name: app.version ? `${variant} ${app.version}` : variant, path: app.path };
   }
-  if (!desktop) return null;
-  const variant = clientHere() === "native" ? "native" : "electron";
-  return { name: `${clientLabel(variant)} ${desktop.version}`, path: desktop.path };
+  return desktop ? { name: `${clientLabel("electron")} ${desktop.version}`, path: desktop.path } : null;
 }
 
 const isFirstParty = (repository: string | null) =>
@@ -114,9 +110,8 @@ export function AboutDialog() {
   );
   useEffect(
     () =>
-      onMenuAction(["about", "copy"], (action, event) => {
+      onMenuAction(["about", "copy"], (action) => {
         if (action === "about") {
-          event.preventDefault();
           if (!dialog.current) {
             returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
             setOpen(true);

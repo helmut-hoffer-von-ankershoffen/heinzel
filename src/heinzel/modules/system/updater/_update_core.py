@@ -263,21 +263,11 @@ class UpdateCore:
         return True
 
     def _finish_mutation(
-        self,
-        scope: DaemonMutationScope,
-        plan: DaemonHandoverPlan,
-        candidate: str,
-        result: UpdateResult,
-        *,
-        before_handover: Callable[[], None] | None = None,
+        self, scope: DaemonMutationScope, plan: DaemonHandoverPlan, candidate: str, result: UpdateResult
     ) -> UpdateResult:
         if scope.checkpoint_matched:
             self._installation.record_startup_state(expected=candidate)
-        # Verification is in memory. Keep the rollback until this succeeds, then retire it before any durable
-        # handover request or completion of the daemon mutation.
         scope.verified_complete(candidate)
-        if before_handover is not None:
-            before_handover()
         if not self._restart_daemon:
             scope.finish_without_handover()
             self._handover = (plan, DaemonHandoverRequest(requested=False, reason="--no-daemon left it running"))
@@ -311,10 +301,10 @@ class UpdateCore:
             return latest
         return None
 
-    def _fingerprints(self, *, include_content: bool = False) -> "Before":
-        """The generation before an install and, for a portable rollback, what its content must match."""
+    def _fingerprints(self) -> "Before":
+        """The generation before an install and, if it moves to another interpreter, what a put-back must match."""
         generation = self._installation.startup_fingerprint()
-        if not include_content and not self._installation.changes_interpreter:
+        if not self._installation.changes_interpreter:
             return Before(generation)
         return Before(generation, self._installation.content_fingerprint(), self._installation.startup_state_matches())
 

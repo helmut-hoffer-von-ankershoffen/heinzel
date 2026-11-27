@@ -7,7 +7,7 @@ import { shell } from "@/test/fixtures";
 import { expectAccessible, mockApi } from "@/test/render";
 import { renderAt } from "@/test/renderApp";
 import { nearSlot, resetDock } from "./dock";
-import { resetPagePolicy } from "./queries";
+import { resetPageFrame } from "./queries";
 import { resetSound, soundState } from "./store";
 
 const ORIGIN = "https://www.youtube-nocookie.com";
@@ -65,7 +65,7 @@ async function play() {
 beforeEach(() => resetDock());
 afterEach(() => {
   resetSound();
-  resetPagePolicy();
+  resetPageFrame();
   resetDock();
   vi.restoreAllMocks();
 });

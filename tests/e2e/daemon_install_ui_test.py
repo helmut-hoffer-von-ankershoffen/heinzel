@@ -21,7 +21,7 @@ from tests.e2e.docs_test import GuardedCommand
 from tests.e2e.durable_five_minute_journey_test import BROWSER_CACHE, web_build
 from tests.fixtures.daemon_manager import RecordedManager, record_tool
 
-pytestmark = [pytest.mark.e2e, pytest.mark.real_system]
+pytestmark = pytest.mark.e2e
 ROOT = Path(__file__).resolve().parents[2]
 
 

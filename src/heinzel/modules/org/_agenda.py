@@ -5,31 +5,28 @@ or an adapter error (an expired sign-in) comes back as `problem`, with the comma
 """
 
 from datetime import UTC, datetime, time, timedelta
-from typing import Annotated, Protocol, cast
+from typing import Protocol
 from zoneinfo import ZoneInfo
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AwareDatetime, BaseModel, Field, ValidationError
 
 from heinzel import (
     Calendar,
-    CalendarSource,
     DetailLine,
     Event,
     HeinzelError,
     LiveTime,
     LiveUntil,
-    NotSupportedError,
     OpenUrl,
     RunCommand,
     StatusItem,
     Window,
 )
-from heinzel.kernel import CalendarSources, Requirement, clean_text, link_problem
+from heinzel.kernel import Requirement, clean_text, link_problem
 from heinzel.modules.org._discovery import local_timezone
 
 CALENDAR = Requirement.parse("calendar:read")
 LOOKAHEAD_DAYS = 2
-MAX_CALENDARS = 100
 """The window ends at midnight this many days after today: the rest of today and all of tomorrow."""
 
 
@@ -84,74 +81,18 @@ class Agenda(BaseModel):
     )
 
 
-class CalendarWeekEvent(Event):
-    """An occurrence in the weekly view, labeled with its source when available."""
-
-    calendar_id: str | None = Field(default=None, description="Source calendar id, when reading several calendars.")
-
-
-class CalendarSelection(BaseModel):
-    """Excluded calendar ids are meaningful only for the adapter that supplied them."""
-
-    model_config = ConfigDict(extra="forbid")
-    adapter: str = ""
-    excluded: list[Annotated[str, Field(max_length=1024)]] = Field(default_factory=list, max_length=MAX_CALENDARS)
-
-
-def _week_sources(
-    calendar: Calendar, window: Window, adapter: str, selection: CalendarSelection
-) -> tuple[list[CalendarWeekEvent], list[CalendarSource] | None, list[str]]:
-    source_reader = cast("CalendarSources", calendar)
-    try:
-        sources = source_reader.calendars() if callable(getattr(source_reader, "calendars", None)) else None
-    except NotSupportedError as exc:
-        if exc.capability != "calendar" or exc.method != "calendars":
-            raise
-        sources = None
-    if sources is None:
-        return [CalendarWeekEvent.model_validate(event.model_dump()) for event in calendar.events(window)], None, []
-    if len(sources) > MAX_CALENDARS or len({source.id for source in sources}) != len(sources):
-        msg = "The calendar connector returned too many or duplicate calendars."
-        raise HeinzelError(msg)
-    ignored: set[str] = set(selection.excluded) if adapter == selection.adapter else set()
-    events: list[CalendarWeekEvent] = []
-    warnings: list[str] = []
-    for source in sources:
-        if source.id in ignored:
-            continue
-        try:
-            found = source_reader.events_for(source.id, window)
-            events.extend(
-                CalendarWeekEvent.model_validate(event.model_dump() | {"calendar_id": source.id}) for event in found
-            )
-        except HeinzelError as exc:
-            warnings.append(f"{clean_text(source.title)}: {exc}")
-        except Exception as exc:  # noqa: BLE001 - keep other calendars visible when one adapter read fails
-            warnings.append(f"{clean_text(source.title)}: {type(exc).__name__}")
-    return events, sources, warnings
-
-
 class CalendarWeek(BaseModel):
     """A bounded week of calendar events or an explanation why it could not be read."""
 
     timezone: str | None = Field(default=None, description="IANA profile time zone when known.")
     since: AwareDatetime = Field(description="The beginning of the week in your time zone.")
     until: AwareDatetime = Field(description="The exclusive end of the week in your time zone.")
-    events: list[CalendarWeekEvent] = Field(
-        default_factory=list[CalendarWeekEvent], description="Non-cancelled events overlapping the week."
-    )
-    calendars: list[CalendarSource] | None = Field(
-        default=None, description="Readable calendars, or none for a single-calendar adapter."
-    )
-    adapter: str | None = Field(default=None, description="The bound adapter whose calendar ids these are.")
-    warnings: list[str] = Field(default_factory=list[str], description="Selected calendars that could not be read.")
+    events: list[Event] = Field(default_factory=list[Event], description="Non-cancelled events overlapping the week.")
     problem: str | None = Field(default=None, description="Why the calendar could not be read, if unavailable.")
     fix: str | None = Field(default=None, description="A command to connect a calendar, if available.")
 
 
-def read_week(
-    calendar: Calendar, bindings: Bindings, now: datetime, offset: int, selection: CalendarSelection | None = None
-) -> CalendarWeek:
+def read_week(calendar: Calendar, bindings: Bindings, now: datetime, offset: int) -> CalendarWeek:
     """Read one local calendar week through the bound calendar capability."""
     monday = now.date() - timedelta(days=now.weekday()) + timedelta(weeks=offset)
     since = datetime.combine(monday, time(), tzinfo=now.tzinfo)
@@ -175,8 +116,7 @@ def read_week(
             problem=f"Calendar unavailable: {problem}. {bindings.fix('calendar')}",
         )
     try:
-        window = Window(since=since, until=until)
-        events, sources, warnings = _week_sources(calendar, window, adapter, selection or CalendarSelection())
+        events = calendar.events(Window(since=since, until=until))
     except HeinzelError as exc:
         return CalendarWeek(timezone=zone, since=since, until=until, problem=str(exc))
     except Exception as exc:  # noqa: BLE001 - isolate a broken calendar adapter from the web view
@@ -187,9 +127,6 @@ def read_week(
         timezone=zone,
         since=since,
         until=until,
-        calendars=sources,
-        adapter=adapter,
-        warnings=warnings,
         events=sorted(
             (
                 event

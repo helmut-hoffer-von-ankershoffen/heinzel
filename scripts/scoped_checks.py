@@ -214,14 +214,13 @@ def docs_steps(tooling: list[str]) -> list[str]:
             *(str(path.relative_to(ROOT)) for path in ROOT.glob("tests/unit/site_*_test.py")),
         }
     )
-    # Each complete owning file gets its own deadline; the CI policy file is still required for docs-only changes.
-    # A mixed CI change may also select it as an early guard. The docs plan cannot assume that guard actually ran.
-    tooling_tests = ["tests/unit/ci_test.py", *(path for path in own if path not in MARKDOWN_TESTS)]
+    # Keep the Markdown and tooling selections disjoint, with the same deadline for each.
+    tooling_tests = " ".join(["tests/unit/ci_test.py", *(path for path in own if path not in MARKDOWN_TESTS)])
     return [
         f"format=uv run ruff format --check {files}",
         f"&ruff=uv run ruff check --no-fix {files}",
         *DOCS_STEPS,
-        *(f"tooling-{Path(path).stem}=uv run pytest {path} -n 2 -x -q --session-timeout=120" for path in tooling_tests),
+        f"tooling-tests=uv run pytest {tooling_tests} -n 2 -x -q --session-timeout=120",
     ]
 
 

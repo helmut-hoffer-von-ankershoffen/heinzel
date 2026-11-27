@@ -3,7 +3,6 @@ status: proposed
 date: 2026-10-28
 implementation: built
 amends: 0058
-amended-by: 0166
 implemented-by: 250
 ---
 

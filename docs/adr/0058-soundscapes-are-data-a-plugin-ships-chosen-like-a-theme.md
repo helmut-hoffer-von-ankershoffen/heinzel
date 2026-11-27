@@ -7,7 +7,7 @@ amends: 0027, 0039, 0046
 amends-0027: fixed allowlisted player origins while a stream is in effect; the player loads only after Play
 amends-0039: fixed allowlisted player origins while a stream is in effect; the player loads only after Play
 amends-0046: fixed allowlisted player origins while a stream is in effect; the player loads only after Play
-amended-by: 0088, 0092, 0095, 0166
+amended-by: 0088, 0092, 0095
 related: 0003, 0018, 0026, 0040, 0043, 0044
 implemented-by: 140
 ---
@@ -38,7 +38,7 @@ widened for people who never play anything.
 - A plugin or a project file can't name a host: the frame origin comes from a table in code.
 - One choice for every head ([ADR 0003](0003-heads-are-views-on-operations.md)): the CLI, MCP and the web app see and
   set the same setting.
-- Quiet until Play: no sound starts without the person's click, ducks while typing, mutes in meetings, and still works without a calendar.
+- Quiet by default: off, ducks while typing, mutes in meetings, and still works without a calendar.
 
 ## Considered Options
 
@@ -113,8 +113,7 @@ themes, and the only third party is one allowlisted host that the person starts 
   - Ties over a name follow the layer order of themes (ADR 0040, 0044), conflicts included.
 - **Settings** (`[system.sound]`, user scope; every key is `ignored_in_project`, so a cloned repository can't switch on
   a third-party stream or widen the CSP):
-  - `name`: `singularity` by default (amended 2026-11-22); while no installed plugin offers it, off applies without a
-    note. A name the person set is never replaced, `off` included.
+  - `name`: `off` by default.
   - `volume`: 0 to 100, 50 by default.
   - `follow_theme`: `false` by default.
   - `mute_in_meetings`: `true` by default.
@@ -188,7 +187,7 @@ themes, and the only third party is one allowlisted host that the person starts 
     proposed as ADR 0056, off by default, once that lands.
 - **Amendments.**
   - **ADR 0027.** The core's own contact with a third party gains one case: the stream soundscape in effect, from the
-    person's Play onwards. Claude FM is offered, never the default; Singularity is the default (amended), still played only from Play.
+    person's Play onwards. Claude FM is offered, never on by default.
   - **ADR 0039, 0046.** The page's CSP stays this origin's only, except for one `frame-src` origin from
     `STREAM_PROVIDERS`, on the HTML page, while a stream soundscape is in effect. `/sound-assets` is a route outside
     `/api`, like the theme routes.

@@ -42,50 +42,6 @@ enum MacMenuDelivery {
     }
 }
 
-#if os(macOS)
-enum WorkspaceMenuAction: String {
-    case about
-    case settings, updates, search, sidebar, terminal, browser, chat, notifications
-    case newChat = "new-chat"
-    case today = "go:today", heinzel = "go:heinzel", team = "go:team", plugins = "go:plugins"
-    case help, changelog, doctor, copy, daemon
-    case reload, zoomIn, zoomOut, resetZoom
-}
-
-/// A workspace can claim the request synchronously, then acknowledge it from the page.
-@MainActor
-final class WorkspaceMenuRequest {
-    static let notification = Notification.Name("heinzelWorkspaceMenuAction")
-
-    let action: WorkspaceMenuAction
-    private var claimed = false
-    private var onUnhandled: (() -> Void)?
-
-    private init(_ action: WorkspaceMenuAction, onUnhandled: (() -> Void)?) {
-        self.action = action
-        self.onUnhandled = onUnhandled
-    }
-
-    static func send(_ action: WorkspaceMenuAction, onUnhandled: (() -> Void)? = nil) {
-        let request = WorkspaceMenuRequest(action, onUnhandled: onUnhandled)
-        NotificationCenter.default.post(name: notification, object: request)
-        if !request.claimed { request.complete(nil) }
-    }
-
-    func claim() -> Bool {
-        guard !claimed else { return false }
-        claimed = true
-        return true
-    }
-
-    func complete(_ acknowledgment: Any?, error: Error? = nil) {
-        let fallback = onUnhandled
-        onUnhandled = nil
-        if error != nil || acknowledgment as? Bool != true { fallback?() }
-    }
-}
-#endif
-
 /// Routes within the native app. Shared workspace URLs are handled separately.
 enum NativeRoute: Equatable {
     case workspace

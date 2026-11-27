@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
-import { onlineManager } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -239,7 +238,6 @@ function serve(answer: Answer) {
               start(controller) {
                 const encoder = new TextEncoder();
                 controller.enqueue(encoder.encode(task));
-                if (url.searchParams.get("confirm") === "true") controller.enqueue(encoder.encode(phaseEvents));
                 timer = setTimeout(() => {
                   controller.enqueue(encoder.encode(result));
                   controller.close();
@@ -272,8 +270,6 @@ function base(url: URL): { status?: number; body: unknown } | undefined {
       return { body: [installed] };
     case "/api/system/plugin/search":
       return { body: { plugins: [], warnings: [] } };
-    case "/api/system/plugin/showcase":
-      return { body: { screenshots: [], soundscapes: [] } };
     case "/api/restart":
       return { status: 202, body: { restarting: true, instance: "old", message: "Restarting" } };
     case "/api/system/info":
@@ -668,104 +664,6 @@ describe("PluginsSection", () => {
     ).toBeGreaterThan(0);
   });
 
-  it.each([false, true])("waits for the daemon before sending the same install receipt (cancel=%s)", async (cancel) => {
-    const operationId = "1".padStart(43, "0");
-    let busy = true;
-    const calls = serve((url) => {
-      if (url.pathname === "/api/system/plugin/operation") {
-        return { body: { operation_id: operationId, status: "previewed", candidate, lifecycle_busy: busy } };
-      }
-      if (url.pathname === "/api/system/plugin/add") return { body: change("add", false) };
-      if (url.pathname === "/api/stream/system/plugin/add") return { body: change("add", true) };
-      return base(url);
-    });
-    const writes = () => calls.filter((request) => new URL(request.url).pathname === "/api/stream/system/plugin/add");
-    const reload = vi.fn();
-    const user = userEvent.setup();
-    show({ reload, restartInterval: 1 });
-    await user.click(screen.getByRole("button", { name: "Add" }));
-    await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
-    await user.click(screen.getByRole("button", { name: "Install" }));
-    await choose(user, /Install heinzel-crm/, "Install");
-
-    const running = await dialog(/Installing heinzel-crm/);
-    expect(running).toHaveAttribute("open");
-    await within(running).findByText("Waiting for the background service or another change to finish");
-    expect(writes()).toHaveLength(0);
-    if (cancel) {
-      await user.click(within(running).getByRole("button", { name: "Cancel" }));
-      busy = false;
-      await waitFor(() => expect(getRun().stage).toBe("idle"), { timeout: 2000 });
-      expect(writes()).toHaveLength(0);
-      expect(sessionStorage.getItem("hz.plugin-add-operation.v1")).toBeNull();
-      return;
-    }
-    busy = false;
-    await waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 2000 });
-    expect(writes().map((request) => new URL(request.url).searchParams.get("operation_id"))).toEqual([operationId]);
-  });
-
-  it("checks the server receipt after losing the stream result and restarts without posting the install again", async () => {
-    let writes = 0;
-    const calls = serve((url) => {
-      if (url.pathname === "/api/system/plugin/add") return { body: change("add", false) };
-      if (url.pathname === "/api/stream/system/plugin/add") {
-        writes += 1;
-        throw new Error("stream lost");
-      }
-      if (url.pathname === "/api/system/plugin/operation" && writes) {
-        const operation_id = url.searchParams.get("operation_id");
-        return {
-          body: { operation_id, status: "completed", candidate, result: change("add", true, { operation_id }) },
-        };
-      }
-      return base(url);
-    });
-    const reload = vi.fn();
-    const user = userEvent.setup();
-    show({ reload, restartInterval: 1 });
-    await user.click(screen.getByRole("button", { name: "Add" }));
-    await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
-    await user.click(screen.getByRole("button", { name: "Install" }));
-    await choose(user, /Install heinzel-crm/, "Install");
-    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
-    expect(writes).toBe(1);
-    expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(1);
-  });
-
-  it.each(["unknown", "unavailable"])("never repeats a lost install when its receipt is %s", async (outcome) => {
-    let writes = 0;
-    const calls = serve((url) => {
-      if (url.pathname === "/api/system/plugin/add") return { body: change("add", false) };
-      if (url.pathname === "/api/stream/system/plugin/add") {
-        writes += 1;
-        throw new Error("stream lost");
-      }
-      if (url.pathname === "/api/system/plugin/operation" && writes) {
-        if (outcome === "unavailable") return { status: 503, body: { error: "receipt unavailable" } };
-        return { body: { operation_id: url.searchParams.get("operation_id"), status: "unknown", candidate } };
-      }
-      return base(url);
-    });
-    const user = userEvent.setup();
-    show({ reload: vi.fn(), restartInterval: 1 });
-    await user.click(screen.getByRole("button", { name: "Add" }));
-    await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
-    await user.click(screen.getByRole("button", { name: "Install" }));
-    await choose(user, /Install heinzel-crm/, "Install");
-    expect(await screen.findAllByText("stream lost")).not.toHaveLength(0);
-    await choose(user, /Installing heinzel-crm/, "Try again");
-    expect(await screen.findAllByText(/The request result is unknown/)).not.toHaveLength(0);
-    expect(writes).toBe(1);
-    expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(0);
-    await user.click(
-      within(await dialog(/Installing heinzel-crm/))
-        .getAllByRole("button", { name: "Close" })
-        .at(-1) as HTMLElement,
-    );
-    expect(await screen.findAllByRole("button", { name: "Resolve after checking" })).not.toHaveLength(0);
-  });
-
   it("shows a server-confirmed running receipt after reload without offering another install request", async () => {
     const operationId = "y".repeat(43);
     const calls = serve((url) =>
@@ -814,7 +712,7 @@ describe("PluginsSection", () => {
     phaseEvents = [
       phase("install", "Installing heinzel-crm", "pending"),
       phase("install", "Installing heinzel-crm", "done"),
-      phase("verify", "Verifying the plugin installation", "done"),
+      phase("verify", "Checking that exactly it is installed", "done"),
       phase("needs:heinzel-auth", "Plugin heinzel-auth, which heinzel-crm needs", "done", "Installed with it: 1.0.0"),
       phase("record", "Recording the add", "done"),
     ].join("");
@@ -1168,7 +1066,7 @@ describe("PluginsSection", () => {
       "Restarting hz",
       "Waiting for hz to come back",
       "Reloading the page",
-      "Checking that the plugin is installed",
+      "Checking that exactly it is installed",
     ];
     expect(steps).toHaveLength(plan.length);
     expect(steps.map((step, index) => step.textContent?.startsWith(plan[index] ?? "-"))).toEqual(plan.map(() => true));
@@ -1206,10 +1104,6 @@ describe("PluginsSection", () => {
     { timeout: 15_000 },
     async (action) => {
       confirmedStreamDelay = 4_250;
-      phaseEvents = [
-        'event: phase\ndata: {"id":"verify","label":"Verifying the plugin installation","state":"done"}\n\n',
-        'event: phase\ndata: {"id":"record","label":"Recording the add","state":"running"}\n\n',
-      ].join("");
       const calls = serve((url) => {
         if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
           return { body: change("add", url.searchParams.get("confirm") === "true") };
@@ -1242,19 +1136,6 @@ describe("PluginsSection", () => {
           `Step 2 of 6: ${action === "add" ? "Installing heinzel-crm" : "Removing heinzel-clock"}`,
         ),
       ).toBeInTheDocument();
-      if (action === "add") {
-        await within(running).findByText("Recording the add");
-        expect(within(running).queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
-        expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(0);
-        await user.keyboard("{Escape}");
-        expect(running).toHaveAttribute("open");
-        await user.click(within(running).getByRole("button", { name: "Hide progress" }));
-        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-        await user.click(screen.getByRole("button", { name: "Show installation progress" }));
-        const reopened = await dialog(/Installing heinzel-crm/);
-        expect(reopened).toHaveAttribute("open");
-        expect(within(reopened).getByText("Recording the add")).toBeInTheDocument();
-      }
       await waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 10_000 });
       const paths = calls.map((request) => new URL(request.url).pathname);
       expect(paths.filter((path) => path === `/api/stream/system/plugin/${action}`)).toHaveLength(1);
@@ -1560,31 +1441,6 @@ describe("PluginsSection", () => {
     );
   });
 
-  it("keeps a Discover refresh failure with the submitted search", async () => {
-    window.history.replaceState(null, "", "/");
-    serve((url) => {
-      if (url.pathname !== "/api/system/plugin/search") return base(url);
-      return url.searchParams.has("refresh")
-        ? { status: 503, body: { error: "GitHub is unavailable" } }
-        : { body: { plugins: [], warnings: [] } };
-    });
-    const user = userEvent.setup();
-    show();
-    await user.click(screen.getByRole("tab", { name: "Discover" }));
-    const refresh = await screen.findByRole("button", { name: "Refresh" });
-    await waitFor(() => expect(refresh).toBeEnabled());
-    await user.click(refresh);
-    expect(await screen.findByRole("button", { name: /Refresh.*failed/i })).toBeInTheDocument();
-    // An uncached search can remain paused after connectivity drops.
-    act(() => onlineManager.setOnline(false));
-    try {
-      await user.type(screen.getByRole("searchbox", { name: "Search plugins" }), "weather");
-      expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
-    } finally {
-      act(() => onlineManager.setOnline(true));
-    }
-  });
-
   it("keeps the tab in the address so a reload returns to it", async () => {
     window.history.replaceState(null, "", "/");
     serve((url) =>
@@ -1700,42 +1556,80 @@ const GALLERY = {
 };
 
 describe("PluginGallery", () => {
-  it("shows thumbnails immediately and opens screenshots in an in-app modal", async () => {
+  it("brings a clipped preview into the settings pane without moving keyboard focus", async () => {
+    serve((url) => (url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url)));
+    const user = userEvent.setup();
+    const { container } = render(
+      <Providers client={queryClient()}>
+        <div data-settings-content>
+          <PluginGallery spec="harbor" name="Harbor" />
+        </div>
+      </Providers>,
+    );
+    const open = screen.getByRole("button", { name: "Screenshots for Harbor" });
+    await user.click(open);
+    const image = await screen.findByRole("img", { name: "Harbor in the app" });
+    const pane = container.querySelector<HTMLElement>("[data-settings-content]");
+    if (!pane) throw new Error("Gallery fixture is missing its settings pane");
+    vi.spyOn(pane, "getBoundingClientRect").mockReturnValue({ top: 80, bottom: 380 } as DOMRect);
+    const imageRect = vi.spyOn(image, "getBoundingClientRect").mockReturnValue({ top: 400, bottom: 500 } as DOMRect);
+    fireEvent.load(image);
+    expect(pane.scrollTop).toBe(128);
+    expect(open).toHaveFocus();
+    pane.scrollTop = 100;
+    imageRect.mockReturnValue({ top: 50, bottom: 200 } as DOMRect);
+    fireEvent.load(image);
+    expect(pane.scrollTop).toBe(62);
+    vi.stubGlobal(
+      "visualViewport",
+      Object.assign(new EventTarget(), { offsetLeft: 0, offsetTop: 20, width: 320, height: 240 }),
+    );
+    pane.scrollTop = 0;
+    imageRect.mockReturnValue({ top: 100, bottom: 350 } as DOMRect);
+    fireEvent.load(image);
+    expect(pane.scrollTop).toBe(98);
+    expect(open).toHaveFocus();
+  });
+
+  it("loads no metadata or images until opened, switches UI/CLI captures and keeps sound external", async () => {
     const calls = serve((url) => (url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url)));
     const user = userEvent.setup();
     const { container } = render(
       <Providers client={queryClient()}>
-        <PluginGallery spec="harbor" name="Harbor" privateSource={false} />
+        <PluginGallery spec="harbor" name="Harbor" />
       </Providers>,
     );
-    const gallery = screen.getByRole("region", { name: "Screenshot gallery: Harbor" });
-    const screenshots = await within(gallery).findByRole("list", { name: "Choose a screenshot" });
-    const screenshot = within(screenshots).getByRole("button", { name: "Open full size: Harbor in the terminal" });
-    const thumbnail = within(screenshot).getByRole("img");
-    expect(thumbnail).toHaveAttribute("loading", "lazy");
+    expect(calls).toHaveLength(0);
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
+    const gallery = await screen.findByRole("region", { name: "Screenshot gallery: Harbor" });
+    expect(await within(gallery).findByRole("img", { name: "Harbor in the app" })).toHaveAttribute(
+      "src",
+      GALLERY.screenshots[0]?.url,
+    );
     expect(calls).toHaveLength(1);
     expect(new URL(calls[0]?.url ?? "").searchParams.get("spec")).toBe("harbor");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-
-    await user.click(thumbnail);
-    const viewer = screen.getByRole("dialog", { name: "Harbor in the terminal" });
-    expect(viewer).toHaveAttribute("open");
-    expect(within(viewer).getByRole("img")).toHaveAttribute("src", GALLERY.screenshots[1]?.url);
-    expect(within(viewer).queryByRole("link")).not.toBeInTheDocument();
-    expect(within(viewer).getByRole("button", { name: "Close screenshot" })).toHaveFocus();
-    fireEvent(viewer, new Event("cancel", { cancelable: true }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screenshot).toHaveFocus();
-
-    await user.click(screenshot);
-    await user.click(screen.getByRole("button", { name: "Close screenshot" }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screenshot).toHaveFocus();
+    await user.click(within(gallery).getByRole("radio", { name: "CLI: Harbor in the terminal" }));
+    expect(within(gallery).getByRole("img", { name: "Harbor in the terminal" })).toHaveAttribute(
+      "src",
+      GALLERY.screenshots[1]?.url,
+    );
+    expect(within(gallery).getByRole("link", { name: "Open full size: Harbor in the terminal" })).toHaveAttribute(
+      "href",
+      GALLERY.screenshots[1]?.url,
+    );
+    const cliChoice = within(gallery).getByRole("radio", { name: "CLI: Harbor in the terminal" });
+    expect(cliChoice).toBeChecked();
+    cliChoice.focus();
+    await user.keyboard("{ArrowLeft}");
+    expect(within(gallery).getByRole("radio", { name: "UI: Harbor in the app" })).toBeChecked();
+    expect(within(gallery).getByRole("img", { name: "Harbor in the app" })).toBeInTheDocument();
     expect(within(gallery).getByRole("link", { name: /Harbor tide/ })).toHaveAttribute(
       "href",
       GALLERY.soundscapes[0]?.url,
     );
     expect(container.querySelector("iframe")).toBeNull();
+    expect(calls.every((call) => new URL(call.url).origin === window.location.origin)).toBe(true);
     await expectAccessible(container);
     await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
     expect(screen.queryByRole("region", { name: "Screenshot gallery: Harbor" })).not.toBeInTheDocument();
@@ -1743,78 +1637,23 @@ describe("PluginGallery", () => {
 
   it("never fetches or displays public image URLs for a private source", async () => {
     const calls = serve(base);
+    const user = userEvent.setup();
     const { container } = render(
       <Providers client={queryClient()}>
         <PluginGallery spec="private" name="Harbor" privateSource />
       </Providers>,
     );
+    await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
     expect(screen.getByText("Private previews stay in the plugin's repository.")).toBeInTheDocument();
     expect(calls).toHaveLength(0);
     expect(container.querySelectorAll("img,iframe")).toHaveLength(0);
   });
 
-  it("does not fetch if a previously private source becomes unknown", () => {
-    const calls = serve((url) => (url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url)));
-    const view = render(
-      <Providers client={queryClient()}>
-        <PluginGallery spec="private" name="Harbor" privateSource />
-      </Providers>,
-    );
-    view.rerender(
-      <Providers client={queryClient()}>
-        <PluginGallery spec="private" name="Harbor" privateSource={null} />
-      </Providers>,
-    );
-    expect(calls).toHaveLength(0);
-    expect(screen.queryByRole("region", { name: "Screenshot gallery: Harbor" })).not.toBeInTheDocument();
-  });
-
-  it("keeps a source with unknown visibility opt-in", async () => {
+  it("offers an installed plugin's exact Git source gallery without installing or changing it", async () => {
     const calls = serve((url) => (url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url)));
     const user = userEvent.setup();
-    render(
-      <Providers client={queryClient()}>
-        <PluginGallery spec="harbor" name="Harbor" />
-      </Providers>,
-    );
-    expect(calls).toHaveLength(0);
-    expect(screen.queryByRole("region", { name: "Screenshot gallery: Harbor" })).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
-    const gallery = await screen.findByRole("region", { name: "Screenshot gallery: Harbor" });
-    expect(await within(gallery).findByRole("img", { name: "Harbor in the app" })).toBeInTheDocument();
-    expect(calls).toHaveLength(1);
-  });
-
-  it.each(["source change", "visibility round trip"] as const)(
-    "requires fresh consent after a gallery %s",
-    async (change) => {
-      const calls = serve((url) => (url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url)));
-      const user = userEvent.setup();
-      const client = queryClient();
-      const gallery = (spec: string, privateSource?: boolean) => (
-        <Providers client={client}>
-          <PluginGallery spec={spec} name="Harbor" privateSource={privateSource} />
-        </Providers>
-      );
-      const view = render(gallery("harbor"));
-      await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
-      expect(await screen.findByRole("img", { name: "Harbor in the app" })).toBeInTheDocument();
-      if (change === "visibility round trip") view.rerender(gallery("harbor", true));
-      view.rerender(gallery(change === "source change" ? "different-source" : "harbor"));
-      expect(screen.getByRole("button", { name: "Screenshots for Harbor" })).toHaveAttribute("aria-expanded", "false");
-      expect(screen.queryByRole("region", { name: "Screenshot gallery: Harbor" })).not.toBeInTheDocument();
-      expect(calls).toHaveLength(1);
-    },
-  );
-
-  it("offers an installed plugin's exact Git source gallery without installing or changing it", async () => {
-    const calls = serve((url) => {
-      if (url.pathname === "/api/system/plugin/showcase") return { body: GALLERY };
-      if (url.pathname === "/api/system/plugin/list") return { body: [{ ...installed, private_repository: false }] };
-      return base(url);
-    });
     show();
+    await user.click(await screen.findByRole("button", { name: "Screenshots for Clock" }));
     await screen.findByRole("img", { name: "Harbor in the app" });
     const previews = calls.filter((call) => new URL(call.url).pathname.endsWith("/showcase"));
     expect(new URL(previews[0]?.url ?? "").searchParams.get("spec")).toBe(
@@ -1834,7 +1673,6 @@ describe("PluginGallery", () => {
               ...installed,
               revision,
               source_url: `https://github.com/fictional-lab/own-clock/tree/${revision}/plugins/heinzel-clock`,
-              private_repository: false,
             },
           ],
         };
@@ -1860,7 +1698,9 @@ describe("PluginGallery", () => {
         };
       return url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url);
     });
+    const user = userEvent.setup();
     show();
+    await user.click(await screen.findByRole("button", { name: "Screenshots for Clock" }));
     await screen.findByRole("img", { name: "Harbor in the app" });
     const preview = calls.find((call) => new URL(call.url).pathname.endsWith("/showcase"));
     expect(new URL(preview?.url ?? "").searchParams.get("spec")).toBe(
@@ -1872,22 +1712,26 @@ describe("PluginGallery", () => {
   it("treats owner HTML captions as text", async () => {
     const caption = '<script>alert("no")</script>';
     serve(() => ({ body: { ...GALLERY, screenshots: [{ ...GALLERY.screenshots[0], caption }] } }));
+    const user = userEvent.setup();
     const { container } = render(
       <Providers client={queryClient()}>
-        <PluginGallery spec="harbor" name="Harbor" privateSource={false} />
+        <PluginGallery spec="harbor" name="Harbor" />
       </Providers>,
     );
+    await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
     expect(await screen.findByRole("img", { name: caption })).toBeInTheDocument();
     expect(container.querySelector("script")).toBeNull();
   });
 
   it("shows a useful empty gallery without blocking installation", async () => {
     serve(() => ({ body: { ...GALLERY, screenshots: [], soundscapes: [], notice: "" } }));
+    const user = userEvent.setup();
     render(
       <Providers client={queryClient()}>
-        <PluginGallery spec="harbor" name="Harbor" privateSource={false} />
+        <PluginGallery spec="harbor" name="Harbor" />
       </Providers>,
     );
+    await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
     expect(await screen.findByText("This plugin has not published screenshots yet.")).toBeInTheDocument();
   });
 
@@ -1917,7 +1761,6 @@ it("never resolves an unknown installed source through another same-name catalog
       <PluginGallery spec={null} name="Harbor" />
     </Providers>,
   );
-  expect(screen.queryByText(/No public GitHub preview/)).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
   expect(screen.getByText(/No public GitHub preview/)).toBeInTheDocument();
   expect(calls).toHaveLength(0);
@@ -1927,25 +1770,29 @@ it("never resolves an unknown installed source through another same-name catalog
 it("keeps partial discovery warnings visible while useful screenshots remain available", async () => {
   const notice = "Soundscape links could not be listed right now.";
   serve(() => ({ body: { ...GALLERY, notice, soundscapes: [] } }));
+  const user = userEvent.setup();
   render(
     <Providers client={queryClient()}>
-      <PluginGallery spec="harbor" name="Harbor" privateSource={false} />
+      <PluginGallery spec="harbor" name="Harbor" />
     </Providers>,
   );
+  await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
   expect(await screen.findByRole("img", { name: "Harbor in the app" })).toBeInTheDocument();
   expect(screen.getByText(notice)).toBeInTheDocument();
 });
 
 it("reports a native media handoff failure beside its functional browser link", async () => {
   serve(() => ({ body: GALLERY }));
+  const user = userEvent.setup();
   render(
     <Providers client={queryClient()}>
-      <PluginGallery spec="harbor" name="Harbor" privateSource={false} />
+      <PluginGallery spec="harbor" name="Harbor" />
     </Providers>,
   );
-  const link = await screen.findByRole("link", { name: /Harbor tide/ });
+  await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
+  const link = await screen.findByRole("link", { name: "Open full size: Harbor in the app" });
   expect(link).toHaveAttribute("data-hz-public-media");
   fireEvent(link, new CustomEvent("hz-public-media-result", { detail: false }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Copy its address");
-  expect(link).toHaveAttribute("href", GALLERY.soundscapes[0]?.url);
+  expect(link).toHaveAttribute("href", GALLERY.screenshots[0]?.url);
 });

@@ -82,7 +82,6 @@ def test_the_matrix_shows_the_runner_and_its_hosts(make_kernel, tmp_path):
         "document search → documents:read": "optional: not connected: no adapter bound",
         "org agenda → calendar:read": "optional: not connected: no adapter bound",
         "org calendar → calendar:read": "optional: not connected: no adapter bound",
-        "org calendar-selection → calendar:read": "optional: not connected: no adapter bound",
         "system.runner ask → agent-runner:read": "claude-code → api.anthropic.com",
         "system.runner.chat send → agent-runner:read": "claude-code → api.anthropic.com",
     }
@@ -94,7 +93,6 @@ def test_the_matrix_shows_the_runner_and_its_hosts(make_kernel, tmp_path):
         "document search → documents:read": "optional: not connected: no adapter bound",
         "org agenda → calendar:read": "optional: not connected: no adapter bound",
         "org calendar → calendar:read": "optional: not connected: no adapter bound",
-        "org calendar-selection → calendar:read": "optional: not connected: no adapter bound",
         "system.runner ask → agent-runner:read": "command → unknown (configured)",
         "system.runner.chat send → agent-runner:read": "command → unknown (configured)",
     }

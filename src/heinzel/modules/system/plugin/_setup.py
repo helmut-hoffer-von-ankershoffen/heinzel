@@ -33,7 +33,6 @@ from packaging.utils import canonicalize_name
 from pydantic import JsonValue
 
 from heinzel import Check, ConfigEditor, HealthLet, HeinzelError, Kernel, Login, ModuleRecord, Progress, Status
-from heinzel._phases import Phases
 from heinzel.kernel import CapabilityView, PlaybookLet
 from heinzel.kernel._logging import get_logger, log_event, step
 from heinzel.modules.system.plugin._setup_models import (
@@ -45,6 +44,7 @@ from heinzel.modules.system.plugin._setup_models import (
     SetupResult,
     SetupStep,
 )
+from heinzel.modules.system.updater._phases import Phases
 
 STATE_FILE = "setup-bindings.json"
 """Under the state directory: the bindings setup wrote, with who recommended them, and the playbooks considered."""

@@ -12,7 +12,7 @@ from heinzel.heads.web import _updates
 from heinzel.kernel import CorePin, Installation, ReleaseCache
 from heinzel.kernel._desktop_app import DesktopApp
 
-pytestmark = [pytest.mark.integration, pytest.mark.real_system]
+pytestmark = pytest.mark.integration
 TOKEN = "t" * 43
 ANSWERED = datetime(2026, 1, 2, 12, tzinfo=UTC)
 AUTH = {"Authorization": f"Bearer {TOKEN}"}

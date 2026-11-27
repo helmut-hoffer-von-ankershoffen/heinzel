@@ -76,17 +76,7 @@ def interrupted(tmp_path, monkeypatch, settings, make_kernel, request):
     marker = service.state_dir / "mutation-pending.json"
     handover = service.state_dir / "handover-request.json"
     automatic = not getattr(request, "param", False)
-    write_state = service._write_state
-
-    def write_released_state(name, data):
-        # 0.9.21 wrote the earlier request format while the fixture drives the current update implementation.
-        if name == handover.name:
-            data = {key: value for key, value in data.items() if key != "mutation_binding"}
-        write_state(name, data)
-
-    with monkeypatch.context() as released:
-        released.setattr(service, "_write_state", write_released_state)
-        failure = _leave_failed_update((service, installation, metadata, handover), monkeypatch, automatic=automatic)
+    failure = _leave_failed_update((service, installation, metadata, handover), monkeypatch, automatic=automatic)
     incident = tuple(hashlib.sha256(path.read_bytes()).hexdigest() for path in (marker, handover, failure))
     standard = settings.data_dir / "standard-app.json"
     private_write(standard, "verified standard selection")
@@ -195,17 +185,7 @@ def test_archives_only_verified_mutation_and_waits_for_real_tick(interrupted):
 
 
 @pytest.mark.parametrize(
-    "problem",
-    [
-        "wrong-version",
-        "old-request",
-        "new-request-format",
-        "snapshot",
-        "snapshot-link",
-        "new-heartbeat",
-        "active",
-        "foreign",
-    ],
+    "problem", ["wrong-version", "old-request", "snapshot", "snapshot-link", "new-heartbeat", "active", "foreign"]
 )
 def test_ambiguous_state_preserves_both_original_records(interrupted, problem):
     recovery, service, manager, marker, request, incident = interrupted
@@ -217,11 +197,6 @@ def test_ambiguous_state_preserves_both_original_records(interrupted, problem):
     elif problem == "old-request":
         earlier = marker.stat().st_mtime_ns - 1
         os.utime(request, ns=(earlier, earlier))
-    elif problem == "new-request-format":
-        stamp = request.stat().st_mtime_ns
-        service._write_state(request.name, service._read_state(request.name) | {"mutation_binding": "b" * 64})
-        os.utime(request, ns=(stamp, stamp))
-        incident = (incident[0], hashlib.sha256(request.read_bytes()).hexdigest(), incident[2])
     elif problem == "snapshot":
         (service.state_dir.parent / "auto-update/before-update").mkdir(parents=True)
     elif problem == "snapshot-link":

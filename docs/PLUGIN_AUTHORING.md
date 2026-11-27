@@ -612,32 +612,3 @@ caption = "The plugin's terminal output"
 Use at most eight regular PNG, JPG or WebP files of at most 2 MiB each, inside the project. Captions are plain text,
 at most 180 characters. The preview uses the owning public source at an immutable revision and never executes the
 plugin. Stream soundscapes may provide explicit YouTube links; opening a gallery starts no playback.
-
-## Give a soundscape music tracks (preview)
-
-A `stream` soundscape can list tracks beside or instead of its `[stream]`; they play in the page, in this order
-([ADR 0166](adr/0166-soundscapes-may-play-native-tracks-from-an-allowlisted-media-host.md)):
-
-```toml
-name = "harbour"
-title = "Harbour mornings"
-kind = "stream"
-
-[[tracks]]
-title = "Morning tide"
-url = "https://media.heinzel.team/harbour/morning-tide-v1.mp3"
-type = "audio/mpeg"
-duration_seconds = 287
-```
-
-The URL must be a plain `.mp3` or `.m4a` path on a host of the core's `MEDIA_ORIGINS`; another host needs a change in
-core. Tracks play only with the preview feature `native_audio`. To try it, set `HZ_FEATURES=native_audio`, or add
-this to your user configuration (`hz system config reveal user`); a project's `hz.toml` can't switch it:
-
-```toml
-[hz]
-features = ["native_audio"]
-```
-
-Without the feature, a soundscape with both sources plays its stream and one with only tracks isn't offered. Older
-cores reject a file with `tracks`, so give the plugin a floor on its core version.

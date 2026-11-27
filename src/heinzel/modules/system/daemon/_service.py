@@ -42,7 +42,6 @@ from heinzel import (
     Status,
     __version__,
 )
-from heinzel._phases import Phases
 from heinzel.kernel import (
     KERNEL_SECTION,
     DaemonHandoverObservation,
@@ -149,6 +148,7 @@ from heinzel.modules.system.daemon._units import (
     systemd_service,
     systemd_timer,
 )
+from heinzel.modules.system.updater._phases import Phases
 
 if TYPE_CHECKING:
     import threading
@@ -372,7 +372,8 @@ class DaemonService(_Quiescence, _HandoverRequest, _Removal):
         while it installs. Only a held lock is waited for: a pending marker with a free lock is left for recovery.
         Returns whether the lock is free now; the caller still acquires it without waiting, as before.
         """
-        if not self.lifecycle_busy():
+        path = self.state_dir / "lifecycle.lock"
+        if not held(path):
             return True
         budget = self._wait_budget()
         if budget <= 0:
@@ -382,9 +383,9 @@ class DaemonService(_Quiescence, _HandoverRequest, _Removal):
         started = time.monotonic()
         deadline = started + budget
         with self._kernel.resolve(Progress).task(f"Waiting for {_HOLDERS[holder]} to finish (up to {_budget(budget)})"):
-            while self.lifecycle_busy() and time.monotonic() < deadline:
+            while held(path) and time.monotonic() < deadline:
                 time.sleep(min(self.lifecycle_poll_seconds, max(0.0, deadline - time.monotonic())))
-        free = not self.lifecycle_busy()
+        free = not held(path)
         log_event(
             logger,
             "daemon.lifecycle.wait",

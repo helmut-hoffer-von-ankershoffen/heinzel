@@ -42,9 +42,6 @@ try {
     const context = await browser.newContext({ viewport: { width, height }, serviceWorkers: "block" });
     const page = await context.newPage();
     await page.route("**/api/system/plugin/search**", (route) => route.fulfill({ json: { plugins, warnings: [] } }));
-    await page.route("**/api/system/plugin/showcase**", (route) =>
-      route.fulfill({ json: { screenshots: [], soundscapes: [] } }),
-    );
     await page.route("**/api/system/plugin/add**", async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 300));
       await route.fulfill({
@@ -64,19 +61,6 @@ try {
     await page.route("**/api/system/plugin/operation**", (route) =>
       route.fulfill({ json: { candidate, operation_id: "fixture-operation", status: "previewed" } }),
     );
-    let releaseInstall;
-    const heldInstall = new Promise((resolve) => {
-      releaseInstall = resolve;
-    });
-    let installCalls = 0;
-    await page.route("**/api/stream/system/plugin/add**", async (route) => {
-      installCalls += 1;
-      await heldInstall;
-      await route.fulfill({
-        contentType: "text/event-stream",
-        body: `event: result\ndata: ${JSON.stringify({ data: { action: "add", done: true, distribution: "heinzel-p29", candidate, plugins: [], restart_required: false, next: [] } })}\n\n`,
-      });
-    });
     const address = new URL(url);
     await page.goto(`${address.origin}/?settings=plugins${address.hash}`);
     await page.locator("#splash").waitFor({ state: "hidden" });
@@ -121,46 +105,7 @@ try {
       false,
       "provenance starts collapsed",
     );
-    assert.equal(await confirm.evaluate((element) => element.matches(":modal")), true, "native modal blocks the page");
-    for (let i = 0; i < 8; i += 1) {
-      await page.keyboard.press("Tab");
-      assert.equal(
-        await confirm.evaluate((element) => element.contains(document.activeElement)),
-        true,
-        "focus stays in the modal",
-      );
-    }
-    await page.evaluate(() => {
-      const probe = document.createElement("button");
-      probe.textContent = "Background fixture";
-      probe.id = "background-fixture";
-      probe.style.cssText = "position:fixed;left:0;top:0;width:40px;height:40px;z-index:9999";
-      probe.addEventListener("click", () => {
-        probe.dataset.clicked = "yes";
-      });
-      document.body.append(probe);
-    });
-    await page.mouse.click(3, 3);
-    assert.equal(await confirm.isVisible(), true, "outside pointer cannot dismiss or operate the page");
-    assert.equal(await page.locator("#background-fixture").getAttribute("data-clicked"), null);
     await page.screenshot({ path: `${shots}/plugin-install-confirm-${name}.png` });
-    const installStarted = page.waitForRequest((request) => request.url().includes("/api/stream/system/plugin/add"));
-    await confirm.getByRole("button", { name: "Install", exact: true }).click();
-    const progress = page.getByRole("dialog", { name: /Installing heinzel-p29/ });
-    await installStarted;
-    await progress.getByRole("button", { name: "Hide progress" }).click();
-    await page.mouse.click(3, 3);
-    assert.equal(await page.locator("#background-fixture").getAttribute("data-clicked"), "yes");
-    await page.locator("#background-fixture").evaluate((element) => element.remove());
-    await dialog.getByRole("button", { name: "Close settings" }).click();
-    await dialog.waitFor({ state: "hidden" });
-    await page.getByRole("button", { name: "Show installation progress" }).click();
-    await progress.waitFor();
-    assert.equal(await progress.evaluate((element) => element.matches(":modal")), true);
-    assert.equal(installCalls, 1, "hide and reopen do not send another install");
-    const response = page.waitForResponse((result) => result.url().includes("/api/stream/system/plugin/add"));
-    releaseInstall();
-    await response;
     results.push({ name, y: Math.round(box.y), viewportHeight: view.height });
     await context.close();
   }

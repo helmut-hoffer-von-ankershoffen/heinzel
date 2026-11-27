@@ -7,11 +7,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch: # fallback if a merge made with the GitHub token doesn't trigger the push event
-    inputs:
-      sha:
-        description: Exact protected main merge commit to tag
-        type: string
-        required: false
 
 permissions: {}
 
@@ -27,9 +22,6 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: write
-      actions: read # verify the pre-merge chain receipt on a tag retry
-      pull-requests: read
-      statuses: read
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
@@ -42,39 +34,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           MESSAGE: ${{ github.event.head_commit.message }}
-          REQUESTED_SHA: ${{ inputs.sha }}
         run: |
           tag="v$(uv version --short)"
-          if [[ -n "$REQUESTED_SHA" && ( "$GITHUB_REF" != refs/heads/main || "$REQUESTED_SHA" != "$GITHUB_SHA" ) ]]; then
-            echo 'error: Release tag dispatch does not bind the exact protected main merge' >&2
-            exit 1
-          fi
           MESSAGE="${MESSAGE:-$(git log -1 --format=%B)}" # dispatched by hand: the commit checked out
-          if [[ "$MESSAGE" != "chore(release): $tag"* ]]; then
-            echo "Not a release of $tag; nothing to do."
+          # Only a real release commit for the current version tags; anything else titled like one is ignored.
+          if [[ "$MESSAGE" != "chore(release): $tag"* ]] || git ls-remote --exit-code --tags origin "$tag" >/dev/null; then
+            echo "Not a release of $tag, or already tagged; nothing to do."
             exit 0
           fi
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          policy="$(uv run --no-project --frozen --no-build --python 3.15 python -I scripts/release_latest.py "$tag" "$GITHUB_SHA")"
-          if git ls-remote --exit-code --tags origin "$tag" >/dev/null; then
-            if [ "$policy" = defer_latest=false ]; then
-              echo "Already tagged $tag; nothing to do."
-              exit 0
-            fi
-            test "$policy" = defer_latest=true
-            git fetch --no-tags origin "refs/tags/$tag"
-            test "$(git rev-parse --verify 'FETCH_HEAD^{commit}')" = "$GITHUB_SHA" \
-              || { echo 'error: existing release tag does not point at the verified merge' >&2; exit 1; }
-            if gh release view "$tag" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -qx artifact-manifest.json; then
-              echo "Already published $tag with its producer manifest; nothing to do."
-              exit 0
-            fi
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git tag -a "$tag" -m "$tag"
-            git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$tag"
-          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "$tag"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
   publish:
@@ -90,5 +61,3 @@ jobs:
       id-token: write
       attestations: write
       actions: read # Publish promotes the release candidate's macOS apps from its CI run
-      pull-requests: read
-      statuses: read

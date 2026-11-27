@@ -36,10 +36,8 @@ export async function contributeGallery(page, fixtureOrigin = "**") {
     }),
   );
   await page.route(`${fixtureOrigin}/api/system/plugin/showcase?*`, (route) => {
-    if (new URL(route.request().url()).searchParams.get("spec") !== specification) {
-      return route.fulfill({ json: { screenshots: [], soundscapes: [] } });
-    }
     requests.metadata++;
+    assert.equal(new URL(route.request().url()).searchParams.get("spec"), specification);
     return route.fulfill({
       json: {
         title: "Harbor",
@@ -76,38 +74,47 @@ export async function exercisePluginGallery(page, requests, shots, name) {
   const install = await dialog.getByRole("button", { name: "Install", exact: true }).boundingBox();
   const bounds = await dialog.boundingBox();
   assert.ok(install && bounds && install.x >= bounds.x && install.x + install.width <= bounds.x + bounds.width);
+  assert.equal(requests.metadata, 0, "Gallery metadata must remain lazy");
+  assert.equal(requests.images, 0, "No external image request before opening its gallery");
+  await button.click();
   const gallery = dialog.getByRole("region", { name: "Screenshot gallery: Harbor", exact: true });
-  const ui = gallery.getByRole("button", { name: "Open full size: Harbor UI preview", exact: true });
-  const cli = gallery.getByRole("button", { name: "Open full size: Harbor CLI preview", exact: true });
-  await ui.scrollIntoViewIfNeeded();
-  await ui.getByRole("img").evaluate((element) => element.decode());
-  assert.ok(requests.metadata >= 1, "Thumbnails load without opening the gallery");
+  await gallery.getByRole("img", { name: "Harbor UI preview", exact: true }).evaluate((element) => element.decode());
+  const visiblePreview = async (caption) => {
+    await page.waitForFunction((text) => {
+      const image = [...document.querySelectorAll("[data-plugin-gallery-content] img")].find(
+        (item) => item.alt === text,
+      );
+      const pane = image?.closest("[data-settings-content]");
+      if (!image || !pane) return false;
+      const picture = image.getBoundingClientRect();
+      const viewport = pane.getBoundingClientRect();
+      return (
+        picture.height > 0 &&
+        picture.top >= Math.max(viewport.top, 0) &&
+        picture.bottom <= Math.min(viewport.bottom, window.innerHeight) &&
+        picture.left >= Math.max(viewport.left, 0) &&
+        picture.right <= Math.min(viewport.right, window.innerWidth)
+      );
+    }, caption);
+  };
+  await visiblePreview("Harbor UI preview");
   await page.screenshot({ path: join(shots, `${name}-plugin-gallery-ui.png`) });
-
-  const originalUrl = page.url();
-  const originalPages = page.context().pages().length;
+  const cli = gallery.getByRole("radio", { name: "CLI: Harbor CLI preview", exact: true });
   await cli.focus();
   await page.keyboard.press("Space");
-  const viewer = page.getByRole("dialog", { name: "Harbor CLI preview", exact: true });
-  await viewer.getByRole("img").evaluate((element) => element.decode());
-  const fullscreen = await viewer.evaluate((element) => {
-    const bounds = element.getBoundingClientRect();
-    return (
-      element.matches(":modal") && bounds.width >= window.innerWidth - 1 && bounds.height >= window.innerHeight - 1
-    );
-  });
-  assert.equal(fullscreen, true);
-  assert.equal(page.url(), originalUrl);
-  assert.equal(page.context().pages().length, originalPages);
-  await page.screenshot({ path: join(shots, `${name}-plugin-gallery-fullscreen.png`) });
-  await page.keyboard.press("Escape");
-  await viewer.waitFor({ state: "hidden" });
-  assert.equal(await cli.evaluate((element) => document.activeElement === element), true);
+  const selected = gallery.getByRole("img", { name: "Harbor CLI preview", exact: true });
+  await selected.evaluate((element) => element.decode());
+  await visiblePreview("Harbor CLI preview");
   assert.equal(
     await gallery
       .getByText("Screenshots remain available. Soundscape discovery is incomplete in this fixture.", { exact: true })
       .count(),
     1,
+  );
+  assert.equal(await cli.isChecked(), true);
+  assert.equal(
+    await gallery.getByRole("link", { name: "Open full size: Harbor CLI preview" }).getAttribute("href"),
+    `${imageBase}cli.png`,
   );
   assert.equal(
     await gallery.getByRole("link", { name: /Harbor tide/ }).getAttribute("href"),
@@ -118,7 +125,7 @@ export async function exercisePluginGallery(page, requests, shots, name) {
   const content = dialog.locator("[data-settings-content]");
   const sizing = await content.evaluate((element) => ({ width: element.clientWidth, scroll: element.scrollWidth }));
   assert.ok(sizing.scroll <= sizing.width + 1, `Gallery overflows its settings pane: ${JSON.stringify(sizing)}`);
-  const target = await cli.boundingBox();
+  const target = await cli.locator("..").boundingBox();
   assert.ok(target && target.width >= 24 && target.height >= 24, "Screenshot chooser needs usable touch targets");
   await page.evaluate(axeSource);
   const violations = await gallery.evaluate(

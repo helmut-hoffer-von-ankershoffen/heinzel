@@ -646,7 +646,7 @@ def selected_pr_inventory(selected: dict[str, bool]) -> dict[str, str]:
         "Heinzel Notifier (macOS app)": selected["notifier"],
         "macOS-specific tests": (selected["macos_full"] or surface) and (core or surface) and not site,
         "Build": core,
-        "Plugin SDK candidate": True,
+        "Plugin SDK candidate": core,
         "Optional source plugins": selected["plugins"] or selected["contracts"],
         "Public contract consumers": selected["contracts"],
         "Site tests": site,

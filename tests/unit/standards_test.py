@@ -4,7 +4,6 @@ Each check comes with a test that feeds it a violation, so a check that silently
 """
 
 import ast
-import gzip
 import importlib.util
 import re
 import subprocess
@@ -108,6 +107,8 @@ def repository_files() -> list[str]:
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
     "scripts/contexts.py": "reads Core's contexts.toml and generates its import contracts; plugins have no context map",
+    "scripts/refactor_one_pr.py": "moves Core files into the target module map; deleted a week after the 0.9.54 merge",
+    "scripts/refactor_one_pr_map.toml": "the old and new path of every file that script moves; deleted with it",
     "scripts/acme_setup_e2e.py": "proves the core plugin catalog installs a company plugin with its required plugins",
     "scripts/check_apple_ci.py": "checks Core Apple fixture results; plugins have no Apple CI job",
     "scripts/ci_node.py": "selects Node for core's Python unit lanes; independent plugins own their CI runtime setup",
@@ -134,11 +135,6 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/check_docs.py": "checks the core's documents and UI copy; plugins keep their own docs tooling",
     "scripts/site_privacy.py": "lists the hosts the core product website may contact for its check (ADR 0098)",
     ".github/workflows/pypi.yml": "publishes only the registered core project with its trusted publisher (ADR 0079)",
-    ".github/workflows/release-chain.yml": "runs the Core release end to end; plugins release through release.yml",
-    ".github/workflows/release-tail.yml": "the tail run of one Core release (release-chain.yml); plugins have none",
-    ".github/workflows/release-freeze.yml": "freezes Core's main for its release candidate; plugins have no candidate",
-    "scripts/release_chain.py": "the steps of Core's release chain (release-chain.yml), which plugins don't get",
-    "scripts/release_latest.py": "binds deferred Latest to Core's release chain; plugins publish independently",
     ".github/workflows/edge.yml": "releases the core's edge channel from its green main (ADR 0114)",
     "scripts/release_channel.py.lock": "locks that script for the edge workflow (ADR 0114)",
     "scripts/check_confidentiality.py.lock": "locks the term scan for the edge workflow (ADR 0114)",
@@ -169,7 +165,6 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/source_review.py.lock": "locks that script for the review workflow",
     "scripts/review_tier.py.lock": "locks the tier decision for the review command",
     "scripts/source_review.py": "guard and runner of the core's protected source review workflow; plugins have none",
-    "scripts/review_history.py": "checks prior attempts of the Core-only Gate review workflow",
     ".github/workflows/source-review.yml": "runs only on the core's protected review ref, with its own secret",
     "scripts/web.py": "the web head's typed client and dev server (web/, ADR 0039); plugins bring no UI",
     "scripts/web_build.py": "runs and builds the web head's app (web/, ADR 0039); plugins bring no UI",
@@ -325,20 +320,15 @@ def test_tests_and_template_use_only_variables_something_reads(make_kernel):
         for section, settings in kernel.settings_of()
         for key in type(settings).model_fields
     }
+    code = [path for path in repository_files() if path.endswith(CODE_SUFFIXES)]
     known |= HOST_GATE_ENV_READS
-    used: set[tuple[str, str]] = set()
-    for path in repository_files():
-        code = path.endswith(CODE_SUFFIXES)
-        tests_or_template = path.startswith(("tests/", "template/"))
-        if not (code or tests_or_template):
-            continue
-        text = (REPO / path).read_text(encoding="utf-8", errors="strict" if code else "ignore")
-        if "HZ_" not in text:
-            continue
-        if code:
-            known.update(env_reads(text))
-        if tests_or_template:
-            used.update((name, path) for name in env_names(text))
+    known |= {name for path in code for name in env_reads((REPO / path).read_text(encoding="utf-8"))}
+    used = {
+        (name, path)
+        for path in repository_files()
+        if path.startswith(("tests/", "template/"))
+        for name in env_names((REPO / path).read_text(encoding="utf-8", errors="ignore"))
+    }
     unknown = sorted(
         f"{path}: {name}" for name, path in used if name not in known and not name.startswith(tuple(NOT_SETTINGS))
     )
@@ -680,25 +670,18 @@ BINARY = (".gif", ".webp", ".mp4", ".png", ".woff2", ".jpg", ".ico")
 """Recordings and images: their bytes aren't words, and a GIF holds any three letters somewhere."""
 
 
-def repository_text(path: Path) -> str:
-    if path.name.endswith(".txt.gz"):
-        with gzip.open(path, "rt", encoding="utf-8") as manifest:
-            return manifest.read()
-    return path.read_text(encoding="utf-8", errors="ignore")
-
-
-def test_finds_the_old_name_in_compressed_text(tmp_path):
-    path = tmp_path / "manifest.txt.gz"
-    path.write_bytes(gzip.compress(b"the old " + b"j" + b"oy name"))
-    assert OLD_NAME.search(repository_text(path))
-
-
 def test_the_working_title_is_gone():
     found = [
         path
         for path in repository_files()
         if not path.startswith(OLD_NAME_ALLOWED)
-        and (OLD_NAME.search(path) or (not path.endswith(BINARY) and OLD_NAME.search(repository_text(REPO / path))))
+        and (
+            OLD_NAME.search(path)
+            or (
+                not path.endswith(BINARY)
+                and OLD_NAME.search((REPO / path).read_text(encoding="utf-8", errors="ignore"))
+            )
+        )
     ]
     assert found == [], "say Heinzelmännchen, hz or heinzel"
 

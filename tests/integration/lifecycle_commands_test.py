@@ -12,7 +12,7 @@ from heinzel import HeinzelError
 from heinzel.modules.system.lifecycle._models import Activation, RuntimeManifest
 from heinzel.modules.system.lifecycle._store import LifecycleStore, atomic_record
 
-pytestmark = [pytest.mark.integration, pytest.mark.real_system]
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture

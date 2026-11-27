@@ -30,7 +30,7 @@ from heinzel.kernel import (
 from heinzel.modules.system.lifecycle._service import LABEL, WebService
 from heinzel.modules.system.runner.chat._policy import refusal
 
-pytestmark = [pytest.mark.integration, pytest.mark.real_system]
+pytestmark = pytest.mark.integration
 TOKEN = "t" * 43
 INSTANCE = "a" * 32
 
@@ -1137,59 +1137,6 @@ def test_interrupted_historical_migration_keeps_exact_fences_and_can_resume(serv
     assert not selected.compatibility_gate().exists()
     if boundary == "compatibility-cleared":
         assert manager_effects(manager) == effects_before
-
-
-def test_install_refuses_an_oversized_registration_before_writing(service, monkeypatch):
-    from heinzel.modules.system.lifecycle._service import PRIVATE_CONTROL_LIMIT
-
-    selected, manager, port = service
-    monkeypatch.setattr(selected, "_launch_content", lambda *_args, **_kwargs: "x" * PRIVATE_CONTROL_LIMIT)
-    with pytest.raises(HeinzelError, match="registration exceeds"):
-        selected.install(port)
-    assert not any(path.exists() for path in (selected.unit, selected.launcher, selected.marker))
-    assert not manager_effects(manager)
-
-
-@pytest.mark.parametrize("boundary", ["launcher-replaced", "canonical"])
-def test_reopening_desktop_resumes_its_interrupted_launcher_migration(service, monkeypatch, boundary):
-    from heinzel.modules.system.lifecycle import _service
-    from heinzel.modules.system.lifecycle._launcher_transition import LauncherTransition
-
-    selected, _manager, port = service
-    selected.install(port)
-    selected.recovery = ("/fixture/python", "a" * 64)
-    monkeypatch.setattr(_service, "interpreter_matches", lambda *_args: True)
-    original_phase, original_replace = LauncherTransition.phase, Path.replace
-
-    def phase(transition, value):
-        original_phase(transition, value)
-        if value == boundary:
-            msg = "fixture interruption after canonical registration"
-            raise OSError(msg)
-
-    def replace(path, target):
-        result = original_replace(path, target)
-        if boundary == "launcher-replaced" and path.name.endswith("-launcher.new"):
-            msg = "fixture interruption before storing the registration"
-            raise OSError(msg)
-        return result
-
-    with monkeypatch.context() as interruption:
-        interruption.setattr(LauncherTransition, "phase", phase)
-        interruption.setattr(Path, "replace", replace)
-        with pytest.raises(HeinzelError, match="transition is incomplete"):
-            selected.attach(port)
-    assert host_maintenance_gate(selected.prefix).exists()
-    controls = []
-    monkeypatch.setattr(selected, "_sleep", lambda _seconds: controls.append(start_control(selected, port)))
-    try:
-        assert selected.attach(port) == f"http://127.0.0.1:{port}/#token={TOKEN}"
-        assert selected.recovery_interpreter() == selected.recovery
-        assert not host_maintenance_gate(selected.prefix).exists()
-        assert not selected.compatibility_gate().exists()
-    finally:
-        for control in controls:
-            control.close()
 
 
 @pytest.mark.parametrize("change", ["foreign", "missing", "edited-launcher", "edited-journal"])

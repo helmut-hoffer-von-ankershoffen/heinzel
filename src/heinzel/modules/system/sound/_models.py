@@ -7,8 +7,6 @@ from pydantic import BaseModel, Field
 from heinzel import ModuleSettings
 
 NAME_PATTERN = r"^[a-z](?:-?[a-z0-9])*$"
-DEFAULT_SOUNDSCAPE = "singularity"
-"""The soundscape of someone who never chose one; silent (off) while no installed plugin offers it."""
 
 
 class SoundSettings(ModuleSettings):
@@ -23,14 +21,11 @@ class SoundSettings(ModuleSettings):
     )
 
     name: str = Field(
-        default=DEFAULT_SOUNDSCAPE,
+        default="off",
         pattern=NAME_PATTERN,
         max_length=64,
         title="Soundscape",
-        description=(
-            "The soundscape of the web app; off is no sound, and plugins can bring others. "
-            "Singularity until you choose."
-        ),
+        description="The soundscape of the web app; off is no sound, and plugins can bring others.",
         json_schema_extra={"x-hidden": True},
     )
     volume: int = Field(
@@ -98,15 +93,6 @@ class SoundStreamView(BaseModel):
     watch_url: str = Field(description="Where the video is on the host itself, to open it there instead.")
 
 
-class SoundTrackView(BaseModel):
-    """One track the web app plays in its own audio element."""
-
-    title: str = Field(description="What the player shows, e.g. `Morning tide`.")
-    url: str = Field(description="The https URL to play after Play, on a media host of the core's list.")
-    type: str = Field(description="Its media type, `audio/mpeg` or `audio/mp4`.")
-    duration_seconds: int = Field(description="How long it is, in seconds.")
-
-
 class SoundscapeView(BaseModel):
     """One available soundscape, ready for the web app to play."""
 
@@ -119,13 +105,7 @@ class SoundscapeView(BaseModel):
     effective: bool = Field(description="Whether it is the one in effect (follow my theme may pick another).")
     pairs_with: list[str] = Field(default_factory=list[str], description="Themes it goes with.")
     fade_seconds: int = Field(default=4, description="How long a change fades, in seconds.")
-    stream: SoundStreamView | None = Field(
-        default=None, description="The stream; none for another kind or tracks only."
-    )
-    tracks: list[SoundTrackView] = Field(
-        default_factory=list[SoundTrackView],
-        description="Tracks to play in order, before the stream; empty while the feature `native_audio` is off.",
-    )
+    stream: SoundStreamView | None = Field(default=None, description="The stream; none unless the kind is `stream`.")
     layers: list[SoundLayerView] = Field(default_factory=list[SoundLayerView], description="The layers to mix.")
     earcons: list[SoundEarconView] = Field(
         default_factory=list[SoundEarconView], description="Short sounds for notices, by kind."

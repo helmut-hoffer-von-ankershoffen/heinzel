@@ -16,7 +16,7 @@ from heinzel.modules.system.lifecycle._models import EnvironmentManifest, Runtim
 from heinzel.modules.system.lifecycle._store import LifecycleStore, atomic_record
 from heinzel.modules.system.lifecycle._uninstall import uninstall_runtime
 
-pytestmark = [pytest.mark.integration, pytest.mark.real_system]
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture

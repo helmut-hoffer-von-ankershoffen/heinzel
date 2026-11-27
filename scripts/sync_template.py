@@ -47,18 +47,10 @@ def _without_quarantine(text: str) -> str:
     return text[:start] + text[end:] if 0 <= start < end else text
 
 
-def _without_upgrade_lane(text: str) -> str:
-    """Lane B updates the published Core in place to the built wheel: plugins have no published app of their own."""
-    text = text.replace(" test-upgrade", "")
-    text = re.sub(r"\nUPGRADE_RECEIPT :=[^\n]*\ntest-upgrade:.*?\n(?:\t.*\n)+", "\n", text)
-    text = re.sub(r"\n  upgrade:\n.*?(?=\n  [a-z-]+:)", "", text, flags=re.DOTALL)
-    return re.sub(r"(?m)^[^\n]*# Core upgrade lane(?::[^\n]*)?\n", "", text)
-
-
 def makefile() -> str:
     """The Makefile without Heinzelmännchen-only targets, plus `update-template`."""
     text = (
-        _without_upgrade_lane(_without_quarantine((ROOT / "Makefile").read_text(encoding="utf-8")))
+        _without_quarantine((ROOT / "Makefile").read_text(encoding="utf-8"))
         # Core-only guards read core standards, CLI guides and E2E lane inventory.
         .replace("\t@uv run --quiet --script scripts/scoped_checks.py early-fast\n", "")
         .replace('\t@uv run --quiet --script scripts/scoped_checks.py early-preflight --base "$(BASE)"\n', "")
@@ -335,9 +327,9 @@ def ci_workflow() -> str:
     )
     text = text.replace("needs: [admission, ", "needs: [")
     # Plugins have no changed-path job; preserve their existing macOS matrix.
-    text = _without_upgrade_lane(_without_release_candidate(_without_core_node_selection(text)))
+    text = _without_release_candidate(_without_core_node_selection(text))
     text = text.replace(
-        "Full PRs keep both macOS cells; main runs them in its coalesced macOS lane.",
+        "PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.",
         "PRs run the newest version; non-PR runs cover all versions.",
     )
     text = re.sub(r"\n  template:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
@@ -420,7 +412,6 @@ def ci_workflow() -> str:
         "local-plugin-plan",
         "local-plugin-check",
         "core-wheel",
-        "upgrade",
         "release-candidate-source",
         "quarantine-registry",
         "quarantine-plan",

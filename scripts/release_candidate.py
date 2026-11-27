@@ -243,7 +243,6 @@ def expected_jobs(event: str) -> dict[str, str]:
         "macOS-specific tests",
         "Public contract consumers",
         "Build",
-        "Upgrade in place (published to candidate, Linux)",
         "Plugin template",
         "Release candidate source",
         "CI OK",

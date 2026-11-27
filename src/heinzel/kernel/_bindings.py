@@ -652,7 +652,7 @@ def _wrap(
     # Not functools.wraps: it would set __wrapped__ to the bound method and with it the adapter.
     call.__name__ = name
     call.__qualname__ = f"{capability.protocol.__name__}.{name}"
-    call.__doc__ = (capability.optional_reads.get(name) or getattr(capability.protocol, name)).__doc__
+    call.__doc__ = getattr(capability.protocol, name).__doc__
     return call
 
 
@@ -992,7 +992,7 @@ class Capabilities:
                 # it asks `CapabilityView.serves` first and degrades instead of failing (`hz org agenda`).
                 unmet = self._unmet(requester, wanted, problem)
                 label = f"{capability.name}:unserved for {requester.label}"
-                return _Handle({}, dict.fromkeys(capability.handle_methods, unmet), label)
+                return _Handle({}, dict.fromkeys(capability.methods, unmet), label)
         return self.handle_for(requester, capability)
 
     def handle_for(self, requester: Requester, capability: Capability) -> object:
@@ -1115,7 +1115,7 @@ class Capabilities:
         """A handle with the methods of `modes`; every other method raises why `requester` can't call it."""
         allowed: dict[str, Callable[..., Any]] = {}
         denied: dict[str, str] = {}
-        for name, mode in capability.handle_methods.items():
+        for name, mode in capability.methods.items():
             if name in capability.core_only:
                 denied[name] = f"Only hz itself calls {capability.name}.{name} (ADR 0160); {requester.label} can't."
                 continue

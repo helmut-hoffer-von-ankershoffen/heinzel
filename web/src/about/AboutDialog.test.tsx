@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { recordSurface } from "@/lib/surfaceDiagnostics";
 import { zoneDateTime } from "@/lib/zoneTime";
 import { AboutDialog, clientHere, desktopApp, detailsText } from "./AboutDialog";
-import { MENU_EVENT, requestMenuAction } from "./menu";
+import { requestMenuAction } from "./menu";
 
 const info = {
   version: "1.2.3",
@@ -50,19 +50,6 @@ afterEach(() => {
 });
 
 describe("About dialog", () => {
-  it("acknowledges the native request only while mounted, including when About is already open", () => {
-    const request = () => window.dispatchEvent(new CustomEvent(MENU_EVENT, { detail: "about", cancelable: true }));
-    expect(request()).toBe(true);
-    const view = show();
-    act(() => expect(request()).toBe(false));
-    const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByRole("button", { name: "Close" })).toHaveFocus();
-    act(() => expect(request()).toBe(false));
-    expect(screen.getByRole("dialog")).toBe(dialog);
-    view.unmount();
-    expect(request()).toBe(true);
-  });
-
   it("only exposes native About details to the owned desktop frame", () => {
     // The focused web lane owns the About surface and can run this dependency-free IPC suite with its pinned Node.
     const suite = resolve(dirname(fileURLToPath(import.meta.url)), "../../../desktop/test/lifecycle-ipc.test.js");
@@ -123,13 +110,9 @@ describe("About dialog", () => {
   });
 
   it("tells which client shows the page from the bridge it injects", () => {
-    const about = () => Promise.resolve({ version: "1", path: "/A" });
     expect(clientHere(undefined)).toBe("browser");
     expect(clientHere({})).toBe("native");
-    expect(clientHere({ about })).toBe("electron");
-    expect(clientHere({ about, workspaceAudio: false })).toBe("native");
-    expect(clientHere({ about, clientFlavor: "native" })).toBe("native");
-    expect(clientHere({ clientFlavor: "electron" })).toBe("electron");
+    expect(clientHere({ about: () => Promise.resolve({ version: "1", path: "/A" }) })).toBe("electron");
   });
 
   it("shows the Native app row and the client it runs in", async () => {
@@ -158,21 +141,6 @@ describe("About dialog", () => {
     expect(text).toContain("desktop Electron app 0.9.29 /Applications/H.app");
     expect(text).toContain("client Browser");
     expect(text).toContain("plugin heinzel-b 0.4.0 git");
-  });
-
-  it("labels local Native About details when the backend has no desktop app metadata", async () => {
-    const about = async () => ({ version: "0.9.53", path: "/Applications/Heinzelmaennchen.app" });
-    vi.stubGlobal("heinzelDesktop", { about, clientFlavor: "native" });
-    try {
-      show();
-      act(() => requestMenuAction("about"));
-      const dialog = await screen.findByRole("dialog");
-      expect(await within(dialog).findByText("Native app 0.9.53")).toBeInTheDocument();
-      expect(within(dialog).getByText("Running in").nextSibling).toHaveTextContent("Native app");
-      expect(detailsText(info as never, await about())).toContain("desktop Native app 0.9.53");
-    } finally {
-      vi.unstubAllGlobals();
-    }
   });
 
   it("includes the loaded entrypoint and safe surface snapshot separately from backend version", () => {

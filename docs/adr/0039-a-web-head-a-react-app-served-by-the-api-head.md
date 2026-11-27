@@ -6,7 +6,7 @@ decision-makers: maintainer
 amends: 0018, 0019
 amends-0018: adds hz ui
 amends-0019: a token-protected web head may expose what the unauthenticated REST head does not
-amended-by: 0041, 0043, 0045, 0046, 0047, 0048, 0058, 0068, 0084, 0166
+amended-by: 0041, 0043, 0045, 0046, 0047, 0048, 0058, 0068, 0084
 related: 0003, 0020, 0021, 0023, 0024, 0027, 0029, 0036, 0037
 implemented-by: 60
 ---

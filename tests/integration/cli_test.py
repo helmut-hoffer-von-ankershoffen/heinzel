@@ -17,7 +17,6 @@ from typer.testing import CliRunner
 from heinzel import Config, HeinzelError, Module, OperationLet, Prompter, Settings, __version__
 from heinzel.heads.cli import build
 from heinzel.kernel import ReleaseCache
-from heinzel.kernel._exposure import restricts
 from heinzel.modules.system import _github
 from heinzel.modules.system import _service as system_service
 
@@ -145,16 +144,10 @@ def test_help_lists_only_everyday_commands_and_says_how_many_are_hidden(app, mak
     assert top_level(app, "heinzel") >= {"list", "show", "drafts", "wake"}
     assert "graph" not in top_level(app, "heinzel")
     kernel = make_kernel(builtins=True, **example_modules())
-    expert = sum(
-        let.audience == "expert"
-        for _, let in kernel.lets(OperationLet)
-        if kernel.available(let.func) and not restricts(let.heads, "cli")
-    )
-    hidden = expert + 8  # The expert commands mounted directly under hz system serve.
+    expert = sum(let.audience == "expert" for _, let in kernel.lets(OperationLet) if kernel.available(let.func))
+    hidden = expert + 7  # and the server plus MCP setup, switch and check commands
     last = screen.strip().splitlines()[-1].strip()
-    headline = re.search(r"(\d+) more commands for experts are hidden; hz system expert on lists them\.", screen)
-    assert headline is not None
-    assert int(headline[1]) == hidden
+    assert f"{hidden} more commands for experts are hidden; hz system expert on lists them." in screen
     assert last.startswith(f"v{__version__}")
     assert last.endswith("🐻 built with AI in Berlin")
 
@@ -258,7 +251,6 @@ def test_system_info_json(app):
             "document search → documents:read": "optional: not connected: no adapter bound",
             "org agenda → calendar:read": "optional: not connected: no adapter bound",
             "org calendar → calendar:read": "optional: not connected: no adapter bound",
-            "org calendar-selection → calendar:read": "optional: not connected: no adapter bound",
             "system.runner ask → agent-runner:read": "claude-code → api.anthropic.com",
             "system.runner.chat send → agent-runner:read": "claude-code → api.anthropic.com",
         },

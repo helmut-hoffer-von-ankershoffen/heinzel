@@ -160,7 +160,6 @@ markers = [
     "e2e: End-to-end tests - complete workflows against real external services (PyPI, GitHub, a real `uv tool` install). Need network. Timeout 120 s; mark as long_running if a test needs >= 5 min.",
     "long_running: Tests with a timeout >= 5 min.",
     "perf: Performance tests that assert on elapsed time (linear time, a budget). Additional to the level marker; excluded from make check-fast, test, test-parallel and test-all-pythons, run by make test-perf in CI only, because load makes them flake.",
-    "real_system: Additional to the level marker. The test runs real processes, uv or the service manager on the update or lifecycle path: the upgrade proof. It runs where its level runs; their number may only fall.",
 ]
 
 [tool.coverage.run]

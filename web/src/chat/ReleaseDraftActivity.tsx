@@ -2,9 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api, authorityMiddleware, type SchemaChatAction, type SchemaChatSession, unwrap } from "@/api/client";
 import { authorityEpoch } from "@/api/token";
-import { RefreshGlyph } from "@/components/RefreshGlyph";
 import { Button } from "@/components/ui/button";
-import { refreshName } from "@/lib/refreshFeedback";
 
 const activityLabels: Record<string, string> = {
   "draft.release-observed": "Release observed",
@@ -221,15 +219,7 @@ export function ReleaseDraftActivity({
               })}
             </ul>
           )}
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={query.isFetching}
-            aria-busy={query.isFetching}
-            aria-label={refreshName("Refresh", query.isFetching, query.isError)}
-            onClick={() => void query.refetch()}
-          >
-            <RefreshGlyph busy={query.isFetching} failed={query.isError} />
+          <Button size="sm" variant="outline" disabled={query.isFetching} onClick={() => void query.refetch()}>
             Refresh
           </Button>
         </div>

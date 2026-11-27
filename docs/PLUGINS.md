@@ -118,7 +118,7 @@ the versioned SDK and the owning declaration; plugin browser code shares the tru
 | --- | --- | --- |
 | Themes, variants, backdrop, fonts and logo | Available | `module.theme`; validated assets and a checked palette; [THEMES](THEMES.md) |
 | Time-of-day and weather signals | Available | `@module.signals`; closed signal vocabulary; plugins supply weather |
-| Soundscapes and earcons | Available | `module.soundscape`; checked assets, an allowed stream provider or tracks on an allowed media host (preview); [ADR 0058](adr/0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md), [ADR 0166](adr/0166-soundscapes-may-play-native-tracks-from-an-allowlisted-media-host.md) |
+| Soundscapes and earcons | Available | `module.soundscape`; checked assets or an allowed stream provider; [ADR 0058](adr/0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md) |
 | Avatar accessories in graphic widgets | Available | Checked accessory data; the host draws the character |
 | Dressing the user's own avatar | Proposed | A policy for selecting accessories across plugins, separate from a widget's own avatar |
 | Avatar palette and seasonal decorations | Available | Optional checked theme data, for example snow, retaining the person's look choices |

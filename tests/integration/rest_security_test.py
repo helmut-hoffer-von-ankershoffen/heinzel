@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from heinzel import Module
-from heinzel.heads import _kit, api
+from heinzel.heads import api
 
 pytestmark = pytest.mark.integration
 
@@ -94,10 +94,10 @@ def test_spending_and_unattended_operations_are_not_rest_endpoints(make_kernel):
 
 
 def test_the_split_of_host_headers():
-    assert _kit._split("LocalHost:8000") == ("localhost", "8000")
-    assert _kit._split("[::1]:8000") == ("[::1]", "8000")
-    assert _kit._split("[::1]") == ("[::1]", "")
-    assert _kit._split("[::1") == ("[::1", "")
+    assert api._split("LocalHost:8000") == ("localhost", "8000")
+    assert api._split("[::1]:8000") == ("[::1]", "8000")
+    assert api._split("[::1]") == ("[::1]", "")
+    assert api._split("[::1") == ("[::1", "")
 
 
 def test_serve_passes_its_port_and_your_allowed_hosts(monkeypatch, make_kernel):

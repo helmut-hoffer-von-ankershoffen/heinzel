@@ -402,7 +402,7 @@ it("spins the check icon from the click until the check finishes, then stops", a
   expect(button.querySelector("svg")).not.toHaveAttribute("data-spinning");
   await user.click(button);
   await waitFor(() => expect(button.querySelector("svg")).toHaveAttribute("data-spinning"));
-  expect(button.querySelector("svg")).toHaveClass("motion-safe:animate-spin");
+  expect(button.querySelector("svg")).toHaveClass("animate-spin");
   finish();
   await waitFor(() => expect(button.querySelector("svg")).not.toHaveAttribute("data-spinning"));
 });

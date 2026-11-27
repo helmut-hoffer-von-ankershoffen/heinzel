@@ -43,7 +43,7 @@ from heinzel.modules.system._tools import tools as tool_list
 from heinzel.modules.system._uninstall import SystemOfflineUninstall
 from heinzel.modules.system.config._service import ConfigService
 from heinzel.modules.system.updater._adapter_state import FileInstallationState
-from heinzel.modules.system.updater._announced import Announcement, trial_start
+from heinzel.modules.system.updater._announced import Announcement, ToolSnapshot, trial_start
 from heinzel.modules.system.updater._plugin_releases import PyPIPluginReleases, plugin_releases
 from heinzel.modules.system.updater._update import UpdateService
 
@@ -405,13 +405,17 @@ def apply_announced(  # noqa: PLR0913, PLR0917 - the services and each part of t
 
 
 @module.operation(private=True, read_only=False, heads={"auto-update"}, audience="everyday")
-def recover_announced(service: UpdateService, kernel: Kernel) -> bool:
+def recover_announced(installation: Installation, kernel: Kernel) -> bool:
     """Finish putting back an automatic update that stopped half way (ADR 0116); whether there was one.
 
-    The web app's server asks once when it starts, holding the apply lock. The tool folder goes back to the copy
-    and its pre-update continuity is verified before the recovery gate is removed.
+    The web app's server asks once when it starts, holding the apply lock. A copy left behind is the truth: the
+    process that took it died before the update ended, so the tool folder goes back to it.
     """
-    return service.recover_announced(kernel.settings.state_dir / "auto-update")
+    folder = kernel.settings.state_dir / "auto-update"
+    if not installation.is_tool or not (folder / "before-update").is_dir():
+        return False
+    ToolSnapshot(installation.prefix.resolve(strict=True), folder / "before-update", folder / "after-update").recover()
+    return True
 
 
 @module.operation(read_only=False, audience="everyday", render=render_channel, agents="approve")

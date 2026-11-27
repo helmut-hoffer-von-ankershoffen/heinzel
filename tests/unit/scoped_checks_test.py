@@ -18,7 +18,6 @@ scoped = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(scoped)
 sys.path.insert(0, str(REPO / "scripts"))
 import related_tests as scoped_related  # noqa: E402 - needs the scripts path above
-import steps as step_runner  # noqa: E402 - the same named-step runner used by the hook
 
 
 @pytest.fixture(autouse=True)
@@ -305,24 +304,14 @@ def test_docs_tooling_and_its_tests_run_the_documentation_checks_not_the_full_ga
         "tests/unit/documentation_test.py",
     ]
     steps = scoped.scoped_steps(changed)
-    assert names(steps)[:7] == ["format", "ruff", "template", "docs", "demo", "typos", "tests"]
-    assert steps[6] == scoped.DOCS_STEPS[-1]
-    expected = [
+    assert names(steps) == ["format", "ruff", "template", "docs", "demo", "typos", "tests", "tooling-tests"]
+    assert steps[-2] == scoped.DOCS_STEPS[-1]
+    tooling_tests = steps[-1].split()
+    assert tooling_tests[3:-5] == [
         "tests/unit/ci_test.py",
         *sorted(str(path.relative_to(REPO)) for path in (REPO / "tests/unit").glob("site_*_test.py")),
     ]
-    assert [step.split()[3] for step in steps[7:]] == expected
-    assert len(names(steps)) == len(set(names(steps)))
-    assert all(step.split()[-5:] == steps[6].split()[-5:] for step in steps[7:])
-    assert all(not step.startswith("&") for step in steps[7:])  # no parallel test sessions
-    groups = step_runner.groups(steps)
-    try:
-        assert all(len(group) == 1 for group in groups[-len(expected) :])
-        assert [group[0].name for group in groups[-len(expected) :]] == names(steps)[7:]
-    finally:
-        for group in groups:
-            for step in group:
-                step.output.close()
+    assert tooling_tests[-5:] == steps[-2].split()[-5:]
     assert "scripts/site_pages.py" in steps[0]
     assert "--check" in steps[0]
 
@@ -330,9 +319,6 @@ def test_docs_tooling_and_its_tests_run_the_documentation_checks_not_the_full_ga
 def test_docs_tooling_alone_is_enough_for_the_scope():
     assert scoped.scoped_steps(["scripts/check_docs.py"]) is not None
     assert scoped.scoped_steps(["tests/unit/sync_template_test.py"]) is not None
-    steps = scoped.scoped_steps(["tests/unit/sync_template_test.py"])
-    assert sum("tests/unit/ci_test.py" in step for step in steps[7:]) == 1
-    assert sum("tests/unit/sync_template_test.py" in step for step in steps[7:]) == 1
 
 
 @pytest.mark.parametrize(

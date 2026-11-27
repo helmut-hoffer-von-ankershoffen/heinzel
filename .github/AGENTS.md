@@ -15,8 +15,7 @@ Intel large runners, or Intel self-hosted runners. Keep the shared bootstrap arc
 native, browser, Electron and release-acceptance coverage and its limits. Linux coverage is unchanged.
 
 macOS e2e, Electron and setup lanes run on push to main, schedule and dispatch, and on a release PR
-(`full_release`). A full ordinary PR runs the Linux in-place upgrade and both macOS unit and integration cells.
-The existing path rules select macOS-specific and notifier jobs.
+(`full_release`); an ordinary PR runs every Linux job plus macOS unit, integration, macOS-specific and notifier.
 Narrow by matrix, never by a job-level `if` on a required job. The nightly requires the full matrix (`CI OK`
 checks it), and a red nightly or main macOS lane blocks the next release. PR matrices use `fail-fast: false`, and the
 template job starts with the Linux jobs instead of waiting for lint. The pre-push hook is capped at lint, types and
@@ -40,28 +39,8 @@ Constraints per workflow:
 - `acceptance.yml`: `contents: read`, no secrets, publishes nothing; uploads `result.json`, which promotion reads. A
   candidate run (release wheel URL + sha256 + profile URL) is labelled `CANDIDATE_*`, never a public-path pass.
 - `prepare-release.yml` (`make release`): opens the release PR `chore(release): vX.Y.Z` and dispatches CI on it (token-made
-   PRs trigger none). A maintainer reviews all checks before merging. The owner decisions of 2026-11-22 in the root
-   AGENTS.md allow replacing this review and the macOS PR lanes once #907 and #933 merge and the hosted chain is active.
-- `release-chain.yml` ("Release", core only): the whole Core release in CI (`scripts/release_chain.py`): cut on a
-  first-attempt green main tip, candidate CI (full, first attempt), merge as the owner (secret `RELEASE_TOKEN`) only
-  if main has not moved since the candidate base, tag and Publish, PyPI, compose, the sharded `acceptance.yml` on both
-  OSes (`workflow_call`), the `acceptance.json` marker, then Latest. Publish creates a Core release with `--latest=false`; nothing is Latest
-  before its marker. Dispatch again to resume; a rerun of failed jobs never counts as acceptance. Auto-cut and resume
-  on a schedule only while `vars.AUTO_CUT` is `true`. A PR touching the chain runs it as a dry run. A dispatch with
-  `dry_run`, `version` and `cut_sha` replans that cut from the given main commit and prints the plan, the gate and the
-  candidate verdict of the version's release PR, pushing, merging and publishing nothing. With `probe` (from main
-  only) the one token-bearing dry-run job pushes `release-probe/<sha7>`, opens a draft PR, checks the freeze post and
-  main's required checks, then removes both. Main's tip is proven by its push run or, before that, by the merged PR's
-  first-attempt run on the same tree; the merge waits for main's required checks; compose starts at the wheel asset.
-  Only read-only dry runs are enabled initially. Enabling release writes, token probes, the freeze and the tail
-  requires the protected freeze publisher and queue integration. Enable the producer's Latest change with the tail.
-- `release-tail.yml` ("Release tail", core only): one release's tail after its tag, started by the chain: compose at
-  the wheel asset, PyPI, the sharded acceptance, the verdict, the marker, Latest. One concurrency group per version,
-  apart from the chain, so releases pipeline: N's tail runs while N+1 is cut and runs its candidate (at most two in
-  flight); N+1's marker and Latest wait until N is terminal (accepted, or not accepted and so absorbed).
-- `release-freeze.yml` (core only): the check "Release freeze", red on every PR while another PR is the open release
-  candidate; the chain posts it on all open PRs at the cut and after the merge. Not required by the ruleset yet: it is
-  added after this workflow has been dispatched once, so every open PR carries the check first.
+  PRs trigger none). A maintainer reviews all checks before merging. The owner decisions of 2026-11-22 in the root
+  AGENTS.md allow replacing this review and the macOS PR lanes once #907 and #933 merge.
 - `edge.yml`: dark until `vars.RELEASE_CHANNELS` is set (ADR 0114); then publishes pre-releases `edge-v<version>`,
   never latest, never on PyPI.
 - `pypi.yml`: manual dispatch on a final version tag; verifies and promotes the exact signed official GitHub release
@@ -73,7 +52,7 @@ Constraints per workflow:
   runner, testing only the dispatched branch (input `ref` must equal it); `os`, `kind` and `selector` are validated by
   `scripts/focused_job.py` and never pass through a shell. `contents: read`, no repository secrets (the read-only job
   token only, as in ci.yml's e2e), never writes the cache, 20 min; a diagnostic that gates nothing.
-- `fuzz.yml`: core only. `claude-review.yml`: the "Gate review" check on every PR; passes without a model call unless gate paths change. Gate changes require an Opus `VERDICT: APPROVE`, except that a confirmed Anthropic spending limit records a skip only when same-head review history has no rejection. Bots, forks and drafts require a human or agent review when automated review is enabled. The repository variable `CLAUDE_REVIEW=false` pauses model calls and records the operator skip in the run summary only when same-head review history is readable and has no rejection; restore `true` to resume.
+- `fuzz.yml`: core only. `claude-review.yml`: the "Gate review" check on every PR; passes without a model call unless gate paths change, then an Opus review must end in `VERDICT: APPROVE` (needs `vars.CLAUDE_REVIEW`; bots, forks and drafts fail with "needs a human or agent review").
 - `docs.yml`: deploys to GitHub Pages when the repository is public or `vars.DOCS_PAGES` is `true`, else keeps an
   artifact (ADR 0082).
 

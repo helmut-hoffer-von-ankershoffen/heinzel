@@ -1962,7 +1962,7 @@ Module `org`. Read-only. Result: `Agenda {now: string, timezone: string \| null,
 
 Show a week from your connected calendar.
 
-Module `org`. Read-only. Result: `CalendarWeek {timezone: string \| null, since: string, until: string, events: list[CalendarWeekEvent], calendars: list[CalendarSource] \| null, adapter: string \| null, warnings: list[string], problem: string \| null, fix: string \| null}`.
+Module `org`. Read-only. Result: `CalendarWeek {timezone: string \| null, since: string, until: string, events: list[Event], problem: string \| null, fix: string \| null}`.
 
 ```json
 {
@@ -1974,13 +1974,6 @@ Module `org`. Read-only. Result: `CalendarWeek {timezone: string \| null, since:
       "minimum": -52,
       "title": "Offset",
       "type": "integer"
-    },
-    "selection": {
-      "default": "",
-      "description": "Calendar exclusions and their adapter as JSON.",
-      "maxLength": 32768,
-      "title": "Selection",
-      "type": "string"
     }
   },
   "title": "org_calendarArguments",
@@ -3813,7 +3806,7 @@ Module `system.plugin`. Read-only. Result: `PluginPending {changes: list[PluginP
 
 Read the status and result of a plugin add without repeating it.
 
-Module `system.plugin`. Read-only. Result: `PluginOperation {operation_id: string, status: 'previewed' \| 'running' \| 'completed' \| 'unknown', candidate: PluginCandidate, result: PluginChange \| null, lifecycle_busy: boolean}`.
+Module `system.plugin`. Read-only. Result: `PluginOperation {operation_id: string, status: 'previewed' \| 'running' \| 'completed' \| 'unknown', candidate: PluginCandidate, result: PluginChange \| null}`.
 
 ```json
 {

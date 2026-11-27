@@ -32,10 +32,7 @@ def browser_probe(tmp_path_factory: pytest.TempPathFactory) -> Path:
             "6",
             "-target",
             f"{platform.machine()}-apple-macosx15.0",
-            *(
-                str(app / f"{name}.swift")
-                for name in ("Endpoint", "BrowserNetwork", "NavigationIdentity", "IntegratedBrowser")
-            ),
+            *(str(app / f"{name}.swift") for name in ("Endpoint", "BrowserNetwork", "IntegratedBrowser")),
             str(ROOT / "tests/fixtures/apple-browser-clear.swift"),
             "-o",
             str(probe),

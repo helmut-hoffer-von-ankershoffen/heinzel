@@ -31,15 +31,3 @@ def test_menu_probe_covers_every_state_field_and_route() -> None:
     assert delivery
     for parameter in re.findall(r"(\w+): Bool", delivery.group(1)):
         assert f"{parameter}:" in probe, f"the probe never passes MacMenuDelivery {parameter}"
-
-
-def test_about_uses_the_guarded_workspace_menu_with_a_native_fallback() -> None:
-    app = (ROOT / "apple/App/HeinzelApp.swift").read_text(encoding="utf-8")
-    coordinator = (ROOT / "apple/App/Navigation.swift").read_text(encoding="utf-8")
-    app_info = app[app.index("CommandGroup(replacing: .appInfo)") : app.index("CommandGroup(replacing: .appSettings)")]
-    assert re.search(r"WorkspaceMenuRequest\.send\(\.about\) \{\s*NSApp\.orderFrontStandardAboutPanel\(nil\)", app_info)
-    menu = coordinator[coordinator.index("@objc private func menuAction") : coordinator.index("func close(_ view")]
-    assert menu.index("guard MacMenuDelivery.allowed(") < menu.index("request.claim()") < menu.index("case .about:")
-    about = menu[menu.index("case .about:") : menu.index("case .reload:")]
-    assert "!window.dispatchEvent(new CustomEvent('hz:menu', { detail: 'about', cancelable: true }))" in about
-    assert "request.complete(value, error: error)" in about

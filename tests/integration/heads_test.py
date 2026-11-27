@@ -1,17 +1,15 @@
-"""In-process parity across the CLI, MCP, REST and authenticated web heads."""
+"""The MCP and REST heads, in-process: the same operations as the CLI, derived from the same declarations."""
 
-import json
-from typing import Annotated, Literal
+from typing import Annotated
 
 import anyio
 import pytest
 from fastapi.testclient import TestClient
 from mcp import Client
 from pydantic import BaseModel, Field
-from typer.testing import CliRunner
 
-from heinzel import Check, HeinzelError, Kernel, Module, Status
-from heinzel.heads import api, cli, mcp, web
+from heinzel import Check, HeinzelError, Module, Status
+from heinzel.heads import api, mcp
 
 pytestmark = pytest.mark.integration
 
@@ -45,38 +43,6 @@ def example() -> Module:
 @pytest.fixture
 def kernel(make_kernel):
     return make_kernel(builtins=True, example=example())
-
-
-@pytest.mark.parametrize("head", ["cli", "api", "mcp", "web"])
-@pytest.mark.parametrize("arguments", [{}, {"name": "Ada"}], ids=["default", "explicit"])
-def test_typed_result_across_real_heads(
-    kernel: Kernel, head: Literal["cli", "api", "mcp", "web"], arguments: dict[str, str]
-) -> None:
-    expected = {"text": f"Hello, {arguments.get('name', 'world')}!"}
-    if head == "cli":
-        options = [part for key, value in arguments.items() for part in (f"--{key}", value)]
-        result = CliRunner().invoke(cli.build(kernel), ["example", "greet", *options, "--json"])
-        assert result.exit_code == 0, result.output
-        assert json.loads(result.stdout) == expected
-    elif head == "mcp":
-
-        async def scenario() -> None:
-            async with Client(mcp.build(kernel)) as client:
-                result = await client.call_tool("example_greet", arguments)
-                assert not result.is_error, result.content
-                assert result.structured_content == expected
-
-        anyio.run(scenario)
-    else:
-        if head == "web":
-            token = "head-parity-session"
-            client = TestClient(web.build(kernel, port=None, token=token, static=None), base_url="http://localhost")
-            response = client.get("/api/example/greet", params=arguments, headers={"Authorization": f"Bearer {token}"})
-        else:
-            client = TestClient(api.build(kernel), base_url="http://localhost")
-            response = client.get("/example/greet", params=arguments)
-        assert response.status_code == 200, response.text
-        assert response.json() == expected
 
 
 def test_mcp_tools(kernel):

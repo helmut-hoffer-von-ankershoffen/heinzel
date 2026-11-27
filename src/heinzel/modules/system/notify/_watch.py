@@ -5,11 +5,9 @@ hourly receipt for it would say nothing a notice doesn't.
 """
 
 import logging
-from datetime import datetime
 
 from heinzel import HeinzelError, Kernel, NoticeKind, Notifications, OperationLet, ResolveWhen, Status
 from heinzel.kernel import ReleaseCache
-from heinzel.kernel._calendar_reminders import agenda_plan
 from heinzel.kernel._logging import get_logger, log_event
 from heinzel.modules.system.notify._channels import DaemonState
 from heinzel.modules.system.notify._resolve import DOCTOR_KEY, RELEASE_KEY, installed_version
@@ -130,14 +128,3 @@ def _doctor(kernel: Kernel, notifications: Notifications) -> int:
         resolve_when=when,
     )
     return int(notice is not None)
-
-
-def calendar_keys(kernel: Kernel, now: datetime) -> set[str]:
-    """Read the generic agenda operation afresh; absence and provider errors validate no reminders."""
-    operation = next(
-        (let for owner, let in kernel.lets(OperationLet) if (owner.qualname, let.name) == ("org", "agenda")), None
-    )
-    if operation is None or not kernel.available(operation.func):
-        return set()
-    agenda = kernel.call(operation.func)
-    return {reminder.key for reminder in agenda_plan(agenda, now) if reminder.due <= now < reminder.expires}

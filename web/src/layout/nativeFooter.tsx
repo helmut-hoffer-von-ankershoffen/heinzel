@@ -1,30 +1,18 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { viewportFrame, watchViewport } from "@/lib/viewport";
 
-type Stamp = { revision?: number; generation?: number };
-type Slot = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  viewportWidth: number;
-  viewportHeight: number;
-} & Stamp;
-type Bridge = {
-  metrics: () => { width: number; bottom: number } & Stamp;
-  reportSlot: (slot: Slot) => Promise<unknown>;
-};
-type Metrics = { width: number; bottom: number; bridge: Bridge } & Stamp;
+type Slot = { x: number; y: number; width: number; height: number; viewportWidth: number; viewportHeight: number };
+type Bridge = { metrics: () => { width: number; bottom: number }; reportSlot: (slot: Slot) => Promise<unknown> };
+type Metrics = { width: number; bottom: number; bridge: Bridge };
 
 /** Only the newer native host advertises this contract; old apps and browsers keep their existing footer. */
 export function nativeFooter(): Metrics | null {
   const bridge = (window as Window & { heinzelDesktop?: { nativeFooter?: Bridge } }).heinzelDesktop?.nativeFooter;
   if (!bridge || typeof bridge.metrics !== "function" || typeof bridge.reportSlot !== "function") return null;
   try {
-    const { width, bottom, revision, generation } = bridge.metrics();
+    const { width, bottom } = bridge.metrics();
     if (!Number.isFinite(width) || !Number.isFinite(bottom)) return null;
-    const stamp = Number.isSafeInteger(revision) && Number.isSafeInteger(generation) ? { revision, generation } : {};
-    return { bridge, width: Math.min(180, Math.max(44, width)), bottom: Math.min(80, Math.max(0, bottom)), ...stamp };
+    return { bridge, width: Math.min(180, Math.max(44, width)), bottom: Math.min(80, Math.max(0, bottom)) };
   } catch {
     return null;
   }
@@ -59,9 +47,7 @@ export function NativeFooterSlot({ metrics }: { metrics: Metrics }) {
       if (!active || !element.isConnected) return;
       const { x, y, width, height } = element.getBoundingClientRect();
       const viewport = viewportFrame();
-      const stamp =
-        metrics.generation === undefined ? {} : { revision: metrics.revision, generation: metrics.generation };
-      const value = { x, y, width, height, viewportWidth: viewport.width, viewportHeight: viewport.height, ...stamp };
+      const value = { x, y, width, height, viewportWidth: viewport.width, viewportHeight: viewport.height };
       if (!Object.values(value).every(Number.isFinite)) return;
       const next = JSON.stringify(value);
       if (next !== last) {
@@ -126,13 +112,12 @@ export function NativeFooterSlot({ metrics }: { metrics: Metrics }) {
       window.removeEventListener("hz:footer-relocated", refresh);
       window.removeEventListener("heinzel-native-footer-metrics", refresh);
     };
-  }, [metrics.bridge, metrics.width, metrics.bottom, metrics.revision, metrics.generation]);
+  }, [metrics.bridge, metrics.width, metrics.bottom]);
   return (
     <div
       ref={slot}
       aria-hidden="true"
       data-native-footer-slot=""
-      data-native-footer-version={metrics.generation === undefined ? undefined : "2"}
       className="pointer-events-none absolute top-0 left-0 h-12"
       style={{ width: metrics.width }}
     />

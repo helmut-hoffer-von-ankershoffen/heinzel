@@ -542,14 +542,11 @@ function TerminalView({
     void full;
     if (active) refitRef.current?.();
   }, [full, active]);
-  // Selecting or restarting a terminal gives it focus. The socket and prompt can arrive after focus has moved.
-  useEffect(() => {
-    void generation;
-    if (active) terminalRef.current?.focus();
-  }, [active, generation]);
+  // The shown tab receives "Run in the terminal" and gets the focus.
   useEffect(() => {
     if (!active || state !== "open") return;
     refitRef.current?.();
+    terminalRef.current?.focus();
     if (!ready) return;
     connectTerminal((text) => senderRef.current?.(text));
     return () => connectTerminal(null);

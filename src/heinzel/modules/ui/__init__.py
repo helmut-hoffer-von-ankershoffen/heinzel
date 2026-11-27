@@ -79,10 +79,7 @@ def _web_head_refresh(kernel: Kernel) -> WebHeadRefresh:
         )
         return WebHeadRefresh(refresh=lambda _target: result)
 
-    # A launcher service resolved from the previous generation can refresh but cannot attest recovery.
-    if (recovery_ready := getattr(service, "recovery_ready", None)) is None:
-        return WebHeadRefresh(refresh=service.refresh)
-    return WebHeadRefresh(refresh=service.refresh, recovery_ready=recovery_ready)
+    return WebHeadRefresh(refresh=service.refresh)
 
 
 module.service(WebHeadRefresh, _web_head_refresh)

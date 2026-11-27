@@ -11,7 +11,7 @@ only with all of this evidence:
   the current `{"token", "pid", "boot"}` form;
 - its owner provably ended: it was written in an earlier boot (a different recorded boot identity, or, for the legacy
   form, a modification time before the current boot), or in this boot by a recorded process id that no longer exists;
-- no other installation gate or rollback copy remains, and any new handover request belongs to the verified mutation;
+- no other installation gate, rollback copy or daemon handover from that attempt remains;
 - the installed tool matches its durable startup checkpoint, which updates write only for a verified generation.
 
 The marker is not deleted: it is moved, with its exact bytes, to an archive beside it, after a receipt names the
@@ -35,7 +35,6 @@ from typing import TYPE_CHECKING, cast
 
 from heinzel import HeinzelError
 from heinzel.kernel import Installation, installation_mutation_paths
-from heinzel.modules.system.daemon._mutation_scope import MutationHandover
 from heinzel.modules.system.daemon._recovery_files import RecoveryFile, path_absent, recovery_file, rename_exclusive
 
 if TYPE_CHECKING:
@@ -164,7 +163,7 @@ class Evidence:
     exists: Callable[[int], bool] = process_exists
 
 
-def owner_ended(owner: MutationOwner, marker: RecoveryFile, evidence: Evidence) -> str | None:
+def _owner_ended(owner: MutationOwner, marker: RecoveryFile, evidence: Evidence) -> str | None:
     """Why the owner can no longer run, or None when that isn't proven."""
     by_identity = (
         None
@@ -182,7 +181,7 @@ def owner_ended(owner: MutationOwner, marker: RecoveryFile, evidence: Evidence) 
     return None
 
 
-def _other_gates_absent(state: Path, installation: Installation) -> bool:
+def _other_gates_absent(state: Path, installation: Installation, marker: RecoveryFile) -> bool:
     daemon = state / "daemon"
     paths = (
         *installation_mutation_paths(installation.prefix, state),
@@ -190,12 +189,11 @@ def _other_gates_absent(state: Path, installation: Installation) -> bool:
         state / "auto-update/before-update.partial",
         state / "auto-update/after-update",
     )
-    return all(path_absent(path) for path in paths if path != daemon / MUTATION)
-
-
-def _handover_request(daemon: Path) -> RecoveryFile | None:
+    if not all(path_absent(path) for path in paths if path != daemon / MUTATION):
+        return False
     request = daemon / "handover-request.json"
-    return None if path_absent(request) else recovery_file(request)
+    # A request written after the marker belongs to this attempt; only the explicit package recovery handles it.
+    return path_absent(request) or recovery_file(request).modified_ns < marker.modified_ns
 
 
 def _verified_generation(installation: Installation) -> str | None:
@@ -212,7 +210,6 @@ class _Assessment:
     evidence: Evidence
     reason: str
     generation: str
-    handover: RecoveryFile | None
 
 
 def _assess(state: Path, installation: Installation, observe: Callable[[], Evidence]) -> _Assessment | None:
@@ -223,22 +220,15 @@ def _assess(state: Path, installation: Installation, observe: Callable[[], Evide
         if owner is None:
             return None
         evidence = observe()
-        reason = owner_ended(owner, marker, evidence)
-        if reason is None or not _other_gates_absent(state, installation):
+        reason = _owner_ended(owner, marker, evidence)
+        if reason is None or not _other_gates_absent(state, installation, marker):
             return None
         generation = _verified_generation(installation)
         if generation is None or recovery_file(path) != marker:
             return None
-        handover = _handover_request(path.parent)
-        if (
-            handover is not None
-            and handover.modified_ns >= marker.modified_ns
-            and (owner.pid is None or not MutationHandover(owner.token, generation).matches(handover.content))
-        ):
-            return None
     except (OSError, HeinzelError):
         return None
-    return _Assessment(marker, owner, evidence, reason, generation, handover)
+    return _Assessment(marker, owner, evidence, reason, generation)
 
 
 def recover_abandoned_mutation(
@@ -281,19 +271,10 @@ def recover_abandoned_mutation(
         "verified_generation": found.generation,
         "archive": str(archive),
     }
-    if found.handover is not None and found.handover.modified_ns >= marker.modified_ns:
-        facts["bound_handover_request"] = found.handover.facts()
     from heinzel.modules.system.daemon._runtime import write_private  # noqa: PLC0415 - shared private writer
 
     # The receipt exists before the move, so no archived marker is ever without one; it says whether the move landed.
     write_private(receipt, json.dumps(facts | {"status": "archiving"}, indent=2, sort_keys=True) + "\n")
-    if (
-        _handover_request(daemon) != found.handover
-        or not _other_gates_absent(state, installation)
-        or _verified_generation(installation) != found.generation
-    ):
-        msg = "The installation or handover request changed before recovering the mutation."
-        raise HeinzelError(msg)
     rename_exclusive(path, archive, expected_source=marker)
     write_private(receipt, json.dumps(facts | {"status": "archived"}, indent=2, sort_keys=True) + "\n")
     log_event(logger, "daemon.mutation.archived", level=logging.WARNING, reason=found.reason, receipt=receipt.name)

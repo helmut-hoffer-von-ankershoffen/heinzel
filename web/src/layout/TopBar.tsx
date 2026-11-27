@@ -10,7 +10,6 @@ import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { Button } from "@/components/ui/button";
 import type { MessageKey } from "@/i18n";
 import { t } from "@/i18n";
-import { refreshIcon, refreshName } from "@/lib/refreshFeedback";
 import { cn } from "@/lib/utils";
 import type { BrowserAgents } from "./browserAgents";
 
@@ -83,7 +82,6 @@ export function TopBar({
   const screenTitle = compact ? title || t("top.screenActions") : title;
   const [menu, setMenu] = useState<"screen" | "tools" | null>(null);
   const [copied, setCopied] = useState<"command" | "link" | null>(null);
-  const [refreshBaseline, setRefreshBaseline] = useState<Map<string, number> | null>(null);
   const screenRef = useRef<HTMLDivElement>(null);
   const toolsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -121,28 +119,8 @@ export function TopBar({
   };
   // Reload refetches every query the screen shows, without a page reload that would drop open panels and drafts.
   const fetching = useIsFetching() > 0;
-  const refreshFailed =
-    !fetching &&
-    queries
-      .getQueryCache()
-      .findAll({ type: "active" })
-      .some(
-        (query) =>
-          query.state.status === "error" &&
-          (refreshBaseline
-            ? query.state.errorUpdateCount > (refreshBaseline.get(query.queryHash) ?? 0)
-            : query.state.dataUpdatedAt > 0),
-      );
   const refresh = () => {
     setMenu(null);
-    setRefreshBaseline(
-      new Map(
-        queries
-          .getQueryCache()
-          .getAll()
-          .map((query) => [query.queryHash, query.state.errorUpdateCount]),
-      ),
-    );
     // Abort reads still in flight first, so an older response can never land after the refetch and overwrite it.
     void Promise.all([
       queries.cancelQueries({ queryKey: ["org", "calendar"] }),
@@ -171,16 +149,7 @@ export function TopBar({
         {t("top.copyLink")}
       </MenuItem>
       {!compact && (
-        <MenuItem
-          onSelect={refresh}
-          ariaLabel={refreshName(t("top.refresh"), fetching, refreshFailed)}
-          icon={
-            <RefreshCw
-              aria-hidden
-              className={cn(refreshIcon(fetching, refreshFailed), !fetching && refreshFailed && "text-bad!")}
-            />
-          }
-        >
+        <MenuItem onSelect={refresh} icon={<RefreshCw aria-hidden />}>
           {t("top.refresh")}
         </MenuItem>
       )}
@@ -293,11 +262,11 @@ export function TopBar({
               variant="ghost"
               size="icon"
               onClick={refresh}
-              aria-label={refreshName(t("top.refresh"), fetching, refreshFailed)}
+              aria-label={t("top.refresh")}
               title={t(fetching ? "top.refreshing" : "top.refresh")}
               aria-busy={fetching}
             >
-              <RefreshCw aria-hidden className={refreshIcon(fetching, refreshFailed)} />
+              <RefreshCw aria-hidden className={cn(fetching && "animate-spin")} />
             </Button>
           </>
         )}
@@ -365,17 +334,8 @@ export function TopBar({
                         Open calendar
                       </HeaderShortcut>
                       <HeaderShortcut
-                        icon={
-                          <RefreshCw
-                            aria-hidden
-                            className={cn(
-                              refreshIcon(fetching, refreshFailed),
-                              !fetching && refreshFailed && "text-bad!",
-                            )}
-                          />
-                        }
+                        icon={<RefreshCw aria-hidden className={cn(fetching && "animate-spin")} />}
                         aria-busy={fetching}
-                        aria-label={refreshName(t("top.refresh"), fetching, refreshFailed)}
                         title={t(fetching ? "top.refreshing" : "top.refresh")}
                         onClick={() => {
                           closeTools();
@@ -403,18 +363,15 @@ function MenuItem({
   onSelect,
   icon,
   children,
-  ariaLabel,
 }: {
   onSelect: () => void;
   icon: React.ReactNode;
   children: React.ReactNode;
-  ariaLabel?: string;
 }) {
   return (
     <button
       type="button"
       role="menuitem"
-      aria-label={ariaLabel}
       onClick={onSelect}
       className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm min-h-11 transition-colors hover:bg-accent [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-icon"
     >

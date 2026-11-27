@@ -888,7 +888,6 @@ def test_selector_output_is_read_strictly(focused_gate):
         "".join(lines[1:]).encode(),  # a key is missing
         (selector_log(SELECTED) + lines[0]).encode(),  # a key is repeated
         selector_log({**SELECTED, "extra": True}).encode(),
-        selector_log({**SELECTED, "upgrade": False}).encode(),  # obsolete evidence could omit required jobs
         selector_log(SELECTED).replace("core=true", "core=maybe").encode(),
     ):
         with pytest.raises(focused_gate.CandidateError, match="selector output"):
@@ -915,7 +914,6 @@ def test_selected_inventory_matches_a_real_path_selected_run(focused_gate):
         *(f"End-to-end {s} (ubuntu-24.04)" for s in ("supervised", "cli", "web-1", "web-2", "web-3")),
     }
     assert sum(1 for n in inventory if n.startswith("Test (macos")) == 2
-    assert inventory["Upgrade in place (published to candidate, Linux)"] == "success"
     assert inventory["Coverage floor"] == inventory["Sonar ratings"] == "success"
 
 
@@ -929,49 +927,17 @@ def test_selected_inventory_follows_each_selector(focused_gate):
     assert site["Consumer (${{ matrix.name }})"] == "skipped"
     assert site["Build"] == "success"
     surface = focused_gate.selected_pr_inventory(
-        {
-            **SELECTED,
-            "core": False,
-            "surface_only": True,
-            "macos_full": False,
-            "contracts": False,
-            "electron": False,
-        }
+        {**SELECTED, "core": False, "surface_only": True, "macos_full": False, "contracts": False, "electron": False}
     )
     assert surface["Lint, contracts and types"] == surface["macOS-specific tests"] == "success"
-    assert {surface[n] for n in ("Build", "Coverage", "Dependency audit")} == {"skipped"}
-    assert surface["Plugin SDK candidate"] == "success"
-    assert surface["Upgrade in place (published to candidate, Linux)"] == "success"
-    ordinary = focused_gate.selected_pr_inventory(
-        {**SELECTED, "macos_full": False, "contracts": False, "electron": False}
-    )
-    assert ordinary["Upgrade in place (published to candidate, Linux)"] == "success"
-    assert {name: result for name, result in ordinary.items() if name.startswith("Test (")} == {
-        f"Test ({os}, Python 3.15, {level})": "success"
-        for os in ("ubuntu-24.04", "macos-latest")
-        for level in ("unit", "integration")
-    }
+    assert {surface[n] for n in ("Build", "Coverage", "Dependency audit", "Plugin SDK candidate")} == {"skipped"}
     release = focused_gate.selected_pr_inventory({**SELECTED, "release": True})
     assert release == {**focused_gate.expected_jobs("pull_request"), "Release candidate source": "skipped"}
 
 
 @pytest.mark.parametrize(
     "defect",
-    [
-        None,
-        "missing",
-        "failed",
-        "stale-base",
-        "workflow",
-        "checkout",
-        "dispatch",
-        "parents",
-        "skipped",
-        "unselected",
-        "skipped-upgrade",
-        "missing-macos-unit",
-        "missing-macos-integration",
-    ],
+    [None, "missing", "failed", "stale-base", "workflow", "checkout", "dispatch", "parents", "skipped", "unselected"],
 )
 @pytest.mark.parametrize("reviewed", [False, True])
 def test_full_pr_inventory_binds_existing_checkout_without_a_focused_plan(focused_gate, monkeypatch, defect, reviewed):
@@ -983,18 +949,12 @@ def test_full_pr_inventory_binds_existing_checkout_without_a_focused_plan(focuse
         {"id": number, "name": name, "conclusion": conclusion}
         for number, (name, conclusion) in enumerate(inventory.items(), 1)
     ]
-    omissions = {
-        "missing": jobs[-1]["name"],
-        "missing-macos-unit": "Test (macos-latest, Python 3.15, unit)",
-        "missing-macos-integration": "Test (macos-latest, Python 3.15, integration)",
-    }
-    if defect in omissions:
-        jobs = [job for job in jobs if job["name"] != omissions[defect]]
+    if defect == "missing":
+        jobs.pop()
     if defect == "failed":
         jobs[0]["conclusion"] = "failure"
-    skipped = {"skipped": "Coverage", "skipped-upgrade": "Upgrade in place (published to candidate, Linux)"}
-    if defect in skipped:
-        next(job for job in jobs if job["name"] == skipped[defect])["conclusion"] = "skipped"
+    if defect == "skipped":  # a job the selector chose that did not run
+        next(job for job in jobs if job["name"] == "Coverage")["conclusion"] = "skipped"
     if defect == "unselected":  # a job the selector skipped that ran
         next(job for job in jobs if job["name"] == "Heinzel Notifier (macOS app)")["conclusion"] = "success"
     run = {

@@ -203,6 +203,16 @@ private extension FocusedValues {
     }
 }
 
+enum WorkspaceMenuAction: String {
+    case settings, updates, search, sidebar, terminal, browser, chat, notifications
+    case newChat = "new-chat"
+    case today = "go:today", heinzel = "go:heinzel", team = "go:team", plugins = "go:plugins"
+    case help, changelog, doctor, copy, daemon
+    case reload, zoomIn, zoomOut, resetZoom
+
+    static let notification = Notification.Name("heinzelWorkspaceMenuAction")
+}
+
 private struct WorkspaceCommands: Commands {
     @FocusedValue(\.workspaceMenuAvailable) private var workspaceAvailable
     @FocusedValue(\.connectionMenuAvailable) private var connectionAvailable
@@ -211,11 +221,7 @@ private struct WorkspaceCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
-            Button("About Heinzelmännchen") {
-                WorkspaceMenuRequest.send(.about) {
-                    NSApp.orderFrontStandardAboutPanel(nil)
-                }
-            }
+            Button("About Heinzelmännchen") { NSApp.orderFrontStandardAboutPanel(nil) }
         }
         CommandGroup(replacing: .appSettings) {
             command("Settings…", .settings).keyboardShortcut(",")
@@ -272,7 +278,7 @@ private struct WorkspaceCommands: Commands {
     }
 
     private func command(_ title: String, _ action: WorkspaceMenuAction) -> some View {
-        Button(title) { WorkspaceMenuRequest.send(action) }
+        Button(title) { NotificationCenter.default.post(name: WorkspaceMenuAction.notification, object: action) }
             .disabled(workspaceAvailable != true)
     }
 
@@ -1142,7 +1148,7 @@ struct ConnectionView: View {
 
     private var nativeFooterBottomValue: CGFloat {
         #if os(iOS)
-        WorkspaceFooterGeometry.webBottomInset(safeArea: nativeFooterBottom, hasSlot: nativeFooterSlot != nil)
+        nativeFooterBottom
         #else
         0
         #endif

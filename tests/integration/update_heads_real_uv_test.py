@@ -28,7 +28,7 @@ from heinzel.modules.system.updater._announced import Announcement, environment_
 from heinzel.modules.system.updater._update import UpdateService
 from tests.integration.auto_update_real_uv_test import private_python, unavailable, wheel
 
-pytestmark = [pytest.mark.integration, pytest.mark.real_system]
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(autouse=True)

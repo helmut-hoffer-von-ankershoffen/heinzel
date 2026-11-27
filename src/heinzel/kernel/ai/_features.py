@@ -8,7 +8,6 @@ from heinzel.kernel._settings import Settings
 
 FEATURES: dict[str, str] = {
     "connected_channels": "Exact owner-reviewed channel delivery and host-verified human replies.",
-    "native_audio": "Music tracks from media.heinzel.team in the sound player; a project's hz.toml can't switch it.",
     "captured_writes": "Exact human-reviewed conditional writes while provider integrations are being completed.",
 }
 """Every flag and what it switches on; everything is off unless named in the setting `features`."""

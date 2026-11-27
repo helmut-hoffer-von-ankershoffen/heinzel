@@ -2,7 +2,6 @@
 
 from datetime import timedelta
 from pathlib import Path
-from unittest.mock import call, create_autospec
 
 import pytest
 from fastapi.testclient import TestClient
@@ -37,35 +36,44 @@ def test_only_web_and_cli_expose_daemon_persistence_operations(kernel):
 
 
 @pytest.mark.parametrize("action", ["install", "uninstall"])
-def test_confirmed_daemon_persistence_action_is_authenticated_and_runs_on_web_head(kernel, action):
-    service = create_autospec(DaemonService, instance=True, spec_set=True)
-    kernel.bind(DaemonService, service)
+def test_confirmed_daemon_persistence_action_is_authenticated_and_runs_on_web_head(kernel, monkeypatch, action):
+    service = kernel.resolve(DaemonService)
+    calls = []
     if action == "install":
-        service.install.return_value = Installed(
-            platform="darwin",
-            executable=Path("/usr/local/bin/hz"),
-            interval_minutes=5,
-            files={},
-            commands=[],
-            dry_run=False,
-        )
-        expected = {"platform": "darwin", "interval_minutes": 5, "dry_run": False, "commands": []}
-        expected_call = call.install(timedelta(minutes=5), dry_run=False, notifier=False)
+
+        def install(interval, *, dry_run=False, notifier=True):
+            calls.append(("install", interval, dry_run, notifier))
+            return Installed(
+                platform="darwin",
+                executable=Path("/usr/local/bin/hz"),
+                interval_minutes=5,
+                files={},
+                commands=[["launchctl", "load"]],
+                dry_run=False,
+            )
+
+        monkeypatch.setattr(service, "install", install)
+        expected = {"platform": "darwin", "interval_minutes": 5, "dry_run": False}
     else:
-        service.uninstall.return_value = Uninstalled(removed=[Path("~/Library/LaunchAgents/hz.plist")], commands=[])
-        expected = {"removed": ["~/Library/LaunchAgents/hz.plist"], "commands": []}
-        expected_call = call.uninstall()
+
+        def uninstall():
+            calls.append(("uninstall",))
+            return Uninstalled(removed=[Path("~/Library/LaunchAgents/hz.plist")], commands=[["launchctl", "unload"]])
+
+        monkeypatch.setattr(service, "uninstall", uninstall)
+        expected = {"removed": ["~/Library/LaunchAgents/hz.plist"]}
 
     client = TestClient(web.build(kernel, port=8000, token=TOKEN, static=None), base_url=BASE)
     path = f"/api/system/daemon/{action}"
     assert client.post(path).status_code == 401
-    assert service.method_calls == []
+    assert calls == []
 
     response = client.post(path, headers=AUTH)
     assert response.status_code == 200
     for key, value in expected.items():
         assert response.json()[key] == value
-    assert service.method_calls == [expected_call]
+    expected_calls = [("install", timedelta(minutes=5), False, False)] if action == "install" else [("uninstall",)]
+    assert calls == expected_calls
 
     rest = TestClient(api.build(kernel, port=8000), base_url=BASE)
     assert rest.post(f"/system/daemon/{action}").status_code == 404

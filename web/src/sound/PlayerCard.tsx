@@ -21,15 +21,7 @@ const HEADER = 44;
 const DRAG_PX = 6;
 const STEP = 16;
 
-type Props = {
-  title: string;
-  /** The video on YouTube, the one host with a page to open. */
-  watchUrl?: string;
-  /** Where the sound comes from. */
-  host: string;
-  children: ReactNode;
-  headerAction?: ReactNode;
-};
+type Props = { title: string; watchUrl?: string; host: string; children: ReactNode; headerAction?: ReactNode };
 
 export function PlayerCard({ title, watchUrl, host, children, headerAction }: Props) {
   const pref = useDockPref();
@@ -238,7 +230,7 @@ export function PlayerCard({ title, watchUrl, host, children, headerAction }: Pr
           )}
           {watchUrl && (
             <PaneAction ghost icon={ExternalLink} href={watchUrl} onClick={stop}>
-              {t("sound.openOn", { host: "YouTube" })}
+              {t("sound.openOn", { host })}
             </PaneAction>
           )}
           <PaneAction ghost icon={X} onClick={stop}>

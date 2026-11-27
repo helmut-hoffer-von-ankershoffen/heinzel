@@ -110,9 +110,7 @@ def test_chat_meetings_and_calendar_read_in_windows_and_meetings_only_read():
     }
     assert CAPABILITIES["chat"].protocol is Chat
     assert CAPABILITIES["meetings"].protocol is Meetings
-    calendar = CAPABILITIES["calendar"]
-    assert calendar.protocol is Calendar
-    assert calendar.handle_methods == {**calendar.methods, "calendars": "read", "events_for": "read"}
+    assert CAPABILITIES["calendar"].protocol is Calendar
 
 
 @pytest.mark.parametrize("name", sorted(set(CAPABILITIES) - {"agent-runner"}))

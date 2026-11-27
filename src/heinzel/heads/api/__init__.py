@@ -1,8 +1,8 @@
 """The REST head: every operation becomes an HTTP endpoint with an OpenAPI schema (served at `/docs`).
 
-Read-only operations default to `GET` and the others to `POST`. Private operations may opt into a bounded JSON body
-and `POST` even for reads. A `HeinzelError` becomes `400 {"error": ...}`. An operation whose exit code would be
-non-zero answers `503`, so `GET /system/doctor` doubles as a health probe.
+Read-only operations are `GET`, the others `POST`; parameters are query parameters described by their `Field`. A
+`HeinzelError` becomes `400 {"error": ...}`; an operation whose exit code would be non-zero answers `503`, so
+`GET /system/doctor` doubles as a health probe.
 
 The default server has no authentication, so it answers only requests that name a loopback host (or one listed in
 `[hz] api_allowed_hosts`) on its own port, and refuses requests from another origin with `403`: a web page in your
@@ -21,30 +21,21 @@ events as it runs
 
 import hmac
 import inspect
-from collections.abc import Awaitable, Callable, Coroutine, Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal, get_args, get_origin
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi import Body, Depends, FastAPI, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from fastapi.routing import APIRoute
 from fastapi.security import HTTPBearer
 from pydantic import ConfigDict, create_model
 from pydantic.fields import FieldInfo
-from starlette.types import Message
+from starlette.datastructures import Headers
 
 from heinzel import __version__
-from heinzel.heads import _kit
 from heinzel.heads._exposure import API_PRIVATE, Exposed, exposed
-from heinzel.heads._kit import API_HOST_HELP as API_HOST_HELP
-from heinzel.heads._kit import DEFAULT_PORTS as DEFAULT_PORTS
-from heinzel.heads._kit import FORBIDDEN as FORBIDDEN
-from heinzel.heads._kit import LOOPBACK as LOOPBACK
-from heinzel.heads._kit import WEB_HOST_HELP as WEB_HOST_HELP
-from heinzel.heads._kit import refusal as refusal
-from heinzel.heads._kit import request_refusal as request_refusal
 from heinzel.heads._presence import mark_authenticated_presence
 from heinzel.heads._served_tools import bind_served_tools
 from heinzel.heads._stream import error_body, request_person, streamed
@@ -57,7 +48,16 @@ from heinzel.kernel.ai._agent_writes import calling
 
 HEAD = "api"
 UNAVAILABLE = 503
+FORBIDDEN = 403
 UNAUTHORIZED = 401
+DEFAULT_PORTS = frozenset({80, 443})
+LOOPBACK = frozenset({"localhost", "127.0.0.1", "[::1]"})
+"""Hosts the REST head always answers; `[hz] api_allowed_hosts` adds others."""
+API_HOST_HELP = "If you serve on another interface, add its name to [hz] api_allowed_hosts in your user configuration."
+WEB_HOST_HELP = (
+    "For a private HTTPS proxy, add its exact HTTPS origin to [hz] ui_allowed_origins in your user configuration "
+    "and restart hz ui. api_allowed_hosts configures the REST head only."
+)
 
 
 def _error_response(exc: HeinzelError, *, private: bool) -> JSONResponse:
@@ -116,7 +116,7 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
         if credentials is not None
         else [],
     )
-    hosts = _kit.LOOPBACK | {host.strip().lower() for host in allowed_hosts}
+    hosts = LOOPBACK | {host.strip().lower() for host in allowed_hosts}
     bearer = f"Bearer {token}".encode() if token is not None else b""
 
     @app.middleware("http")
@@ -160,15 +160,15 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
         return _error_response(exc, private=head == "web" or selected == API_PRIVATE)
 
     for item in exposed(kernel, selected):
-        # The private body model and byte limit apply equally to the normal and streaming routes.
-        limit = item.operation.request_body_limit
-        route_class = _bounded_body_route(limit) if limit is not None else None
-        body_parameters = _parameters(item, body=True) if _normal_body(item) else None
+        # A private mutation has the same strict JSON input on its normal and streaming routes.
+        body_parameters = (
+            _parameters(item, body=True) if item.operation.private and not item.operation.read_only else None
+        )
         returns = item.returns if item.returns is not inspect.Signature.empty else None
-        app.router.add_api_route(
+        app.add_api_route(
             "/" + "/".join(item.path),
             endpoint(kernel, item, body_parameters=body_parameters),
-            methods=[item.operation.http_method],
+            methods=["GET" if item.operation.read_only else "POST"],
             summary=item.operation.summary,
             description=inspect.getdoc(item.operation.func) or "",
             response_model=returns,
@@ -178,15 +178,13 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
             else None,
             tags=[item.record.path[0]],
             operation_id=item.name,
-            route_class_override=route_class,
         )
         if token is not None or credentials is not None:  # Streams retain the authenticated call context.
-            app.router.add_api_route(
+            app.add_api_route(
                 "/stream/" + "/".join(item.path),
                 stream_endpoint(kernel, item, body_parameters=body_parameters),
                 methods=["POST"],
                 include_in_schema=False,
-                route_class_override=route_class,
             )
     return app
 
@@ -230,15 +228,91 @@ def _authorized(request: Request, header: str, bearer: bytes, accept: Callable[[
     return False
 
 
-def _normal_body(item: Exposed) -> bool:
-    return item.operation.private and item.operation.http_method == "POST"
+def request_refusal(
+    headers: Headers,
+    hosts: frozenset[str],
+    port: int | None,
+    *,
+    allowed_origins: frozenset[str] = frozenset(),
+    host_help: str = API_HOST_HELP,
+) -> str | None:
+    """Apply one authority policy to HTTP and WebSocket headers, refusing ambiguous duplicate headers."""
+    if len(headers.getlist("host")) != 1 or any(
+        len(headers.getlist(name)) > 1 for name in ("origin", "sec-fetch-site")
+    ):
+        return "Refused: supply exactly one Host and at most one Origin and Sec-Fetch-Site header."
+    return refusal(
+        headers.get("host", ""),
+        headers.get("origin"),
+        hosts,
+        port,
+        headers.get("sec-fetch-site"),
+        allowed_origins=allowed_origins,
+        host_help=host_help,
+    )
+
+
+def refusal(  # noqa: PLR0913 - the caller headers and the explicit server authority policy
+    host: str,
+    origin: str | None,
+    hosts: frozenset[str],
+    port: int | None,
+    fetch_site: str | None = None,
+    *,
+    allowed_origins: frozenset[str] = frozenset(),
+    host_help: str = API_HOST_HELP,
+) -> str | None:
+    """Why a request is refused, or None: its Host must be an allowed name on our port, its Origin our own.
+
+    Without an Origin, a browser's `Sec-Fetch-Site: cross-site` or `same-site` still marks a request another page
+    made. On port 80 or 443 a Host without a port is the same port.
+    """
+    if any(char.isspace() or char in "\\/@?#," or char < " " or char == "\x7f" for char in host):
+        return "Refused: malformed Host authority."
+    if fetch_site is not None and fetch_site.strip().lower() not in {"none", "same-origin"}:
+        return f"Refused: a request another site made (Sec-Fetch-Site: {fetch_site}) can't call operations."
+    external = next((value for value in allowed_origins if host.lower() in _authorities(value)), None)
+    if external is not None:
+        expected = {f"https://{name}" for name in _authorities(external)}
+    else:
+        name, given = _split(host)
+        default = port in DEFAULT_PORTS and given == ""
+        if name not in hosts or (port is not None and given != str(port) and not default):
+            where = f" on port {port}" if port is not None else ""
+            return (
+                f"Refused: this server answers requests to {', '.join(sorted(hosts))}{where}, not {host!r}. {host_help}"
+            )
+        expected = {f"http://{host.lower()}", f"https://{host.lower()}"}
+    if origin is not None and origin.lower() not in expected:
+        return f"Refused: a request from another origin ({origin}) can't call operations; use the CLI or MCP."
+    return None
+
+
+def _authorities(origin: str) -> frozenset[str]:
+    """The configured HTTPS authority, including the equivalent explicit default port."""
+    authority = origin.removeprefix("https://")
+    _, port = _split(authority)
+    return frozenset({authority}) if port else frozenset({authority, f"{authority}:443"})
+
+
+def _split(host: str) -> tuple[str, str]:
+    """A Host header's name and port; `[::1]:8000` keeps its brackets."""
+    host = host.strip().lower()
+    if host.startswith("["):
+        end = host.find("]")
+        if end == -1:
+            return host, ""
+        rest = host[end + 1 :]
+        return host[: end + 1], rest[1:] if rest.startswith(":") else ""
+    name, _, port = host.partition(":")
+    return name, port
 
 
 def endpoint(
     kernel: Kernel, item: Exposed, *, body_parameters: list[inspect.Parameter] | None = None
 ) -> Callable[..., Any]:
-    """Bind public parameters, keeping opted-in private input in a strict JSON body."""
-    body = _normal_body(item)
+    """Bind public parameters, keeping private mutation input in a strict JSON body."""
+    body = item.operation.private and not item.operation.read_only
 
     def run(response: Response, **kwargs: Any) -> Any:  # noqa: ANN401 - whatever the operation returns
         mark_authenticated_presence(kernel, item.record.qualname)
@@ -255,32 +329,6 @@ def endpoint(
     )
     run.__name__ = item.name
     return run
-
-
-def _bounded_body_route(limit: int) -> type[APIRoute]:
-    """Limit bytes as the router reads them, including chunked requests and JSON padding."""
-
-    class BoundedBodyRoute(APIRoute):
-        def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
-            handler = super().get_route_handler()
-
-            async def bounded(request: Request) -> Response:
-                size = 0
-
-                async def receive() -> Message:
-                    nonlocal size
-                    message = await request.receive()
-                    if message["type"] == "http.request":
-                        size += len(message.get("body", b""))
-                        if size > limit:
-                            raise HTTPException(status_code=413, detail="Request body too large.")
-                    return message
-
-                return await handler(Request(request.scope, receive=receive))
-
-            return bounded
-
-    return BoundedBodyRoute
 
 
 def stream_endpoint(

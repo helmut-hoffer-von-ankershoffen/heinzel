@@ -4,9 +4,7 @@ import { useSearchParams } from "react-router";
 import { chatKey } from "@/api/chat";
 import { api, problem, type SchemaChatSession, type SchemaNotificationProposal } from "@/api/client";
 import { ActionCard } from "@/chat/ActionCard";
-import { RefreshGlyph } from "@/components/RefreshGlyph";
 import { Button } from "@/components/ui/button";
-import { refreshName } from "@/lib/refreshFeedback";
 
 async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
   const { data, error, response } = await call;
@@ -46,14 +44,7 @@ export function NotificationPanel({ sessionId }: { sessionId: string }) {
     <section aria-label="Notification drafts" className="space-y-2 rounded border border-border p-3 text-sm">
       <h3 className="font-medium">Notification drafts</h3>
       <p>Drafts need your review before they are queued. Queued does not mean shown.</p>
-      <Button
-        size="sm"
-        variant="outline"
-        aria-busy={page.isFetching}
-        aria-label={refreshName("Refresh drafts", page.isFetching, page.isError)}
-        onClick={() => void page.refetch()}
-      >
-        <RefreshGlyph busy={page.isFetching} failed={page.isError} />
+      <Button size="sm" variant="outline" onClick={() => void page.refetch()}>
         Refresh drafts
       </Button>
       {page.isError && <p role="alert">Notification drafts could not be verified.</p>}

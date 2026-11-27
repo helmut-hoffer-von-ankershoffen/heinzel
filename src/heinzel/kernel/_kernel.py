@@ -20,7 +20,7 @@ from heinzel.kernel._bindings import (
     CapabilityView,
     Requester,
 )
-from heinzel.kernel._config import KERNEL_SECTION, Config, ModuleSettings, config_file_stamp
+from heinzel.kernel._config import KERNEL_SECTION, Config, ModuleSettings
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._identity import PRIVATE_READ, PRIVATE_WRITE, CurrentUser
 from heinzel.kernel._jobs import CompiledJobs
@@ -42,7 +42,6 @@ from heinzel.kernel._lets import (
 from heinzel.kernel._local_web import LocalWebRuntime
 from heinzel.kernel._logging import log_event
 from heinzel.kernel._module import Module
-from heinzel.kernel._notifications import notice_producer_scope
 from heinzel.kernel._org import OrgContext
 from heinzel.kernel._prerequisites import PrerequisiteLet
 from heinzel.kernel._progress import Progress
@@ -188,13 +187,6 @@ class Kernel:
             factory = partial(self.config.settings, declared.model, record.qualname, renamed_from=renamed)
             self._provide(declared.model, factory, record)
         self._records = dict(sorted(self._records.items(), key=lambda item: item[1].path))
-        callback_owners: dict[int, set[str]] = {}
-        callbacks: list[tuple[ModuleRecord, OperationLet | JobLet]] = [*self.lets(OperationLet), *self.lets(JobLet)]
-        for record, let in callbacks:
-            callback_owners.setdefault(id(let.func), set()).add(f"{record.origin.distribution}:{record.qualname}")
-        self._callback_owners = {
-            callback: next(iter(owners)) for callback, owners in callback_owners.items() if len(owners) == 1
-        }
         self.capability_settings = self.config.settings(CapabilitySettings, CAPABILITIES_SECTION)
         requesters, owners = self._requesters()
         unknown = [
@@ -213,7 +205,7 @@ class Kernel:
         )
         # Modules get a view that reports; handles come only through declarations and injection (ADR 0028).
         self._instances[CapabilityView] = self._capabilities.view
-        self._config_stamp = config_file_stamp(self.config)
+        self._config_stamp = _stamp(self.config)
 
     @property
     def modules(self) -> tuple[ModuleRecord, ...]:
@@ -566,7 +558,7 @@ class Kernel:
         call without a restart. Cheap when nothing changed: the files are only looked at, not parsed. An unreadable
         file keeps the bindings as they are and logs why. Returns whether a binding changed.
         """
-        stamp = config_file_stamp(self.config)
+        stamp = _stamp(self.config)
         if stamp == self._config_stamp:
             return False
         self._config_stamp = stamp
@@ -609,9 +601,7 @@ class Kernel:
 
     def call[R](self, func: Callable[..., R], /, **kwargs: Any) -> R:  # noqa: ANN401 - forwards arbitrary arguments
         """Call `func`, injecting every parameter the kernel provides that the caller didn't pass."""
-        arguments = self._inject(func, kwargs)
-        with notice_producer_scope(self._callback_owners.get(id(func))):
-            return func(**arguments)
+        return func(**self._inject(func, kwargs))
 
     def invoke(self, operation: OperationLet, /, **kwargs: Any) -> Any:  # noqa: ANN401 - operations return anything
         """Run an operation for a head: inject dependencies and validate the arguments against their annotations.
@@ -652,7 +642,7 @@ class Kernel:
             problems = "; ".join(f"{'.'.join(map(str, e['loc'])) or 'input'}: {e['msg']}" for e in exc.errors())
             msg = f"Invalid arguments for {operation.name}: {problems}"
             raise HeinzelError(msg) from exc
-        return self.call(func, **arguments)
+        return func(**self._inject(func, arguments))
 
     def _inject(self, func: Callable[..., Any], kwargs: dict[str, Any]) -> dict[str, Any]:
         self.refresh_live_bindings()
@@ -979,6 +969,19 @@ def _adapters_capability(annotation: Any) -> Capability:  # noqa: ANN401 - an an
         )
         raise HeinzelError(msg)
     return capability
+
+
+def _stamp(config: Config) -> tuple[tuple[str, int, int] | None, ...]:
+    """What changes when a configuration file is written: each file's modification time and size, or None if absent."""
+    stamps: list[tuple[str, int, int] | None] = []
+    for file in config.files:
+        try:
+            stat = file.path.stat()
+        except OSError:
+            stamps.append(None)
+        else:
+            stamps.append((str(file.path), stat.st_mtime_ns, stat.st_size))
+    return tuple(stamps)
 
 
 def _builtins_first(pair: tuple[ModuleRecord, Let]) -> tuple[bool, tuple[str, ...]]:

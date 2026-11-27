@@ -35,36 +35,6 @@ summary = load("summary")
 UNKNOWN_FOREGROUND_VERSION = f"{max(int(version.split('.')[0]) for version in harness.FOREGROUND_UI) + 1}.0.0"
 
 
-@pytest.mark.parametrize(
-    ("selected", "effective", "active", "keep_off", "passes"),
-    [
-        ("off", "off", "off", False, True),  # .55 default
-        ("singularity", "singularity", "singularity", False, True),  # .56 default with the theme installed
-        ("off", "off", "off", True, True),  # an explicit preference retained by the update
-        ("singularity", "singularity", "singularity", True, False),  # lost explicit Off
-        ("off", "singularity", "singularity", False, False),
-        ("off", "off", "singularity", False, False),
-        ("other", "other", "other", False, False),
-    ],
-)
-def test_sound_choice_validation_distinguishes_defaults_from_explicit_off(
-    selected, effective, active, keep_off, passes
-):
-    sound = {
-        "selected": selected,
-        "effective": effective,
-        "soundscapes": [
-            {"name": name, "selected": name == active, "effective": name == active}
-            for name in ("off", "singularity", "other")
-        ],
-    }
-    if passes:
-        assert harness.verify_sound_choice(sound, keep_sound_off=keep_off) == selected
-    else:
-        with pytest.raises(harness.StepFailed, match=r"[Ss]oundscape"):
-            harness.verify_sound_choice(sound, keep_sound_off=keep_off)
-
-
 def run(**overrides):
     args = {
         "diagnostic_explicit_profile": False,

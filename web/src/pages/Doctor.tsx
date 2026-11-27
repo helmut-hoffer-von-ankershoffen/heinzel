@@ -4,7 +4,6 @@ import { useDoctor } from "@/api/queries";
 import { CopyCommand, Loaded, Page, StatusBadge } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
-import { refreshIcon, refreshName } from "@/lib/refreshFeedback";
 import { commandsIn } from "@/lib/utils";
 
 export function Doctor() {
@@ -14,14 +13,8 @@ export function Doctor() {
       title={t("doctor.title")}
       intro={t("doctor.intro")}
       actions={
-        <Button
-          variant="outline"
-          onClick={() => doctor.refetch()}
-          disabled={doctor.isFetching}
-          aria-busy={doctor.isFetching}
-          aria-label={refreshName(t("doctor.rerun"), doctor.isFetching, doctor.isError)}
-        >
-          <RefreshCw aria-hidden className={refreshIcon(doctor.isFetching, doctor.isError)} />
+        <Button variant="outline" onClick={() => doctor.refetch()} disabled={doctor.isFetching}>
+          <RefreshCw aria-hidden />
           {t("doctor.rerun")}
         </Button>
       }

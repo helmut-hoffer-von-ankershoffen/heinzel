@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from heinzel import Notice, NoticeKind
+from heinzel import Notice
 from heinzel.modules.system.notify._models import NotifySettings
 
 DEFAULT_HOURS = (9, 18)
@@ -134,40 +134,13 @@ def decide(
     return Decision(popup=True, held=None, due=now)
 
 
-def repeated(
-    recent: Sequence[Notice], key: str, now: datetime, window: timedelta, *, include_resolved: bool = False
-) -> Notice | None:
+def repeated(recent: Sequence[Notice], key: str, now: datetime, window: timedelta) -> Notice | None:
     """The notice with the same `key` recorded within `window`, which a new one would only repeat; None if none."""
     return next(
         (
             notice
             for notice in recent
-            if notice.key == key
-            and (include_resolved or notice.resolved_at is None)
-            and now - window < notice.at <= now
+            if notice.key == key and notice.resolved_at is None and now - window < notice.at <= now
         ),
         None,
     )
-
-
-def replacement_history(
-    notices: list[Notice], producer: str | None, replacement: str | None, address: tuple[NoticeKind, str, str]
-) -> tuple[dict[int, Notice], list[Notice]]:
-    """Find the notices this producer may replace and the history it may repeat."""
-    if producer is None:
-        return {}, [older for older in notices if older.producer is None]
-    stream = {
-        index: older
-        for index, older in enumerate(notices)
-        if older.producer == producer
-        and older.replaces == replacement
-        and (older.kind, older.route, older.command) == address
-    }
-    return stream, list(stream.values())
-
-
-def resolve_replaced(notices: list[Notice], stream: Mapping[int, Notice], now: datetime) -> None:
-    """Resolve active notices in the current store mutation."""
-    for index, older in stream.items():
-        if older.resolved_at is None:
-            notices[index] = older.model_copy(update={"resolved_at": now, "resolved": "Replaced by a newer notice."})

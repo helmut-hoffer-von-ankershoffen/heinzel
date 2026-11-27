@@ -36,5 +36,5 @@ export function renderAt(path: string, client = queryClient()) {
     observer.observe(view.container, { childList: true, subtree: true });
     footerObservers.add(observer);
   }
-  return { ...view, client };
+  return view;
 }

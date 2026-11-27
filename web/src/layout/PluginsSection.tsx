@@ -2,7 +2,6 @@
 // and community plugins), "Add" installs from a name or a git URL. Installing runs code, so it takes two steps: the
 // backend first answers what a spec would install (source, version, publisher, pinned), and only the confirm sends
 // that pinned requirement with `confirm=true` (ADR 0047). The app then restarts `hz ui` itself and reloads.
-import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import {
   BookOpen,
   Download,
@@ -20,10 +19,9 @@ import {
   Sparkles,
   Trash2,
   Users,
-  X,
 } from "lucide-react";
-import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import type { SchemaPluginCandidate, SchemaPluginChange, SchemaPluginInfo, SchemaPluginOperation } from "@/api/client";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import type { SchemaPluginCandidate, SchemaPluginChange, SchemaPluginInfo } from "@/api/client";
 import { api, unwrap } from "@/api/client";
 import {
   type PluginChangeRequest,
@@ -49,7 +47,6 @@ import { type MessageKey, t } from "@/i18n";
 import {
   type DrivenOperation,
   getRun,
-  OperationCancelled,
   type Phase,
   requestDrivenOperation,
   resumeDrivenOperation,
@@ -57,6 +54,7 @@ import {
   wasDrivenOperationDismissed,
 } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
+import { viewportBounds } from "@/lib/viewport";
 import { PluginsPending } from "./PluginsPending";
 import {
   acknowledgePluginRestart,
@@ -70,22 +68,6 @@ import {
   validRestartObservation,
 } from "./pluginActivation";
 import { displayName } from "./settingsSections";
-
-const LIFECYCLE_WAIT_MS = 3 * 60_000;
-
-async function pollPluginReceipt(
-  id: string,
-  signal: AbortSignal,
-  keepWaiting: (receipt: SchemaPluginOperation) => boolean,
-) {
-  for (;;) {
-    signal.throwIfAborted();
-    const receipt = await readPluginOperation(id, signal);
-    signal.throwIfAborted();
-    if (!keepWaiting(receipt)) return receipt;
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-}
 
 /** A plugin change as the operation dialog shows it: its title and the command it runs. */
 function callOf(pending: Pending) {
@@ -485,7 +467,6 @@ function InlineSlot({ children }: { children: ReactNode }) {
 }
 
 export function PluginsSection({ reload, restartInterval }: { reload?: () => void; restartInterval?: number } = {}) {
-  const client = useQueryClient();
   const [tab, setTabState] = useState<"yours" | "discover">(() =>
     new URLSearchParams(window.location.search).get("plugins") === "discover" ? "discover" : "yours",
   );
@@ -498,18 +479,12 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     window.history.replaceState(window.history.state, "", `${address.pathname}${address.search}${address.hash}`);
   };
   const [query, setQuery] = useState("");
-  const refresh = useRefreshPluginSearch();
-  const queryClient = useQueryClient();
-  const searchFetching = useIsFetching({ queryKey: ["system", "plugin", "search", query] }) > 0;
-  const searchState = queryClient.getQueryState(["system", "plugin", "search", query]);
-  const refreshing = refresh.isPending || searchFetching;
-  const refreshFailed =
-    searchState?.status === "error" ||
-    (refresh.isError && refresh.variables === query && refresh.submittedAt >= (searchState?.dataUpdatedAt ?? 0));
+  const refresh = useRefreshPluginSearch(query);
   const [adding, setAdding] = useState(false);
   const [spec, setSpec] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
   const [anchor, setAnchor] = useState<string | null>(null);
+  const [, setPluginProgress] = useState<string | null>(null);
   const [restored] = useState(restoredPluginFlow);
   const [receiptId, setReceiptId] = useState<string | null>(restored.receiptId);
   const [restartObservation, setRestartObservation] = useState<RestartObservation | null>(restored.restartObservation);
@@ -560,6 +535,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     change.reset();
     completed.current = null;
     attempted.current = false;
+    setPluginProgress(null);
     try {
       window.sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
       window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
@@ -584,20 +560,16 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     change.reset();
     completed.current = null;
     attempted.current = false;
+    setPluginProgress(null);
     preview.reset();
     setPending(value);
   };
-  const confirm = async (
-    value: Pending,
-    signal: AbortSignal,
-    heard: (phase: Phase) => void,
-    cancellable: (cancel?: () => void) => void,
-  ) => {
+  const confirm = async (value: Pending, signal: AbortSignal, heard: (phase: Phase) => void) => {
     if (pluginActivationBlocksChanges()) throw new Error(t("pluginsPending.restartRequired"));
     if (completed.current) return completed.current.restart_required;
     if (attempted.current) throw new Error(t("plugins.resultUnknown"));
+    setPluginProgress(null);
     const operation = request(value);
-    let answer: SchemaPluginChange | undefined;
     if ("add" in operation) {
       if (!operation.operationId) throw new Error(t("plugins.receiptStorageUnavailable"));
       try {
@@ -606,66 +578,21 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
         throw new Error(t("plugins.receiptStorageUnavailable"));
       }
       if (receiptId !== operation.operationId) setReceiptId(operation.operationId);
-      const cancel = new AbortController();
-      const deadline = AbortSignal.timeout(LIFECYCLE_WAIT_MS);
-      const waitSignal = AbortSignal.any([signal, cancel.signal, deadline]);
-      const setDetail = (id: string, label: MessageKey) => heard({ id, label: t(label), state: "running" });
-      cancellable(() => cancel.abort(new OperationCancelled()));
-      let status: SchemaPluginOperation;
-      try {
-        status = await pollPluginReceipt(operation.operationId, waitSignal, (receipt) => {
-          if (receipt.status !== "previewed" || !receipt.lifecycle_busy) return false;
-          setDetail("lifecycle", "plugins.waitingForLifecycle");
-          return true;
-        });
-      } catch (error) {
-        if (cancel.signal.aborted) {
-          window.sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
-          throw cancel.signal.reason;
-        }
-        if (deadline.aborted) throw new Error(t("plugins.lifecycleWaitExpired"));
-        throw error;
-      } finally {
-        cancellable();
-      }
-      if (status.status === "running" || status.status === "unknown") {
-        attempted.current = true;
-        client.setQueryData(["system", "plugin", "operation", operation.operationId], status);
-        throw new Error(t(status.status === "running" ? "plugins.operationRunning" : "plugins.operationUnknown"));
-      }
+      const status = await readPluginOperation(operation.operationId);
+      if (status.status === "running") throw new Error(t("plugins.operationRunning"));
+      if (status.status === "unknown") throw new Error(t("plugins.operationUnknown"));
       if (status.status === "completed" && status.result) {
         completed.current = status.result;
         pluginRestartRequired.current = status.result.restart_required;
         return status.result.restart_required;
       }
       attempted.current = true;
-      try {
-        answer = await change.mutateAsync({ ...operation, signal, onPhase: heard });
-      } catch (error) {
-        setDetail("receipt", "plugins.checkingReceipt");
-        let lastStatus: SchemaPluginOperation["status"] | undefined;
-        const observation = await pollPluginReceipt(
-          operation.operationId,
-          AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
-          (receipt) => {
-            lastStatus = receipt.status;
-            client.setQueryData(["system", "plugin", "operation", operation.operationId], receipt);
-            return receipt.status === "running";
-          },
-        ).catch(() => null);
-        if (observation?.status === "completed" && observation.result) answer = observation.result;
-        else {
-          if (lastStatus === "running") throw new Error(t("plugins.operationRunning"));
-          if (lastStatus !== "unknown") setRestartBlocked(true);
-          throw error;
-        }
-      }
     }
     // A lost removal response is also uncertain. Require a fresh, explicit choice after status reconciliation.
     if ("remove" in operation) attempted.current = true;
     // The change's own steps (installing, checking, each plugin it needs, recording) join the dialog's list.
-    if (!("add" in operation)) answer = await change.mutateAsync({ ...operation, signal, onPhase: heard });
-    if (!answer?.done) throw new Error(t("plugins.notCompleted"));
+    const answer = await change.mutateAsync({ ...operation, signal, onProgress: setPluginProgress, onPhase: heard });
+    if (!answer.done) throw new Error(t("plugins.notCompleted"));
     completed.current = answer;
     pluginRestartRequired.current = answer.restart_required;
     return answer.restart_required;
@@ -689,7 +616,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     details: value.action === "add" ? <CandidateDetails candidate={value.candidate} /> : undefined,
     action: actionText(value.action),
     destructive: value.action === "remove",
-    run: async (report, cancellable) => {
+    run: async (report) => {
       const steps = new ApplySteps(report, labelsOf(value));
       const resume = value.action === "add" ? (restartRef.current ?? undefined) : undefined;
       const release = acquirePluginChange(resume);
@@ -697,7 +624,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       try {
         await applyWithSteps(
           {
-            change: (signal, heard) => confirm(value, signal, heard, cancellable),
+            change: (signal, heard) => confirm(value, signal, heard),
             resume,
             options: {
               ...(value.action === "add" || value.action === "remove" ? { preserveTimeout: 20 * 60_000 } : {}),
@@ -729,7 +656,6 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
         }
         throw error;
       } finally {
-        steps.stop();
         release();
       }
       finished.current = true;
@@ -842,10 +768,6 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     if (run.stage !== "idle" || getRun().stage !== "idle" || !opened.current) return;
     const value = opened.current;
     if (finished.current) return;
-    if (value.action === "add" && attempted.current && !completed.current) {
-      opened.current = null;
-      return;
-    }
     if (value.action === "add") {
       setReceiptId(null);
       setRestartObservation(null);
@@ -926,10 +848,9 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
           <PaneAction
             ghost
             icon={RefreshCw}
-            spinning={refreshing}
-            refreshFailed={refreshFailed}
-            disabled={frozen || refreshing}
-            onClick={() => refresh.mutate(query)}
+            className={refresh.isPending ? "[&_svg]:motion-safe:animate-spin" : undefined}
+            disabled={frozen || refresh.isPending}
+            onClick={() => refresh.mutate()}
           >
             {t("plugins.refresh")}
           </PaneAction>
@@ -1111,7 +1032,7 @@ function Yours({
                       <PluginGallery
                         spec={installedGallerySpec(plugin)}
                         name={displayName(plugin.name, plugin.summary)}
-                        privateSource={plugin.private_repository}
+                        privateSource={plugin.private_repository === true}
                       />
                       {slot?.key === rowKey && slot.node}
                     </li>
@@ -1290,7 +1211,7 @@ function Discover({
                 <PluginGallery
                   spec={plugin.install_spec}
                   name={displayName(plugin.short_name, plugin.description)}
-                  privateSource={plugin.private_repository}
+                  privateSource={plugin.private_repository === true}
                 />
                 {slot?.key === `discover:${plugin.name}` && slot.node}
               </li>
@@ -1321,30 +1242,17 @@ export function installedGallerySpec(plugin: SchemaPluginInfo): string | null {
   }
 }
 
-/** Show public previews by default; unknown source visibility requires opening the gallery. */
+/** Read owner-declared media only after a person asks to see the selected plugin. */
 export function PluginGallery({
   spec,
   name,
-  privateSource,
+  privateSource = false,
 }: {
   spec: string | null;
   name: string;
-  privateSource?: boolean | null;
+  privateSource?: boolean;
 }) {
-  const visibility = privateSource ?? null;
-  return <GalleryDisclosure key={JSON.stringify([spec, visibility])} spec={spec} name={name} visibility={visibility} />;
-}
-
-function GalleryDisclosure({
-  spec,
-  name,
-  visibility,
-}: {
-  spec: string | null;
-  name: string;
-  visibility: boolean | null;
-}) {
-  const [open, setOpen] = useState(visibility !== null);
+  const [open, setOpen] = useState(false);
   const galleryId = useId();
   return (
     <div className="mt-2 min-w-0">
@@ -1354,7 +1262,7 @@ function GalleryDisclosure({
         aria-expanded={open}
         aria-controls={open ? galleryId : undefined}
         aria-label={t("plugins.screenshotsFor", { name })}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => setOpen((value) => !value)}
       >
         {t("plugins.screenshots")}
       </Button>
@@ -1364,7 +1272,7 @@ function GalleryDisclosure({
           aria-label={t("plugins.galleryFor", { name })}
           className="mt-2 min-w-0 rounded-lg border border-border bg-muted/30 p-3"
         >
-          {visibility === true ? (
+          {privateSource ? (
             <p className="text-sm text-muted-foreground">{t("plugins.privateGallery")}</p>
           ) : spec ? (
             <GalleryContents key={spec} spec={spec} />
@@ -1379,86 +1287,79 @@ function GalleryDisclosure({
 
 function GalleryContents({ spec }: { spec: string }) {
   const query = usePluginShowcase(spec);
-  const [selected, setSelected] = useState<number | null>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const dialog = useRef<HTMLDialogElement>(null);
-  const closeButton = useRef<HTMLButtonElement>(null);
-  useLayoutEffect(() => {
-    const element = dialog.current;
-    if (selected === null || !element) return;
-    element.showModal();
-    closeButton.current?.focus();
-    return () => {
-      element.close();
-      trigger.current?.focus();
-    };
-  }, [selected]);
+  const [selected, setSelected] = useState(0);
+  const choiceName = useId();
   return (
     <Loaded query={query}>
       {(gallery) => {
         const shots = gallery.screenshots ?? [];
-        const shot = selected === null ? undefined : shots[selected];
+        const shot = shots[selected] ?? shots[0];
         return (
           <div data-plugin-gallery-content className="min-w-0 space-y-3">
-            {shots.length > 0 ? (
-              <ul aria-label={t("plugins.chooseScreenshot")} className="flex min-w-0 flex-wrap gap-2">
-                {shots.map((image, index) => (
-                  <li key={`${image.url}-${image.caption}-${image.surface}`}>
-                    <Button
-                      variant="outline"
-                      className="h-auto min-h-11 flex-col items-start gap-1 p-1"
-                      aria-label={t("plugins.fullSizeFor", { caption: image.caption })}
-                      onClick={(event) => {
-                        trigger.current = event.currentTarget;
-                        setSelected(index);
-                      }}
+            {shot ? (
+              <>
+                <div
+                  role="radiogroup"
+                  aria-label={t("plugins.chooseScreenshot")}
+                  className="flex min-w-0 flex-wrap gap-2"
+                >
+                  {shots.map((image, index) => (
+                    <label
+                      key={`${image.url}-${image.caption}-${image.surface}`}
+                      className={cn(
+                        "min-h-11 rounded-md border border-border p-1 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring",
+                        selected === index && "ring-2 ring-ring",
+                      )}
                     >
+                      <input
+                        type="radio"
+                        name={choiceName}
+                        checked={selected === index}
+                        aria-label={`${image.surface.toUpperCase()}: ${image.caption}`}
+                        onChange={() => setSelected(index)}
+                        className="sr-only"
+                      />
                       <img
                         src={image.url}
-                        alt={image.caption}
+                        alt=""
                         loading="lazy"
                         referrerPolicy="no-referrer"
                         className="h-14 w-24 rounded-sm object-contain"
                       />
-                      <span className="text-xs">{image.surface.toUpperCase()}</span>
-                    </Button>
-                  </li>
-                ))}
-              </ul>
+                      <span className="block text-xs">{image.surface.toUpperCase()}</span>
+                    </label>
+                  ))}
+                </div>
+                <figure className="min-w-0">
+                  <PublicMediaLink href={shot.url} label={t("plugins.fullSizeFor", { caption: shot.caption })}>
+                    <img
+                      src={shot.url}
+                      alt={shot.caption}
+                      referrerPolicy="no-referrer"
+                      className="max-h-[35dvh] w-full rounded-md border border-border object-contain"
+                      onLoad={(event) => {
+                        const image = event.currentTarget;
+                        const pane = image.closest<HTMLElement>("[data-settings-content]");
+                        if (pane) {
+                          const picture = image.getBoundingClientRect();
+                          const viewport = pane.getBoundingClientRect();
+                          const visible = viewportBounds();
+                          const top = Math.max(viewport.top, visible.top);
+                          const bottom = Math.min(viewport.bottom, visible.top + visible.height);
+                          if (picture.top < top) pane.scrollTop += picture.top - top - 8;
+                          else if (picture.bottom > bottom) pane.scrollTop += picture.bottom - bottom + 8;
+                        }
+                      }}
+                    />
+                  </PublicMediaLink>
+                  <figcaption className="mt-2 break-words text-sm text-muted-foreground">
+                    <span className="mr-2 font-medium">{shot.surface.toUpperCase()}</span>
+                    {shot.caption}
+                  </figcaption>
+                </figure>
+              </>
             ) : (
               <p className="text-sm text-muted-foreground">{t("plugins.noScreenshots")}</p>
-            )}
-            {shot && (
-              <dialog
-                ref={dialog}
-                aria-label={shot.caption}
-                aria-modal="true"
-                className="fixed inset-0 m-0 h-dvh max-h-none w-full max-w-none flex-col gap-3 bg-background p-4 text-foreground open:flex"
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") event.stopPropagation();
-                }}
-                onCancel={(event) => {
-                  event.preventDefault();
-                  setSelected(null);
-                }}
-              >
-                <Button
-                  ref={closeButton}
-                  variant="outline"
-                  className="self-end"
-                  aria-label={t("plugins.closeScreenshot")}
-                  onClick={() => setSelected(null)}
-                >
-                  <X aria-hidden />
-                </Button>
-                <img
-                  src={shot.url}
-                  alt={shot.caption}
-                  referrerPolicy="no-referrer"
-                  className="min-h-0 w-full flex-1 object-contain"
-                />
-                <p className="break-words text-center text-sm">{shot.caption}</p>
-              </dialog>
             )}
             {gallery.notice && <p className="text-sm text-muted-foreground">{gallery.notice}</p>}
             {(gallery.soundscapes?.length ?? 0) > 0 && (
