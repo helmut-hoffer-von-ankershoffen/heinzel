@@ -205,3 +205,70 @@ def test_cli_uses_fixed_source_path(tmp_path, monkeypatch):
     runpy.run_path(str(SCRIPT), run_name="__main__")
     assert path.read_text() == SOURCE.replace(mirror.ORIGINAL, f"mirror+file:{tmp_path / 'mirrors.txt'}")
     assert (tmp_path / "mirrors.txt").read_text() == mirror.MIRROR_CONTENT
+
+
+def test_host_installs_apt_source_scope_after_validating_archive():
+    import shlex
+    import subprocess
+
+    root = SCRIPT.parent.parent
+    plan = subprocess.check_output(
+        ["make", "--no-print-directory", "-n", "-f", "scripts/ubuntu_browser_mirror.mk"],
+        cwd=root,
+        text=True,
+        timeout=10,
+    ).splitlines()
+    validate, install = map(shlex.split, plan)
+    assert validate == ["sudo", "python3", "-I", "scripts/ubuntu_browser_mirror.py"]
+    assert install == [
+        "sudo",
+        "install",
+        "-o",
+        "root",
+        "-g",
+        "root",
+        "-m",
+        "0644",
+        "scripts/ubuntu_browser_mirror.conf",
+        "/etc/apt/apt.conf.d/99-heinzel-browser-sources",
+    ]
+    config = (root / install[-2]).read_text()
+    assert [line for line in config.splitlines() if not line.startswith("//")] == [
+        'Dir::Etc::sourcelist "sources.list.d/ubuntu.sources";',
+        'Dir::Etc::sourceparts "-";',
+        'APT::Update::Error-Mode "any";',
+    ]
+
+
+def test_new_apt_process_uses_only_ubuntu_including_security(tmp_path):
+    import os
+    import shutil
+    import subprocess
+
+    apt = shutil.which("apt-get")
+    if apt is None:
+        pytest.skip("APT source resolution runs on the Linux lane")
+    parts = tmp_path / "sources.list.d"
+    parts.mkdir()
+    (parts / "ubuntu.sources").write_text(SOURCE.replace(mirror.ORIGINAL, "https://archive.ubuntu.com/ubuntu"))
+    (parts / "vendor.list").write_text("deb https://unrelated.invalid/ubuntu noble main\n")
+    (tmp_path / "sources.list").write_text("deb https://legacy.invalid/ubuntu noble main\n")
+    config_parts = tmp_path / "apt.conf.d"
+    config_parts.mkdir()
+    # Relocate the system config for this fixture. The clean child receives no browser-specific options.
+    bootstrap = tmp_path / "bootstrap.conf"
+    bootstrap.write_text(f'Dir::Etc "{tmp_path}";\n')
+    env = {"APT_CONFIG": str(bootstrap), "PATH": os.defpath, "LC_ALL": "C"}
+
+    def fetch_plan():
+        return subprocess.check_output([apt, "--print-uris", "update"], env=env, text=True, timeout=10)
+
+    before = fetch_plan()
+    assert "unrelated.invalid" in before
+    assert "legacy.invalid" in before
+    shutil.copyfile(SCRIPT.with_name("ubuntu_browser_mirror.conf"), config_parts / "99-heinzel-browser-sources")
+    after = fetch_plan()
+    assert "unrelated.invalid" not in after
+    assert "legacy.invalid" not in after
+    for suite in ("noble", "noble-updates", "noble-backports", "noble-security"):
+        assert f"https://archive.ubuntu.com/ubuntu/dists/{suite}/InRelease" in after
