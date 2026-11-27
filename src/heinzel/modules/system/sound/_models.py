@@ -93,6 +93,15 @@ class SoundStreamView(BaseModel):
     watch_url: str = Field(description="Where the video is on the host itself, to open it there instead.")
 
 
+class SoundTrackView(BaseModel):
+    """One track the web app plays in its own audio element."""
+
+    title: str = Field(description="What the player shows, e.g. `Morning tide`.")
+    url: str = Field(description="The https URL to play after Play, on a media host of the core's list.")
+    type: str = Field(description="Its media type, `audio/mpeg` or `audio/mp4`.")
+    duration_seconds: int = Field(description="How long it is, in seconds.")
+
+
 class SoundscapeView(BaseModel):
     """One available soundscape, ready for the web app to play."""
 
@@ -105,7 +114,13 @@ class SoundscapeView(BaseModel):
     effective: bool = Field(description="Whether it is the one in effect (follow my theme may pick another).")
     pairs_with: list[str] = Field(default_factory=list[str], description="Themes it goes with.")
     fade_seconds: int = Field(default=4, description="How long a change fades, in seconds.")
-    stream: SoundStreamView | None = Field(default=None, description="The stream; none unless the kind is `stream`.")
+    stream: SoundStreamView | None = Field(
+        default=None, description="The stream; none for another kind or tracks only."
+    )
+    tracks: list[SoundTrackView] = Field(
+        default_factory=list[SoundTrackView],
+        description="Tracks to play in order, before the stream; empty while the feature `native_audio` is off.",
+    )
     layers: list[SoundLayerView] = Field(default_factory=list[SoundLayerView], description="The layers to mix.")
     earcons: list[SoundEarconView] = Field(
         default_factory=list[SoundEarconView], description="Short sounds for notices, by kind."

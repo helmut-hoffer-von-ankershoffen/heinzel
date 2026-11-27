@@ -15,4 +15,23 @@ module.soundscape(
         }
     )
 )
+# Dark unless the preview `native_audio` is on (ADR 0166). Nothing is at these addresses: tests serve their own tone.
+module.soundscape(
+    Soundscape.model_validate(
+        {
+            "name": "fixture-album",
+            "title": "Fixture album",
+            "kind": "stream",
+            "tracks": [
+                {
+                    "title": title,
+                    "url": f"https://media.heinzel.team/fixture/{file}.mp3",
+                    "type": "audio/mpeg",
+                    "duration_seconds": 2,
+                }
+                for title, file in (("First tone", "one"), ("Second tone", "two"), ("Third tone", "three"))
+            ],
+        }
+    )
+)
 module.soundscape(Path(__file__).parent / "soundscapes")

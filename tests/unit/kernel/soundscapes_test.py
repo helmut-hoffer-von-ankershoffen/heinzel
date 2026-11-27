@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from heinzel import Module, SoundAssets, SoundLayer, Soundscape, SoundscapeLet, SoundStream, ThemeChoice
-from heinzel.kernel import SIGNALS, SOUND_CSP, SOUND_ROUTE, STREAM_PROVIDERS
+from heinzel import Module, SoundAssets, SoundLayer, Soundscape, SoundscapeLet, SoundStream, SoundTrack, ThemeChoice
+from heinzel.kernel import MEDIA_ORIGINS, SIGNALS, SOUND_CSP, SOUND_ROUTE, STREAM_PROVIDERS
 from heinzel.kernel.look._soundscapes import (
     MAX_ASSET_BYTES,
     MAX_SOUNDSCAPE_BYTES,
@@ -24,6 +24,13 @@ OGG = b"OggS" + b"\0" * 60
 FRAME = b"\xff\xfb\x90\x00" + b"\0" * 413
 MP3 = FRAME * 2
 STREAM = {"name": "fm", "title": "FM", "kind": "stream", "stream": {"provider": "youtube", "video": "tRsQsTMvPNg"}}
+TRACK = {
+    "title": "Morning tide",
+    "url": "https://media.heinzel.team/harbour/morning-tide-v1.mp3",
+    "type": "audio/mpeg",
+    "duration_seconds": 287,
+}
+ALBUM = {"name": "album", "title": "Album", "kind": "stream", "tracks": [TRACK]}
 
 
 def layers(**overrides: object) -> dict[str, object]:
@@ -41,6 +48,82 @@ def write(directory: Path, name: str = "sounds/rain.ogg", content: bytes = OGG) 
 def let(data: dict[str, object], directory: Path | None) -> SoundscapeLet:
     soundscape = Soundscape.model_validate(data)
     return SoundscapeLet(name=soundscape.name, soundscape=soundscape, directory=directory)
+
+
+def test_tracks_go_beside_or_instead_of_a_stream_and_keep_their_order():
+    second = TRACK | {"title": "Noon", "url": "https://media.heinzel.team/noon.m4a", "type": "audio/mp4"}
+    alone = Soundscape.model_validate(ALBUM | {"tracks": [TRACK, second]})
+    assert alone.stream is None
+    assert [track.title for track in alone.tracks] == ["Morning tide", "Noon"]
+    both = Soundscape.model_validate(STREAM | {"tracks": [TRACK]})
+    assert both.stream is not None
+    assert both.tracks == (SoundTrack.model_validate(TRACK),)
+    assert Soundscape.model_validate(STREAM).tracks == ()
+
+
+def test_the_media_origins_are_https_origins_in_code_without_paths():
+    assert MEDIA_ORIGINS == ("https://media.heinzel.team",)
+    for origin in MEDIA_ORIGINS:
+        assert re.fullmatch(r"https://[a-z0-9.-]+", origin)
+        assert SoundTrack.model_validate(TRACK | {"url": f"{origin}/a.mp3"})
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://media.heinzel.team/a.mp3",
+        "https://evil.example/a.mp3",
+        "https://media.heinzel.team.evil.example/a.mp3",
+        "https://media.heinzel.team-evil.example/a.mp3",
+        "https://evil.media.heinzel.team/a.mp3",
+        "https://heinzel.team/a.mp3",
+        "https://media.heinzel.team./a.mp3",
+        "https://MEDIA.heinzel.team/a.mp3",
+        "https://media.heinzel.team:443/a.mp3",
+        "https://media.heinzel.team@evil.example/a.mp3",
+        "https://user:pw@media.heinzel.team/a.mp3",
+        "https://media.heinzel.team/a.mp3?listener=1",
+        "https://media.heinzel.team/a.mp3#t=10",
+        "https://media.heinzel.team/../a.mp3",
+        "https://media.heinzel.team/%2e%2e/a.mp3",
+        "https://media.heinzel.team//evil.example/a.mp3",
+        "https://media.heinzel.team/a b.mp3",
+        "https://media.heinzel.team/a;b.mp3",
+        "https://media.heinzel.team/a.mp3\n",
+        "https://media.heinzel.team/a.wav",
+        "https://media.heinzel.team/" + "a" * 300 + ".mp3",
+        "//media.heinzel.team/a.mp3",
+        "javascript:alert(1)//.mp3",
+    ],
+)
+def test_a_track_is_refused_off_the_allowlist_or_with_more_than_a_plain_path(url):
+    with pytest.raises(ValidationError, match="url"):
+        SoundTrack.model_validate(TRACK | {"url": url})
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"type": "audio/mp4"},
+        {"type": "audio/ogg"},
+        {"duration_seconds": 0},
+        {"duration_seconds": 10801},
+        {"duration_seconds": 2.5},
+        {"title": ""},
+        {"title": "two\nlines"},
+        {"preload": True},
+    ],
+)
+def test_a_track_with_a_wrong_type_duration_title_or_field_is_refused(change):
+    with pytest.raises(ValidationError):
+        SoundTrack.model_validate(TRACK | change)
+
+
+def test_the_let_checks_a_constructed_tracks_origin_again():
+    track = SoundTrack.model_construct(**(TRACK | {"url": "https://evil.example/a.mp3"}))  # type: ignore[arg-type]
+    sneaky = Soundscape.model_construct(**(ALBUM | {"tracks": (track,)}))  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="isn't valid"):
+        SoundscapeLet(name="album", soundscape=sneaky)
 
 
 def test_a_stream_names_an_allowed_provider_and_a_video_never_a_url():
@@ -75,6 +158,9 @@ def test_a_stream_with_another_host_a_bad_id_or_a_url_is_refused(stream):
         (layers(layers=[]), "1 to 8 [[layers]]"),
         (layers(stream=STREAM["stream"]), "no [stream]"),
         (layers(kind="mixtape"), "kind"),
+        (layers(tracks=[TRACK]), "no [stream] or [[tracks]]"),
+        (ALBUM | {"tracks": []}, "has a [stream], [[tracks]] or both"),
+        (ALBUM | {"tracks": [TRACK] * 51}, "tracks"),
         (layers(name="Rain"), "name"),
         (layers(title="two\nlines"), "title"),
         (layers(fade_seconds=0), "fade_seconds"),
@@ -300,6 +386,7 @@ def test_the_interfaces_are_abstract_and_the_audio_csp_loads_nothing():
         SoundAssets().asset("demo", "layer-0", "ogg")
     with pytest.raises(NotImplementedError):
         SoundAssets().stream_provider()
+    assert SoundAssets().media_origins() == ()
     with pytest.raises(NotImplementedError):
         ThemeChoice().selected()
     assert SOUND_CSP == "default-src 'none'; sandbox"
