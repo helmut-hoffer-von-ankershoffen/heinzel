@@ -121,6 +121,7 @@ FOREGROUND_UI = {
     "0.9.53": ("ui", "serve"),
     "0.9.54": ("ui", "serve"),
     "0.9.55": ("ui", "serve"),
+    "0.9.56": ("ui", "serve"),
     "0.9.57": ("ui", "serve"),
 }
 PROFILE_FIXTURE = {
