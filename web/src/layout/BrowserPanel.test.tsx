@@ -5,6 +5,83 @@ import { addressUrl, BrowserPanel, externalBrowserUrl } from "./BrowserPanel";
 afterEach(() => {
   Reflect.deleteProperty(window, "heinzelDesktop");
 });
+it("shows native automatic loading and a failed reload until a successful retry", async () => {
+  let status = "ready";
+  let fail = true;
+  let statePolls = 0;
+  const browser = vi.fn(async ({ action }: Record<string, unknown>) => {
+    if (action === "reload" && fail) throw new Error("reload refused");
+    if (action === "state") statePolls += 1;
+    return { status, url: "https://example.com/" };
+  });
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  const reload = await screen.findByRole("button", { name: "Reload the website" });
+  await waitFor(() => expect(reload).toBeEnabled());
+  status = "loading";
+  await waitFor(() => expect(reload).toHaveAttribute("aria-busy", "true"), { timeout: 2500 });
+  expect(reload.querySelector("svg")).toHaveClass("motion-safe:animate-spin");
+  status = "ready";
+  await waitFor(() => expect(reload).toHaveAttribute("aria-busy", "false"), { timeout: 2500 });
+  fireEvent.click(reload);
+  const failed = await screen.findByRole("button", { name: "Reload the website — Refresh failed" });
+  expect(failed.querySelector("svg")).toHaveClass("text-bad");
+  const pollsAtFailure = statePolls;
+  await waitFor(() => expect(statePolls).toBeGreaterThan(pollsAtFailure), { timeout: 1500 });
+  expect(screen.getByRole("button", { name: "Reload the website — Refresh failed" })).toBeVisible();
+  fail = false;
+  fireEvent.click(failed);
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Reload the website" }).querySelector("svg")).not.toHaveClass("text-bad"),
+  );
+});
+it("ignores a ready poll that was already in flight when reload returned loading", async () => {
+  let resolveStale!: (state: { status: string; selected: string; revision: number; url: string }) => void;
+  let held = false;
+  const browser = vi.fn(async ({ action }: Record<string, unknown>) => {
+    if (action === "state" && !held) {
+      held = true;
+      return await new Promise<{ status: string; selected: string; revision: number; url: string }>((resolve) => {
+        resolveStale = resolve;
+      });
+    }
+    if (action === "reload") return { status: "loading", selected: "tab-1", revision: 2, url: "https://example.com/" };
+    return { status: "ready", selected: "tab-1", revision: 1, url: "https://example.com/" };
+  });
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  const reload = await screen.findByRole("button", { name: "Reload the website" });
+  await waitFor(() => expect(reload).toBeEnabled());
+  await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "state" }));
+  fireEvent.click(reload);
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Reload the website" })).toHaveAttribute("aria-busy", "true"),
+  );
+  await act(async () => resolveStale({ status: "ready", selected: "tab-1", revision: 1, url: "https://example.com/" }));
+  expect(screen.getByRole("button", { name: "Reload the website" })).toHaveAttribute("aria-busy", "true");
+});
+it("ignores a rejected reload reply after a newer address navigation", async () => {
+  let rejectReload!: (error: Error) => void;
+  const browser = vi.fn(async ({ action, url }: Record<string, unknown>) => {
+    if (action === "reload")
+      return await new Promise<never>((_resolve, reject) => {
+        rejectReload = reject;
+      });
+    if (action === "navigate") return { status: "ready", selected: "tab-1", revision: 3, url };
+    return { status: "ready", selected: "tab-1", revision: 1, url: "https://example.com/" };
+  });
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  const reload = await screen.findByRole("button", { name: "Reload the website" });
+  await waitFor(() => expect(reload).toBeEnabled());
+  fireEvent.click(reload);
+  const address = screen.getByRole("textbox", { name: "Website address" });
+  fireEvent.change(address, { target: { value: "https://new.example/" } });
+  fireEvent.click(screen.getByRole("button", { name: "Open this address" }));
+  await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "navigate", url: "https://new.example/" }));
+  await act(async () => rejectReload(new Error("stale reload refused")));
+  expect(screen.getByRole("button", { name: "Reload the website" }).querySelector("svg")).not.toHaveClass("text-bad");
+});
 it("web mode supplies an explicit safe external link without an iframe or disabled browser promise", () => {
   const { container } = render(<BrowserPanel active onClose={vi.fn()} />);
   const link = screen.getByRole("link", { name: "Open in a new browser tab" });

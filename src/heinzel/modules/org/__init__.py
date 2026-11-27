@@ -8,7 +8,7 @@ for `ProfileService` by type to learn who is acting.
 from collections.abc import Mapping
 from typing import Annotated, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from rich.console import RenderableType
 
 from heinzel import (
@@ -25,7 +25,15 @@ from heinzel import (
     Status,
 )
 from heinzel.kernel import CapabilityView
-from heinzel.modules.org._agenda import Agenda, CalendarWeek, local_now, read_agenda, read_week, status_item
+from heinzel.modules.org._agenda import (
+    Agenda,
+    CalendarSelection,
+    CalendarWeek,
+    local_now,
+    read_agenda,
+    read_week,
+    status_item,
+)
 from heinzel.modules.org._models import ROLES, OrgSettings, Profile
 from heinzel.modules.org._profile import ProfileService, ask_profile
 from heinzel.modules.org._reminder_maintenance import CalendarMaintenance
@@ -58,6 +66,12 @@ module.settings(OrgSettings)
 module.service(ProfileService)
 module.service(CalendarMaintenance)
 module.service(SyncService)
+
+CalendarOffset = Annotated[int, Field(ge=-52, le=52, description="Weeks before or after this week.")]
+CALENDAR_QUERY_LIMIT = 32_768
+# An ASCII-escaped supplementary Unicode code point can take 12 bytes; 100 full-length IDs plus the adapter
+# and JSON framing fit in 2 MiB even when the ASCII adapter name is also escaped.
+CALENDAR_BODY_LIMIT = 2 * 1024 * 1024
 
 
 # Your name and email are in it; a web page can reach a local REST server, so the CLI, MCP and the web head (which
@@ -137,10 +151,44 @@ def calendar(
     calendar: Calendar,
     view: CapabilityView,
     settings: OrgSettings,
-    offset: Annotated[int, Field(ge=-52, le=52, description="Weeks before or after this week.")] = 0,
+    offset: CalendarOffset = 0,
+    selection: Annotated[
+        str, Field(max_length=CALENDAR_QUERY_LIMIT, description="Calendar exclusions and their adapter as JSON.")
+    ] = "",
 ) -> CalendarWeek:
-    """Show a week from your connected calendar."""
-    return read_week(calendar, view, local_now(settings.timezone), offset)
+    """Show a week from your connected calendar.
+
+    Raises:
+        HeinzelError: If the calendar selection is invalid.
+    """
+    try:
+        chosen = CalendarSelection.model_validate_json(selection) if selection else CalendarSelection()
+    except ValidationError:
+        msg = "The calendar selection is invalid."
+        raise HeinzelError(msg) from None
+    return read_week(calendar, view, local_now(settings.timezone), offset, chosen)
+
+
+class CalendarWeekSelection(CalendarSelection):
+    """Browser calendar exclusions for one week."""
+
+    # Use the adapter slug grammar of Module.provides. An empty name still means no adapter selected.
+    adapter: str = Field(default="", pattern=r"^(?:[a-z][a-z0-9-]*)?$", max_length=CALENDAR_QUERY_LIMIT)
+    offset: CalendarOffset = 0
+
+
+# The web stream accepts large selections in its authenticated JSON body without putting opaque IDs in the URL.
+@module.operation(
+    private=True, heads={"web"}, requires=["calendar:read"], optional=True, request_body_limit=CALENDAR_BODY_LIMIT
+)
+def calendar_selection(
+    calendar: Calendar,
+    view: CapabilityView,
+    settings: OrgSettings,
+    selection: CalendarWeekSelection,
+) -> CalendarWeek:
+    """Read a calendar week with the browser's current calendar exclusions."""
+    return read_week(calendar, view, local_now(settings.timezone), selection.offset, selection)
 
 
 # The web app's status bar shows it (ADR 0056): a view over `agenda`, so it is gated and private like the operation.

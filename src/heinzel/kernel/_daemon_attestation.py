@@ -115,3 +115,4 @@ class DaemonInstallationLifecycle:
     quiescent: Callable[[Path], AbstractContextManager[None]]
     recover_quiescent: Callable[[Path], None]
     mutation: Callable[[Callable[[], bool], Callable[[], str]], AbstractContextManager[DaemonMutationScope]]
+    busy: Callable[[], bool]

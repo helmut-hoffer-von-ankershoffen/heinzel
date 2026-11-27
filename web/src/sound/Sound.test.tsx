@@ -6,7 +6,7 @@ import { type FakeContext, fakeAudio } from "@/test/fakeAudio";
 import { acmeTheme, shell, themeList } from "@/test/fixtures";
 import { expectAccessible, mockApi } from "@/test/render";
 import { renderAt } from "@/test/renderApp";
-import { needsReload, page, pendingResume, rememberPageFrame, resetPageFrame } from "./queries";
+import { needsReload, page, pendingResume, rememberPagePolicy, resetPagePolicy } from "./queries";
 import { duck, resetSound, soundState } from "./store";
 import { rememberYouTubeAccount } from "./stream";
 
@@ -112,7 +112,7 @@ function serveLayers() {
 afterEach(() => {
   sessionStorage.clear();
   resetSound();
-  resetPageFrame();
+  resetPagePolicy();
   vi.restoreAllMocks();
 });
 
@@ -354,6 +354,36 @@ describe("Sound", () => {
     expect(new URL(frame.src).origin).toBe("https://www.youtube.com");
   });
 
+  it("lists the default Singularity as the choice and still loads nothing of YouTube until Play", async () => {
+    const singularity: SchemaSoundscapeView = {
+      ...fm,
+      name: "singularity",
+      title: "Singularity",
+      stream: {
+        ...(fm.stream as NonNullable<typeof fm.stream>),
+        video: "AvtStYuO79Y",
+        embed_url: `${ORIGIN}/embed/AvtStYuO79Y`,
+      },
+    };
+    const list = soundList("singularity", {
+      soundscapes: [off, singularity].map((s) => ({
+        ...s,
+        selected: s.name === "singularity",
+        effective: s.name === "singularity",
+      })),
+    });
+    const { calls } = mockApi({ ...shell, "/api/system/sound/list": list });
+    const user = userEvent.setup();
+    renderAt("/");
+    const dialog = await openSoundChoices(user);
+    expect(within(dialog).getByRole("button", { name: "Play Singularity" })).toBeInTheDocument();
+    expect(document.querySelector("iframe")).toBeNull();
+    expect(calls.some((call) => !call.url.startsWith(window.location.origin))).toBe(false);
+    await user.click(within(dialog).getByRole("button", { name: "Play Singularity" }));
+    const frame = (await screen.findByTitle("Singularity player")) as HTMLIFrameElement;
+    expect(frame.src).toContain("/embed/AvtStYuO79Y");
+  });
+
   it("with nothing picked, the speaker opens the choices instead of playing", async () => {
     soundApi("off");
     const user = userEvent.setup();
@@ -530,12 +560,12 @@ describe("Sound", () => {
 
 describe("the page's frame origin", () => {
   it("needs a reload only when the soundscape in effect needs another frame origin than the page admits", () => {
-    rememberPageFrame(soundList("off"));
+    rememberPagePolicy(soundList("off"));
     expect(needsReload(soundList("rain"))).toBe(false);
     expect(needsReload(soundList("fixture-radio"))).toBe(true);
-    resetPageFrame();
-    rememberPageFrame(soundList("fixture-radio"));
-    rememberPageFrame(soundList("off")); // the first list decides: it is what the server served the page with
+    resetPagePolicy();
+    rememberPagePolicy(soundList("fixture-radio"));
+    rememberPagePolicy(soundList("off")); // the first list decides: it is what the server served the page with
     expect(needsReload(soundList("fixture-radio"))).toBe(false);
     expect(needsReload(soundList("off"))).toBe(true);
   });
@@ -678,7 +708,12 @@ describe("a stream's fades", () => {
     renderAt("/");
     await playSound(user, "Fixture radio");
     await screen.findByTitle("Fixture radio player");
-    const reload = vi.spyOn(page, "reload").mockImplementation(() => undefined);
+    const reload = vi
+      .spyOn(page, "reload")
+      .mockImplementationOnce(() => {
+        throw new Error("reload refused");
+      })
+      .mockImplementation(() => undefined);
     await act(async () => {
       const event = new Event("securitypolicyviolation") as SecurityPolicyViolationEvent;
       Object.assign(event, { effectiveDirective: "frame-src", blockedURI: `${ORIGIN}/embed/abcdefghijk` });
@@ -686,6 +721,11 @@ describe("a stream's fades", () => {
     });
     expect(screen.queryByTitle("Fixture radio player")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Reload" }));
-    expect(reload).toHaveBeenCalled();
+    const button = screen.getByRole("button", { name: "Reload — Refresh failed" });
+    expect(button.querySelector("svg")).toHaveClass("text-bad");
+    await user.click(button);
+    expect(reload).toHaveBeenCalledTimes(2);
+    expect(button).toHaveAttribute("aria-busy", "true");
+    expect(button.querySelector("svg")).toHaveClass("motion-safe:animate-spin");
   });
 });

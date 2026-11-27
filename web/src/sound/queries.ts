@@ -19,26 +19,34 @@ export function effective(list: SchemaSoundList | undefined): SchemaSoundscapeVi
   return found && found.kind !== "off" ? found : null;
 }
 
-/** The frame origin the page needs for `list`'s soundscape in effect: the stream's host, or none. */
-export const frameOf = (list: SchemaSoundList | undefined): string | null =>
-  effective(list)?.stream?.frame_origin ?? null;
+/** Whether `soundscape` plays as one programme (a stream or tracks) rather than as layers mixed here. */
+export const isProgramme = (soundscape: SchemaSoundscapeView | null | undefined): boolean =>
+  Boolean(soundscape?.stream || soundscape?.tracks?.length);
 
-let pageFrame: string | null | undefined;
+/** The origins the page's CSP needs for `list`'s soundscape in effect: the stream's frame, its tracks' hosts. */
+export function admittedFor(list: SchemaSoundList | undefined): string {
+  const current = effective(list);
+  const media = new Set((current?.tracks ?? []).map((track) => new URL(track.url).origin));
+  return [current?.stream?.frame_origin ?? "", ...[...media].sort((a, b) => a.localeCompare(b))].join(" ");
+}
+
+let pageAdmits: string | undefined;
 
 /** Loads the page again from the network; an object, so tests can watch it. */
 export const page = { reload: (): void => window.location.reload() };
 
-/** The frame origin this page's CSP admits, as the server decided when it served the page: the first list's. */
-export function rememberPageFrame(list: SchemaSoundList): void {
-  if (pageFrame === undefined) pageFrame = frameOf(list);
+/** The origins this page's CSP admits, as the server decided when it served the page: the first list's. */
+export function rememberPagePolicy(list: SchemaSoundList): void {
+  pageAdmits ??= admittedFor(list);
 }
 
-/** Whether the page must load again for `list` to play: its CSP admits another frame origin than it needs. */
-export const needsReload = (list: SchemaSoundList): boolean => pageFrame !== undefined && pageFrame !== frameOf(list);
+/** Whether the page must load again for `list` to play: its CSP admits other origins than it needs. */
+export const needsReload = (list: SchemaSoundList): boolean =>
+  pageAdmits !== undefined && pageAdmits !== admittedFor(list);
 
-/** For tests: forget the page's frame origin. */
-export function resetPageFrame(): void {
-  pageFrame = undefined;
+/** For tests: forget what the page admits. */
+export function resetPagePolicy(): void {
+  pageAdmits = undefined;
 }
 
 const RESUME_KEY = "hz.sound.resume";
@@ -107,7 +115,7 @@ export const useSetSound = () => {
       client.setQueryData(SOUND_KEY, list);
       if (needsReload(list)) {
         rememberResume(name);
-        page.reload(); // the network's page, with the frame-src the new soundscape needs or none
+        page.reload(); // the network's page, with the CSP origins the new soundscape needs or none
       }
     },
     onError: () => {

@@ -100,6 +100,8 @@ export function DaemonSettings() {
                 <PaneAction
                   key="refresh"
                   icon={RefreshCw}
+                  spinning={status.isFetching}
+                  refreshFailed={status.isError}
                   disabled={status.isFetching}
                   onClick={() => void status.refetch()}
                 >

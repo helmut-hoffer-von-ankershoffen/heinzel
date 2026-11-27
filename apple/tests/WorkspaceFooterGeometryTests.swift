@@ -2,6 +2,8 @@ import Foundation
 
 @main struct WorkspaceFooterGeometryTests {
     @MainActor static func main() async throws {
+        verifyFooterHandoff()
+        verifyFooterReceiver()
         let viewport = CGSize(width: 390, height: 844)
         let valid: [String: NSNumber] = ["x": 0, "y": 762, "width": 100, "height": 48,
                                                 "viewportWidth": 390, "viewportHeight": 844]
@@ -52,6 +54,60 @@ import Foundation
         verifyCloudSyncPreference()
         await verifyVersionRefresh(now: now)
         print("PASS: native footer slot is bounded to the current viewport")
+    }
+
+    private static func verifyFooterHandoff() {
+        for (width, height, safeArea, left) in [(390, 844, 34, 0), (844, 390, 21, 44), (390, 844, 0, 0)] {
+            let row = 48
+            let fallbackHeight = height - safeArea - row
+            let fallbackViewport = CGSize(width: width, height: fallbackHeight)
+            let integratedViewport = CGSize(width: width, height: height)
+            let fallback: [String: NSNumber] = ["x": .init(value: left), "y": .init(value: fallbackHeight - row),
+                "width": 100, "height": 48, "viewportWidth": .init(value: width),
+                "viewportHeight": .init(value: fallbackHeight)]
+            let integrated: [String: NSNumber] = ["x": .init(value: left), "y": .init(value: fallbackHeight),
+                "width": 100, "height": 48, "viewportWidth": .init(value: width), "viewportHeight": .init(value: height)]
+            let nativeBottom = CGFloat(safeArea)
+            let fallbackBottom = WorkspaceFooterGeometry.webBottomInset(safeArea: nativeBottom, hasSlot: false)
+            let integratedBottom = WorkspaceFooterGeometry.webBottomInset(safeArea: nativeBottom, hasSlot: true)
+            let fallbackSlot = WorkspaceFooterGeometry.slot(fallback, viewport: fallbackViewport, width: 100, bottom: fallbackBottom)
+            let integratedSlot = WorkspaceFooterGeometry.slot(integrated, viewport: integratedViewport, width: 100, bottom: integratedBottom)
+            precondition(fallbackSlot?.maxY == fallbackViewport.height)
+            precondition(integratedSlot?.minY == fallbackViewport.height)
+            precondition(integratedSlot?.maxY == integratedViewport.height - nativeBottom)
+            precondition(WorkspaceFooterGeometry.slot(fallback, viewport: integratedViewport, width: 100, bottom: integratedBottom) == nil)
+            precondition(WorkspaceFooterGeometry.slot(integrated, viewport: fallbackViewport, width: 100, bottom: fallbackBottom) == nil)
+        }
+    }
+
+    private static func verifyFooterReceiver() {
+        let viewport = CGSize(width: 390, height: 844)
+        let valid: [String: Any] = ["revision": 9, "generation": 4, "x": 0, "y": 762,
+            "width": 100, "height": 48, "viewportWidth": 390, "viewportHeight": 844]
+        var slot: CGRect?
+        var updates = 0
+        func receive(_ values: [String: Any]) -> Bool {
+            WorkspaceFooterGeometry.receive(values, viewport: viewport, width: 100, bottom: 34,
+                revision: 9, generation: 4) {
+                slot = $0
+                updates += 1
+            }
+        }
+        precondition(receive(valid))
+        let accepted = CGRect(x: 0, y: 762, width: 100, height: 48)
+        precondition(slot == accepted && updates == 1)
+        for (key, value) in [("revision", 8), ("generation", 3)] {
+            var stale = valid
+            stale[key] = value
+            stale["viewportHeight"] = 762
+            precondition(!receive(stale) && slot == accepted && updates == 1)
+        }
+        var unversioned = valid
+        unversioned.removeValue(forKey: "generation")
+        precondition(!receive(unversioned) && slot == accepted && updates == 1)
+        var invalid = valid
+        invalid["y"] = "invalid"
+        precondition(!receive(invalid) && slot == nil && updates == 2)
     }
 
     private static func verifyCloudSyncPreference() {

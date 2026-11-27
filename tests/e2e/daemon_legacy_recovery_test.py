@@ -25,6 +25,7 @@ from tests.e2e._candidate_wheel import CANDIDATE_VERSION, candidate_wheel
 from tests.e2e.tool_install_test import REPO, Sandbox
 
 pytestmark = [
+    pytest.mark.real_system,
     pytest.mark.e2e,
     pytest.mark.skipif(sys.platform != "darwin", reason="Initial legacy recovery protocol is macOS only"),
 ]

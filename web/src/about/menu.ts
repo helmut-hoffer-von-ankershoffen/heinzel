@@ -29,11 +29,14 @@ export type MenuAction =
 export const requestMenuAction = (action: MenuAction) =>
   window.dispatchEvent(new CustomEvent(MENU_EVENT, { detail: action }));
 
-/** Run `handle` for each of `actions` the menu asks for; returns the cleanup. */
-export function onMenuAction(actions: readonly MenuAction[], handle: (action: MenuAction) => void): () => void {
+/** Run `handle` for each matching menu event. A receiver can acknowledge a cancelable request with preventDefault. */
+export function onMenuAction(
+  actions: readonly MenuAction[],
+  handle: (action: MenuAction, event: Event) => void,
+): () => void {
   const listener = (event: Event) => {
     const action = (event as CustomEvent<MenuAction>).detail;
-    if (actions.includes(action)) handle(action);
+    if (actions.includes(action)) handle(action, event);
   };
   window.addEventListener(MENU_EVENT, listener);
   return () => window.removeEventListener(MENU_EVENT, listener);

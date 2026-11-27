@@ -23,11 +23,21 @@ function fixture(configure = async () => {}, extra = {}) {
         webRequest: { onBeforeRequest: (handler) => { session.before = handler; } } });
       sessions.push(session); return session;
     }, createView: (preferences) => {
-      options.push(preferences); let url = "", dead = false;
+      options.push(preferences); let url = "", dead = false, historyEntries = [], historyIndex = 0;
+      const navigationHistory = {
+        canGoBack: () => historyIndex > 0,
+        canGoForward: () => historyIndex < historyEntries.length - 1,
+        getActiveIndex: () => historyIndex,
+        getEntryAtIndex: (index) => historyEntries[index] ?? null,
+        goBack: () => { historyIndex -= 1; },
+        goForward: () => { historyIndex += 1; },
+        clear: () => { historyEntries = []; historyIndex = 0; calls.push(["history-clear"]); },
+        setForTest: (entries, index) => { historyEntries = entries; historyIndex = index; },
+      };
       const contents = Object.assign(new EventEmitter(), { isDestroyed: () => dead, mainFrame: { top: null, origin: "", url: "" },
-        close: (options) => { dead = true; calls.push(["close", options]); }, getURL: () => url,
+        close: (options) => { dead = true; calls.push(["close", options]); }, getURL: () => url, setURL: (next) => { url = next; },
         loadURL: async (target) => { url = target; calls.push(["load", target]); }, reload: () => calls.push(["reload"]),
-        navigationHistory: { canGoBack: () => false, canGoForward: () => false, clear: () => calls.push(["history-clear"]) },
+        navigationHistory,
         setWebRTCIPHandlingPolicy: (policy) => calls.push(["webrtc", policy]),
         setWindowOpenHandler: (handler) => { contents.popup = handler; } });
       let visible = false;
@@ -43,12 +53,12 @@ test("diagnostics report actual native visibility without page details", async (
   const f = fixture();
   await f.invoke({ action: "navigate", url: "https://example.com" });
   await f.invoke({ action: "layout", bounds: { x: 10, y: 10, width: 200, height: 200 } });
-  assert.deepEqual(await f.invoke({ action: "diagnostics" }), { focused: true, visible: true, status: "empty", reason: "draw-enabled" });
+  assert.deepEqual(await f.invoke({ action: "diagnostics" }), { focused: true, visible: true, status: "loading", reason: "draw-enabled" });
   await f.invoke({ action: "hide" });
   assert.equal((await f.invoke({ action: "diagnostics" })).visible, false);
   f.owner.isFocused = () => false;
   await f.invoke({ action: "layout", bounds: { x: 10, y: 10, width: 200, height: 200 } });
-  assert.deepEqual(await f.invoke({ action: "diagnostics" }), { focused: false, visible: false, status: "empty", reason: "unfocused" });
+  assert.deepEqual(await f.invoke({ action: "diagnostics" }), { focused: false, visible: false, status: "loading", reason: "unfocused" });
 });
 
 test("native guest never borrows the product session/preload", async () => {
@@ -62,6 +72,131 @@ test("native guest never borrows the product session/preload", async () => {
     assert.equal(f.options[0].webPreferences[key], false);
   assert.equal(f.options[0].webPreferences.sandbox, true);
   assert.equal(f.options[0].webPreferences.contextIsolation, true);
+});
+
+test("reload reports loading immediately and a late stop does not clear failure", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://example.com" });
+  const contents = f.views[0].webContents;
+  contents.emit("did-start-loading");
+  contents.emit("did-stop-loading");
+  const ready = await f.invoke({ action: "state" });
+  assert.equal(ready.status, "ready");
+
+  const loading = await f.invoke({ action: "reload" });
+  assert.equal(loading.status, "loading");
+  assert.ok(loading.revision > ready.revision);
+  contents.emit("did-fail-load", {}, -105, "offline", contents.getURL(), true);
+  const failed = await f.invoke({ action: "state" });
+  assert.equal(failed.status, "unavailable");
+  assert.ok(failed.revision > loading.revision);
+  contents.emit("did-stop-loading");
+  const stopped = await f.invoke({ action: "state" });
+  assert.equal(stopped.status, "unavailable");
+  assert.equal(stopped.revision, failed.revision);
+});
+test("Electron 45 guest navigation events and failures are bound to the current main-frame URL", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://first.example/" });
+  const contents = f.views[0].webContents;
+
+  // Electron 45 emits (event, url, isSameDocument, isMainFrame, ...); the event carries initiator.
+  contents.emit("did-start-navigation", {
+    url: "https://second.example/", isSameDocument: false, isMainFrame: true, initiator: { url: "https://first.example/" },
+  }, "https://second.example/", false, true, 1, 2);
+  const loading = await f.invoke({ action: "state" });
+  assert.equal(loading.status, "loading");
+  contents.emit("did-redirect-navigation", {
+    url: "https://second-redirect.example/", isSameDocument: false, isMainFrame: true, initiator: null,
+  }, "https://second-redirect.example/", false, true, 1, 2);
+  contents.emit("did-fail-load", {}, -105, "stale first failure", "https://first.example/", true);
+  const stillLoading = await f.invoke({ action: "state" });
+  assert.equal(stillLoading.status, "loading");
+  assert.equal(stillLoading.revision, loading.revision);
+
+  contents.emit("did-fail-load", {}, -105, "stale pre-redirect failure", "https://second.example/", true);
+  assert.equal((await f.invoke({ action: "state" })).status, "loading");
+  contents.emit("did-fail-load", {}, -105, "current redirect failure", "https://second-redirect.example/", true);
+  const failed = await f.invoke({ action: "state" });
+  assert.equal(failed.status, "unavailable");
+  assert.ok(failed.revision > stillLoading.revision);
+});
+test("same-document Back and Forward settle only after the matching current in-page completion", async () => {
+  const f = fixture();
+  await f.invoke({ action: "navigate", url: "https://current.example/" });
+  const contents = f.views[0].webContents;
+  const history = contents.navigationHistory;
+  const previous = "https://current.example/#previous";
+  const current = "https://current.example/#current";
+  history.setForTest([{ url: previous }, { url: current }], 1);
+
+  const back = await f.invoke({ action: "back" });
+  assert.equal(back.status, "loading");
+  // A matching URL alone is insufficient: wait for did-start-navigation for this attempt.
+  contents.emit("did-navigate-in-page", {}, previous, true);
+  assert.equal((await f.invoke({ action: "state" })).status, "loading");
+  contents.emit("did-start-navigation", {
+    url: "https://unrelated.example/", isSameDocument: true, isMainFrame: true, initiator: null,
+  }, "https://unrelated.example/", true, true, 1, 2);
+  contents.emit("did-navigate-in-page", {}, "https://unrelated.example/", true);
+  assert.equal((await f.invoke({ action: "state" })).status, "loading");
+  contents.emit("did-start-navigation", {
+    url: previous, isSameDocument: true, isMainFrame: true, initiator: null,
+  }, previous, true, true, 1, 2);
+  contents.setURL(previous);
+  contents.emit("did-navigate-in-page", {}, previous, true);
+  assert.equal((await f.invoke({ action: "state" })).status, "ready");
+
+  const forward = await f.invoke({ action: "forward" });
+  assert.equal(forward.status, "loading");
+  contents.emit("did-start-navigation", {
+    url: current, isSameDocument: true, isMainFrame: true, initiator: null,
+  }, current, true, true, 1, 2);
+  contents.setURL(current);
+  contents.emit("did-navigate-in-page", {}, current, true);
+  assert.equal((await f.invoke({ action: "state" })).status, "ready");
+
+  history.setForTest([{ url: previous }, { url: current }], 1);
+  await f.invoke({ action: "back" });
+  const newNavigation = await f.invoke({ action: "navigate", url: "https://new.example/" });
+  contents.emit("did-navigate-in-page", {}, previous, true);
+  const stillLoading = await f.invoke({ action: "state" });
+  assert.equal(stillLoading.status, "loading");
+  assert.equal(stillLoading.revision, newNavigation.revision);
+});
+test("a superseded load rejection cannot replace the current navigation status or revision", async () => {
+  const f = fixture();
+  let rejectFirst;
+  await f.invoke({ action: "new-tab" });
+  const guest = f.views[0].webContents;
+  guest.loadURL = (url) => {
+    if (url === "https://first.example/") return new Promise((_resolve, reject) => { rejectFirst = reject; });
+    return Promise.resolve();
+  };
+  const first = await f.invoke({ action: "navigate", url: "https://first.example" });
+  const second = await f.invoke({ action: "navigate", url: "https://second.example" });
+  assert.equal(first.status, "loading");
+  assert.equal(second.status, "loading");
+  assert.ok(second.revision > first.revision);
+  rejectFirst(new Error("the superseded first load failed"));
+  await new Promise(setImmediate);
+  const current = await f.invoke({ action: "state" });
+  assert.equal(current.status, "loading");
+  assert.equal(current.revision, second.revision);
+});
+test("an Electron ERR_ABORTED load rejection does not become a refresh failure", async () => {
+  const f = fixture();
+  let rejectLoad;
+  await f.invoke({ action: "new-tab" });
+  const guest = f.views[0].webContents;
+  guest.loadURL = () => new Promise((_resolve, reject) => { rejectLoad = reject; });
+  const loading = await f.invoke({ action: "navigate", url: "https://cancelled.example" });
+  const cancelled = Object.assign(new Error("ERR_ABORTED"), { code: "ERR_ABORTED" });
+  rejectLoad(cancelled);
+  await new Promise(setImmediate);
+  const current = await f.invoke({ action: "state" });
+  assert.equal(current.status, "loading");
+  assert.equal(current.revision, loading.revision);
 });
 test("all permissions, downloads, popup dispatch and local redirects/subresources refuse", async () => {
   const f = fixture(); await f.invoke({ action: "navigate", url: "https://example.com" });
@@ -221,7 +356,7 @@ test("a passkey step or a WebAuthn failure shows a visible note that passkeys ma
 test("Open in browser hands only the guest's own public HTTPS location to the OS", async () => {
   const opened = [];
   const f = fixture(undefined, { openExternal: async (url, window) => { assert.equal(window, f.owner); opened.push(url); return true; } });
-  assert.deepEqual(await f.invoke({ action: "external" }), { status: "empty", url: "", canGoBack: false, canGoForward: false, notice: null, tabs: [], selected: null, link: null });
+  assert.deepEqual(await f.invoke({ action: "external" }), { status: "empty", url: "", canGoBack: false, canGoForward: false, notice: null, tabs: [], selected: null, link: null, revision: 0 });
   await f.invoke({ action: "navigate", url: "https://example.com/page?q=1" });
   await f.invoke({ action: "external" });
   assert.deepEqual(opened, ["https://example.com/page?q=1"]);

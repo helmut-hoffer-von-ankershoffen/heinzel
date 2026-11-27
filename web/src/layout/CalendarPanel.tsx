@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { stream } from "@/api/stream";
 import { token } from "@/api/token";
 import { OperationDialog } from "@/components/OperationDialog";
 import { PaneAction, PaneActions, PaneTitle } from "@/components/PaneActions";
@@ -41,6 +42,7 @@ import { CONNECTORS } from "./settingsSections";
 type Person = { name?: string | null; email?: string | null };
 type Event = {
   id: string;
+  calendar_id?: string | null;
   title: string;
   start: string;
   end: string;
@@ -59,8 +61,27 @@ type Week = {
   events: Event[];
   problem: string | null;
   fix: string | null;
+  calendars?: { id: string; title: string; primary: boolean }[] | null;
+  adapter?: string | null;
+  warnings?: string[];
 };
 type ReminderStatus = { enabled: boolean; service: string };
+type CalendarSelection = { adapter: string; excluded: string[] };
+
+function savedSelection(adapter?: string): CalendarSelection {
+  try {
+    const selectedAdapter = adapter ?? localStorage.getItem("hz.calendar.adapter") ?? "";
+    const raw: unknown = JSON.parse(localStorage.getItem(`hz.calendar.excluded.${selectedAdapter}`) ?? "[]");
+    const ids = Array.isArray(raw)
+      ? raw.filter((id): id is string => typeof id === "string" && id.length > 0 && [...id].length <= 1024)
+      : [];
+    return { adapter: selectedAdapter, excluded: [...new Set(ids)].slice(0, 100) };
+  } catch {
+    return { adapter: adapter ?? "", excluded: [] };
+  }
+}
+
+const eventKey = (event: Event) => JSON.stringify([event.calendar_id ?? null, event.id, event.start]);
 
 /** The client clock at `interval` resolution; the agenda re-derives Now from it. */
 function useNow(interval: number): number {
@@ -81,11 +102,18 @@ function showToday(node: HTMLElement | null) {
 export function CalendarPanel({ onClose }: { onClose: () => void }) {
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
+  const [selection, setSelection] = useState<CalendarSelection>(() => savedSelection());
+  const [showCalendars, setShowCalendars] = useState(false);
   const now = useNow(60_000);
-  const week = useQuery({
-    queryKey: ["org", "calendar", offset],
+  const week = useQuery<Week>({
+    queryKey: ["org", "calendar", offset, selection],
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[2] === offset && previous?.adapter === selection.adapter ? previous : undefined,
     // The query aborts its older read when it is cancelled or superseded, so a stale response never overwrites newer data.
     queryFn: async ({ signal }): Promise<Week> => {
+      if (selection.adapter && selection.excluded.length) {
+        return stream<Week>("/org/calendar-selection", {}, () => {}, signal, { selection: { offset, ...selection } });
+      }
       const url = new URL("/api/org/calendar", window.location.origin);
       url.searchParams.set("offset", String(offset));
       const response = await fetch(
@@ -101,6 +129,30 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
     refetchInterval: 60_000,
     retry: false,
   });
+  useEffect(() => {
+    const adapter = week.data?.adapter;
+    if (adapter && selection.adapter !== adapter) {
+      const saved = savedSelection(adapter);
+      if (saved.excluded.length) setSelection(saved);
+    }
+  }, [week.data?.adapter, selection.adapter]);
+  const toggleCalendar = (id: string, checked: boolean) => {
+    const { adapter, calendars } = week.data ?? {};
+    if (!adapter || !calendars) return;
+    const previous = new Set(selection.adapter === adapter ? selection.excluded : savedSelection(adapter).excluded);
+    const excluded = calendars.flatMap((calendar) =>
+      (calendar.id === id ? !checked : previous.has(calendar.id)) ? [calendar.id] : [],
+    );
+    const next = { adapter, excluded };
+    try {
+      localStorage.setItem("hz.calendar.adapter", adapter);
+      localStorage.setItem(`hz.calendar.excluded.${adapter}`, JSON.stringify(excluded));
+    } catch {
+      /* The choice still applies for this open pane. */
+    }
+    setSelected(null);
+    setSelection(next);
+  };
   const reminders = useQuery({
     queryKey: ["org", "calendar-reminders-status"],
     queryFn: async (): Promise<ReminderStatus> => {
@@ -116,10 +168,13 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
     refetchInterval: 60_000,
     retry: false,
   });
-  const chosen = week.data?.events.find((event) => `${event.id}:${event.start}` === selected);
   const data = week.data && !week.data.problem ? week.data : undefined;
+  const events = week.isPlaceholderData
+    ? data?.events.filter((event) => !event.calendar_id || !selection.excluded.includes(event.calendar_id))
+    : data?.events;
+  const chosen = events?.find((event) => eventKey(event) === selected);
   const days = data
-    ? groupWeek({ events: data.events, since: data.since, until: data.until, now, tz: data.timezone })
+    ? groupWeek({ events: events ?? [], since: data.since, until: data.until, now, tz: data.timezone })
     : [];
   const today = days.find((day) => day.relation === "today");
   // Missing reminders on this computer are the one thing to do here, so turning them on leads the row in words.
@@ -151,6 +206,41 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
         </PaneTitle>
       </header>
       <ReminderBand reminders={reminders} />
+      {week.data?.calendars && week.data.adapter && (
+        <details
+          open={showCalendars}
+          onToggle={(event) => setShowCalendars(event.currentTarget.open)}
+          className="border-b border-border px-3 py-2 text-sm"
+        >
+          <summary className="cursor-pointer font-medium">
+            {t("calendar.sources")} ({week.data.calendars.length})
+          </summary>
+          <fieldset className="pt-2">
+            <legend className="sr-only">{t("calendar.sources")}</legend>
+            {week.data.calendars.map((calendar) => (
+              <label key={calendar.id} className="mr-4 inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={selection.adapter !== week.data?.adapter || !selection.excluded.includes(calendar.id)}
+                  onChange={(event) => toggleCalendar(calendar.id, event.target.checked)}
+                />
+                {calendar.title}
+                {calendar.primary ? t("calendar.primarySuffix") : ""}
+              </label>
+            ))}
+          </fieldset>
+        </details>
+      )}
+      {!week.isPlaceholderData && !!week.data?.warnings?.length && (
+        <div role="status" className="border-b border-border px-3 py-2 text-sm">
+          <p>{t("calendar.partialRead")}</p>
+          <ul>
+            {week.data.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {today && data && !chosen && <TodayStatus day={today} now={now} tz={data.timezone} />}
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
         {week.isPending ? (
@@ -182,7 +272,7 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
                     day={day}
                     now={now}
                     tz={week.data.timezone}
-                    onOpen={(event) => setSelected(`${event.id}:${event.start}`)}
+                    onOpen={(event) => setSelected(eventKey(event))}
                   />
                 ))}
               </ol>
@@ -296,7 +386,7 @@ function DayGroup({
       <ul className="space-y-1">
         {items.map((item) => (
           <EventRow
-            key={`${item.event.id}:${item.event.start}:${item.edge}`}
+            key={`${eventKey(item.event)}:${item.edge}`}
             item={item}
             tz={tz}
             now={now}

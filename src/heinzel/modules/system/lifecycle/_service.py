@@ -5,7 +5,6 @@ import os
 import plistlib
 import re
 import secrets
-import shlex
 import shutil
 import socket
 import stat
@@ -15,7 +14,7 @@ from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
@@ -39,26 +38,30 @@ from heinzel.kernel import (
     private_socket_directory,
     private_write,
 )
+from heinzel.kernel._private_control import LIMIT as PRIVATE_CONTROL_LIMIT
 from heinzel.kernel.install._offline_uv import verified_installed_path
 from heinzel.kernel.install._tool_uninstall import OwnedFile, owned_file, remove_owned_file
 from heinzel.kernel.install._uv_locate import find_uv
-from heinzel.modules.system.lifecycle._historical_launcher import HistoricalLauncher
+from heinzel.modules.system.lifecycle import _adapter_launchd as launchd
+from heinzel.modules.system.lifecycle import _adapter_systemd as systemd
+from heinzel.modules.system.lifecycle._adapter_launchd import LaunchdWebCommands
+from heinzel.modules.system.lifecycle._adapter_systemd import SystemdWebCommands
 from heinzel.modules.system.lifecycle._launcher_transition import Action, LauncherTransition
 from heinzel.modules.system.lifecycle._profile import (
     default_profile,
-    environment_command,
     installation_overrides,
     require_installation_profile,
     user_profile,
     validated_profile,
 )
+from heinzel.modules.system.lifecycle._recovery_launcher import interpreter, interpreter_matches, recover_config
+from heinzel.modules.system.lifecycle._web_registration import MAX_PORT, WEB_SERVICE_LABEL, WebRegistration
 from heinzel.ports import ServiceManager
 
-LABEL = "io.github.helmut-hoffer-von-ankershoffen.heinzel.web"
+LABEL = WEB_SERVICE_LABEL
 UNIT = "hz-web.service"
 STARTUP_PENDING = ".heinzel-startup-pending"
 """The continuity marker an installation change keeps while its outcome is uncertain (ADR 0108)."""
-MAX_PORT = 65535
 STOP_SECONDS = 5.0
 STOP_POLL_SECONDS = 0.05
 READY_SECONDS = 12.0
@@ -70,6 +73,14 @@ Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 def _run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
     # The manager executable is resolved and its argument vector is fixed by the operation.
     return SYSTEM_RUNNER.run(command, timeout=10)
+
+
+def _encode_registration(record: dict[str, JsonValue]) -> str:
+    text = json.dumps(record)
+    if any(len(value.encode()) > PRIVATE_CONTROL_LIMIT for value in (text, str(record["launcher"]))):
+        msg = "The web registration exceeds its control-file budget. No service files were changed."
+        raise HeinzelError(msg)
+    return text
 
 
 class WebStatus(BaseModel):
@@ -123,7 +134,7 @@ class WebRemoval:
     compatibility_gates: tuple[Path, ...] = ()
 
 
-class WebService:
+class WebService(WebRegistration):
     """Install and mutate only exact recorded OS integration for one user and stable uv shim."""
 
     def __init__(  # noqa: PLR0913 - isolated OS and installation seams
@@ -145,6 +156,7 @@ class WebService:
         clock: Callable[[], float] = SYSTEM_CLOCK.monotonic,
         sleep: Callable[[float], None] = SYSTEM_CLOCK.sleep,
         repair: Callable[[], bool] | None = None,
+        recovery: tuple[str, str] | None = None,
     ) -> None:
         """Keep the stable shim path unresolved, because uv replaces its destination during updates.
 
@@ -152,6 +164,7 @@ class WebService:
         (`Installation.clear_stale_startup_pending`), so a restart isn't refused for it.
         """
         self.repair = repair
+        self.recovery = recovery
         self.directory = state / "ui"
         self.home = home
         self.executable = executable
@@ -200,12 +213,13 @@ class WebService:
             prefix=installation.prefix.resolve(strict=True),
             uv=uv,
             runner=lambda command: manager.command(list(command)),
-            which=lambda name: "/bin/launchctl" if name == "launchctl" else "/usr/bin/systemctl",
+            which=lambda name: launchd.PATH if name == launchd.MANAGER else systemd.PATH,
             profile=user_profile(
                 config, settings, Path.home(), installation.prefix.resolve(strict=True), binary / "hz"
             ),
             unsupported=installation_overrides(config),
             repair=installation.clear_stale_startup_pending,
+            recovery=interpreter(installation.prefix),
             verify=lambda: (
                 installation.is_tool
                 and installation.startup_state_matches()
@@ -231,82 +245,20 @@ class WebService:
             raise HeinzelError(msg)
         return Path(value)
 
-    def _command(self, *arguments: str) -> list[str]:
-        manager = "launchctl" if self.platform == "darwin" else "systemctl"
+    def _commands(self) -> "LaunchdWebCommands | SystemdWebCommands":
+        """The platform's argument vectors for the web job; the manager is looked up on every call.
+
+        Raises:
+            HeinzelError: If the platform has no supported manager.
+        """
+        manager = launchd.MANAGER if self.platform == "darwin" else systemd.MANAGER
         executable = self.which(manager)
         if self.platform not in {"darwin", "linux"} or executable is None:
             msg = "Persistent web access requires macOS launchd or Linux systemd user services."
             raise HeinzelError(msg)
-        return [executable, *arguments] if self.platform == "darwin" else [executable, "--user", *arguments]
-
-    def _launch_content(
-        self, port: int, generation: str, profile: dict[str, str] | None = None, *, legacy: bool = False
-    ) -> str:
-        guards = "".join(
-            f"if [ -e {shlex.quote(str(path))} ] || [ -L {shlex.quote(str(path))} ]; then exit 75; fi\n"
-            for path in installation_mutation_paths(self.prefix, self.directory.parent)
-        )
-        directories = dict.fromkeys(
-            [
-                str(self.uv.parent),
-                str(self.executable.parent),
-                "/opt/homebrew/bin",
-                "/usr/local/bin",
-                "/usr/bin",
-                "/bin",
-            ]
-        )
-        path = shlex.quote(":".join(directories))
-        arguments = shlex.join(
-            [
-                str(self.executable),
-                "ui",
-                *([] if legacy else ["serve"]),
-                "--no-browser",
-                "--port",
-                str(port),
-                "--supervised",
-                generation,
-            ]
-        )
-        return (
-            "#!/bin/sh\nset -eu\n"
-            "# Recovery requires the existing update authority before any mutable tool code imports.\n"
-            + guards
-            + environment_command(self.profile if profile is None else profile)
-            + f'exec "$@" PATH={path} {arguments}\n'
-        )
-
-    def _content(self) -> str:
-        arguments = ["/bin/sh", str(self.launcher)]
         if self.platform == "darwin":
-            return plistlib.dumps(
-                {
-                    "Label": LABEL,
-                    "ProgramArguments": arguments,
-                    "WorkingDirectory": str(self.home),
-                    "RunAtLoad": True,
-                    "KeepAlive": True,
-                    "ThrottleInterval": 10,
-                    "ProcessType": "Background",
-                    # No session URL or arbitrary startup/plugin error reaches an unrotated OS log.
-                    "StandardOutPath": "/dev/null",
-                    "StandardErrorPath": "/dev/null",
-                    "EnvironmentVariables": {
-                        "PATH": f"{self.executable.parent}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-                    },
-                },
-                sort_keys=True,
-            ).decode()
-        command = shlex.join(arguments).replace("%", "%%").replace("$", "$$")
-        directory = shlex.quote(str(self.home)).replace("%", "%%")
-        return (
-            "[Unit]\nDescription=Heinzelmännchen web workspace\nStartLimitIntervalSec=0\n\n"
-            "[Service]\nType=simple\n"
-            f"ExecStart={command}\nWorkingDirectory={directory}\n"
-            "Restart=always\nRestartSec=10\nStandardOutput=null\nStandardError=null\n\n"
-            "[Install]\nWantedBy=default.target\n"
-        )
+            return LaunchdWebCommands(executable, self.uid, LABEL)
+        return SystemdWebCommands(executable, UNIT)
 
     def historical_record(self, record: dict[str, JsonValue] | None) -> bool:
         """Recognized historical authority remains distinct from a current operational launcher."""
@@ -315,56 +267,37 @@ class WebService:
         profile = validated_profile(
             record.get("profile"), self.home, self.directory.parent, self.prefix, self.executable
         )
+        recovery = recover_config(str(record["launcher"]))
         return profile is not None and (
             record["uv"] != str(self.uv)
-            or record["launcher"] != self._launch_content(int(str(record["port"])), str(record["generation"]), profile)
+            or (recovery is None and self.recovery is not None)
+            or (
+                recovery is not None
+                and self.recovery is not None
+                and recovery != self.recovery
+                and not interpreter_matches(recovery, self.prefix)
+            )
+            or record["launcher"]
+            != self._launch_content(int(str(record["port"])), str(record["generation"]), profile, recovery=recovery)
         )
 
     def compatibility_gate(self) -> Path:
         """A frozen historical shell consumes this profile fence before importing mutable SDK code."""
         return self.directory.parent / "daemon/standard-install-pending.json"
 
-    def valid_record_value(self, value: dict[str, JsonValue]) -> bool:
-        """Validate only exact current or historical tuples; this does not authorize files, a manager or effects."""
-        if set(value) != {
-            "port",
-            "generation",
-            "executable",
-            "unit",
-            "content",
-            "launcher",
-            "prefix",
-            "uv",
-            "profile",
-        }:
-            return False
-        profile = validated_profile(
-            value.get("profile"), self.home, self.directory.parent, self.prefix, self.executable
-        )
-        port, generation, uv = value.get("port"), value.get("generation"), value.get("uv")
-        if (
-            profile is None
-            or type(port) is not int
-            or not 1 <= port <= MAX_PORT
-            or not isinstance(generation, str)
-            or re.fullmatch(r"[0-9a-f]{32}", generation) is None
-            or value["executable"] != str(self.executable)
-            or value["prefix"] != str(self.prefix)
-            or value["unit"] != str(self.unit)
-            or value["content"] != self._content()
-            or not isinstance(uv, str)
-            or not Path(uv).is_absolute()
-            or len(uv) > 4 * 1024
-            or "\x00" in uv
-        ):
-            return False
-        historical = HistoricalLauncher(self.prefix, self.directory, self.executable, Path(uv), profile)
+    def recovery_interpreter(self) -> tuple[str, str] | None:
+        """Observe the interpreter bound to the exact installed shell and registration."""
+        record = self._record()
+        return None if record is None else recover_config(str(record["launcher"]))
+
+    def recovery_ready(self, state: Path) -> bool:
+        """Verify that this state directory's owned launcher can run the recovery worker."""
+        selected = self.recovery_interpreter()
         return (
-            value["uv"] == str(self.uv) and value["launcher"] == self._launch_content(port, generation, profile)
-        ) or value["launcher"] in {
-            historical.render(port, generation),
-            historical.render(port, generation, legacy=True),
-        }
+            self.directory.parent.resolve() == state
+            and selected is not None
+            and interpreter_matches(selected, self.prefix)
+        )
 
     def _record(self) -> dict[str, JsonValue] | None:
         try:
@@ -386,10 +319,10 @@ class WebService:
         return self._manager_linux(record)
 
     def _manager_darwin(self, record: dict[str, JsonValue] | None) -> tuple[bool, int | None]:
-        result = self.runner(self._command("print", f"gui/{self.uid}/{LABEL}"))
+        result = self.runner(self._commands().inspect())
         if result.returncode != 0:
             # A failed label-specific request is not evidence of absence: require the complete listing.
-            listing = self.runner(self._command("list"))
+            listing = self.runner(cast("LaunchdWebCommands", self._commands()).listing())
             lines = listing.stdout.splitlines()
             if listing.returncode or not lines or lines[0].split() != ["PID", "Status", "Label"]:
                 msg = "The web service manager could not be inspected."
@@ -413,9 +346,7 @@ class WebService:
         return True, int(pids[0]) if len(pids) == 1 else None
 
     def _manager_linux(self, record: dict[str, JsonValue] | None) -> tuple[bool, int | None]:
-        result = self.runner(
-            self._command("show", UNIT, "--property=LoadState,FragmentPath,DropInPaths,ExecStart,MainPID")
-        )
+        result = self.runner(self._commands().inspect())
         if result.returncode != 0:
             msg = "The web service manager could not be inspected."
             raise HeinzelError(msg)
@@ -544,41 +475,36 @@ class WebService:
             raise HeinzelError(msg)
         generation = secrets.token_hex(16)
         content = self._content()
+        launcher = self._launch_content(port, generation, recovery=self.recovery)
+        registration = _encode_registration(
+            {
+                "port": port,
+                "generation": generation,
+                "executable": str(self.executable),
+                "prefix": str(self.prefix),
+                "uv": str(self.uv),
+                "profile": dict(self.profile),
+                "unit": str(self.unit),
+                "content": content,
+                "launcher": launcher,
+            }
+        )
         if dry_run:
             return WebChange(
                 changed=False,
                 dry_run=True,
-                files={str(self.unit): content, str(self.launcher): self._launch_content(port, generation)},
+                files={str(self.unit): content, str(self.launcher): launcher},
                 status=WebStatus(installed=False, loaded=False, ready=False),
             )
         self._prepare_install(port)
-        private_write(self.launcher, self._launch_content(port, generation))
+        private_write(self.launcher, launcher)
         descriptor = os.open(self.unit, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         with os.fdopen(descriptor, "w") as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-        private_write(
-            self.marker,
-            json.dumps(
-                {
-                    "port": port,
-                    "generation": generation,
-                    "executable": str(self.executable),
-                    "prefix": str(self.prefix),
-                    "uv": str(self.uv),
-                    "profile": self.profile,
-                    "unit": str(self.unit),
-                    "content": content,
-                    "launcher": self._launch_content(port, generation),
-                }
-            ),
-        )
-        commands = (
-            [self._command("bootstrap", f"gui/{self.uid}", str(self.unit))]
-            if self.platform == "darwin"
-            else [self._command("daemon-reload"), self._command("enable", "--now", UNIT)]
-        )
+        private_write(self.marker, registration)
+        commands = self._commands().load(str(self.unit))
         for command in commands:
             if self.runner(command).returncode:
                 msg = (
@@ -592,7 +518,7 @@ class WebService:
             raise HeinzelError(msg)
         return WebChange(
             changed=True,
-            files={str(self.unit): content, str(self.launcher): self._launch_content(port, generation)},
+            files={str(self.unit): content, str(self.launcher): launcher},
             status=status,
         )
 
@@ -607,7 +533,7 @@ class WebService:
             selected = validated_profile(
                 existing["profile"], self.home, self.directory.parent, self.prefix, self.executable
             )
-            proposal = self._launch_content(port, str(existing["generation"]), selected)
+            proposal = self._launch_content(port, str(existing["generation"]), selected, recovery=self.recovery)
             return WebChange(changed=False, dry_run=True, files={str(self.launcher): proposal}, status=self.status())
         return WebChange(changed=False, dry_run=dry_run, status=self.status())
 
@@ -642,10 +568,10 @@ class WebService:
             new = None
             if action == "migrate":
                 new = old | {"generation": secrets.token_hex(16), "uv": str(self.uv)}
-                new["launcher"] = self._launch_content(int(str(old["port"])), str(new["generation"]), profile)
-                if len(json.dumps(new).encode()) > 16 * 1024:
-                    msg = "The canonical web record exceeds its existing control-file budget; no job was stopped."
-                    raise HeinzelError(msg)
+                new["launcher"] = self._launch_content(
+                    int(str(old["port"])), str(new["generation"]), profile, recovery=self.recovery
+                )
+                _encode_registration(new)
             transition.prepare(
                 action, (old, new), (self.unit, self.launcher, self.marker), retiring_instance=retiring_instance
             )
@@ -716,7 +642,7 @@ class WebService:
     def _finish_retirement(self, transition: LauncherTransition) -> None:
         value = transition.record
         transition.require_gates()
-        if self.platform == "linux" and self.runner(self._command("daemon-reload")).returncode:
+        if self._reload_failed():
             msg = "The retired web definitions need a verified user-manager reload."
             raise HeinzelError(msg)
         if not self._stop_complete(value.old):
@@ -733,11 +659,7 @@ class WebService:
         if transition.record.phase != "loaded" or not loaded:
             self._stop_owned(new, fence=transition.require_gates)
             self._prepare_install(int(str(new["port"])))
-            commands = (
-                [self._command("bootstrap", f"gui/{self.uid}", str(self.unit))]
-                if self.platform == "darwin"
-                else [self._command("daemon-reload"), self._command("enable", "--now", UNIT)]
-            )
+            commands = self._commands().load(str(self.unit))
             for command in commands:
                 transition.require_gates()
                 if self.runner(command).returncode:
@@ -753,8 +675,8 @@ class WebService:
             msg = "Install and verify the persistent uv tool app before enabling its web service."
             raise HeinzelError(msg)
         if self.platform == "darwin":
-            session = self.runner(self._command("managername"))
-            owner = self.runner(self._command("manageruid"))
+            asked_session, asked_owner = cast("LaunchdWebCommands", self._commands()).session()
+            session, owner = self.runner(asked_session), self.runner(asked_owner)
             if session.returncode or session.stdout.strip() != "Aqua" or owner.stdout.strip() != str(self.uid):
                 msg = "Install web availability from your own logged-in desktop session."
                 raise HeinzelError(msg)
@@ -805,17 +727,14 @@ class WebService:
     def attach(self, port: int, *, bridge: str | None = None) -> str:
         """Ensure the one owned web service runs and return a fresh session link; never start a private server.
 
-        Installs the service when absent (at `port`), loads it when its manager lost it, and waits up to
-        `READY_SECONDS` for it. `bridge` is the desktop app's browser-bridge token, registered with the live server
-        over its owner-only control socket, never written down.
+        Installs the service when absent (at `port`), upgrades an owned launcher to support recovery, and loads it
+        when its manager lost it. It waits up to `READY_SECONDS`. `bridge` is the desktop app's browser-bridge
+        token, registered with the live server over its owner-only control socket, never written down.
 
         Raises:
             HeinzelError: If the service can't be installed, loaded, made ready or registered with.
         """
-        try:
-            self.marker.lstat()
-        except FileNotFoundError:
-            self.install(port)
+        self._prepare_attachment(port)
         deadline = self._clock() + READY_SECONDS
         loaded_once = False
         while True:
@@ -843,20 +762,55 @@ class WebService:
                 raise HeinzelError(msg)
         return url
 
+    def _prepare_attachment(self, port: int) -> None:
+        """Install a missing service or migrate the matching launcher to support recovery."""
+        try:
+            self.marker.lstat()
+        except FileNotFoundError:
+            self.install(port)
+            return
+        if self.recovery is None or not interpreter_matches(self.recovery, self.prefix):
+            return
+        transition = LauncherTransition(self.directory, self.prefix, self.executable)
+        if not os.path.lexists(transition.path) and self._pre_recovery_port(self._record()) is None:
+            return
+        with MaintenanceLocks(transition.lock_paths) as locks:
+            transition = LauncherTransition(self.directory, self.prefix, self.executable, locks)
+            installed_port = self._attachment_migration_port(transition)
+            if installed_port is not None:
+                self._transition("migrate", locks=locks, port=installed_port)
+
+    def _attachment_migration_port(self, transition: LauncherTransition) -> int | None:
+        if not os.path.lexists(transition.path):
+            return self._pre_recovery_port(self._record())
+        pending = transition.load()
+        if (
+            pending.kind == "web-launcher-migrate"
+            and pending.retiring_instance is None
+            and pending.new is not None
+            and recover_config(str(pending.new["launcher"])) == self.recovery
+        ):
+            return self._pre_recovery_port(pending.old)
+        return None
+
+    def _pre_recovery_port(self, record: dict[str, JsonValue] | None) -> int | None:
+        if record is None or record["uv"] != str(self.uv):
+            return None
+        installed_port, generation = int(str(record["port"])), str(record["generation"])
+        profile = validated_profile(record["profile"], self.home, self.directory.parent, self.prefix, self.executable)
+        if profile is not None and record["launcher"] == self._launch_content(installed_port, generation, profile):
+            return installed_port
+        return None
+
     def _load(self) -> None:
         """Hand the exact owned unit to its manager again; the manager's KeepAlive or Restart then runs it.
 
         Raises:
             HeinzelError: With the manager's own reason when it refuses.
         """
-        command = (
-            self._command("bootstrap", f"gui/{self.uid}", str(self.unit))
-            if self.platform == "darwin"
-            else self._command("start", UNIT)
-        )
-        result = self.runner(command)
+        result = self.runner(self._commands().start(str(self.unit)))
         if result.returncode != 0:
-            # An already loaded job also exits nonzero (launchctl bootstrap: "already loaded"): not a refusal.
+            # An already loaded job also exits nonzero (launchd's bootstrap: "already loaded"): not a refusal.
             observed = self.status()
             if observed.loaded or observed.ready:
                 return
@@ -917,6 +871,11 @@ class WebService:
             message="Restart requested. Use `hz ui status` to verify a different ready instance.",
         )
 
+    def _reload_failed(self) -> bool:
+        """Reload the manager's definitions where it needs it (systemd); True when that reload failed."""
+        command = self._commands().reload() if self.platform == "linux" else None
+        return command is not None and bool(self.runner(command).returncode)
+
     def service_manager(self) -> ServiceManager:
         """The platform's manager of the web job, sending its commands through `runner`.
 
@@ -925,7 +884,7 @@ class WebService:
         """
         if self._manager_port is not None:
             return self._manager_port
-        base = self._command()
+        base = self._commands().base()
         if self.platform == "darwin":
             return LaunchdServiceManager(self.runner, uid=self.uid, base=base, subject="web service")
         return SystemdServiceManager(self.runner, base=base, subject="web service")
@@ -933,7 +892,7 @@ class WebService:
     def restart_job(self, record: dict[str, JsonValue] | None = None) -> WebRestart:
         """Restart the owned web job through its service manager, which needs no control channel.
 
-        macOS: `launchctl kickstart -k`; Linux: `systemctl --user restart` of the user unit.
+        macOS: launchd's `kickstart -k`; Linux: systemd's `restart` of the user unit.
 
         Raises:
             HeinzelError: If the job is not owned and loaded, or the manager refuses.
@@ -1055,7 +1014,7 @@ class WebService:
                     raise HeinzelError(msg)
                 for captured in files:
                     remove_owned_file(captured)
-                if files and self.platform == "linux" and self.runner(self._command("daemon-reload")).returncode:
+                if files and self._reload_failed():
                     msg = "Web integration was removed but the user manager needs a local reload."
                     raise HeinzelError(msg)
                 return WebChange(changed=bool(files), status=WebStatus(installed=False, loaded=False, ready=False))
@@ -1117,7 +1076,7 @@ class WebService:
         loaded, _ = self._manager(record)
         if self.platform == "darwin":
             return not loaded
-        stopped = self.runner(self._command("show", UNIT, "--property=ActiveState,MainPID"))
+        stopped = self.runner(cast("list[str]", self._commands().stop_state()))
         properties = {
             key: value for line in stopped.stdout.splitlines() if "=" in line for key, value in [line.split("=", 1)]
         }
@@ -1175,7 +1134,7 @@ class WebService:
         self.unit.unlink()
         self.launcher.unlink()
         self.marker.unlink()
-        if self.platform == "linux" and self.runner(self._command("daemon-reload")).returncode:
+        if self._reload_failed():
             msg = "Web integration was removed but systemd reload failed; inspect your user manager."
             raise HeinzelError(msg)
         return WebChange(changed=True, status=self.status())
@@ -1188,11 +1147,7 @@ class WebService:
         """
         loaded, _ = self._manager(record)
         if loaded:
-            command = (
-                self._command("bootout", f"gui/{self.uid}/{LABEL}")
-                if self.platform == "darwin"
-                else self._command("disable", "--now", UNIT)
-            )
+            command = self._commands().unload()
             if fence is not None:
                 fence()
             if self.runner(command).returncode:

@@ -4,9 +4,27 @@ import Foundation
 import Security
 
 enum WorkspaceFooterGeometry {
+    /// Until the web slot is accepted, the native switcher and safe area sit outside the web view.
+    static func webBottomInset(safeArea: CGFloat, hasSlot: Bool) -> CGFloat {
+        hasSlot ? safeArea : 0
+    }
+
     static func deliveryIsCurrent(revision: Int, currentRevision: Int,
                                   requested: (CGFloat, CGFloat, Int), current: (CGFloat, CGFloat, Int)) -> Bool {
         revision == currentRevision && requested == current
+    }
+
+    /// Only a report for the current document and layout may replace or clear ownership.
+    static func receive(_ values: [String: Any], viewport: CGSize, width: CGFloat, bottom: CGFloat,
+                        revision: Int, generation: Int, report: (CGRect?) -> Void) -> Bool {
+        func matches(_ key: String, _ expected: Int) -> Bool {
+            guard let value = values[key] as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID() else { return false }
+            return value.doubleValue == Double(expected)
+        }
+        guard matches("revision", revision), matches("generation", generation) else { return false }
+        let accepted = (values as? [String: NSNumber]).flatMap { slot($0, viewport: viewport, width: width, bottom: bottom) }
+        report(accepted)
+        return accepted != nil
     }
 
     /// The page can only reserve the current viewport's bottom-left footer slot.

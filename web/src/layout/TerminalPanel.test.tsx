@@ -7,6 +7,7 @@ import { READY_FALLBACK_MS, READY_QUIET_MS, TerminalPanel } from "./TerminalPane
 const { terminals } = vi.hoisted(() => ({
   terminals: [] as Array<{
     options: { theme?: { background?: string } };
+    element: HTMLElement | null;
     modes: { applicationCursorKeysMode: boolean };
     title: (value: string) => void;
     osc: Map<number, (value: string) => boolean>;
@@ -19,6 +20,7 @@ vi.mock("@xterm/xterm", () => ({
     options: { theme?: { background?: string } } = {};
     record = {
       options: this.options,
+      element: null as HTMLElement | null,
       modes: { applicationCursorKeysMode: false },
       title: (_value: string) => {},
       osc: new Map<number, (value: string) => boolean>(),
@@ -35,7 +37,10 @@ vi.mock("@xterm/xterm", () => ({
       terminals.push(this.record);
     }
     loadAddon() {}
-    open() {}
+    open(element: HTMLElement) {
+      element.tabIndex = -1;
+      this.record.element = element;
+    }
     onTitleChange(callback: (value: string) => void) {
       this.record.title = callback;
       return { dispose() {} };
@@ -46,7 +51,9 @@ vi.mock("@xterm/xterm", () => ({
     onSelectionChange() {
       return { dispose() {} };
     }
-    focus() {}
+    focus() {
+      this.record.element?.focus();
+    }
     write() {}
     dispose() {}
   },
@@ -93,6 +100,27 @@ describe("typing a command for the person", () => {
     expect(connectTerminal).not.toHaveBeenCalledWith(expect.any(Function));
     act(() => void vi.advanceTimersByTime(1));
     expect(connectTerminal).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it("keeps the user's new focus while a selected terminal connects and its prompt becomes ready", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("WebSocket", Socket);
+    render(
+      <>
+        <button type="button">Workspace control</button>
+        <TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />
+      </>,
+    );
+    expect(terminals[0]?.element).toHaveFocus();
+    const control = screen.getByRole("button", { name: "Workspace control" });
+    control.focus();
+    const socket = Socket.instances[0];
+    act(() => socket?.onopen?.());
+    expect(control).toHaveFocus();
+    act(() => socket?.onmessage?.({ data: new ArrayBuffer(8) }));
+    act(() => void vi.advanceTimersByTime(READY_QUIET_MS));
+    expect(connectTerminal).toHaveBeenCalledWith(expect.any(Function));
+    expect(control).toHaveFocus();
   });
 
   it("does not hold a command back for good when the shell never says anything", () => {

@@ -1,7 +1,12 @@
-"""Service of the sound module: the soundscapes plugins offer, ties by layer order, and `[system.sound]` (ADR 0058)."""
+"""Service of the sound module: the soundscapes plugins offer, ties by layer order, and `[system.sound]` (ADR 0058).
+
+Tracks are dark behind the feature `native_audio` (ADR 0166): with it off they are not listed, a soundscape of only
+tracks isn't offered, and the page's CSP admits no media origin.
+"""
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import ClassVar
 
 from pydantic import ValidationError
 
@@ -12,11 +17,12 @@ from heinzel import (
     Kernel,
     LayerStack,
     ModuleRecord,
+    Settings,
     SoundAssets,
     SoundscapeLet,
     ThemeChoice,
 )
-from heinzel.kernel import STREAM_PROVIDERS, daypart
+from heinzel.kernel import MEDIA_ORIGINS, STREAM_PROVIDERS, daypart, feature_enabled
 from heinzel.modules.system.sound._models import (
     SoundAssetView,
     SoundEarconView,
@@ -25,11 +31,35 @@ from heinzel.modules.system.sound._models import (
     SoundscapeView,
     SoundSettings,
     SoundStreamView,
+    SoundTrackView,
 )
 
 SECTION = "system.sound"
 KEY = f"{SECTION}.name"
 OFF = "off"
+FEATURE = "native_audio"
+NEEDS_FEATURE = (
+    f"needs the preview feature {FEATURE}: add it to `features` under [hz] in your user configuration "
+    f"(`hz system config reveal user`) or set HZ_FEATURES={FEATURE}"
+)
+
+
+class _UserFeatures(Settings):
+    """The kernel's settings with `features` from the person's files only: a repository can't open a media origin."""
+
+    ignored_in_project: ClassVar[frozenset[str]] = Settings.ignored_in_project | {"features"}
+
+
+def _native_audio() -> bool:
+    """Whether the person switched native tracks on, read now; off while their configuration can't be read.
+
+    Never raises, so layered files are served however the configuration is: they don't depend on the flag.
+    """
+    try:
+        settings = Config.load().settings(_UserFeatures, "hz")
+    except (HeinzelError, OSError, ValueError):  # ValueError: an invalid value, or bytes that aren't UTF-8
+        return False
+    return feature_enabled(settings, FEATURE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +78,10 @@ class Available:
 
     soundscapes: dict[str, Offered]
     conflicts: list[str]
+    native: bool
+    """Whether tracks play; the list and the page's CSP follow this one reading."""
+    dark: frozenset[str]
+    """Installed names of only tracks, left out because the feature is off: to say so when one is asked for."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,7 +114,7 @@ def _asset_view(let: SoundscapeLet, part: str) -> SoundAssetView | None:
     return SoundAssetView(url=url, licence=asset.licence, attribution=asset.attribution, source=asset.source)
 
 
-def _view(name: str, offered: Offered, choice: Choice) -> SoundscapeView:
+def _view(name: str, offered: Offered, choice: Choice, *, native: bool) -> SoundscapeView:
     soundscape = offered.let.soundscape
     stream = None
     if soundscape.stream is not None:
@@ -116,6 +150,7 @@ def _view(name: str, offered: Offered, choice: Choice) -> SoundscapeView:
         pairs_with=list(soundscape.pairs_with),
         fade_seconds=soundscape.fade_seconds,
         stream=stream,
+        tracks=[SoundTrackView(**track.model_dump()) for track in soundscape.tracks] if native else [],
         layers=layers,
         earcons=earcons,
         shadows=offered.shadows,
@@ -137,6 +172,7 @@ class SoundService(SoundAssets):
         over a module outside the stack, then the first module by qualified name; an org and the site offering one
         name with nothing more specific deciding is a conflict, left out and reported.
         """
+        native = _native_audio()
         stack = self._kernel.layer_stack()
         rank = {name: index for index, name in enumerate(stack.names)}
 
@@ -145,7 +181,11 @@ class SoundService(SoundAssets):
             return (-1 - rank[top] if top in rank else 0, record.qualname)
 
         by_name: dict[str, list[tuple[ModuleRecord, SoundscapeLet]]] = {}
+        dark: set[str] = set()
         for record, let in sorted(self._kernel.lets(SoundscapeLet), key=lambda pair: order(pair[0])):
+            if not native and let.soundscape.tracks and let.soundscape.stream is None:
+                dark.add(let.name)
+                continue
             by_name.setdefault(let.name, []).append((record, let))
         soundscapes: dict[str, Offered] = {}
         conflicts: list[str] = []
@@ -164,7 +204,7 @@ class SoundService(SoundAssets):
             soundscapes[name] = Offered(let, winner, order(winner), [r.qualname for r, _ in others])
         # The core's own soundscapes first, then the plugins' in the order above.
         ordered = sorted(soundscapes.items(), key=lambda item: not item[1].record.origin.builtin)
-        return Available(dict(ordered), conflicts)
+        return Available(dict(ordered), conflicts, native, frozenset(dark - soundscapes.keys()))
 
     def _theme(self) -> str | None:
         """The theme in effect, or None when no module provides it (the theme module is off)."""
@@ -186,7 +226,7 @@ class SoundService(SoundAssets):
         try:
             settings = config.settings(SoundSettings, SECTION)
         except ValidationError as exc:
-            settings = SoundSettings()
+            settings = SoundSettings(name=OFF)
             problems = "; ".join(
                 f"{'.'.join(map(str, error['loc'])) or 'the table'}: {error['msg']}" for error in exc.errors()
             )
@@ -196,10 +236,14 @@ class SoundService(SoundAssets):
             )
             next_steps = ["hz system config reveal user"]  # show, get and unset fail while a value is invalid
         selected = settings.name
-        if selected != OFF and selected not in available.soundscapes:
+        if "name" not in settings.model_fields_set and selected not in available.soundscapes:
+            selected = OFF  # the default is only a wish: no plugin offering it is no news, and no sound plays
+        elif selected != OFF and selected not in available.soundscapes:
             note = (
-                f"No installed plugin offers the soundscape {selected!r}; no sound plays until you pick another or "
-                "install its plugin."
+                f"The soundscape {selected!r} {NEEDS_FEATURE}; no sound plays until then."
+                if selected in available.dark
+                else f"No installed plugin offers the soundscape {selected!r}; no sound plays until you pick another "
+                "or install its plugin."
             )
             next_steps = [f"hz system sound use {OFF}"]
             selected = OFF
@@ -239,7 +283,13 @@ class SoundService(SoundAssets):
         return SoundList(
             selected=choice.selected,
             effective=choice.effective,
-            soundscapes=[off, *(_view(name, offered, choice) for name, offered in available.soundscapes.items())],
+            soundscapes=[
+                off,
+                *(
+                    _view(name, offered, choice, native=available.native)
+                    for name, offered in available.soundscapes.items()
+                ),
+            ],
             signals={"daypart": daypart(datetime.now().astimezone())},
             volume=choice.settings.volume,
             follow_theme=choice.settings.follow_theme,
@@ -256,7 +306,11 @@ class SoundService(SoundAssets):
         Raises:
             HeinzelError: If no installed plugin offers a soundscape of that name, or the file can't be written.
         """
-        soundscapes = self.available().soundscapes
+        available = self.available()
+        soundscapes = available.soundscapes
+        if name in available.dark:
+            msg = f"The soundscape {name!r} {NEEDS_FEATURE}."
+            raise HeinzelError(msg)
         if name != OFF and name not in soundscapes:
             msg = (
                 f"No soundscape is called {name!r}; available: {', '.join([OFF, *soundscapes])}. Pick one, e.g. "
@@ -284,3 +338,12 @@ class SoundService(SoundAssets):
         offered = available.soundscapes.get(self._choice(available).effective)
         stream = offered.let.soundscape.stream if offered else None
         return stream.provider if stream else None
+
+    def media_origins(self) -> tuple[str, ...]:
+        """The origins of the tracks of the soundscape in effect; none while the feature is off."""
+        available = self.available()
+        if not available.native:
+            return ()
+        offered = available.soundscapes.get(self._choice(available).effective)
+        tracks = offered.let.soundscape.tracks if offered else ()
+        return tuple(origin for origin in MEDIA_ORIGINS if any(track.url.startswith(f"{origin}/") for track in tracks))

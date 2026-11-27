@@ -10,6 +10,7 @@ import { Loaded } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/card";
 import { type MessageKey, t } from "@/i18n";
+import { refreshIcon, refreshName } from "@/lib/refreshFeedback";
 import { Switch } from "./SettingControls";
 
 export const FROM_CLAUDE = "from-claude";
@@ -171,8 +172,10 @@ export function FromClaudeSection() {
           size="sm"
           onClick={() => void claude.refetch()}
           disabled={claude.isFetching}
+          aria-busy={claude.isFetching}
+          aria-label={refreshName(t("fromClaude.rescan"), claude.isFetching, claude.isError)}
         >
-          <RefreshCw aria-hidden className="size-4" />
+          <RefreshCw aria-hidden className={refreshIcon(claude.isFetching, claude.isError)} />
           {t("fromClaude.rescan")}
         </Button>
       </div>

@@ -1,11 +1,15 @@
 """`hz org agenda` through the web head (ADR 0039), the footer's source, with and without a calendar bound."""
 
+import json
 from datetime import UTC, datetime, timedelta
+from typing import ClassVar
 
+import anyio
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from heinzel import Config, Event, FreeBusy, HeinzelError, Module, Window
+from heinzel import CalendarSource, Config, Event, FreeBusy, HeinzelError, Module, Window
 from heinzel.heads import api, web
 from heinzel.heads._exposure import exposed
 
@@ -97,3 +101,117 @@ def test_calendar_week_is_private_and_limited(make_kernel):
     assert week.status_code == 200
     assert [event["title"] for event in week.json()["events"]] == ["Standup", "Review"]
     assert web_client.get("/api/org/calendar?offset=53", headers=AUTH).status_code == 400
+
+
+def test_week_reads_selected_calendars_through_read_only_capability(make_kernel):
+    class Multiple(Diary):
+        calls: ClassVar[list[str]] = []
+        fail_family = False
+
+        def calendars(self) -> list[CalendarSource]:
+            return [
+                CalendarSource(id="personal", title="Personal", primary=True),
+                CalendarSource(id="family", title="Family"),
+            ]
+
+        def events_for(self, calendar: str, window: Window) -> list[Event]:
+            self.calls.append(calendar)
+            if calendar == "family" and self.fail_family:
+                msg = "Access expired"
+                raise HeinzelError(msg)
+            now = datetime.now(UTC)
+            return [Event(id="shared-id", title=calendar, start=now, end=now + timedelta(minutes=10))]
+
+    module = Module("diary", "Provides calendars for tests.")
+    module.provides("calendar", modes={"read"})(Multiple)
+    kernel = make_kernel(
+        builtins=True, diary=module, config=Config(files=(), data={"capabilities": {"calendar": "diary"}})
+    )
+    web_client = TestClient(web.build(kernel, port=8000, token=TOKEN, static=None), base_url=BASE)
+    both = web_client.get("/api/org/calendar", headers=AUTH).json()
+    assert [item["title"] for item in both["events"]] == ["personal", "family"]
+    assert [item["calendar_id"] for item in both["events"]] == ["personal", "family"]
+    assert both["adapter"] == "diary"
+    Multiple.calls.clear()
+    selection = json.dumps({"adapter": "diary", "excluded": ["family"]})
+    chosen = web_client.get("/api/org/calendar", params={"selection": selection}, headers=AUTH).json()
+    assert [item["title"] for item in chosen["events"]] == ["personal"]
+    assert Multiple.calls == ["personal"]
+    mismatch = json.dumps({"adapter": "other", "excluded": ["family"]})
+    assert len(web_client.get("/api/org/calendar", params={"selection": mismatch}, headers=AUTH).json()["events"]) == 2
+    none = json.dumps({"adapter": "diary", "excluded": ["personal", "family"]})
+    assert web_client.get("/api/org/calendar", params={"selection": none}, headers=AUTH).json()["events"] == []
+    Multiple.fail_family = True
+    partial = web_client.get("/api/org/calendar", headers=AUTH).json()
+    assert [event["title"] for event in partial["events"]] == ["personal"]
+    assert partial["warnings"] == ["Family: Access expired"]
+    assert [source["id"] for source in partial["calendars"]] == ["personal", "family"]
+    assert partial["problem"] is None
+
+
+@pytest.mark.parametrize("streamed", [False, True], ids=["json", "stream"])
+def test_calendar_selection_accepts_all_maximum_length_ids_in_the_authenticated_body(make_kernel, streamed):
+    ids = [f'{index:03}"\\' + "😀" * 1019 for index in range(100)]
+
+    class Multiple(Diary):
+        calls: ClassVar[list[str]] = []
+
+        def calendars(self) -> list[CalendarSource]:
+            return [CalendarSource(id=identifier, title=f"Calendar {index}") for index, identifier in enumerate(ids)]
+
+        def events_for(self, calendar: str, window: Window) -> list[Event]:
+            self.calls.append(calendar)
+            return []
+
+    module = Module("diary", "Provides calendars for tests.")
+    module.provides("calendar", modes={"read"})(Multiple)
+    kernel = make_kernel(
+        builtins=True, diary=module, config=Config(files=(), data={"capabilities": {"calendar": "diary"}})
+    )
+    app = web.build(kernel, port=8000, token=TOKEN, static=None)
+    web_client = TestClient(app, base_url=BASE)
+    path = f"/api{'/stream' if streamed else ''}/org/calendar-selection"
+    selection = {"adapter": "diary", "excluded": ids, "offset": 0}
+    assert all(len(identifier) == 1024 for identifier in ids)
+    wire = json.dumps({"selection": selection}, ensure_ascii=True).encode()
+    assert len(wire) > 1_200_000
+    assert web_client.post(path, json={"selection": selection}).status_code == 401
+    assert web_client.get(path, headers=AUTH).status_code == 405
+    headers = AUTH | {"Content-Type": "application/json"}
+    response = web_client.post(path, content=wire, headers=headers)
+    assert response.status_code == 200
+    if streamed:
+        (result,) = [
+            json.loads(block.removeprefix("event: result\ndata: "))["data"]
+            for block in response.text.split("\n\n")
+            if block.startswith("event: result\ndata: ")
+        ]
+    else:
+        result = response.json()
+    assert [source["id"] for source in result["calendars"]] == ids
+    assert result["problem"] is None
+    assert result["events"] == []
+    assert Multiple.calls == []
+    for invalid in ([*ids, "extra"], [ids[0] + "x"]):
+        refused = web_client.post(path, json={"selection": selection | {"excluded": invalid}}, headers=AUTH)
+        assert refused.status_code == 422
+        assert Multiple.calls == []
+    for adapter in ("Invalid Name", "a" * 32_769):
+        refused = web_client.post(path, json={"selection": selection | {"adapter": adapter}}, headers=AUTH)
+        assert refused.status_code == 422
+        assert Multiple.calls == []
+
+    async def chunks():
+        yield wire
+        yield b" " * (512 * 1024)
+        yield b" " * (512 * 1024)
+
+    async def reject_padded_body():
+        # Each ASGI request chunk fits. Valid JSON plus padding exceeds the cumulative limit.
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE) as client:
+            padded = await client.post(path, content=chunks(), headers=headers)
+            assert "content-length" not in padded.request.headers
+            assert padded.status_code == 413
+
+    anyio.run(reject_padded_body)
+    assert Multiple.calls == []

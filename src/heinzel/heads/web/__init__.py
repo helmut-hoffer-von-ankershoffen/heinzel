@@ -25,8 +25,8 @@ nothing.
 Soundscapes' audio files are served the same way at `/sound-assets/<name>/<layer-n|earcon-kind>.<ext>`, typed by
 their
 checked signature (ADR 0058). The page itself (`index.html`) admits only fixed media frame origins from code:
-a stream origin only while the soundscape in effect is a stream. The
-configuration is read for each page, and any error admits no stream origin.
+a stream origin only while the soundscape in effect is a stream, a media origin only while it has tracks (ADR 0166).
+The configuration is read for each page, and any error admits neither.
 
 `POST /api/restart` restarts the server in place, for changes a running process can't load, such as an added plugin
 (`restart_required`, ADR 0047): the process executes `hz` again with the same arguments, handing over its listening
@@ -52,7 +52,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from heinzel.heads import api
+from heinzel.heads import _kit, api
 from heinzel.heads._stream import StreamProgress
 from heinzel.heads.web import _browser_bridge, _terminal
 from heinzel.heads.web._auto_update import Activity, AutoUpdater, add_auto_update, as_work, counts_as_work
@@ -120,7 +120,9 @@ SECURITY_HEADERS = {
     "Cross-Origin-Resource-Policy": "same-origin",
 }
 """How others may treat our answers; none of them limits what the page embeds. Never add COEP `require-corp`: it
-would block the stream soundscape's player (ADR 0058)."""
+would block the stream soundscape's player (ADR 0058) and tracks from a media host (ADR 0166)."""
+PAGE_WIDENINGS = (f"{CSP}; frame-src ", f"{CSP}; media-src ")
+"""How the page's own policy may begin (`page_csp`): the strict one, then frames, media or both."""
 NO_CACHE = frozenset({"sw.js", "manifest.webmanifest", "favicon.svg", "offline.html", "boot-retry.js"})
 """Top-level files a browser must check for a new version every time: the service worker, the manifest and the shell
 the worker keeps (the offline page and its retry script), so a new build's worker never keeps an older build's copy."""
@@ -235,15 +237,15 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     async def guarded(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         headers = request.headers
         if not local_callback_navigation(request, port) and (
-            problem := api.request_refusal(
+            problem := _kit.request_refusal(
                 headers,
-                api.LOOPBACK,
+                _kit.LOOPBACK,
                 port,
                 allowed_origins=runtime.loaded_origins,
-                host_help=api.WEB_HOST_HELP,
+                host_help=_kit.WEB_HOST_HELP,
             )
         ):
-            response: Response = JSONResponse(status_code=api.FORBIDDEN, content={"error": problem})
+            response: Response = JSONResponse(status_code=_kit.FORBIDDEN, content={"error": problem})
         elif counts_as_work(request.method, request.url.path):
             # A chat answer or install holds off an automatic update (ADR 0116) until its body has been sent.
             response = await as_work(activity, call_next, request)
@@ -360,8 +362,9 @@ def add_views(app: FastAPI, kernel: Kernel) -> None:
 def page_csp(kernel: Kernel) -> str:
     """The page CSP admits only fixed origins needed by currently installed capabilities.
 
-    A streaming frame is available only while a known stream is in effect. No
-    origin comes from plugin, user, or configuration input.
+    A streaming frame is available only while a known stream is in effect, and
+    a media origin only while tracks on one are (ADR 0166). No origin comes from
+    plugin, user, or configuration input.
     """
     origins: list[str] = []
     try:
@@ -372,21 +375,27 @@ def page_csp(kernel: Kernel) -> str:
     if stream:
         origins.append(stream.frame_origin)
         origins.extend(stream.additional_frame_origins)
-    return f"{CSP}; frame-src {' '.join(dict.fromkeys(origins))}" if origins else CSP
+    try:
+        # Imported here: a process that just updated itself loads this file beside its old kernel, which hasn't it.
+        from heinzel.kernel import MEDIA_ORIGINS  # noqa: PLC0415
+
+        # Only the core's own service, which keeps the feature dark: no replacement of it can open a media origin.
+        media = kernel.resolve_builtin_service(SoundAssets, "system.sound").media_origins()
+        admitted = [origin for origin in MEDIA_ORIGINS if origin in media]
+    except Exception:  # noqa: BLE001 - fail closed, and apart from the frame: a stream still plays
+        admitted = []
+    policy = f"{CSP}; frame-src {' '.join(dict.fromkeys(origins))}" if origins else CSP
+    return f"{policy}; media-src {' '.join(admitted)}" if admitted else policy
 
 
 def secure(response: Response, path: str) -> None:
     """Add the security headers to the answer for `path`, and what the answers of some paths need besides.
 
-    The page's own CSP (`page_csp`) is kept: only it may admit a frame, and only by extending `CSP`.
+    The page's own CSP (`page_csp`) is kept: only it may admit a frame or media, and only by extending `CSP`.
     """
     own = response.headers.get(CSP_HEADER)
     response.headers.update(SECURITY_HEADERS)
-    if (
-        own
-        and own.startswith(CSP + "; frame-src ")
-        and response.headers.get("content-type", "").startswith("text/html")
-    ):
+    if own and own.startswith(PAGE_WIDENINGS) and response.headers.get("content-type", "").startswith("text/html"):
         response.headers[CSP_HEADER] = own
     if response.status_code != OK:
         return

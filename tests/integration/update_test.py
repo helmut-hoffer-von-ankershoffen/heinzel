@@ -16,7 +16,7 @@ from heinzel import __version__
 from heinzel.heads.cli import build
 from heinzel.modules.system import _github
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.real_system]
 
 runner = CliRunner()
 KEPT = "kept at 1.0.0 (pinned to v1.0.0; newer releases not checked)"
