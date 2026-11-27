@@ -23,13 +23,14 @@ starter_pid=""
 starter_grouped=0
 stop_starter() {
   [[ -n "$starter_pid" ]] || return 0
-  local attempt
+  # The starter gives its children two seconds to exit before escalating.
+  local attempt grace_seconds=3
   if (( starter_grouped )); then
     kill -TERM -- "-$starter_pid" 2>/dev/null || true
   else
     kill -TERM "$starter_pid" 2>/dev/null || true
   fi
-  for ((attempt = 0; attempt < 5; attempt++)); do
+  for ((attempt = 0; attempt < grace_seconds; attempt++)); do
     if (( starter_grouped )); then
       kill -0 -- "-$starter_pid" 2>/dev/null || break
     else
@@ -37,7 +38,7 @@ stop_starter() {
     fi
     sleep 1
   done
-  if (( attempt == 5 )); then
+  if (( attempt == grace_seconds )); then
     if (( starter_grouped )); then
       kill -KILL -- "-$starter_pid" 2>/dev/null || true
     else
