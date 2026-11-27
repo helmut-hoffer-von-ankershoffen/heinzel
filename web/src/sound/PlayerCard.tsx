@@ -36,6 +36,7 @@ type Props = {
 export function PlayerCard({ title, watchUrl, host, children, headerAction, onClose = stop }: Props) {
   const [viewport, setViewport] = useState(viewportBounds);
   useLayoutEffect(() => watchViewport(() => setViewport(viewportBounds())), []);
+  const [requestedWidth, setRequestedWidth] = useState(WIDTH);
   const pref = useDockPref();
   const slot = useDockSlot();
   const docked = pref.docked && slot !== null;
@@ -180,7 +181,7 @@ export function PlayerCard({ title, watchUrl, host, children, headerAction, onCl
   const dockedAt = at ?? { left: 0, top: 0, width: WIDTH };
   const narrow = viewport.width < 218;
   const subminimum = !docked && viewport.width < 200;
-  const geometry = floatingPlayerGeometry(viewport.width);
+  const geometry = floatingPlayerGeometry(viewport.width, requestedWidth);
   const style = docked
     ? { left: dockedAt.left + (offset?.dx ?? 0), top: dockedAt.top + (offset?.dy ?? 0), width: dockedAt.width }
     : offset
@@ -214,7 +215,8 @@ export function PlayerCard({ title, watchUrl, host, children, headerAction, onCl
               width: geometry.width,
               maxWidth: geometry.width,
               borderWidth: geometry.border,
-              ...(narrow ? { maxHeight: "none", overflow: "visible" } : {}),
+              maxHeight: viewport.height,
+              ...(narrow ? { overflowX: "auto" as const } : {}),
               ...(subminimum ? { maxHeight: viewport.height, overflow: "auto" } : {}),
             }
       }
@@ -281,6 +283,19 @@ export function PlayerCard({ title, watchUrl, host, children, headerAction, onCl
           </div>
         </header>
         {children}
+        {!docked && viewport.width >= 218 && (
+          <label className="flex items-center gap-2 px-3 py-1 text-ui-sm">
+            {t("sound.playerWidth")}
+            <input
+              type="range"
+              min={202}
+              max={Math.floor(viewport.width - 16)}
+              value={Math.round(geometry.width)}
+              onChange={(event) => setRequestedWidth(event.currentTarget.valueAsNumber)}
+              className="min-w-0 flex-1"
+            />
+          </label>
+        )}
       </div>
     </section>
   );
@@ -288,7 +303,7 @@ export function PlayerCard({ title, watchUrl, host, children, headerAction, onCl
 }
 
 /** Spend margins and borders only when the full provider minimum still fits. */
-export function floatingPlayerGeometry(available: number): { width: number; border: number } {
+export function floatingPlayerGeometry(available: number, requestedWidth = WIDTH): { width: number; border: number } {
   const width = Number.isFinite(available) ? Math.max(0, available) : 200;
-  return width < 218 ? { width, border: 0 } : { width: Math.min(WIDTH, width - 16), border: 1 };
+  return width < 218 ? { width, border: 0 } : { width: Math.min(Math.max(202, requestedWidth), width - 16), border: 1 };
 }
