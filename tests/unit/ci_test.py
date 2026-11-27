@@ -1455,6 +1455,8 @@ def _template_sync_module():
 
 def _generated_plugin_ci() -> dict:
     text = _template_sync_module().ci_workflow()
+    assert "ci_changed_paths.py" not in text
+    assert "homepage_only" not in text
     assert "notifier" not in text
     assert "changes" not in text.replace("upstream changes", "")
     return yaml.safe_load(text.replace("[[ package_name ]]", "x"))
