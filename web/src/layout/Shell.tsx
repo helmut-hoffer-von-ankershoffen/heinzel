@@ -129,6 +129,7 @@ function Layout() {
   const [chatOpen, setChatOpen] = useRemembered("hz.chat.open", () => true);
   const browserEnabled = desktopBrowserAvailable();
   const [browserOpen, setBrowserOpen] = useState(false);
+  const browserStartup = useRef(false);
   const browserAgents = useBrowserAgents();
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -796,6 +797,7 @@ function Layout() {
                           content: (
                             <BrowserPanel
                               bookmarks
+                              startup={browserStartup}
                               active={selectedPanel === "browser"}
                               onClose={() => setBrowserOpen(false)}
                               onSettings={() => setSettings("browser")}

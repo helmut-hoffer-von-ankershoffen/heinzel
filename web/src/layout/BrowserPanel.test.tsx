@@ -390,6 +390,22 @@ it("does not navigate or overwrite a draft typed before the empty snapshot resol
   expect(browser).not.toHaveBeenCalledWith(expect.objectContaining({ action: "navigate" }));
 });
 
+it("keeps an explicitly closed last tab closed when the workspace remounts the panel", async () => {
+  const browser = tabBridge([]);
+  const startup = { current: false };
+  const view = render(<BrowserPanel active onClose={vi.fn()} startup={startup} />);
+  await screen.findByRole("tab", { name: "Home" });
+  fireEvent.click(screen.getByRole("button", { name: "Close tab Home" }));
+  await waitFor(() => expect(screen.queryByRole("tab", { name: "Home" })).toBeNull());
+  view.unmount();
+
+  render(<BrowserPanel active onClose={vi.fn()} startup={startup} />);
+  await act(async () => {});
+  expect(screen.queryByRole("tab")).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Website address" })).toHaveValue("");
+  expect(browser.mock.calls.filter(([request]) => request.action === "navigate")).toHaveLength(1);
+});
+
 it("shows the tabs the desktop holds when the panel opens again, and switches and closes them", async () => {
   const browser = tabBridge();
   render(<BrowserPanel active onClose={vi.fn()} />);

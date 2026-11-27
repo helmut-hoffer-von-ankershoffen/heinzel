@@ -10,7 +10,7 @@ import {
   Settings,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { MENU_EVENT } from "@/about/menu";
 import { BookmarkBar } from "@/bookmarks/BookmarkStar";
 import { Favicon } from "@/bookmarks/Favicon";
@@ -130,13 +130,17 @@ export function BrowserPanel({
   onClose,
   onSettings,
   bookmarks = false,
+  startup: workspaceStartup,
 }: Readonly<{
   active: boolean;
   onClose: () => void /** Show the bookmark star; needs the app's providers. */;
   onSettings?: () => void;
   bookmarks?: boolean;
+  startup?: RefObject<boolean>;
 }>) {
-  const [address, setAddress] = useState(START_PAGE);
+  const localStartup = useRef(false);
+  const startup = workspaceStartup ?? localStartup;
+  const [address, setAddress] = useState(() => (startup.current ? "" : START_PAGE));
   const [addressEdited, setAddressEdited] = useState(false);
   const addressRevision = useRef(0);
   const navigationRevision = useRef(0);
@@ -250,6 +254,7 @@ export function BrowserPanel({
   }, [selectedId, shownTab, state.tabs]);
   const newTab = () => {
     if (!native || ownTabs >= MAX_TABS) return;
+    startup.current = true;
     setAddress("");
     setRefused(false);
     void request({ action: "new-tab" }).then(() => addressInput.current?.focus());
@@ -308,6 +313,7 @@ export function BrowserPanel({
   // The desktop refuses local, private and non-HTTPS targets; say so instead of a silent failure.
   const go = useCallback(
     async (url: string) => {
+      startup.current = true;
       const submittedRevision = addressRevision.current;
       const navigation = ++navigationRevision.current;
       const requestRevision = ++browserRequestRevision.current;
@@ -328,9 +334,9 @@ export function BrowserPanel({
         } else setState((previous) => ({ ...previous, status: "unavailable" }));
       }
     },
-    [native, applyState, clearReloadFailure],
+    [native, applyState, clearReloadFailure, startup],
   );
-  // An explicit open restores the desktop's tabs. Only a genuinely empty browser needs a first navigation.
+  // The workspace keeps first-use state when the user closes and remounts this panel.
   useEffect(() => {
     if (!native) return;
     let disposed = false;
@@ -340,6 +346,8 @@ export function BrowserPanel({
       .browser({ action: "tabs" })
       .then((result) => {
         if (disposed || !applyState(result, requestRevision)) return;
+        const firstOpen = active && !startup.current;
+        if (active) startup.current = true;
         const restored = result.tabs?.find((tab) => tab.selected);
         if (restored) {
           setShownTab(restored.id);
@@ -348,7 +356,7 @@ export function BrowserPanel({
             setAddress(restored.url);
           }
         } else if (
-          active &&
+          firstOpen &&
           result.tabs?.length === 0 &&
           result.status === "empty" &&
           !result.link &&
@@ -363,7 +371,7 @@ export function BrowserPanel({
     return () => {
       disposed = true;
     };
-  }, [active, native, applyState, go]);
+  }, [active, native, applyState, go, startup]);
   const surfaceFailed = useNativeSurface(
     surface,
     active,
@@ -529,6 +537,7 @@ export function BrowserPanel({
           spellCheck={false}
           value={displayAddress}
           onChange={(event) => {
+            startup.current = true;
             addressRevision.current += 1;
             setAddress(event.target.value);
             setAddressEdited(true);
