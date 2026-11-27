@@ -10,7 +10,10 @@ import pytest
 from pydantic import ValidationError
 
 from heinzel import HeinzelError, SessionEvent, SessionStore
-from heinzel.kernel.session import _session_store
+from heinzel.kernel.session import _session as published_records
+from heinzel.kernel.session import _session_store as published_store
+from heinzel.services.session import _session_store
+from heinzel.spec import _session as session_records
 
 pytest_plugins = ("tests.fixtures.flushes",)
 
@@ -25,6 +28,19 @@ def store(tmp_path, **kwargs):
 def append(sessions, session="one", kind="turn.started", **kwargs):
     with sessions.writer(session) as writer:
         return writer.append(kind, **kwargs)
+
+
+def test_session_facades_keep_sdk_types_and_published_module_names():
+    assert SessionEvent is published_records.SessionEvent is session_records.SessionEvent
+    assert SessionStore is published_store.SessionStore is _session_store.SessionStore
+    for name in ("SessionRead", "SessionHead", "SessionEvent"):
+        model = getattr(published_records, name)
+        assert model is getattr(session_records, name)
+        assert model.__module__ == "heinzel.kernel.session._session"
+    for name in ("SessionStore", "SessionWriter"):
+        storage = getattr(published_store, name)
+        assert storage is getattr(_session_store, name)
+        assert storage.__module__ == "heinzel.kernel.session._session_store"
 
 
 def test_session_index_schema_leaves_no_partial_tables_on_failure(tmp_path):
