@@ -74,7 +74,7 @@ Constraints per workflow:
   runner, testing only the dispatched branch (input `ref` must equal it); `os`, `kind` and `selector` are validated by
   `scripts/focused_job.py` and never pass through a shell. `contents: read`, no repository secrets (the read-only job
   token only, as in ci.yml's e2e), never writes the cache, 20 min; a diagnostic that gates nothing.
-- `fuzz.yml`: core only. `claude-review.yml`: the "Gate review" check on every PR; passes without a model call unless gate paths change. Gate changes require an Opus `VERDICT: APPROVE`, except that a confirmed Anthropic spending limit records a skip only when same-head review history has no rejection. Bots, forks and drafts require a human or agent review when automated review is enabled. The repository variable `CLAUDE_REVIEW=false` pauses model calls and records the operator skip in the run summary; restore `true` to resume.
+- `fuzz.yml`: core only. `claude-review.yml`: the "Gate review" check on every PR; passes without a model call unless gate paths change. Gate changes require an Opus `VERDICT: APPROVE`, except that a confirmed Anthropic spending limit records a skip only when same-head review history has no rejection. Bots, forks and drafts require a human or agent review when automated review is enabled. The repository variable `CLAUDE_REVIEW=false` pauses model calls and records the operator skip in the run summary only when same-head review history is readable and has no rejection; restore `true` to resume.
 - `docs.yml`: deploys to GitHub Pages when the repository is public or `vars.DOCS_PAGES` is `true`, else keeps an
   artifact (ADR 0082).
 

@@ -200,12 +200,12 @@ jobs:
           needs.model.outputs.explicit_rejection == 'true' || needs.model.outputs.verdict_line == 'VERDICT: REJECT'
         run: echo 'Gate review rejected this exact head.' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: needs.model.outputs.spend_limit == 'true'
+        if: needs.scope.outputs.mode == 'paused' || needs.model.outputs.spend_limit == 'true'
         with:
           persist-credentials: false
       - name: Check same-head Gate review history
         id: history
-        if: needs.model.outputs.spend_limit == 'true'
+        if: needs.scope.outputs.mode == 'paused' || needs.model.outputs.spend_limit == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -227,7 +227,7 @@ jobs:
           RESULT: ${{ needs.model.outputs.result }}
         run: |
           if [[ "$MODE" == pass ]]; then echo "No gate path touched: passes without a review."; exit 0; fi
-          if [[ "$MODE" == paused && "$SCOPE_RESULT" == success && "$MODEL" == skipped ]]; then
+          if [[ "$MODE" == paused && "$SCOPE_RESULT" == success && "$MODEL" == skipped && "$HISTORY_OUTCOME" == success ]]; then
             echo "Claude review skipped by operator (CLAUDE_REVIEW=false)." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
