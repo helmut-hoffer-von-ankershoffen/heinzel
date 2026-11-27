@@ -1,8 +1,10 @@
+import pickle
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from heinzel.kernel import MAX_WINDOW, Span, Window, format_duration, parse_duration, parse_window
+from heinzel.spec import _duration as duration_spec
 
 pytestmark = pytest.mark.unit
 
@@ -55,3 +57,12 @@ def test_a_window_is_written_one_way_and_at_most_a_year(text):
 
 def test_formats_a_duration_in_its_largest_whole_unit():
     assert [format_duration(timedelta(seconds=s)) for s in (45, 90, 7200, 86400)] == ["45s", "90s", "2h", "1d"]
+
+
+@pytest.mark.parametrize("name", ["parse_duration", "format_duration"])
+def test_duration_spec_keeps_the_legacy_callable(name):
+    implementation = getattr(duration_spec, name)
+    public = {"parse_duration": parse_duration, "format_duration": format_duration}[name]
+    assert implementation is public
+    assert implementation.__module__ == "heinzel.kernel._duration"
+    assert pickle.loads(pickle.dumps(implementation)) is public  # noqa: S301 - the test owns the serialized input
