@@ -600,10 +600,18 @@ def selector_output(log: bytes) -> dict[str, bool]:
         CandidateError: The log is oversized or a key is missing, repeated, unknown or not a boolean.
     """
     require(len(log) <= 1024 * 1024, "oversized selector log")
-    found = re.findall(rb"(?m)^\d{4}-[^ \r\n]+ selector-output: ([a-z_]+)=(true|false)\r?$", log)
-    keys = [key.decode() for key, _ in found]
-    require(len(keys) == len(set(keys)) and set(keys) == SELECTOR_KEYS, "missing or ambiguous selector output")
-    return {key.decode(): value == b"true" for key, value in found}
+    found = re.findall(rb"(?m)^\d{4}-[^ \r\n]+ selector-output: ([a-z_]+)=([^ \r\n]+)\r?$", log)
+    values = {key.decode(): value == b"true" for key, value in found}
+    keys = values.keys()
+    require(
+        len(found) == len(values)
+        and all(value in (b"true", b"false") for _, value in found)
+        and keys >= SELECTOR_KEYS
+        and keys <= SELECTOR_KEYS | {"homepage_only"}
+        and values.get("homepage_only", True),
+        "missing or ambiguous selector output",
+    )
+    return values
 
 
 def selected_pr_inventory(selected: dict[str, bool]) -> dict[str, str]:
@@ -615,10 +623,17 @@ def selected_pr_inventory(selected: dict[str, bool]) -> dict[str, str]:
     """
     inventory = expected_jobs("pull_request")
     inventory["Release candidate source"] = "skipped"  # ordinary full PRs are not release candidates
+    homepage = selected.get("homepage_only", False)
+    core, site, surface = selected["core"], selected["site_only"], selected["surface_only"]
+    require(
+        not homepage
+        or (site and not any(selected[key] for key in ("release", "notifier", "contracts", "electron", "plugins"))),
+        "contradictory homepage selector output",
+    )
     if selected["release"]:
         return inventory
-    core, site, surface = selected["core"], selected["site_only"], selected["surface_only"]
-    tested = core and not site
+    full = not homepage
+    tested = full and core and not site
     for name in [n for n in inventory if n.endswith("(macos-latest)") and n.startswith(MAIN_ONLY_MACOS)]:
         del inventory[name]  # a pull request that is not a release candidate runs these on Linux only
 
@@ -633,27 +648,28 @@ def selected_pr_inventory(selected: dict[str, bool]) -> dict[str, str]:
         else:
             inventory.update(dict.fromkeys(names, "skipped"))
 
-    rule("make setup", core, SKIPPED_TEMPLATES["setup"])
+    rule("make setup", full and core, SKIPPED_TEMPLATES["setup"])
     rule("Test (", tested, SKIPPED_TEMPLATES["test"])
     if tested and not selected["upgrade"]:
         for name in [name for name in inventory if name.startswith("Test (macos")]:
             del inventory[name]
     rule("End-to-end ", tested, SKIPPED_TEMPLATES["e2e"])
-    rule("Electron (", selected["electron"], SKIPPED_TEMPLATES["electron"])
-    rule("Consumer (heinzel-", selected["contracts"], SKIPPED_TEMPLATES["consumer"])
+    rule("Electron (", full and selected["electron"], SKIPPED_TEMPLATES["electron"])
+    rule("Consumer (heinzel-", full and selected["contracts"], SKIPPED_TEMPLATES["consumer"])
     for name, on in {
-        "Lint, contracts and types": core or surface,
-        "Dependency audit": core,
+        "Lint, contracts and types": homepage or core or surface,
+        "Dependency audit": homepage or core,
         "Coverage": tested,
+        "Coverage floor": full,
         "Performance tests": tested,
-        "Plugin template": not site,
-        "Heinzel Notifier (macOS app)": selected["notifier"],
-        "macOS-specific tests": (selected["macos_full"] or surface) and (core or surface) and not site,
-        "Build": core,
-        "Upgrade in place (published to candidate, Linux)": selected["upgrade"],
-        "Plugin SDK candidate": True,
-        "Optional source plugins": selected["plugins"] or selected["contracts"],
-        "Public contract consumers": selected["contracts"],
+        "Plugin template": full and not site,
+        "Heinzel Notifier (macOS app)": full and selected["notifier"],
+        "macOS-specific tests": full and (selected["macos_full"] or surface) and (core or surface) and not site,
+        "Build": full and core,
+        "Upgrade in place (published to candidate, Linux)": full and selected["upgrade"],
+        "Plugin SDK candidate": full,
+        "Optional source plugins": full and (selected["plugins"] or selected["contracts"]),
+        "Public contract consumers": full and selected["contracts"],
         "Site tests": site,
     }.items():
         inventory[name] = "success" if on else "skipped"

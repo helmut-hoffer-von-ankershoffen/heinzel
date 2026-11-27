@@ -883,6 +883,8 @@ def selector_log(selected):
 
 def test_selector_output_is_read_strictly(focused_gate):
     assert focused_gate.selector_output(selector_log(SELECTED).encode()) == SELECTED
+    homepage = {**SELECTED, "homepage_only": True}
+    assert focused_gate.selector_output(selector_log(homepage).encode()) == homepage
     lines = selector_log(SELECTED).splitlines(keepends=True)
     for invalid in (
         b"",
@@ -891,9 +893,54 @@ def test_selector_output_is_read_strictly(focused_gate):
         selector_log({**SELECTED, "extra": True}).encode(),
         selector_log({key: value for key, value in SELECTED.items() if key != "upgrade"}).encode(),
         selector_log(SELECTED).replace("core=true", "core=maybe").encode(),
+        selector_log({**SELECTED, "homepage_only": False}).encode(),
+        selector_log(homepage).replace("homepage_only=true", "homepage_only=maybe").encode(),
     ):
         with pytest.raises(focused_gate.CandidateError, match="selector output"):
             focused_gate.selector_output(invalid)
+
+
+HOMEPAGE_SELECTED = {
+    **SELECTED,
+    "homepage_only": True,
+    "site_only": True,
+    "contracts": False,
+    "electron": False,
+    "upgrade": False,
+}
+
+
+@pytest.mark.parametrize("core", [False, True])
+def test_homepage_inventory_matches_only_the_structural_and_site_jobs(focused_gate, core):
+    inventory = focused_gate.selected_pr_inventory({**HOMEPAGE_SELECTED, "core": core})
+    assert {name for name, status in inventory.items() if status == "success"} == {
+        "Main batch admission",
+        "Changed paths",
+        "Conventional commits",
+        "Dependency review",
+        "Dependency audit",
+        "Lint, contracts and types",
+        "Secret scan",
+        "Site tests",
+        "Sonar ratings",
+        "CI OK",
+    }
+    assert all(
+        inventory[name] == "skipped"
+        for name in (
+            "Build",
+            "Coverage floor",
+            "Plugin SDK candidate",
+            *focused_gate.SKIPPED_TEMPLATES.values(),
+        )
+    )
+    assert not any("ubuntu-24.04" in name or "macos-latest" in name for name in inventory)
+
+
+@pytest.mark.parametrize("key", ["site_only", "contracts", "electron", "notifier", "plugins", "release"])
+def test_homepage_inventory_refuses_contradictory_selector_flags(focused_gate, key):
+    with pytest.raises(focused_gate.CandidateError, match="contradictory homepage"):
+        focused_gate.selected_pr_inventory({**HOMEPAGE_SELECTED, key: not HOMEPAGE_SELECTED[key]})
 
 
 def test_selected_inventory_matches_a_real_path_selected_run(focused_gate):
@@ -1238,5 +1285,6 @@ def test_the_selector_prints_every_key_the_merge_gate_derives_its_inventory_from
     assert printed
     assert {*printed["keys"].split("|"), "release"} == keys
     assert 'echo "selector-output: release=${FULL_RELEASE:-false}"' in step["run"]
+    assert 'if [ "$homepage_only" = true ]; then echo "selector-output: homepage_only=true"; fi' in step["run"]
     for key in printed["keys"].split("|"):  # each is a real output of the same step
         assert f'echo "{key}=' in step["run"]
