@@ -3,9 +3,9 @@ import json
 import pytest
 from rich.console import Console
 
+from heinzel._phases import Phases
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._steps import StepBoard
-from heinzel.modules.system.updater._phases import Phases
 
 pytestmark = pytest.mark.unit
 

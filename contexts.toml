@@ -167,9 +167,6 @@ keep = ["CHANGELOG.md", "README.md", "docs/**/*.sh"]
 # Today's violations of the generated contracts. Each list may only shrink: a new entry fails review.
 [allow]
 contexts = [
-    "heinzel.modules.system.daemon._service -> heinzel.modules.system.updater._phases",
-    "heinzel.modules.system.plugin._service -> heinzel.modules.system.updater._phases",
-    "heinzel.modules.system.plugin._setup -> heinzel.modules.system.updater._phases",
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._models",
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._sources",
     "heinzel.modules.system.updater._update_install -> heinzel.modules.system.plugin._sources",

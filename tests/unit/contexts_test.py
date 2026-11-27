@@ -3,6 +3,7 @@
 import importlib.util
 import re
 import sys
+import tomllib
 from pathlib import Path, PurePosixPath
 
 import pytest
@@ -23,8 +24,8 @@ OWNERS = contexts.owners(CONFIG, FILES)
 WORLD = re.compile(
     r"\bsubprocess\.(?:run|Popen|check_output|check_call|call)\b|\btime\.(?:sleep|monotonic)\b|\blaunchctl\b|\bdatetime\.now\("
 )
-MAX_CONTEXT_EDGES = 8
-MAX_HEAD_EDGES = 12
+MAX_CONTEXT_EDGES = 3
+MAX_HEAD_EDGES = 11
 
 
 def test_every_mapped_file_has_exactly_one_owner():
@@ -63,6 +64,18 @@ def test_the_contract_allowlists_only_shrink():
         "a context may not gain an import of another; lower the cap when one goes"
     )
     assert len(allow["heads"]) <= MAX_HEAD_EDGES, "a head may not gain an import of another head"
+
+
+def test_head_import_exceptions_name_exact_edges():
+    """An exception permits the existing import, not future imports hidden by a wildcard."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    head_contract = next(
+        contract
+        for contract in project["tool"]["importlinter"]["contracts"]
+        if contract["name"] == "Heads only know what the kernel discovered"
+    )
+    entries = [*CONFIG["allow"]["heads"], *head_contract["ignore_imports"]]
+    assert [entry for entry in entries if "*" in entry or "?" in entry] == []
 
 
 def _world_touches(path: str) -> int:
