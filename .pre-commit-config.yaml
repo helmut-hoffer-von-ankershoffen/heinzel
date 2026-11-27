@@ -89,7 +89,7 @@ repos:
         name: owning plugin lint and unit tests
         entry: uv run --no-project --frozen --no-build --python 3.15 python scripts/plugin_tooling.py --toolkit
         args:
-          - heinzel-plugin-tools @ https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/tools-v0.4.1/heinzel_plugin_tools-0.4.1-py3-none-any.whl#sha256=56072dabdd2a7c94f5210b10dedb85099d6ad67f19a58e37949a05d4b830ad38
+          - heinzel-plugin-tools @ https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/tools-v0.4.2/heinzel_plugin_tools-0.4.2-py3-none-any.whl#sha256=5e7649b5b9dd4546d11793c6e76ace8743bad5967ad37479fcdfe762f83e604a
           - hz-plugin
           - check-changed
           - --git-hook
