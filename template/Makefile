@@ -24,11 +24,10 @@ TYPES := "&mypy=uv run mypy" "&pyright=uv run pyright"
 # Unit, then integration (the suite orders them), on 4 workers, stopping at the first failure; coverage is in make test.
 # Match the covered suite's deadline: the full suite can exceed two minutes on a busy developer machine.
 TESTS := "&tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=300"
-# The same suite measured, on the same 4 workers: coverage's subprocess tracing can exceed the unmeasured 300s
-# deadline on a busy developer machine. 720s (es8j): the measured suite took 285 to 411s on recent runs and hit 420s at
-# 97 % on the 0.9.43 candidate (run 43682716777, 14343 passed); the owner raised it. Coverage measures every worker.
-# ([tool.coverage.run] patch = ["subprocess"]) writes each worker to its own file; `coverage combine` merges them.
-COVERED := uv run coverage erase && uv run coverage run -m pytest -m '(unit or integration) and not perf' -n 4 -q --session-timeout=720
+# Coverage traces every worker; combine their data files after the measured suite exits.
+# The hosted Core Coverage step sets a longer session budget than local and generated-plugin runs.
+COVERAGE_SESSION_TIMEOUT ?= 720
+COVERED := uv run coverage erase && uv run coverage run -m pytest -m '(unit or integration) and not perf' -n 4 -q --session-timeout=$(COVERAGE_SESSION_TIMEOUT)
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
