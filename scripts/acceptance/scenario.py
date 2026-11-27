@@ -13,6 +13,18 @@ One story on one private backend, in one private home on a hosted runner:
 
 It reuses the hash-pinned harness (`run_acceptance.py`) for private homes, owned processes and every byte check, and
 publishes nothing. Its verdict is advisory: no release waits for it yet (SCENARIO.md, slice 1).
+
+With `--candidate-wheel` it is lane B on a pull request (CI job `upgrade`, a gate): the published release (PyPI latest
+unless `--from-version`) updates in place to the change's own wheel. No server waits for the automatic updater (it only
+finds published releases); the user's explicit `hz system update --source WHEEL` is the in-place step, run by the
+published Core's own updater, the path #919 fixed:
+
+- P0: the published app profile is bound to PyPI's wheel by sha256; the candidate wheel is bound by its own sha256.
+- B1, B2: as above.
+- B4: `hz system update --json --source WHEEL` by the installed published Core: it must report the candidate.
+- B5: Core bytes equal the candidate wheel, configuration and plugin choices kept, the CLI reports the candidate.
+- T1: the updated app serves one `hz ui serve` that answers one web chat message with the local test model.
+- T16: as above.
 """
 
 import argparse
@@ -37,6 +49,7 @@ SPEC.loader.exec_module(HARNESS)
 SCENARIO = "B"
 HARNESS.CASES[SCENARIO] = "scenario_upgrade"  # this process's copy only: the harness's own cases are unchanged
 STEPS = ("P0", "B1", "B2", "B3", "B4", "B5", "T1", "T16")
+CANDIDATE_STEPS = ("P0", "B1", "B2", "B4", "B5", "T1", "T16")  # in place to a pull request's wheel: no servers wait
 UPDATE_DEADLINE = 900  # first check 1 to 5 min after start, a 30 s countdown, the apply and both restarts
 POLL_SECONDS = 5
 ANSWER = "42"
@@ -86,6 +99,25 @@ def bind_releases(args, parent):
         "target_version": new["version"],
         "target_profile_sha256": new["profile_sha256"],
         "target_core_wheel_sha256": core["sha256"],
+    }
+
+
+def bind_candidate_releases(args, parent):
+    """P0 of lane B on a pull request: the published starting app and the candidate wheel, each bound by sha256."""
+    if not args.from_version:
+        pypi = json.loads(HARNESS.fetch("https://pypi.org/pypi/heinzel/json", 8 * 1024 * 1024))
+        args.from_version = pypi["info"]["version"]
+    old = HARNESS.bind_old_app(args.from_version, parent / "accepted-from")
+    candidate = HARNESS.bind_candidate(args.candidate_wheel, parent)
+    if args.expect_wheel_sha256:
+        expected = args.expect_wheel_sha256
+        HARNESS.check(candidate["sha256"] == expected, "The candidate wheel differs from the expected sha256")
+    new = {"version": candidate["version"], "wheel": candidate["wheel"], "accepted": candidate["dir"]}
+    return old, new, {
+        "from_version": old["version"],
+        "from_profile_sha256": old["profile_sha256"],
+        "candidate_version": candidate["version"],
+        "candidate_wheel_sha256": candidate["sha256"],
     }
 
 
@@ -150,6 +182,7 @@ def prepare_state(case, plugin_age_hours=0):
     """B2: what a user has before the update; the configuration snapshot is compared after it."""
     HARNESS.hz(case, "system", "plugin", "add", "heinzel-example", "--confirm", label="user-plugin-add")
     HARNESS.hz(case, "system", "plugin", "disable", "heinzel-resource", label="user-disable")
+    HARNESS.hz(case, "system", "sound", "use", "off", label="user-sound-off")
     settings = user_settings(plugin_age_hours)
     for key, value in settings.items():
         HARNESS.hz(case, "system", "config", "set", key, value, label=f"user-config-{key}")
@@ -159,7 +192,12 @@ def prepare_state(case, plugin_age_hours=0):
     case.notes["python_before"] = HARNESS.installed_interpreter(case)
     case.notes["config_before"] = HARNESS.snapshot_files(case.root / "config_home")
     HARNESS.check(case.notes["config_before"], "No user configuration exists to retain")
-    return {"user_plugin": "heinzel-example", "disabled_default": "heinzel-resource", "settings": settings}
+    return {
+        "user_plugin": "heinzel-example",
+        "disabled_default": "heinzel-resource",
+        "soundscape_preference": "off",
+        "settings": settings,
+    }
 
 
 def start_servers(case, version):
@@ -218,10 +256,13 @@ def await_update(case, servers, target, deadline):
 
 
 def verify_after(case, old, new):
-    """B5: Core bytes are N's wheel, configuration and plugin choices are kept, the CLI reports N."""
-    core = next(a for a in new["profile"]["artifacts"] if a["name"] == "heinzel")
-    wheel = new["accepted"] / core["filename"]
-    case.ctx["from_app"], case.ctx["update_target"] = old, {"mode": "published", "version": new["version"], "wheel": wheel}
+    """B5: Core bytes are N's wheel (or the candidate's), configuration and plugin choices kept, the CLI reports it."""
+    if "wheel" in new:
+        wheel, mode = new["wheel"], "candidate"
+    else:
+        core = next(a for a in new["profile"]["artifacts"] if a["name"] == "heinzel")
+        wheel, mode = new["accepted"] / core["filename"], "published"
+    case.ctx["from_app"], case.ctx["update_target"] = old, {"mode": mode, "version": new["version"], "wheel": wheel}
     case.expect_version, case.core_wheel_override = new["version"], wheel
     profile = HARNESS.post_update_profile(case)
     files = HARNESS.verify_files(
@@ -230,12 +271,30 @@ def verify_after(case, old, new):
     HARNESS.check(
         HARNESS.snapshot_files(case.root / "config_home") == case.notes["config_before"], "Configuration changed"
     )
-    evidence = {"core_files": files["wheel_files_identical"], **HARNESS.verify_state(case, "after")}
+    evidence = {"core_files": files["wheel_files_identical"], **HARNESS.verify_state(case, "after", keep_sound_off=True)}
     evidence["interpreter"] = HARNESS.verify_update_interpreter(case, migrated=False)
     evidence["plugin_versions_after"] = {
         p: v["version"] for p, v in HARNESS.plugin_map(case, "versions-after").items()
     }
     return evidence
+
+
+def update_in_place(case, old, new):
+    """B4 of lane B: the published Core's own updater installs the candidate in place, as a user's explicit update."""
+    case.ctx["update_target"] = {"mode": "candidate", "version": new["version"], "wheel": new["wheel"]}
+    result = HARNESS.run_update(case, "hz-system-update-candidate", previous=old["version"])
+    return {key: result.get(key) for key in ("updated", "before", "after", "message")}
+
+
+def serve_and_chat(case, version):
+    """T1 of lane B: the updated app starts one `hz ui serve` that reports the candidate and answers the chat."""
+    server = case.foreground([str(case.bin / "hz"), *HARNESS.foreground_ui_command(version)], "server-updated")
+    try:
+        info = get_json(server, "/api/system/info")
+        HARNESS.check(info["version"] == version, f"The updated server runs {info['version']}, expected {version}")
+        return {"version": info["version"], **chat(server)}
+    finally:
+        server.stop()
 
 
 def chat(session):
@@ -304,7 +363,9 @@ def record(result, ident, status, case=None, why=None):
 
 def run_scenario(args, parent, result, ctx_base):
     """Every step in order; the first failure stops the story, and every later step says it did not run."""
-    old, new, identity = bind_releases(args, parent)
+    candidate = bool(args.candidate_wheel)
+    order = CANDIDATE_STEPS if candidate else STEPS
+    old, new, identity = (bind_candidate_releases if candidate else bind_releases)(args, parent)
     result["release"] = identity
     record(result, "P0", "PASS")
     ctx = {
@@ -317,7 +378,11 @@ def run_scenario(args, parent, result, ctx_base):
     case = HARNESS.Case(SCENARIO, parent, ctx)
     result["root"] = str(case.root)
     servers = []
-    current = "B1"
+    progress = {"current": "B1"}
+
+    def at(ident):
+        progress["current"] = ident
+
     try:
         case.provide_uv()
         case.step("the user's default state folder, inside the private home", lambda: default_state_folder(case))
@@ -327,31 +392,18 @@ def run_scenario(args, parent, result, ctx_base):
         finally:
             case.env.pop("HZ_APP_PROFILE", None)
         record(result, "B1", "PASS", case)
-        current = "B2"
+        at("B2")
         case.step("user state before the update", lambda: prepare_state(case, args.plugin_age_hours))
-        case.step("state before the update verified", lambda: HARNESS.verify_state(case, "before"))
+        case.step("state before the update verified", lambda: HARNESS.verify_state(case, "before", keep_sound_off=True))
         record(result, "B2", "PASS", case)
-        current = "B3"
-        servers, evidence = case.step("two servers on one state folder", lambda: start_servers(case, old["version"]))
-        case.steps[-1]["evidence"] = evidence
-        record(result, "B3", "PASS", case)
-        current = "B4"
-        target = new["version"]
-        case.step(
-            "the automatic update, no button", lambda: await_update(case, servers, target, args.update_deadline)
-        )
-        record(result, "B4", "PASS", case)
-        current = "T1"
-        case.step("web chat answered by the local test model", lambda: chat(servers[0]))
-        record(result, "T1", "PASS", case)
-        current = "B5"
-        case.step("stop both servers", lambda: stop_all(case, servers))
-        case.step("state after the update", lambda: verify_after(case, old, new))
-        record(result, "B5", "PASS", case)
-        current = None
+        if candidate:
+            candidate_steps(case, result, old, new, at)
+        else:
+            published_steps(case, result, (old, new), servers, at, args.update_deadline)
+        at(None)
     except (HARNESS.StepFailed, HARNESS.Refused, HARNESS.Unprovable) as error:
         status = {HARNESS.Refused: "REFUSED", HARNESS.Unprovable: "UNPROVABLE"}.get(type(error), "FAIL")
-        record(result, current, status, why=HARNESS.redact(str(error))[:800])
+        record(result, progress["current"], status, why=HARNESS.redact(str(error))[:800])
     finally:
         for server in servers:
             if not server.stopped:
@@ -359,8 +411,9 @@ def run_scenario(args, parent, result, ctx_base):
                     server.stop()
                 except HARNESS.StepFailed as error:
                     result.setdefault("cleanup_failures", []).append(HARNESS.redact(str(error))[:300])
+    current = progress["current"]
     if current is not None:
-        for ident in STEPS[STEPS.index(current) + 1 :]:
+        for ident in order[order.index(current) + 1 :]:
             if ident != "T16":
                 record(result, ident, "NOT_RUN", why=f"{current} did not pass")
     hits = case.hits
@@ -374,8 +427,41 @@ def run_scenario(args, parent, result, ctx_base):
     return case
 
 
-def verdict(steps):
-    states = [steps.get(ident, {}).get("status") for ident in STEPS]
+def published_steps(case, result, releases, servers, at, deadline):
+    """B3, B4, T1 and B5 of the published story: two servers wait for the automatic updater."""
+    old, new = releases
+    at("B3")
+    started, evidence = case.step("two servers on one state folder", lambda: start_servers(case, old["version"]))
+    servers.extend(started)
+    case.steps[-1]["evidence"] = evidence
+    record(result, "B3", "PASS", case)
+    at("B4")
+    case.step("the automatic update, no button", lambda: await_update(case, servers, new["version"], deadline))
+    record(result, "B4", "PASS", case)
+    at("T1")
+    case.step("web chat answered by the local test model", lambda: chat(servers[0]))
+    record(result, "T1", "PASS", case)
+    at("B5")
+    case.step("stop both servers", lambda: stop_all(case, servers))
+    case.step("state after the update", lambda: verify_after(case, old, new))
+    record(result, "B5", "PASS", case)
+
+
+def candidate_steps(case, result, old, new, at):
+    """B4, B5 and T1 of lane B on a pull request: the explicit update in place, then the updated app serves."""
+    at("B4")
+    case.step("the user's explicit update, in place, to the candidate", lambda: update_in_place(case, old, new))
+    record(result, "B4", "PASS", case)
+    at("B5")
+    case.step("state after the update", lambda: verify_after(case, old, new))
+    record(result, "B5", "PASS", case)
+    at("T1")
+    case.step("the updated app serves and answers a web chat", lambda: serve_and_chat(case, new["version"]))
+    record(result, "T1", "PASS", case)
+
+
+def verdict(steps, order=STEPS):
+    states = [steps.get(ident, {}).get("status") for ident in order]
     if all(state == "PASS" for state in states):
         return "SCENARIO_PASSED"
     return "SCENARIO_REFUSED" if "REFUSED" in states else "SCENARIO_FAILED"
@@ -396,10 +482,19 @@ def parse_args(argv=None):
         help="The plugin age gate: 0 updates core and plugins together, 24 (the default a user has) core only",
     )
     parser.add_argument("--diagnostics", type=Path, help="Copy logs, the updater plan and receipts here")
+    parser.add_argument(
+        "--candidate-wheel",
+        type=Path,
+        help="Lane B on a pull request: update the published release in place to this locally built Core wheel",
+    )
     args = parser.parse_args(argv)
+    if args.candidate_wheel and args.expect_version != "candidate":
+        parser.error("--candidate-wheel takes --expect-version candidate")
+    if args.expect_version == "candidate" and not args.candidate_wheel:
+        parser.error("--expect-version candidate needs --candidate-wheel")
     for name in ("expect_version", "from_version"):
         value = getattr(args, name)
-        if value and value != "published" and not HARNESS.is_final_version(value):
+        if value and value not in ("published", "candidate") and not HARNESS.is_final_version(value):
             parser.error(f"--{name.replace('_', '-')} must be a final X.Y.Z version")
     if args.from_version == "published":
         parser.error("--from-version takes a version")
@@ -410,6 +505,30 @@ def parse_args(argv=None):
 
 def write(path, result, secrets):
     HARNESS.write_result(path, result, secrets)
+
+
+def receipt_limits(*, candidate: bool) -> list[str]:
+    """Describe the scope of the selected scenario in its receipt."""
+    if candidate:
+        return [
+            "This gate starts with a published Core release and explicitly updates it in place to this CI run's candidate wheel.",
+            "The updated Core runs one foreground server and answers a chat. Scheduled updates, multiple servers and "
+            "live daemon ownership are outside this gate.",
+            "The starting release and candidate use the default state folder inside the private home. The scenario "
+            "checks that state survives the update.",
+            "Native apps and plugin upgrades are outside this gate.",
+        ]
+    return [
+        "ADVISORY: slice 1 of the end-to-end scenario; no release waits for this verdict yet.",
+        "The servers run in the foreground; the daemon and the service manager are not involved (case 11 says "
+        "why a hosted runner cannot prove an active daemon), so 'one owned backend' is the two web servers on "
+        "one state folder.",
+        "The core age gate is set to 0 hours as a user can, so a release of minutes is installed by itself; the "
+        "plugin gate is 0 hours (core and plugins update together) or 24 hours (the default: core only).",
+        "The state folder is the user's default one inside the private home (HZ_STATE_DIR is not set): the "
+        "updater treats any other state folder as development and never updates.",
+        "No apps, no chat thread or bookmark before the update, no plugin upgrade check: later slices.",
+    ]
 
 
 def main(argv=None):
@@ -430,23 +549,14 @@ def main(argv=None):
         "schema": "acceptance-scenario/v1",
         "slice": 1,
         "plugin_age_hours": args.plugin_age_hours,
-        "advisory": True,
+        "mode": "candidate" if args.candidate_wheel else "published",
+        "advisory": not args.candidate_wheel,
         "scenario_sha256": HARNESS.file_sha256(Path(__file__).resolve()),
         "harness_sha256": HARNESS.file_sha256(DIRECTORY / "run_acceptance.py"),
         "started": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "ci": HARNESS.ci_record(),
         "proof_root": str(parent),
-        "limits": [
-            "ADVISORY: slice 1 of the end-to-end scenario; no release waits for this verdict yet.",
-            "The servers run in the foreground; the daemon and the service manager are not involved (case 11 says "
-            "why a hosted runner cannot prove an active daemon), so 'one owned backend' is the two web servers on "
-            "one state folder.",
-            "The core age gate is set to 0 hours as a user can, so a release of minutes is installed by itself; the "
-            "plugin gate is 0 hours (core and plugins update together) or 24 hours (the default: core only).",
-            "The state folder is the user's default one inside the private home (HZ_STATE_DIR is not set): the "
-            "updater treats any other state folder as development and never updates.",
-            "No apps, no chat thread or bookmark before the update, no plugin upgrade check: later slices.",
-        ],
+        "limits": receipt_limits(candidate=bool(args.candidate_wheel)),
         "verdict": "INCOMPLETE",
         "steps": {},
     }
@@ -467,7 +577,7 @@ def main(argv=None):
         "live_untouched": live_before == live_after,
         "logs_containing_session_tokens": leaked,
     }
-    result["verdict"] = verdict(result["steps"])
+    result["verdict"] = verdict(result["steps"], CANDIDATE_STEPS if args.candidate_wheel else STEPS)
     if leaked or live_before != live_after:
         result["verdict"] = "SCENARIO_REJECTED_ISOLATION"
     result["finished"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
@@ -487,8 +597,10 @@ def summary(path):
         result = json.loads(Path(path).read_text())
     except (OSError, ValueError):
         return "## Acceptance scenario (advisory)\n\nNo scenario receipt was written.\n"
-    lines = [f"## Acceptance scenario slice 1 (advisory): {result.get('verdict')}", "", "| Step | Status | Why |", "|---|---|---|"]
-    for ident in STEPS:
+    candidate = result.get("mode") == "candidate"
+    title = "Upgrade in place, published to candidate (gate)" if candidate else "Acceptance scenario slice 1 (advisory)"
+    lines = [f"## {title}: {result.get('verdict')}", "", "| Step | Status | Why |", "|---|---|---|"]
+    for ident in CANDIDATE_STEPS if candidate else STEPS:
         step = result.get("steps", {}).get(ident, {})
         why = str(step.get("why") or "").replace("|", "/").replace("\n", " ")[:300]
         lines.append(f"| {ident} | {step.get('status', 'NOT_RUN')} | {why} |")

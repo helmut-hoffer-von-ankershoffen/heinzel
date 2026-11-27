@@ -131,7 +131,7 @@ describe("The durable Heinzel footer control", () => {
     fireEvent.click(button);
     const panel = await screen.findByRole("region", { name: "Heinzelmännchen" });
     expect(within(panel).getByRole("status")).toHaveTextContent("System health could not be refreshed.");
-    expect(within(panel).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Try again — Refresh failed" })).toBeInTheDocument();
     expect(within(panel).queryByText(/persisted personal Heinzels/)).not.toBeInTheDocument();
   });
 });

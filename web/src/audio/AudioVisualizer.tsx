@@ -80,7 +80,7 @@ const CREW: HeinzelLook[] = [
   { age: "old", hat: "purple", shirt: "slate", build: "slim" },
 ];
 
-const FELL_BACK = "Shared audio is not offered by this browser, so Heinzel listens with the microphone.";
+const NO_SHARED = "Shared audio is not offered by this browser.";
 const UNSHARED_KEY = "hz.audio.unshared";
 const NO_SYSTEM = "System audio does not work on this computer, so it is no longer offered.";
 const NO_SYSTEM_KEY = "hz.audio.nosystem";
@@ -98,7 +98,7 @@ function markNoSystem() {
   try {
     sessionStorage.setItem(NO_SYSTEM_KEY, "1");
   } catch {
-    // not remembered: the next try fails the same way and falls back again
+    // The next try can offer system audio again.
   }
 }
 
@@ -140,7 +140,7 @@ function markUnshared() {
   try {
     sessionStorage.setItem(UNSHARED_KEY, "1");
   } catch {
-    // not remembered: the next try fails the same way and falls back again
+    // The next try can offer shared audio again.
   }
 }
 
@@ -175,8 +175,8 @@ function captureProblem(error: unknown) {
 /**
  * The audio visualizations: one analyser and one render loop feed every style that is switched on. Heinzel's own sound
  * is analysed in the page with no prompt; music in a host's frame (YouTube) needs the person's consent, asked once,
- * inline, as a tab share or the microphone. Nothing is captured before a click (a microphone already allowed may be
- * resumed), and nothing is scheduled while the sound is silent, the page hidden or every style off.
+ * inline, using an available source. Nothing is captured before a click (a microphone already allowed may be resumed),
+ * and nothing is scheduled while the sound is silent, the page hidden or every style off.
  */
 export function AudioVisualizer({
   enabled = true,
@@ -245,65 +245,65 @@ export function AudioVisualizer({
    * Listen to `kind`, switching live: the new source is asked for first, and the one running is stopped only once the
    * new one is granted, so a cancelled or refused prompt leaves the old source playing.
    */
-  const start = useCallback(async (kind: Listening) => {
-    const revision = ++generation.current;
-    const replacing = current.current !== null;
-    request.current?.abort();
-    const controller = new AbortController();
-    request.current = controller;
-    setRequesting(kind);
-    setProblem("");
-    try {
-      const captured = await (kind === "mic"
-        ? captureMicrophone(controller.signal)
-        : captureAudio(controller.signal, kind === "system"));
-      if (generation.current !== revision || controller.signal.aborted) {
-        captured.stop();
-        return;
-      }
-      const previous = current.current;
-      request.current = null;
-      if (kind === "mic") resumed.current = true;
-      current.current = captured;
-      setSession(captured);
-      setHasSignal(false);
-      previous?.stop();
-      setRequesting(null);
-      setRemembered(kind);
-      remember(kind);
-    } catch (error) {
-      if (generation.current !== revision) return;
-      setRequesting(null);
-      if (kind === "tab" && unsupported(error)) {
-        // Offered but not supported here: stop offering it and listen with the microphone instead, in one line.
-        markUnshared();
-        setSharing(false);
-        const fallback = !current.current && !replacing;
-        setNotice(fallback ? FELL_BACK : "Shared audio is not offered by this browser.");
-        if (fallback) void start("mic");
-        return;
-      }
-      if (kind === "system" && systemBroken(error)) {
-        // Offered but not working here (unsupported, no audio track, device error): no retry dead end; the other
-        // sources come back with one line. A prior microphone choice must not turn this failure into a new capture.
-        if (!current.current) {
-          setRemembered("off");
-          remember("off");
+  const start = useCallback(
+    async (kind: Listening) => {
+      const revision = ++generation.current;
+      request.current?.abort();
+      const controller = new AbortController();
+      request.current = controller;
+      setRequesting(kind);
+      setProblem("");
+      try {
+        const captured = await (kind === "mic"
+          ? captureMicrophone(controller.signal)
+          : captureAudio(controller.signal, kind === "system"));
+        if (generation.current !== revision || controller.signal.aborted) {
+          captured.stop();
+          return;
         }
-        markNoSystem();
-        setSystem(false);
-        setProblem("");
-        setNotice(NO_SYSTEM);
-        return;
+        const previous = current.current;
+        request.current = null;
+        current.current = captured;
+        setSession(captured);
+        setHasSignal(false);
+        previous?.stop();
+        setRequesting(null);
+        setRemembered(kind);
+        remember(kind);
+      } catch (error) {
+        if (generation.current !== revision) return;
+        setRequesting(null);
+        if (kind === "tab" && unsupported(error)) {
+          // The person may choose another source explicitly.
+          markUnshared();
+          setSharing(false);
+          setNotice(NO_SHARED);
+          return;
+        }
+        if (kind === "system" && systemBroken(error)) {
+          // Offered but not working here (unsupported, no audio track, device error): no retry dead end; the other
+          // sources come back with one line. A prior microphone choice must not turn this failure into a new capture.
+          if (remembered === "system") {
+            setRemembered("off");
+            remember("off");
+          }
+          markNoSystem();
+          setSystem(false);
+          setProblem("");
+          setNotice(NO_SYSTEM);
+          return;
+        }
+        setProblem(
+          kind === "system" ? systemProblem(error) : kind === "mic" ? microphoneProblem(error) : captureProblem(error),
+        );
       }
-      setProblem(
-        kind === "system" ? systemProblem(error) : kind === "mic" ? microphoneProblem(error) : captureProblem(error),
-      );
-    }
-  }, []);
+    },
+    [remembered],
+  );
   const choose = useCallback(
     (source: Source) => {
       if (source === "off") {
+        resumed.current = true;
         stop();
         setProblem("");
         setRemembered("off");
@@ -319,9 +319,11 @@ export function AudioVisualizer({
             root?.querySelector<HTMLButtonElement>("button")?.focus();
         });
         setSharing(false);
-        setNotice("Shared audio is not offered by this browser.");
+        setNotice(NO_SHARED);
         return;
       }
+      // This explicit choice takes precedence over a pending automatic microphone resume.
+      resumed.current = true;
       setNotice("");
       void start(source);
     },
@@ -359,7 +361,7 @@ export function AudioVisualizer({
   }, [session, stop]);
   // A microphone the person already allowed and chose before listens again without another question.
   const framed = own.mode === "frame";
-  // Once per page: a stopped or ended microphone never restarts itself.
+  // Resume at most once per page and only before a new source is chosen.
   useEffect(() => {
     if (
       !enabled ||
@@ -376,7 +378,7 @@ export function AudioVisualizer({
     void navigator.permissions
       ?.query({ name: "microphone" as PermissionName })
       .then((status) => {
-        if (cancelled || status.state !== "granted") return;
+        if (cancelled || resumed.current || status.state !== "granted") return;
         resumed.current = true;
         void start("mic");
       })
@@ -536,7 +538,8 @@ export function AudioVisualizer({
           frame = requestAnimationFrame(paint);
         } else timer = window.setTimeout(poll, 300);
       };
-      timer = window.setTimeout(poll, 300);
+      // A repeated rest frame must keep the pending poll's handle for cleanup.
+      if (!timer) timer = window.setTimeout(poll, 300);
     };
     const paint = (now: number) => {
       frame = 0;
@@ -622,6 +625,7 @@ export function AudioVisualizer({
   const workspaceAudio = workspaceAudioCapability() === true;
   const sharedWord = workspaceAudio ? "Workspace audio" : "Shared audio";
   const looped = session?.label === "System audio";
+  const canPromptForSource = (listenable || sharing || systemOffered) && remembered !== "off";
   const listening: Source = session ? (microphone ? "mic" : looped ? "system" : "tab") : "off";
   const listeningTo = microphone ? "the microphone" : looped ? "system audio" : sharedWord.toLowerCase();
   // The selected source stays visible while its capture is active or permission is pending.
@@ -891,10 +895,12 @@ export function AudioVisualizer({
           </div>,
           stageElement,
         )}
-      {settings.master && framed && !session && !requesting && (listenable || sharing) && remembered !== "off" && (
+      {settings.master && framed && !session && !requesting && canPromptForSource && (
         <SourcePrompt
           remembered={remembered}
+          onSystem={systemOffered ? () => choose("system") : null}
           onTab={sharing ? () => choose("tab") : null}
+          tabLabel={workspaceAudio ? "Use workspace audio" : "Share this tab"}
           onMic={listenable ? () => choose("mic") : null}
         />
       )}
@@ -904,16 +910,20 @@ export function AudioVisualizer({
 
 /** The one compact question, once music plays in a frame: browsers require the person's own yes. On a phone or a short
  * landscape screen a floating card would cover the player it asks about, so there the question stays in the Audio
- * pane (its trigger reads "Share", with Share audio and Use microphone). */
+ * pane. */
 function SourcePrompt({
   remembered,
+  onSystem,
   onTab,
+  tabLabel,
   onMic,
 }: {
   remembered: Remembered;
-  /** Null where the browser cannot share a tab's audio (every iPhone browser): only the microphone is offered. */
+  onSystem: (() => void) | null;
+  /** Null where the browser cannot share a tab's audio (every iPhone browser). */
   onTab: (() => void) | null;
-  /** Null when the microphone API is unavailable. System audio is never offered here: it is an opt-in in the pane. */
+  tabLabel: string;
+  /** Null when the microphone API is unavailable. */
   onMic: (() => void) | null;
 }) {
   const [dismissed, setDismissed] = useState(false);
@@ -924,14 +934,23 @@ function SourcePrompt({
       className="fixed right-12 bottom-14 z-(--layer-popover) w-64 max-sm:hidden [@media(max-height:40rem)]:hidden rounded-xl border border-border bg-popover p-3 text-xs text-foreground shadow-lg"
     >
       <p className="mb-2 font-medium">Let Heinzel see the music?</p>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
+        {onSystem && (
+          <Button size="sm" onClick={onSystem}>
+            Use system audio
+          </Button>
+        )}
         {onTab && (
-          <Button size="sm" variant={remembered === "mic" ? "outline" : "default"} onClick={onTab}>
-            Share this tab
+          <Button size="sm" variant={onSystem || remembered === "mic" ? "outline" : "default"} onClick={onTab}>
+            {tabLabel}
           </Button>
         )}
         {onMic && (
-          <Button size="sm" variant={remembered === "mic" || !onTab ? "default" : "outline"} onClick={onMic}>
+          <Button
+            size="sm"
+            variant={!onSystem && (remembered === "mic" || !onTab) ? "default" : "outline"}
+            onClick={onMic}
+          >
             Use microphone
           </Button>
         )}

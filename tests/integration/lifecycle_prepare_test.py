@@ -14,7 +14,7 @@ from heinzel.modules.system.lifecycle._authority import Request, execute
 from heinzel.modules.system.lifecycle._models import Activation, RuntimeManifest, RuntimeProof
 from heinzel.modules.system.lifecycle._store import LifecycleStore, atomic_record
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.real_system]
 
 
 @pytest.fixture

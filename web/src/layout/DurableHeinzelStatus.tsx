@@ -62,7 +62,13 @@ export function DurableHeinzelStatus() {
       actions={
         <>
           {query.isError ? (
-            <PaneAction icon={RefreshCw} disabled={query.isFetching} onClick={() => void query.refetch()}>
+            <PaneAction
+              icon={RefreshCw}
+              spinning={query.isFetching}
+              refreshFailed={query.isError}
+              disabled={query.isFetching}
+              onClick={() => void query.refetch()}
+            >
               {t("error.retry")}
             </PaneAction>
           ) : !query.isPending && !sessions?.length ? (

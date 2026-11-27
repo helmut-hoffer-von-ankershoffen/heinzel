@@ -146,7 +146,7 @@ def tools(kernel: Kernel, *, modules: Iterable[str] = (), head: HeadFilter = "al
         runs["mcp"] = runs["mcp"] and item.name in served
         if not any(runs.values()) or (head != "all" and not runs[head]):
             continue
-        verb = "GET" if item.operation.read_only else "POST"
+        verb = item.operation.http_method
         path = "/".join(item.path)
         schema = dict(served[item.name].input_schema) if runs["mcp"] else input_schema(item)
         result.append(

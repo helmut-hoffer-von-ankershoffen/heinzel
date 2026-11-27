@@ -259,4 +259,6 @@ the live pull request still has the dispatched head and base, before and after t
   Dependabot secrets): `gh secret set CONFIDENTIAL_TERMS < ~/.config/heinzel-dev/confidential-terms`, again with
   `--app dependabot`. CI on this repository requires it.
 - Reviews on GitHub: secret `CLAUDE_CODE_OAUTH_TOKEN` (run `claude setup-token`; usage counts against that Claude
-  subscription, not API credits) and variable `CLAUDE_REVIEW=true`.
+  subscription) and repository Actions variable `CLAUDE_REVIEW=true`. Set the variable to the literal `false`
+  to pause Claude calls and record the skip in the Gate review summary. Restore `true` for subsequent reviews.
+  An unset or unrecognized value refuses changes to gate paths.

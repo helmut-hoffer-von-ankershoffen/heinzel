@@ -147,9 +147,11 @@ async function launch(redirectOnStart) {
       })(), 15_000, "The attached service's periodic lifecycle probe did not reach the isolated service.")
         .finally(() => { probeDeadline = true; });
       assert.deepEqual(await page.evaluate(() => Object.keys(window.heinzelDesktop)), [
+        "clientFlavor",
         "workspaceAudio", "titlebar", "browser", "player", "linkMode", "lifecycle", "about", "systemAudio", "audioSource",
         "onFullscreen",
       ]);
+      assert.equal(await page.evaluate(() => window.heinzelDesktop.clientFlavor), "electron");
       await page.evaluate(() => document.querySelector("#sound").click());
       assert.equal(await readFile(join(root, "public-media"), "utf8").catch(() => ""), "", "A scripted click reached the OS opener.");
       await page.locator("#capture").click();

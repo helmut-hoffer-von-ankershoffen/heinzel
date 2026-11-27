@@ -329,15 +329,15 @@ export const usePluginSearch = (text: string) =>
   });
 
 /** `hz system plugin search --refresh`: asks GitHub again, past the minute the server keeps its answer, and shows it. */
-export const useRefreshPluginSearch = (text: string) => {
+export const useRefreshPluginSearch = () => {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: () =>
+    mutationFn: (text: string) =>
       unwrap(api.GET("/system/plugin/search", { params: { query: { text: text || undefined, refresh: true } } })),
-    onSuccess: (found) => client.setQueryData(["system", "plugin", "search", text], found),
+    onSuccess: (found, text) => client.setQueryData(["system", "plugin", "search", text], found),
   });
 };
-/** Fetch inert media only after a person opens a plugin's gallery. */
+/** Fetch inert public media for an opened plugin gallery. */
 export const usePluginShowcase = (spec: string) =>
   useQuery({
     queryKey: ["system", "plugin", "showcase", spec],
@@ -363,8 +363,8 @@ export const usePluginOperation = (operationId: string | null) =>
     retry: false,
   });
 
-export const readPluginOperation = async (operationId: string) =>
-  unwrap(api.GET("/system/plugin/operation", { params: { query: { operation_id: operationId } } }));
+export const readPluginOperation = async (operationId: string, signal?: AbortSignal) =>
+  unwrap(api.GET("/system/plugin/operation", { params: { query: { operation_id: operationId } }, signal }));
 
 export type PluginChangeRequest = (
   | { add: string; operationId: string }

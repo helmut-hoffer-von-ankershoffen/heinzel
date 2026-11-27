@@ -19,12 +19,13 @@ from starlette.websockets import WebSocketDisconnect
 from typer.testing import CliRunner
 
 from heinzel.heads import web
+from heinzel.heads._compose import UI_STOPPED
 from heinzel.heads.cli import build
-from heinzel.heads.cli._serve import UI_STOPPED
 from heinzel.heads.web import _terminal
 from heinzel.heads.web._shutdown import GRACE_SECONDS, OVERDUE, STOP_SECONDS, Stopping
 
 pytestmark = [
+    pytest.mark.real_system,
     pytest.mark.integration,
     pytest.mark.skipif(os.name != "posix", reason="SIGINT as Ctrl-C sends it"),
 ]
@@ -147,7 +148,7 @@ def test_a_terminal_closes_going_away_with_a_reason_when_the_server_stops(
 ):
     monkeypatch.setenv("SHELL", "/bin/sh")
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr(web.api, "LOOPBACK", web.api.LOOPBACK | {"testserver"})
+    monkeypatch.setattr(web._kit, "LOOPBACK", web._kit.LOOPBACK | {"testserver"})
     stopping = Stopping()
     client = TestClient(web.build(make_kernel(builtins=True), port=None, token=TOKEN, static=None, stopping=stopping))
     with client.websocket_connect("/api/terminal", headers={"origin": "http://testserver"}) as socket:
