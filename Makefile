@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: ci-macos-arm help pyyaml install setup release-local doctor tools-verify check check-fast check-push linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-apple-ci build-apple-ci test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-static managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package desktop-swift-package desktop-bind-release-assets build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-stage-apple-association docs-catalog docs-site-check docs-publish-check design-check release clean
+.PHONY: ci-macos-arm help pyyaml install setup release-local doctor tools-verify check check-fast check-push linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-apple-ci build-apple-ci test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e test-upgrade e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-static managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package desktop-swift-package desktop-bind-release-assets build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-stage-apple-association docs-catalog docs-site-check docs-publish-check design-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -333,6 +333,16 @@ E2E_WEB_1 := $(filter $(E2E_WEB_1_FILES),$(E2E_WEB))
 E2E_WEB_3 := $(filter $(E2E_WEB_3_FILES),$(E2E_WEB))
 E2E_WEB_2 := $(filter-out $(E2E_WEB_1) $(E2E_WEB_3),$(E2E_WEB))
 E2E_SELECT := $(if $(filter cli,$(SUITE)),$(foreach f,$(E2E_WEB) $(E2E_SUPERVISED), --ignore=$(f)))$(if $(filter supervised,$(SUITE)), $(E2E_SUPERVISED))$(if $(filter web-1,$(SUITE)),$(foreach f,$(E2E_WEB_1), $(f)) --deselect=$(E2E_WEB_3_NODE))$(if $(filter web-2,$(SUITE)),$(foreach f,$(E2E_WEB_2), $(f)))$(if $(filter web-3,$(SUITE)),$(foreach f,$(E2E_WEB_3), $(f)) $(E2E_WEB_3_NODE))
+
+UPGRADE_RECEIPT := reports/acceptance/upgrade.json
+test-upgrade: ## Lane B: the published release updates itself in place to dist's wheel (network, private home; CI job upgrade)
+	uv python install 3.15
+	@test -n "$$(ls dist/heinzel-[0-9]*.whl 2>/dev/null)" || { echo "make build first: no wheel in dist/"; exit 1; }
+	"$$(uv python find 3.15)" -I scripts/acceptance/scenario.py --expect-version candidate \
+		--candidate-wheel "$$(ls dist/heinzel-[0-9]*.whl)" --output $(UPGRADE_RECEIPT) \
+		--diagnostics reports/acceptance/upgrade-diagnostics; status=$$?; \
+		"$$(uv python find 3.15)" -I scripts/acceptance/scenario.py --summary $(UPGRADE_RECEIPT) >> "$${GITHUB_STEP_SUMMARY:-/dev/stdout}"; \
+		exit $$status
 
 test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers (2 on macOS); SUITE=cli, supervised, web-1, web-2 or web-3 runs one part
 	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"

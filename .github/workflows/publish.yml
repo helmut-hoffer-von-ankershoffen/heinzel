@@ -167,6 +167,9 @@ jobs:
       contents: write
       id-token: write
       attestations: write
+      actions: read # bind the optional chain deferral to its first-attempt pre-merge receipt
+      pull-requests: read
+      statuses: read
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
     steps:
@@ -188,6 +191,13 @@ jobs:
         id: source
         if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
         run: uv run --no-project --frozen --no-build --python 3.15 python scripts/pypi_release.py checkout "$TAG" >> "$GITHUB_OUTPUT"
+      - name: Bind the optional release-chain acceptance requirement
+        id: latest
+        if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+        run: uv run --no-project --frozen --no-build --python 3.15 python -I scripts/release_latest.py "$TAG" "$SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
       - name: Check that the tag matches the project version
         run: test "v$(uv version --short)" = "$TAG"
       - name: Check the Core foreground UI release contract
@@ -252,12 +262,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          DEFER_LATEST: ${{ steps.latest.outputs.defer_latest }}
         run: |
           cp "$BUNDLE" "dist/provenance.sigstore.json"
           # The bundles' DSSE envelopes are the signed in-toto SLSA provenance on its own, the format OpenSSF
           # Scorecard (Signed-Releases) and SLSA verifiers look for as *.intoto.jsonl.
           jq -c .dsseEnvelope "$BUNDLE" > "dist/provenance.intoto.jsonl"
-          gh release create "$TAG" dist/* --title "$TAG" --notes-file release-notes.md --verify-tag
+          latest=()
+          if [ "$GITHUB_REPOSITORY" = helmut-hoffer-von-ankershoffen/heinzel ]; then
+            case "$DEFER_LATEST" in
+              true) latest=(--latest=false) ;;
+              false) ;;
+              *) echo 'error: Core release lacks a verified Latest policy' >&2; exit 1 ;;
+            esac
+          fi
+          gh release create "$TAG" dist/* --title "$TAG" --notes-file release-notes.md --verify-tag "${latest[@]}"
 
       - name: Request the independent release docs refresh
         if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'

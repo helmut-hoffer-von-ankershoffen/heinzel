@@ -135,6 +135,11 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/check_docs.py": "checks the core's documents and UI copy; plugins keep their own docs tooling",
     "scripts/site_privacy.py": "lists the hosts the core product website may contact for its check (ADR 0098)",
     ".github/workflows/pypi.yml": "publishes only the registered core project with its trusted publisher (ADR 0079)",
+    ".github/workflows/release-chain.yml": "runs the Core release end to end; plugins release through release.yml",
+    ".github/workflows/release-tail.yml": "the tail run of one Core release (release-chain.yml); plugins have none",
+    ".github/workflows/release-freeze.yml": "freezes Core's main for its release candidate; plugins have no candidate",
+    "scripts/release_chain.py": "the steps of Core's release chain (release-chain.yml), which plugins don't get",
+    "scripts/release_latest.py": "binds deferred Latest to Core's release chain; plugins publish independently",
     ".github/workflows/edge.yml": "releases the core's edge channel from its green main (ADR 0114)",
     "scripts/release_channel.py.lock": "locks that script for the edge workflow (ADR 0114)",
     "scripts/check_confidentiality.py.lock": "locks the term scan for the edge workflow (ADR 0114)",
@@ -320,15 +325,20 @@ def test_tests_and_template_use_only_variables_something_reads(make_kernel):
         for section, settings in kernel.settings_of()
         for key in type(settings).model_fields
     }
-    code = [path for path in repository_files() if path.endswith(CODE_SUFFIXES)]
     known |= HOST_GATE_ENV_READS
-    known |= {name for path in code for name in env_reads((REPO / path).read_text(encoding="utf-8"))}
-    used = {
-        (name, path)
-        for path in repository_files()
-        if path.startswith(("tests/", "template/"))
-        for name in env_names((REPO / path).read_text(encoding="utf-8", errors="ignore"))
-    }
+    used: set[tuple[str, str]] = set()
+    for path in repository_files():
+        code = path.endswith(CODE_SUFFIXES)
+        tests_or_template = path.startswith(("tests/", "template/"))
+        if not (code or tests_or_template):
+            continue
+        text = (REPO / path).read_text(encoding="utf-8", errors="strict" if code else "ignore")
+        if "HZ_" not in text:
+            continue
+        if code:
+            known.update(env_reads(text))
+        if tests_or_template:
+            used.update((name, path) for name in env_names(text))
     unknown = sorted(
         f"{path}: {name}" for name, path in used if name not in known and not name.startswith(tuple(NOT_SETTINGS))
     )

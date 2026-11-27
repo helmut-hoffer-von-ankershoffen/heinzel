@@ -116,12 +116,12 @@ UNTRACKED = {
 }
 
 
-def test_nothing_names_the_old_directory_of_first_party_plugins():
-    """The maintainer named it `plugins/` ("it contains plugins"); only the changelog's history keeps the old name."""
+def _old_plugin_directory_references(repo: Path) -> list[str]:
     old = re.compile(r"(?<![\w-])" + "packages" + "/")  # split, so this file doesn't name it either
     url = re.compile(r"https?://\S+")  # a path in a URL, such as a PyPI file's, is not the directory
+    shard = re.compile(r"\.coverage\.[^.]+\.pid[0-9]+\.X[A-Za-z0-9]+x(?:\.H[A-Za-z0-9]+h)?")
     offenders = []
-    for directory, subdirectories, files in os.walk(REPO):
+    for directory, subdirectories, files in os.walk(repo):
         subdirectories[:] = [d for d in subdirectories if d not in UNTRACKED]
         for name in files:
             path = Path(directory) / name
@@ -129,14 +129,48 @@ def test_nothing_names_the_old_directory_of_first_party_plugins():
                 continue
             try:
                 text = path.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                # Coverage can remove a worker database between listing the root and reading it.
+                if path.parent != repo or not shard.fullmatch(name):
+                    raise
+                continue
             except UnicodeDecodeError:
                 continue
             offenders += [
-                f"{path.relative_to(REPO)}:{n}"
+                f"{path.relative_to(repo)}:{n}"
                 for n, line in enumerate(text.splitlines(), 1)
                 if old.search(url.sub("", line))
             ]
-    assert offenders == []
+    return offenders
+
+
+def test_nothing_names_the_old_directory_of_first_party_plugins():
+    """The maintainer named it `plugins/` ("it contains plugins"); only the changelog's history keeps the old name."""
+    assert _old_plugin_directory_references(REPO) == []
+
+
+@pytest.mark.parametrize("relative", [".coverage.runner.pid14660.XBthklsx", ".coverage.notes.md", "draft.md"])
+def test_naming_audit_only_ignores_disappearing_root_coverage_shards(tmp_path, monkeypatch, relative):
+    disappearing = tmp_path / relative
+    disappearing.touch()
+    nested = tmp_path / "docs"
+    nested.mkdir()
+    authored = nested / ".coverage.runner.pid14660.XBthklsx"
+    authored.write_text("Update " + "packages" + "/example\n", encoding="utf-8")
+    read_text = Path.read_text
+
+    def remove_before_read(path, *args, **kwargs):
+        if path == disappearing:
+            disappearing.unlink()
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", remove_before_read)
+    if relative == ".coverage.runner.pid14660.XBthklsx":
+        assert _old_plugin_directory_references(tmp_path) == [f"{authored.relative_to(tmp_path)}:1"]
+    else:
+        with pytest.raises(FileNotFoundError) as raised:
+            _old_plugin_directory_references(tmp_path)
+        assert raised.value.filename == str(disappearing)
 
 
 def test_every_system_submodule_is_independent_of_the_others():
