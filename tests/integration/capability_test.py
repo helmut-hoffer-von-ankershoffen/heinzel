@@ -485,6 +485,7 @@ def test_capability_list_shows_the_new_capabilities_with_their_adapters(prepared
         ("document search", "documents:read", None),
         ("org agenda", "calendar:read", "agenda"),
         ("org calendar", "calendar:read", "agenda"),
+        ("org calendar-selection", "calendar:read", "agenda"),
         ("prep", "chat:read", "talk"),
         ("prep", "meetings:read", "rooms"),
         ("prep", "calendar:read", "agenda"),
