@@ -998,6 +998,37 @@ def test_gate_review_always_reports_one_check_and_fails_closed():
     assert spec["jobs"]["model"]["if"] == "needs.scope.outputs.mode == 'review'"
 
 
+@pytest.mark.parametrize(
+    ("enabled", "mode"), [("false", "paused"), ("true", "review"), ("", "refuse"), ("False", "refuse")]
+)
+def test_gate_review_operator_switch(tmp_path, enabled, mode):
+    jobs = _gate_review()["jobs"]
+    scope = next(step for step in jobs["scope"]["steps"] if step.get("id") == "scope")
+    assert scope["env"]["ENABLED"] == "${{ vars.CLAUDE_REVIEW }}"
+    output = tmp_path / "output"
+    environment = dict(os.environ, ENABLED=enabled, GITHUB_OUTPUT=str(output), CHANGED_FILES="1")
+    script = 'gh() { echo ".github/workflows/ci.yml"; }\n' + scope["run"]
+    subprocess.run(["bash", "-e", "-o", "pipefail", "-c", script], env=environment, check=True, timeout=scaled(5))
+    assert output.read_text().strip() == f"mode={mode}"
+
+
+@pytest.mark.parametrize(
+    ("scope", "model", "skipped"),
+    [("success", "skipped", True), ("failure", "skipped", False), ("success", "failure", False)],
+)
+def test_gate_review_records_only_a_successful_operator_pause(tmp_path, scope, model, skipped):
+    job = _gate_review()["jobs"]["gate-review"]
+    judge = next(step for step in job["steps"] if step.get("name") == "Judge the review and comment")
+    assert judge["env"]["SCOPE_RESULT"] == "${{ needs.scope.result }}"
+    summary = tmp_path / "summary"
+    environment = dict(os.environ, MODE="paused", SCOPE_RESULT=scope, MODEL=model, GITHUB_STEP_SUMMARY=str(summary))
+    result = subprocess.run(["bash", "-e", "-c", judge["run"]], env=environment, check=False, timeout=scaled(5))
+    assert (result.returncode == 0) is skipped
+    assert summary.exists() is skipped
+    if skipped:
+        assert "Claude review skipped by operator (CLAUDE_REVIEW=false)" in summary.read_text()
+
+
 def test_gate_review_runs_the_base_workflow_and_never_executes_the_head():
     spec = _gate_review()
     assert set(spec[True]) == {"pull_request_target"}
