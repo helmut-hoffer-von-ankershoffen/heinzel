@@ -272,6 +272,25 @@ def test_a_published_process_can_finish_its_update_on_the_current_tree(version: 
     assert KNOWN_BROKEN[version] <= set(broken), "remove the entries that work now from KNOWN_BROKEN"
 
 
+def test_recent_evidence_loads_without_any_resident_kernel_exports() -> None:
+    """A synthetic resident package needs no exports to load the fresh child.
+
+    Both ancestor packages are already loaded, as Python requires. This minimal
+    closure models no published release; historical manifests remain separate.
+    """
+    old = Published(resident={"heinzel": set(), "heinzel.kernel": set()})
+    target = "heinzel.kernel.recent_clients"
+    old.lazy = [("probe", target, ["RecentClient", "RecentUse", "recent_clients"])]
+    tree = Tree(SOURCE)
+    assert swap_problems(old, tree) == {}
+    assert swap_fresh_loads(old, tree) == {target: {target}}
+
+    # Pin the guard: an accidental dependency on a new kernel export must fail.
+    source, package = tree.modules[target]
+    tree.modules[target] = (ast.parse("from heinzel.kernel import RecentUse\n" + ast.unparse(source)), package)
+    assert swap_problems(old, tree) == {target: [f"{target} needs heinzel.kernel.RecentUse"]}
+
+
 @pytest.mark.parametrize("version", DEFINING)
 def test_a_published_process_never_loads_a_second_definition_of_a_class_it_holds(version: str) -> None:
     found = {line for lines in swap_identity_problems(published(version), Tree(SOURCE)).values() for line in lines}

@@ -21,20 +21,25 @@ enum NativeRoute {
 @MainActor final class Navigation {
     var calls: [NativePromptRequest] = []
     var continuation: CheckedContinuation<NativePromptOutcome, Never>?
+    var wasCancelled = false
     func sendPrompt(_ request: NativePromptRequest) async -> NativePromptOutcome {
         calls.append(request)
-        return await withCheckedContinuation { continuation = $0 }
+        let outcome: NativePromptOutcome = await withCheckedContinuation { continuation = $0 }
+        wasCancelled = Task.isCancelled
+        return outcome
     }
 }
-
-// PROMPT_COMPOSER
 
 @main struct Probe {
     @MainActor static func main() async throws {
         let scope = String(repeating: "a", count: 64)
         let roster = [WidgetHeinzel(id: "heinzel", name: "Heinzel")]
         let navigation = Navigation()
-        let composer = NativePromptComposer()
+        let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["PROMPT_TEST_ROOT"]!)
+        let drafts = NativePromptDrafts { NativePromptComposer(storageRoot: root) }
+        let composer = drafts.composer(for: scope)
+        precondition(composer === drafts.composer(for: scope))
+        precondition(composer !== drafts.composer(for: String(repeating: "b", count: 64)))
         composer.navigation = navigation
         let snapshot = ActivityWidgetData(workspaceScope: scope, generation: "g1", roster: roster)
         composer.prepareCatalog(scope: scope, snapshot: snapshot)
@@ -54,21 +59,29 @@ enum NativeRoute {
         composer.prepareCatalog(scope: scope, snapshot: snapshot)
         composer.recipientID = "heinzel"
         composer.text = "Hello"
-        composer.startSend()
+        // The presenting task may be cancelled when its sheet disappears.
+        let presentingTask = Task { @MainActor in
+            composer.startSend()
+            while !Task.isCancelled { await Task.yield() }
+        }
         while navigation.continuation == nil { await Task.yield() }
+        presentingTask.cancel()
+        await presentingTask.value
         precondition(composer.sending && !composer.canSend && composer.pending != nil)
         let request = composer.pending!
         composer.startSend()
         composer.discardPending()
         precondition(navigation.calls == [request] && composer.pending == request)
         // Closing and reopening a sheet does not own the task; a fresh composer also finds the saved identity.
-        let reopened = NativePromptComposer()
+        precondition(drafts.composer(for: scope) === composer)
+        let reopened = NativePromptComposer(storageRoot: root)
         reopened.prepare(scope: scope, roster: roster)
         precondition(reopened.pending == request && reopened.text == "Hello")
         composer.prepare(scope: String(repeating: "b", count: 64), roster: roster)
         precondition(composer.pending == request && composer.scope == scope)
         navigation.continuation!.resume(returning: .unconfirmed)
         while composer.sending { await Task.yield() }
+        precondition(!navigation.wasCancelled)
         precondition(composer.pending == request && composer.canSend)
         composer.prepareCatalog(scope: scope, snapshot: nil)
         precondition(composer.pending == request && !composer.canSend)
@@ -80,7 +93,8 @@ enum NativeRoute {
         navigation.continuation!.resume(returning: .accepted)
         while composer.sending { await Task.yield() }
         precondition(composer.accepted && composer.pending == request)
-        let recovered = NativePromptComposer()
+        precondition(!navigation.wasCancelled && !composer.canSend && composer.text.isEmpty)
+        let recovered = NativePromptComposer(storageRoot: root)
         recovered.prepare(scope: scope, roster: roster)
         precondition(recovered.pending == nil)
     }

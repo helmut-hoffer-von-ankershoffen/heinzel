@@ -7,6 +7,7 @@ import type { SchemaSoundList, SchemaSoundscapeView } from "@/api/client";
 import { useThemes } from "@/api/queries";
 import { PaneAction, PaneActions, PaneTitle } from "@/components/PaneActions";
 import { useSettingsTarget } from "@/components/SettingsShortcut";
+import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { Switch } from "@/layout/SettingControls";
 import { isIOS } from "@/lib/browser";
@@ -108,9 +109,9 @@ export function SoundChoices({ list, onAlbumPlay }: Readonly<{ list: SchemaSound
           );
         })}
       {nativeAlbum() && (
-        // biome-ignore lint/a11y/useSemanticElements: matches the existing soundscape radio list
-        <button
+        <Button
           type="button"
+          variant="ghost"
           role="radio"
           aria-checked={sound.albumSelected}
           onClick={() => {
@@ -119,14 +120,14 @@ export function SoundChoices({ list, onAlbumPlay }: Readonly<{ list: SchemaSound
             void albumAction("play");
             onAlbumPlay?.();
           }}
-          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui hover:bg-accent"
+          className="h-auto w-full justify-start gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui font-normal hover:bg-accent"
         >
           <span className="min-w-0 flex-1">
             <span className="block truncate">{ALBUM_TITLE}</span>
             <span className="block text-xs text-muted-foreground">Latent Heinzels</span>
           </span>
           <Check aria-hidden className={cn("size-4 shrink-0", !sound.albumSelected && "invisible")} />
-        </button>
+        </Button>
       )}
     </div>
   );

@@ -6,7 +6,7 @@ from http import HTTPStatus
 
 from fastapi import FastAPI, Request, Response
 
-from heinzel.kernel import RecentClient, RecentUse, recent_clients
+from heinzel.kernel.recent_clients import RecentClient, RecentUse, recent_clients
 
 
 def add_recent_clients(app: FastAPI) -> None:

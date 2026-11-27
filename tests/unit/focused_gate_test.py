@@ -872,6 +872,7 @@ SELECTED = {
     "contracts": True,
     "electron": True,
     "plugins": False,
+    "upgrade": True,
     "release": False,
 }
 
@@ -888,7 +889,7 @@ def test_selector_output_is_read_strictly(focused_gate):
         "".join(lines[1:]).encode(),  # a key is missing
         (selector_log(SELECTED) + lines[0]).encode(),  # a key is repeated
         selector_log({**SELECTED, "extra": True}).encode(),
-        selector_log({**SELECTED, "upgrade": False}).encode(),  # obsolete evidence could omit required jobs
+        selector_log({key: value for key, value in SELECTED.items() if key != "upgrade"}).encode(),
         selector_log(SELECTED).replace("core=true", "core=maybe").encode(),
     ):
         with pytest.raises(focused_gate.CandidateError, match="selector output"):
@@ -936,22 +937,24 @@ def test_selected_inventory_follows_each_selector(focused_gate):
             "macos_full": False,
             "contracts": False,
             "electron": False,
+            "upgrade": False,
         }
     )
     assert surface["Lint, contracts and types"] == surface["macOS-specific tests"] == "success"
     assert {surface[n] for n in ("Build", "Coverage", "Dependency audit")} == {"skipped"}
     assert surface["Plugin SDK candidate"] == "success"
-    assert surface["Upgrade in place (published to candidate, Linux)"] == "success"
-    ordinary = focused_gate.selected_pr_inventory(
-        {**SELECTED, "macos_full": False, "contracts": False, "electron": False}
-    )
+    assert surface["Upgrade in place (published to candidate, Linux)"] == "skipped"
+    quiet = focused_gate.selected_pr_inventory({**SELECTED, "upgrade": False})
+    assert quiet["Upgrade in place (published to candidate, Linux)"] == "skipped"
+    assert not [name for name in quiet if name.startswith("Test (macos")]
+    ordinary = focused_gate.selected_pr_inventory(SELECTED)
     assert ordinary["Upgrade in place (published to candidate, Linux)"] == "success"
     assert {name: result for name, result in ordinary.items() if name.startswith("Test (")} == {
         f"Test ({os}, Python 3.15, {level})": "success"
         for os in ("ubuntu-24.04", "macos-latest")
         for level in ("unit", "integration")
     }
-    release = focused_gate.selected_pr_inventory({**SELECTED, "release": True})
+    release = focused_gate.selected_pr_inventory({**SELECTED, "release": True, "upgrade": False})
     assert release == {**focused_gate.expected_jobs("pull_request"), "Release candidate source": "skipped"}
 
 

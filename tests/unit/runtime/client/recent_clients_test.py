@@ -6,10 +6,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from heinzel.heads import web
-from heinzel.kernel import RecentClient, RecentUse
+from heinzel.kernel.recent_clients import RecentClient, RecentUse, recent_clients
 from heinzel.modules.system.client import Devices
 from heinzel.modules.system.client import RecentClient as ClientRecentClient
 from heinzel.modules.system.client import RecentUse as ClientRecentUse
+from heinzel.modules.system.client import recent_clients as client_recent_clients
 
 pytestmark = pytest.mark.unit
 
@@ -17,6 +18,7 @@ pytestmark = pytest.mark.unit
 def test_public_model_preserves_pydantic_serialization_and_client_exports():
     assert ClientRecentClient is RecentClient
     assert ClientRecentUse is RecentUse
+    assert client_recent_clients is recent_clients
     observation = RecentClient(presence="fresh")
     assert observation.model_dump() == {"kind": "unknown", "platform": "unknown", "presence": "fresh"}
     assert observation.model_dump_json() == '{"kind":"unknown","platform":"unknown","presence":"fresh"}'

@@ -240,7 +240,6 @@ from heinzel.kernel._protocols import (
     free_busy_people,
     plain_addresses,
 )
-from heinzel.kernel._recent_clients import RecentClient, RecentUse, recent_clients
 from heinzel.kernel._runner_snapshot import RunnerSnapshot, RunnerSnapshotProvider
 from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._settings import Settings
@@ -777,8 +776,6 @@ __all__ = [
     "ProposedCall",
     "ProviderLet",
     "PullRequest",
-    "RecentClient",
-    "RecentUse",
     "Recommendation",
     "RecommendationKind",
     "Relation",
@@ -950,7 +947,6 @@ __all__ = [
     "read_skill",
     "read_skill_file",
     "read_view_asset",
-    "recent_clients",
     "record_usage",
     "redact_emails",
     "remove_owned_integration_file",

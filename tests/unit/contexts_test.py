@@ -9,6 +9,8 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
+from heinzel.testing import scaled
+
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("contexts", ROOT / "scripts" / "contexts.py")
 assert spec
@@ -171,7 +173,7 @@ def test_update_lifecycle_and_kernel_changes_select_the_upgrade_lane_and_macos()
 
 def test_no_update_lifecycle_handover_or_daemon_source_is_left_out_of_the_upgrade_lane():
     sources = subprocess.run(
-        ["git", "ls-files", "src"], cwd=ROOT, capture_output=True, text=True, check=True, timeout=30
+        ["git", "ls-files", "src"], cwd=ROOT, capture_output=True, text=True, check=True, timeout=scaled(30)
     ).stdout.split()
     named = [p for p in sources if re.search(r"update|lifecycle|handover|daemon", p) and p.endswith(".py")]
     assert named
@@ -181,7 +183,7 @@ def test_no_update_lifecycle_handover_or_daemon_source_is_left_out_of_the_upgrad
 def test_owning_upgrade_test_and_fixture_inventory_is_selected():
     # Independent inventory probe: do not derive expectations from the selector globs.
     paths = subprocess.run(
-        ["git", "ls-files", "tests"], cwd=ROOT, capture_output=True, text=True, check=True, timeout=30
+        ["git", "ls-files", "tests"], cwd=ROOT, capture_output=True, text=True, check=True, timeout=scaled(30)
     ).stdout.splitlines()
     owning = [
         p

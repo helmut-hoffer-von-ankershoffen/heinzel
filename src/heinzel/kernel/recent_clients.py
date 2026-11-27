@@ -1,4 +1,9 @@
-"""Ephemeral aggregate evidence for one workspace server, independent of pairing."""
+"""Public, ephemeral evidence for one workspace server, independent of pairing.
+
+Import this submodule directly: an updating process can retain an older
+``heinzel.kernel`` package in memory while loading this file from the new tree.
+Keep it independent of kernel exports and discovery.
+"""
 
 from datetime import datetime, timedelta
 from threading import Lock
@@ -26,6 +31,7 @@ class RecentUse:
     """
 
     def __init__(self) -> None:
+        """Start with no observed client activity."""
         self._latest: datetime | None = None
         self._lock = Lock()
 
