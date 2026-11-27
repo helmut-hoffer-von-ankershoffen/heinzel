@@ -31,14 +31,13 @@ from contextlib import AbstractContextManager, nullcontext
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Literal
 
-from mcp.server import MCPServer
+from mcp.server import MCPServer  # noqa: TC002 - preserve the facade's runtime server type
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.mcpserver.utilities.types import Image
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import ToolAnnotations
 from pydantic import AnyHttpUrl, TypeAdapter
 from pydantic_core import to_jsonable_python
 
@@ -47,10 +46,10 @@ if TYPE_CHECKING:
 
     from heinzel.kernel.ai._agents import ChatToolSet
 
-from heinzel import __version__
-from heinzel.heads._exposure import MCP_HTTP, Exposed, exposed
+from heinzel.heads._exposure import MCP_HTTP, Exposed
 from heinzel.heads._presence import mark_authenticated_presence
 from heinzel.heads._served_tools import bind_served_tools
+from heinzel.heads.mcp._app import make_server, mount_chat_tools, mount_workspace_tools
 from heinzel.heads.mcp._skills import add_skills
 from heinzel.kernel import (
     CurrentUser,
@@ -63,7 +62,7 @@ from heinzel.kernel._browser import BROWSER_MODULE, BrowserBridge, BrowserCaller
 from heinzel.kernel._browser_relay import relay
 from heinzel.kernel._logging import get_logger, log_event, step
 from heinzel.kernel.ai._agent_writes import AgentWrites, Caller, calling
-from heinzel.kernel.session._chat_tools import ChatTool, ChatToolError, agent_item, agent_write, note_write
+from heinzel.kernel.session._chat_tools import ChatTool, ChatToolError, agent_write, note_write
 from heinzel.kernel.session._chat_tools import chat_tools as chat_toolset
 from heinzel.modules.system.client import (
     READ,
@@ -125,21 +124,18 @@ def build(
         msg = "A chat's tools are served over stdio only, never on a port."
         raise HeinzelError(msg)
     verifier = _verifier(transport, tokens)
-    server = MCPServer(
-        name="heinzel",
-        title="Heinzelmännchen",
-        version=__version__,
-        instructions=INSTRUCTIONS if chat is None else CHAT_INSTRUCTIONS,
-        token_verifier=verifier,
-        auth=None
+    auth = (
+        None
         if verifier is None
         else AuthSettings(
             issuer_url=AnyHttpUrl(NO_ISSUER),
             resource_server_url=None,
             validate_token_resource=False,
             required_scopes=[READ],
-        ),
+        )
     )
+    instructions = INSTRUCTIONS if chat is None else CHAT_INSTRUCTIONS
+    server = make_server(instructions, verifier, auth=auth)
     if chat is not None:
         # The private pipe of one chat turn: a thin adapter over the turn's direct toolset and its one policy.
         selected = chat_toolset(kernel, chat, chat_tools)
@@ -147,45 +143,19 @@ def build(
             # Only the browser relay rebuilds an actions chat's tools; a pipe for it would be a second way in.
             msg = "A Heinzel's actions chat has no pipe: its turn calls its tools inside hz (ADR 0162)."
             raise HeinzelError(msg)
-        for chat_item in selected:
-            server.add_tool(
-                chat_tool(chat_item),
-                name=chat_item.name,
-                description=chat_item.description,
-                annotations=ToolAnnotations(
-                    read_only_hint=chat_item.read_only, destructive_hint=not chat_item.read_only
-                ),
-            )
+        mount_chat_tools(server, selected, chat_tool)
         return server
-    items = exposed(kernel, HEAD if transport == "stdio" else MCP_HTTP)
-    names = {item.name for item in items}
-    for item in items:
-        if item.record.qualname == "system.runner.chat" and item.operation.name == "confirm-authorized-mcp":
-            continue  # only a chat's own pipe may consume a person's authorization, for that chat
-        annotations = ToolAnnotations(
-            read_only_hint=item.operation.read_only, destructive_hint=not item.operation.read_only
-        )
-        tool_item = agent_item(item)
-        server.add_tool(
-            tool(kernel, tool_item, local=transport == "stdio"),
-            name=tool_item.name,
-            description=tool_item.operation.summary,
-            annotations=annotations,
-        )
-        # Old tool names of renamed operations, for the one minor release both work (ADR 0051); a name a current
-        # tool has stays that tool's.
-        for old in item.operation.aliases:
-            if (alias := old.replace(" ", "_").replace("-", "_")) in names:
-                continue
-            names.add(alias)
-            server.add_tool(
-                _signed(tool(kernel, tool_item, local=transport == "stdio"), tool_item, item.returns, name=alias),
-                name=alias,
-                description=f"Deprecated: use `{item.name}`, which this runs; goes in the next minor release. "
-                f"{item.operation.summary}",
-                annotations=annotations,
-            )
-    if transport == "stdio":  # skills may be internal: only for a client that started hz as you
+    local = transport == "stdio"
+
+    def handler(item: Exposed, legacy: tuple[str, object] | None) -> Callable[..., object]:
+        run = tool(kernel, item, local=local)
+        if legacy is None:
+            return run
+        alias, returns = legacy
+        return _signed(run, item, returns, name=alias)
+
+    mount_workspace_tools(server, kernel, HEAD if local else MCP_HTTP, handler)
+    if local:  # skills may be internal: only for a client that started hz as you
         add_skills(server, kernel)
     return server
 
