@@ -320,3 +320,16 @@ def toml_value(value: object) -> str:
 def _toml_key(key: str) -> str:
     bare = key.isascii() and key and all(c.isalnum() or c in "-_" for c in key)
     return key if bare else json.dumps(key, ensure_ascii=False)
+
+
+def config_file_stamp(config: Config) -> tuple[tuple[str, int, int] | None, ...]:
+    """What changes when a configuration file is written: each file's modification time and size, or None if absent."""
+    stamps: list[tuple[str, int, int] | None] = []
+    for file in config.files:
+        try:
+            stat = file.path.stat()
+        except OSError:
+            stamps.append(None)
+        else:
+            stamps.append((str(file.path), stat.st_mtime_ns, stat.st_size))
+    return tuple(stamps)

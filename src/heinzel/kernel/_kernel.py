@@ -20,7 +20,7 @@ from heinzel.kernel._bindings import (
     CapabilityView,
     Requester,
 )
-from heinzel.kernel._config import KERNEL_SECTION, Config, ModuleSettings
+from heinzel.kernel._config import KERNEL_SECTION, Config, ModuleSettings, config_file_stamp
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._identity import PRIVATE_READ, PRIVATE_WRITE, CurrentUser
 from heinzel.kernel._jobs import CompiledJobs
@@ -213,7 +213,7 @@ class Kernel:
         )
         # Modules get a view that reports; handles come only through declarations and injection (ADR 0028).
         self._instances[CapabilityView] = self._capabilities.view
-        self._config_stamp = _stamp(self.config)
+        self._config_stamp = config_file_stamp(self.config)
 
     @property
     def modules(self) -> tuple[ModuleRecord, ...]:
@@ -566,7 +566,7 @@ class Kernel:
         call without a restart. Cheap when nothing changed: the files are only looked at, not parsed. An unreadable
         file keeps the bindings as they are and logs why. Returns whether a binding changed.
         """
-        stamp = _stamp(self.config)
+        stamp = config_file_stamp(self.config)
         if stamp == self._config_stamp:
             return False
         self._config_stamp = stamp
@@ -979,19 +979,6 @@ def _adapters_capability(annotation: Any) -> Capability:  # noqa: ANN401 - an an
         )
         raise HeinzelError(msg)
     return capability
-
-
-def _stamp(config: Config) -> tuple[tuple[str, int, int] | None, ...]:
-    """What changes when a configuration file is written: each file's modification time and size, or None if absent."""
-    stamps: list[tuple[str, int, int] | None] = []
-    for file in config.files:
-        try:
-            stat = file.path.stat()
-        except OSError:
-            stamps.append(None)
-        else:
-            stamps.append((str(file.path), stat.st_mtime_ns, stat.st_size))
-    return tuple(stamps)
 
 
 def _builtins_first(pair: tuple[ModuleRecord, Let]) -> tuple[bool, tuple[str, ...]]:

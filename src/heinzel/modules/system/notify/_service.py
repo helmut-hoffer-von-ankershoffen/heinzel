@@ -30,14 +30,12 @@ from heinzel import (
     NoticeHelper,
     NoticeKind,
     Notifications,
-    OperationLet,
     ResolveWhen,
     Settings,
     Status,
     clean_text,
 )
 from heinzel.kernel import KERNEL_SECTION
-from heinzel.kernel._calendar_reminders import agenda_plan
 from heinzel.kernel._logging import get_logger, log_event
 from heinzel.kernel.session._self_chat import STATE, SelfChat
 from heinzel.modules.system.notify import _chat, _resolve
@@ -65,6 +63,7 @@ from heinzel.modules.system.notify._models import (
 )
 from heinzel.modules.system.notify._native import ALLOW, DENIED_DETAIL, DENIED_FIX, HEINZEL, ICON_CACHE, Native, native
 from heinzel.modules.system.notify._store import INTEGRITY_LEGACY, Store, recover
+from heinzel.modules.system.notify._watch import calendar_keys as _calendar_keys
 from heinzel.modules.system.notify._watch import daemon_state, doctor_problems, watch
 
 logger = logging.getLogger(__name__)
@@ -83,17 +82,6 @@ STRAY_EVERY = timedelta(days=1)
 STALE = timedelta(hours=12)
 """A notice that waited longer than this to be shown doesn't pop up any more; it stays in the list."""
 MAX_LOG_PROBLEM = 280
-
-
-def _calendar_keys(kernel: Kernel, now: datetime) -> set[str]:
-    """Read the generic agenda operation afresh; absence and provider errors validate no reminders."""
-    operation = next(
-        (let for owner, let in kernel.lets(OperationLet) if (owner.qualname, let.name) == ("org", "agenda")), None
-    )
-    if operation is None or not kernel.available(operation.func):
-        return set()
-    agenda = kernel.call(operation.func)
-    return {reminder.key for reminder in agenda_plan(agenda, now) if reminder.due <= now < reminder.expires}
 
 
 class NotifyService(Notifications):
@@ -247,15 +235,7 @@ class NotifyService(Notifications):
         replacement = replaces if producer else None
 
         def record(notices: list[Notice]) -> Notice:
-            stream = {
-                index: older
-                for index, older in enumerate(notices)
-                if producer is not None
-                and older.producer == producer
-                and older.replaces == replacement
-                and (older.kind, older.route, older.command) == (kind, notice_route, command)
-            }
-            repeats = list(stream.values()) if producer else [older for older in notices if older.producer is None]
+            stream, repeats = policy.replacement_history(notices, producer, replacement, (kind, notice_route, command))
             if (
                 earlier := policy.repeated(repeats, key, now, window, include_resolved=replacement is not None)
             ) is not None:
@@ -279,11 +259,7 @@ class NotifyService(Notifications):
                 helper=helper,
                 resolve_when=resolve_when,
             )
-            for index, older in stream.items():
-                if older.resolved_at is None:
-                    notices[index] = older.model_copy(
-                        update={"resolved_at": now, "resolved": "Replaced by a newer notice."}
-                    )
+            policy.resolve_replaced(notices, stream, now)
             notices.append(notice)
             return notice
 

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from heinzel import Notice
+from heinzel import Notice, NoticeKind
 from heinzel.modules.system.notify._models import NotifySettings
 
 DEFAULT_HOURS = (9, 18)
@@ -148,3 +148,26 @@ def repeated(
         ),
         None,
     )
+
+
+def replacement_history(
+    notices: list[Notice], producer: str | None, replacement: str | None, address: tuple[NoticeKind, str, str]
+) -> tuple[dict[int, Notice], list[Notice]]:
+    """Find the notices this producer may replace and the history it may repeat."""
+    if producer is None:
+        return {}, [older for older in notices if older.producer is None]
+    stream = {
+        index: older
+        for index, older in enumerate(notices)
+        if older.producer == producer
+        and older.replaces == replacement
+        and (older.kind, older.route, older.command) == address
+    }
+    return stream, list(stream.values())
+
+
+def resolve_replaced(notices: list[Notice], stream: Mapping[int, Notice], now: datetime) -> None:
+    """Resolve active notices in the current store mutation."""
+    for index, older in stream.items():
+        if older.resolved_at is None:
+            notices[index] = older.model_copy(update={"resolved_at": now, "resolved": "Replaced by a newer notice."})
