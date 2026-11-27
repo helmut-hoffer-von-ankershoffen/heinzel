@@ -118,6 +118,7 @@ def test_missing_fresh_stale_future_and_expired():
     ]
 
 
+@pytest.mark.timeout(12)  # Builds an OpenAPI schema for each of two independent app instances.
 def test_route_requires_use_not_pairing_and_is_scoped_to_server(make_kernel, tmp_path):
     devices = Devices(tmp_path / "web")
     _, device_token = devices.pair("Fictional workstation")
