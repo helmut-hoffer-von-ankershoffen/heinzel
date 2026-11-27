@@ -1532,7 +1532,7 @@ def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes(event, full_ci, 
     ]
     recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-parallel:", 1)[1].split("\n\n", 1)[0]
     assert "-m '($(TEST_LEVELS)) and not perf'" in recipe
-    assert "--session-timeout=scaled(420)" in recipe  # each shard has the cap the whole suite had
+    assert "--session-timeout=420" in recipe  # each shard has the cap the whole suite had
     assert {"changes", "notifier", "build"} <= set(jobs["ci-ok"]["needs"])
 
 
@@ -1617,7 +1617,7 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
         assert second.endswith(f"-x --deselect={node}")
         workers = "-n 2" if sys.platform == "darwin" else "-n 3"  # macOS runs fewer workers on its 3 vCPUs
         assert first.count(workers) == second.count(workers) == 1
-        assert first.count("--session-timeout=scaled(600)") == second.count("--session-timeout=scaled(600)") == 1
+        assert first.count("--session-timeout=600") == second.count("--session-timeout=600") == 1
     generated = _template_sync_module().makefile()
     assert "e2e-prepare" not in generated
     assert generated == (REPO / "template/Makefile").read_text(encoding="utf-8")
@@ -1853,7 +1853,7 @@ def test_the_test_matrix_keeps_the_whole_output_of_a_failure():
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
     assert jobs["test"]["timeout-minutes"] == "${{ matrix.levels == 'integration' && 15 || 10 }}"
     recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-parallel:", 1)[1].split("\n\n", 1)[0]
-    assert "--session-timeout=scaled(420)" in recipe
+    assert "--session-timeout=420" in recipe
     step = next(step for step in jobs["test"]["steps"] if step.get("run") == "make test-parallel")
     assert step["env"]["VERBOSE"] == "1"
 
@@ -2624,7 +2624,7 @@ def _template_test_fixture(
         "    if child is not None:\n"
         "        try: os.killpg(child.pid, signal.SIGTERM)\n"
         "        except ProcessLookupError: pass\n"
-        "        try: child.wait(timeout=scaled(2))\n"
+        f"        try: child.wait(timeout={scaled(2)})\n"
         "        except subprocess.TimeoutExpired: os.killpg(child.pid, signal.SIGKILL); child.wait()\n"
         "    parent_stopped.write_text('stopped'); raise SystemExit(128 + signum)\n"
         f"signal.signal(signal.SIGTERM, {'signal.SIG_IGN' if starter_ignores_term else 'stop'})\n"
