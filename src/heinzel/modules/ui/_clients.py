@@ -1,9 +1,11 @@
 """Read recent request evidence through the owned server's authenticated API."""
 
+from contextlib import closing
+from http import HTTPStatus
+from http.client import HTTPConnection, HTTPException
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-import httpx
 from pydantic import AwareDatetime, BaseModel, Field, TypeAdapter
 from rich.text import Text
 
@@ -56,20 +58,21 @@ def read_status(service: WebService) -> UiStatus:
             return result
         if not parsed.fragment.startswith("token="):
             return result
-        with httpx.Client(timeout=2, trust_env=False, follow_redirects=False) as client:
-            response = client.get(
-                f"http://127.0.0.1:{result.port}/api/client-observations",
+        with closing(HTTPConnection("127.0.0.1", result.port, timeout=2)) as client:
+            client.request(
+                "GET",
+                "/api/client-observations",
                 headers={"Authorization": f"Bearer {parsed.fragment[6:]}", "Cache-Control": "no-store"},
             )
-        if response.status_code in {404, 405}:
-            result.client_observations_status = "unsupported"
-        else:
-            response.raise_for_status()
-            result.client_observations = TypeAdapter(
-                Annotated[list[ClientObservation], Field(max_length=50)]
-            ).validate_json(response.content)
-            result.client_observations_status = "available"
-    except (HeinzelError, OSError, ValueError, httpx.HTTPError):
+            response = client.getresponse()
+            if response.status in {404, 405}:
+                result.client_observations_status = "unsupported"
+            elif HTTPStatus.OK <= response.status < HTTPStatus.MULTIPLE_CHOICES:
+                result.client_observations = TypeAdapter(
+                    Annotated[list[ClientObservation], Field(max_length=50)]
+                ).validate_json(response.read())
+                result.client_observations_status = "available"
+    except (HeinzelError, OSError, ValueError, HTTPException):
         # Never expose URLs, credentials or response bodies in diagnostics.
         pass
     return result
