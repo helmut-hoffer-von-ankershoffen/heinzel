@@ -86,7 +86,8 @@ def test_declared_process_fake_is_used_by_every_head(settings, make_kernel, hz_h
 
 
 @pytest.mark.parametrize("head", HEADS[1:])
-def test_harness_refuses_operations_absent_from_the_head(kernel, head):
+def test_harness_refuses_operations_absent_from_the_head(settings, head):
+    kernel = FakeKernel(settings=settings, records=[ModuleRecord("example", example(), ORIGIN)])
     with pytest.raises(OperationNotExposedError, match=r"example\.wizard"):
         operate(head, kernel, "example.wizard")
 
