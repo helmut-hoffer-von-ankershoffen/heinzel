@@ -16,7 +16,7 @@ core_wheel="$(find "$candidate_dir" -name 'heinzel-*.whl' -print -quit)"
 
 # The starter journey reads the same built artifact and template tree, but owns its output and cache directories.
 pyyaml_wheels="$(mktemp -d)"
-bash scripts/bootstrap-pyyaml.sh --wheel-dir "$pyyaml_wheels"
+bash scripts/bootstrap-pyyaml.sh --plugin-wheel-dir "$pyyaml_wheels"
 starter_destination="$(mktemp -d)/starter"
 mkdir -p "$starter_destination"
 starter_pid=""

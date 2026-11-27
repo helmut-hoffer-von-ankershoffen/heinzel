@@ -123,3 +123,24 @@ def test_unreviewed_lock_cannot_download_or_start_a_backend(tmp_path, mismatch):
     assert result.returncode != 0
     assert "lock differs from the reviewed PyYAML bootstrap" in result.stderr
     assert not marker.exists()
+
+
+def test_wheel_directory_uses_the_consumer_pin_for_an_upstream_core_lock(tmp_path):
+    # Exercise the actual shell wrapper and module CLI. Replace only the network/backend build.
+    script = tmp_path / SCRIPT.name
+    script.write_bytes(SCRIPT.read_bytes())
+    (tmp_path / "uv.lock").write_bytes((ROOT / "uv.lock").read_bytes())
+    (tmp_path / "bootstrap_pyyaml.py").write_text(
+        "import runpy\n"
+        f"main = runpy.run_path({str(MODULE)!r})['main']\n"
+        "def fixture_build(work, python):\n"
+        "    wheel = work / 'fixture.whl'\n"
+        "    wheel.write_bytes(b'reviewed fixture')\n"
+        "    return wheel\n"
+        "main.__globals__['build'] = fixture_build\n"
+        "raise SystemExit(main())\n"
+    )
+    for flag, name in (("--wheel-dir", "core"), ("--plugin-wheel-dir", "plugin")):
+        subprocess.run(["bash", str(script), flag, name], cwd=tmp_path, check=True, timeout=10)
+    assert list((tmp_path / "core").iterdir()) == []
+    assert (tmp_path / "plugin" / "fixture.whl").read_bytes() == b"reviewed fixture"
