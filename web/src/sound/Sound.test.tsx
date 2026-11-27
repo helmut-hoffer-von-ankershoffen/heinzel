@@ -375,6 +375,9 @@ describe("Sound", () => {
     const { calls } = mockApi({ ...shell, "/api/system/sound/list": list });
     const user = userEvent.setup();
     renderAt("/");
+    await speaker(/^Choose a soundscape$/);
+    expect(soundState()).toMatchObject({ started: false, playing: false });
+    expect(document.querySelector("iframe, video, audio")).toBeNull();
     const dialog = await openSoundChoices(user);
     expect(within(dialog).getByRole("button", { name: "Play Singularity" })).toBeInTheDocument();
     expect(document.querySelector("iframe")).toBeNull();
@@ -382,6 +385,8 @@ describe("Sound", () => {
     await user.click(within(dialog).getByRole("button", { name: "Play Singularity" }));
     const frame = (await screen.findByTitle("Singularity player")) as HTMLIFrameElement;
     expect(frame.src).toContain("/embed/AvtStYuO79Y");
+    expect(new URL(frame.src).searchParams.has("autoplay")).toBe(false);
+    expect(soundState()).toMatchObject({ started: true, playing: true, soundscape: "singularity" });
   });
 
   it("with nothing picked, the speaker opens the choices instead of playing", async () => {

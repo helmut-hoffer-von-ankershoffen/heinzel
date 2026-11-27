@@ -182,6 +182,7 @@ def prepare_state(case, plugin_age_hours=0):
     """B2: what a user has before the update; the configuration snapshot is compared after it."""
     HARNESS.hz(case, "system", "plugin", "add", "heinzel-example", "--confirm", label="user-plugin-add")
     HARNESS.hz(case, "system", "plugin", "disable", "heinzel-resource", label="user-disable")
+    HARNESS.hz(case, "system", "sound", "use", "off", label="user-sound-off")
     settings = user_settings(plugin_age_hours)
     for key, value in settings.items():
         HARNESS.hz(case, "system", "config", "set", key, value, label=f"user-config-{key}")
@@ -191,7 +192,12 @@ def prepare_state(case, plugin_age_hours=0):
     case.notes["python_before"] = HARNESS.installed_interpreter(case)
     case.notes["config_before"] = HARNESS.snapshot_files(case.root / "config_home")
     HARNESS.check(case.notes["config_before"], "No user configuration exists to retain")
-    return {"user_plugin": "heinzel-example", "disabled_default": "heinzel-resource", "settings": settings}
+    return {
+        "user_plugin": "heinzel-example",
+        "disabled_default": "heinzel-resource",
+        "soundscape_preference": "off",
+        "settings": settings,
+    }
 
 
 def start_servers(case, version):
@@ -265,7 +271,7 @@ def verify_after(case, old, new):
     HARNESS.check(
         HARNESS.snapshot_files(case.root / "config_home") == case.notes["config_before"], "Configuration changed"
     )
-    evidence = {"core_files": files["wheel_files_identical"], **HARNESS.verify_state(case, "after")}
+    evidence = {"core_files": files["wheel_files_identical"], **HARNESS.verify_state(case, "after", keep_sound_off=True)}
     evidence["interpreter"] = HARNESS.verify_update_interpreter(case, migrated=False)
     evidence["plugin_versions_after"] = {
         p: v["version"] for p, v in HARNESS.plugin_map(case, "versions-after").items()
@@ -388,7 +394,7 @@ def run_scenario(args, parent, result, ctx_base):
         record(result, "B1", "PASS", case)
         at("B2")
         case.step("user state before the update", lambda: prepare_state(case, args.plugin_age_hours))
-        case.step("state before the update verified", lambda: HARNESS.verify_state(case, "before"))
+        case.step("state before the update verified", lambda: HARNESS.verify_state(case, "before", keep_sound_off=True))
         record(result, "B2", "PASS", case)
         if candidate:
             candidate_steps(case, result, old, new, at)
