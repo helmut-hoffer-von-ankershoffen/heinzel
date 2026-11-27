@@ -20,10 +20,16 @@ struct SoundDock: View {
             ScrollView {
                 VStack(spacing: 16) {
                     if playback.videoURL != nil {
-                        SoundscapeNativeVideo(player: playback.player)
-                            .aspectRatio(videoAspect, contentMode: .fit)
-                            .frame(maxWidth: .infinity)
-                            .background(.black)
+                        ZStack {
+                            Color.black
+                            if playback.isResuming {
+                                ProgressView().tint(.white).accessibilityLabel("Resuming video")
+                            } else {
+                                SoundscapeNativeVideo(player: playback.player)
+                            }
+                        }
+                        .aspectRatio(videoAspect, contentMode: .fit)
+                        .frame(maxWidth: .infinity)
                     }
                     Link("Latent Heinzels", destination: SoundscapeLink.artist)
                     Button { playback.showingPicker.toggle() } label: {

@@ -75,5 +75,44 @@ struct SoundscapeAlbumTests {
         try require(states.last?.verified == (snapshot["verified"] as? Int) &&
                     states.last?.total == (snapshot["total"] as? Int) &&
                     states.last?.phase == (snapshot["phase"] as? String), "published download snapshot differs")
+
+        let savedPosition = states.last?.position ?? 0
+        var restoredState: SoundscapeWidgetState?
+        var firstAdvancingPosition: Double?
+        let restored = SoundscapePlayback(library: library, defaults: defaults, publish: { state in
+            restoredState = state
+            if state.advancing && firstAdvancingPosition == nil { firstAdvancingPosition = state.position }
+        })
+        restored.player.isMuted = true
+        defer { restored.pause() }
+        restored.openVideo(trackID: tracks[1].id)
+        try require(restored.isResuming && abs((restoredState?.position ?? 0) - savedPosition) < 0.05 &&
+                    restoredState?.advancing == false,
+                    "opening saved video reset or advanced the widget clock while seeking")
+        try await wait("widget never resumed after seeking") {
+            restoredState?.advancing == true && restored.player.currentTime().seconds > savedPosition + 0.05
+        }
+        try require(!restored.isResuming && (firstAdvancingPosition ?? 0) >= savedPosition - 0.05,
+                    "widget began advancing from before the checkpoint")
+        restored.pause()
+
+        var retryPosition: Double?
+        var interruptedState: SoundscapeWidgetState?
+        let interrupted = SoundscapePlayback(
+            library: library, defaults: defaults,
+            resumeSeek: { _, time, completion in
+                retryPosition = time.seconds
+                completion(false)
+            },
+            publish: { interruptedState = $0 }
+        )
+        interrupted.player.isMuted = true
+        defer { interrupted.pause() }
+        interrupted.openVideo(trackID: tracks[1].id)
+        try await wait("interrupted seek did not surface a playback error") { interrupted.errorMessage != nil }
+        try require((retryPosition ?? 0) > 0.1 &&
+                    abs((interruptedState?.position ?? 0) - (retryPosition ?? 0)) < 0.05, "interrupted seek did not retain checkpoint \(retryPosition ?? -1)")
+        try require(interruptedState?.playing == false && !interrupted.isResuming,
+                    "interrupted seek did not stop playback")
     }
 }

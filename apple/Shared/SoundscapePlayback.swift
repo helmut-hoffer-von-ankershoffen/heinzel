@@ -107,12 +107,17 @@ struct SoundscapeWidgetState: Codable {
 final class SoundscapePlayback {
     static let shared = SoundscapePlayback()
     static let changed = Notification.Name("SoundscapePlayback.changed")
+    typealias ResumeSeek = @MainActor (AVQueuePlayer, CMTime, @escaping @Sendable (Bool) -> Void) -> Void
+
     private let library: AlbumLibrary
+    private let resumeSeek: ResumeSeek
     private let defaults: UserDefaults
     private let publish: @MainActor (SoundscapeWidgetState) -> Void
     private var downloadObserver: NSObjectProtocol?
     private var positionObserver: Any?
     private var restoredPosition: Double = 0
+    private var pendingResumePosition: Double?
+    var isResuming: Bool { pendingResumePosition != nil }
     private var loadedURL: URL?
     private var albumEnded = false
     let player = AVQueuePlayer()
@@ -146,13 +151,17 @@ final class SoundscapePlayback {
         var position: Double?
     }
 
-    /// Pass a fixture library, suite defaults and no-op publisher for fully isolated transport.
+    /// Fixture dependencies isolate playback, publishing and the outcome of a resume seek.
     init(library: AlbumLibrary = .shared, defaults: UserDefaults = .standard,
+         resumeSeek: @escaping ResumeSeek = { player, time, completion in
+             player.seek(to: time, completionHandler: completion)
+         },
          publish: @escaping @MainActor (SoundscapeWidgetState) -> Void = { state in
              state.write(poster: AlbumLibrary.shared.savedPoster(for: state.selectedID))
              WidgetCenter.shared.reloadTimelines(ofKind: "HeinzelSoundscape")
          }) {
         self.library = library
+        self.resumeSeek = resumeSeek
         self.defaults = defaults
         self.publish = publish
         let saved = defaults.data(forKey: "soundscapePlayback")
@@ -183,7 +192,7 @@ final class SoundscapePlayback {
         rateObservation = player.observe(\.rate, options: [.new]) { [weak self] _, _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                let playing = self.player.rate != 0
+                let playing = self.loadedURL != nil && self.player.rate != 0
                 if self.isPlaying != playing { self.setPlaying(playing) }
             }
         }
@@ -375,7 +384,11 @@ final class SoundscapePlayback {
         currentTitle = track.title
         try activateAudio()
         if loadedURL == track.url, player.currentItem != nil, player.currentItem?.status != .failed {
-            if albumEnded { player.seek(to: .zero); albumEnded = false }
+            if albumEnded {
+                pendingResumePosition = nil
+                player.seek(to: .zero)
+                albumEnded = false
+            }
             currentTitle = track.title
             videoURL = videoSelected ? track.url : nil
             errorMessage = nil
@@ -405,7 +418,20 @@ final class SoundscapePlayback {
         }
         player.insert(item, after: nil)
         loadedURL = track.url
-        if position > 0 { player.seek(to: CMTime(seconds: position, preferredTimescale: 600)) }
+        if position > 0 {
+            pendingResumePosition = position
+            resumeSeek(player, CMTime(seconds: position, preferredTimescale: 600)) { [weak self] finished in
+                Task { @MainActor [weak self] in
+                    guard let self, self.player.currentItem === item, self.pendingResumePosition != nil else { return }
+                    guard finished else {
+                        self.failCurrentItem("Playback could not resume. Open Sound and try again.")
+                        return
+                    }
+                    self.pendingResumePosition = nil
+                    self.publishWidgetState()
+                }
+            }
+        }
         restoredPosition = 0
         currentTitle = track.title
         videoURL = videoSelected ? track.url : nil
@@ -487,13 +513,15 @@ final class SoundscapePlayback {
     }
 
     private var playbackPosition: Double {
+        if let pendingResumePosition { return pendingResumePosition }
         let seconds = player.currentTime().seconds
-        return player.currentItem != nil && seconds.isFinite ? max(0, seconds) : restoredPosition
+        return loadedURL != nil && player.currentItem != nil && seconds.isFinite ? max(0, seconds) : restoredPosition
     }
 
     private func clearItem() {
         itemObservation = nil
         durationObservation = nil
+        pendingResumePosition = nil
         player.pause()
         player.removeAllItems()
         loadedURL = nil
@@ -516,7 +544,7 @@ final class SoundscapePlayback {
         state.duration = duration.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
         publishedDuration = state.duration
         // Waiting/buffering must freeze the widget clock until media actually advances.
-        state.advancing = isPlaying && player.timeControlStatus == .playing
+        state.advancing = isPlaying && !isResuming && player.timeControlStatus == .playing
         let saved = (try? savedTracks()) ?? []
         let index = saved.firstIndex(where: { $0.id == selectedID }) ?? 0
         state.canPlaySaved = !saved.isEmpty
