@@ -359,6 +359,7 @@ def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(
     monkeypatch.setenv("GIT_INDEX_FILE", str(foreign_index))
     monkeypatch.setenv("GIT_DIR", str(tmp_path / "foreign.git"))
     environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
 
     def git(*args):
         return subprocess.run(
@@ -372,6 +373,8 @@ def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(
         )
 
     git("init", "--quiet")
+    assert Path(git("rev-parse", "--absolute-git-dir").stdout.strip()).resolve() == (tmp_path / ".git").resolve()
+    assert Path(git("rev-parse", "--show-toplevel").stdout.strip()).resolve() == tmp_path.resolve()
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "ci_changed_paths.py").write_bytes((REPO / "scripts/ci_changed_paths.py").read_bytes())
     (tmp_path / "README.md").write_text("fixture")
@@ -3684,8 +3687,15 @@ def test_homepage_lint_steps_keep_policy_and_skip_app_commands():
 
 
 @pytest.fixture
-def homepage_git_repo(tmp_path):
-    """A committed app and homepage asset, with a real Git command runner."""
+def homepage_git_repo(tmp_path, monkeypatch):
+    """Run fixture commits and selector subprocesses inside this temporary repository only."""
+    for name in tuple(os.environ):
+        if name.startswith("GIT_"):
+            monkeypatch.delenv(name)
+    local_config = tmp_path / "empty-gitconfig"
+    local_config.touch()
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(local_config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     repo = tmp_path / "repo"
     repo.mkdir()
 
@@ -3693,6 +3703,8 @@ def homepage_git_repo(tmp_path):
         return subprocess.check_output(["git", *args], cwd=repo, text=True, timeout=scaled(30)).strip()
 
     git("init", "-b", "main")
+    assert Path(git("rev-parse", "--absolute-git-dir")).resolve() == (repo / ".git").resolve()
+    assert Path(git("rev-parse", "--show-toplevel")).resolve() == repo.resolve()
     git("config", "user.email", "test@example.invalid")
     git("config", "user.name", "Test")
     (repo / "app.py").write_text("app")
