@@ -559,3 +559,15 @@ def test_a_published_process_cannot_move_agent_models_directly_to_spec(version: 
     found = {line for lines in swap_identity_problems(old, tree).values() for line in lines}
     assert f"{spec} is facade-only and loads fresh" in found
     assert f"{spec} defines AgentResult again; the process holds it from {legacy}" in found
+
+
+def test_a_published_window_caller_must_keep_using_the_kernel_facades() -> None:
+    """A newly loaded caller must reuse both published runtime types."""
+    old, tree = published("0.9.55"), Tree(SOURCE)
+    renderer = "heinzel.modules.system._render"
+    original, package = tree.modules[renderer]
+    direct = ast.parse("from heinzel.spec._window import Window, Span").body
+    tree.modules[renderer] = (ast.Module(body=[*original.body, *direct], type_ignores=[]), package)
+    found = {line for lines in swap_identity_problems(old, tree).values() for line in lines}
+    assert "heinzel.spec._window defines Window again; the process holds it from heinzel.kernel._protocols" in found
+    assert "heinzel.spec._window defines Span again; the process holds it from heinzel.kernel._duration" in found

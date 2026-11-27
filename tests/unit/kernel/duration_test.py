@@ -4,7 +4,10 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from heinzel.kernel import MAX_WINDOW, Span, Window, format_duration, parse_duration, parse_window
+from heinzel.kernel import _duration as published_duration
+from heinzel.kernel import _protocols as published_protocols
 from heinzel.spec import _duration as duration_spec
+from heinzel.spec import _window as declarative_window
 
 pytestmark = pytest.mark.unit
 
@@ -66,3 +69,16 @@ def test_duration_spec_keeps_the_legacy_callable(name):
     assert implementation is public
     assert implementation.__module__ == "heinzel.kernel._duration"
     assert pickle.loads(pickle.dumps(implementation)) is public  # noqa: S301 - the test owns the serialized input
+
+
+@pytest.mark.parametrize(
+    ("cls", "published"),
+    [(Window, "heinzel.kernel._protocols"), (Span, "heinzel.kernel._duration")],
+)
+def test_window_models_keep_every_published_import_and_pickle_path(cls, published):
+    assert published_protocols.Window is published_duration.Window is declarative_window.Window is Window
+    assert published_duration.Span is declarative_window.Span is Span
+    assert published_duration.parse_window is declarative_window.parse_window is parse_window
+    encoded = f"c{published}\n{cls.__name__}\np0\n.".encode()
+    assert pickle.dumps(cls, protocol=0) == encoded
+    assert pickle.loads(encoded) is cls  # noqa: S301 - fixed published class reference
