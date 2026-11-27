@@ -1062,20 +1062,93 @@ def test_gate_review_operator_switch(tmp_path, enabled, mode):
 
 
 @pytest.mark.parametrize(
-    ("scope", "model", "skipped"),
-    [("success", "skipped", True), ("failure", "skipped", False), ("success", "failure", False)],
+    ("scope", "model", "history", "skipped"),
+    [
+        ("success", "skipped", "success", True),
+        ("success", "skipped", "failure", False),
+        ("success", "skipped", "skipped", False),
+        ("failure", "skipped", "success", False),
+        ("success", "failure", "success", False),
+    ],
 )
-def test_gate_review_records_only_a_successful_operator_pause(tmp_path, scope, model, skipped):
+def test_gate_review_records_only_a_successful_operator_pause(tmp_path, scope, model, history, skipped):
     job = _gate_review()["jobs"]["gate-review"]
     judge = next(step for step in job["steps"] if step.get("name") == "Judge the review and comment")
     assert judge["env"]["SCOPE_RESULT"] == "${{ needs.scope.result }}"
     summary = tmp_path / "summary"
-    environment = dict(os.environ, MODE="paused", SCOPE_RESULT=scope, MODEL=model, GITHUB_STEP_SUMMARY=str(summary))
+    environment = dict(
+        os.environ,
+        MODE="paused",
+        SCOPE_RESULT=scope,
+        MODEL=model,
+        HISTORY_OUTCOME=history,
+        GITHUB_STEP_SUMMARY=str(summary),
+    )
     result = subprocess.run(["bash", "-e", "-c", judge["run"]], env=environment, check=False, timeout=scaled(5))
     assert (result.returncode == 0) is skipped
     assert summary.exists() is skipped
     if skipped:
         assert "Claude review skipped by operator (CLAUDE_REVIEW=false)" in summary.read_text()
+
+
+@pytest.mark.parametrize("case", ["first", "prior_clear", "prior_reject", "unreadable"])
+def test_operator_pause_judges_actual_history(tmp_path, case):
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[2] / "scripts" / "review_history.py"
+    spec = importlib.util.spec_from_file_location("pause_history", path)
+    history = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(history)
+    head = "a" * 40
+
+    def run(number):
+        return {
+            "id": number,
+            "run_attempt": 1,
+            "head_sha": head,
+            "event": "pull_request_target",
+            "path": history.WORKFLOW,
+        }
+
+    def read(endpoint):
+        if "/workflows/" in endpoint:
+            runs = [run(100)] if case == "first" else [run(99), run(100)]
+            return {"total_count": len(runs), "workflow_runs": runs}
+        if case == "unreadable":
+            return {"total_count": 1, "jobs": None}
+        job = {
+            "name": "Gate review",
+            "run_id": 99,
+            "run_attempt": 1,
+            "head_sha": head,
+            "status": "completed",
+            "conclusion": "failure",
+            "steps": [
+                {
+                    "name": history.REJECT_STEP,
+                    "status": "completed",
+                    "conclusion": "success" if case == "prior_reject" else "skipped",
+                }
+            ],
+        }
+        return {"total_count": 1, "jobs": [job]}
+
+    try:
+        history.check(read, "owner/repo", head, 100, 1)
+        outcome = "success"
+    except ValueError:
+        outcome = "failure"
+    summary = tmp_path / "summary"
+    env = dict(
+        os.environ,
+        MODE="paused",
+        SCOPE_RESULT="success",
+        MODEL="skipped",
+        HISTORY_OUTCOME=outcome,
+        GITHUB_STEP_SUMMARY=str(summary),
+    )
+    result = subprocess.run(["bash", "-e", "-c", _gate_judge_script()], env=env, check=False, timeout=scaled(5))
+    assert (result.returncode == 0) == (case in {"first", "prior_clear"})
 
 
 def test_gate_review_runs_the_base_workflow_and_never_executes_the_head():
@@ -1091,9 +1164,10 @@ def test_gate_review_runs_the_base_workflow_and_never_executes_the_head():
     history_checkout = next(
         step for step in spec["jobs"]["gate-review"]["steps"] if "actions/checkout" in step.get("uses", "")
     )
-    assert history_checkout["if"] == "needs.model.outputs.spend_limit == 'true'"
+    assert history_checkout["if"] == "needs.scope.outputs.mode == 'paused' || needs.model.outputs.spend_limit == 'true'"
     assert history_checkout["with"] == {"persist-credentials": False}
     history = next(step for step in spec["jobs"]["gate-review"]["steps"] if step.get("id") == "history")
+    assert history["if"] == history_checkout["if"]
     assert 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in history["run"]
     assert "github.event.pull_request.head.sha" not in str(checkout)
 
