@@ -25,7 +25,7 @@ import json
 import os
 from collections.abc import Callable, Iterable, MutableMapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 
     from heinzel.conformance import Report
     from heinzel.kernel import Credentials, Kernel, ScriptedPrompter
+    from heinzel.testing.heads import Head, Outcome
 
 # Heinzelmännchen itself is imported inside the fixtures: pytest loads this plugin before coverage measurement starts,
 # and a top-level import would hide the import-time lines of every module from the coverage report.
@@ -343,6 +344,20 @@ def hz(hz_kernel: "Kernel") -> Callable[..., Result]:
     def run(*args: str, json: bool = True) -> Result:
         result = runner.invoke(app, [*args, "--json"] if json else list(args))
         return Result(exit_code=result.exit_code, output=result.output)
+
+    return run
+
+
+@pytest.fixture(params=("cli", "api", "mcp", "web"))
+def hz_head(request: pytest.FixtureRequest) -> Callable[..., "Outcome"]:
+    """Run the same operation on each head which exposes it, using the given test kernel."""
+    from heinzel.testing.heads import OperationNotExposedError, operate  # noqa: PLC0415 - see the module comment
+
+    def run(kernel: "Kernel", operation: str, /, **arguments: object) -> "Outcome":
+        try:
+            return operate(cast("Head", request.param), kernel, operation, **arguments)
+        except OperationNotExposedError as exc:
+            pytest.skip(str(exc))
 
     return run
 
