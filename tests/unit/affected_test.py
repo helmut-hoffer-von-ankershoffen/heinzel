@@ -105,6 +105,8 @@ CASES: list[tuple[str, list[str], dict[str, Any]]] = [
         {"full": False, "jobs_has": ["electron"], "jobs_not": ["test-linux", "lint"]},
     ),
     ("conftest = full", ["tests/conftest.py"], {"full": True}),
+    ("legacy shared testing module = full", ["src/heinzel/testing.py"], {"full": True}),
+    ("shared testing package = full", ["src/heinzel/testing/heads.py"], {"full": True}),
     ("unknown path = full", ["something/new.txt"], {"full": True}),
     (
         "openapi",

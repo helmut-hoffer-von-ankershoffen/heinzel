@@ -3207,6 +3207,7 @@ _NATIVE_OFF = {"notifier=false", "contracts=false", "electron=false", "macos_ful
         ("web/src/components/Footer.tsx\n", {"site_only=false", "macos_full=false", "contracts=false"}),
         ("src/heinzel/kernel/_exposure_x.py\n", {"macos_full=true", "contracts=true"}),
         ("src/heinzel/testing.py\n", {"contracts=true"}),
+        ("src/heinzel/testing/heads.py\n", {"contracts=true"}),
         ("src/heinzel/conformance.py\n", {"contracts=true"}),
         ("src/heinzel/modules/team/_x.py\n", {"contracts=true"}),
         ("pyproject.toml\n", {"contracts=true", "notifier=true"}),
