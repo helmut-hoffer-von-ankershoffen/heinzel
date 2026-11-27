@@ -264,6 +264,7 @@ describe("AudioVisualizer", () => {
       },
     } as unknown as Awaited<ReturnType<typeof captureAudio>>);
     const { draw, frames, restore } = paintable();
+    const timers = vi.spyOn(window, "setTimeout");
     try {
       render(<AudioVisualizer />);
       expect(screen.queryByTestId("audio-aurora")).not.toBeInTheDocument();
@@ -293,11 +294,15 @@ describe("AudioVisualizer", () => {
         if (frames.length === before) break;
       }
       const settled = frames.length;
+      const pollCount = () => timers.mock.calls.filter(([, delay]) => delay === 300).length;
+      expect(pollCount()).toBe(1);
       act(() => frames.at(-1)?.(time + 40));
       expect(frames.length).toBe(settled);
+      expect(pollCount()).toBe(1);
       // The status follows the sleeping loop: it never keeps claiming a signal over a cleared canvas.
       expect(screen.getByText("Listening to shared audio. Waiting for sound.")).toBeInTheDocument();
     } finally {
+      timers.mockRestore();
       restore();
     }
   });

@@ -538,7 +538,8 @@ export function AudioVisualizer({
           frame = requestAnimationFrame(paint);
         } else timer = window.setTimeout(poll, 300);
       };
-      timer = window.setTimeout(poll, 300);
+      // A repeated rest frame must keep the pending poll's handle for cleanup.
+      if (!timer) timer = window.setTimeout(poll, 300);
     };
     const paint = (now: number) => {
       frame = 0;
