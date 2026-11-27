@@ -7,7 +7,8 @@ from typing import Annotated, Any, get_args, get_origin
 from pydantic import Field, TypeAdapter, create_model
 from pydantic.fields import FieldInfo
 
-from heinzel.kernel._kernel import Kernel, ModuleRecord
+from heinzel.kernel._head_view import HeadKernel
+from heinzel.kernel._kernel import ModuleRecord
 from heinzel.kernel._lets import OperationLet
 from heinzel.kernel._paths import operation_path, public_parameters
 
@@ -50,7 +51,7 @@ class Exposed:
         return "_".join(self.path).replace("-", "_")
 
 
-def exposed(kernel: Kernel, head: str) -> list[Exposed]:
+def exposed(kernel: HeadKernel, head: str) -> list[Exposed]:
     """Every operation `head` should expose, in module order.
 
     An operation is left out when it needs a service only a disabled module provides, or when its `heads` restrict it

@@ -16,6 +16,10 @@ src = ["src/_heinzel_launcher.py", "src/heinzel/*.py", "src/heinzel/py.typed", "
 exclude = ["src/heinzel/_lifecycle_control.py"]
 tests = ["tests/unit/kernel/**"]
 
+[context.services]
+summary = "kernel service implementations, composed by the kernel"
+src = ["src/heinzel/services/**"]
+
 [context.runtime-update]
 summary = "update plan, apply, schedule and retry; the web head's auto update keeps only its routes"
 src = ["src/heinzel/modules/system/updater/**", "src/heinzel/heads/web/_updates.py"]
@@ -208,7 +212,7 @@ keep = ["CHANGELOG.md", "README.md", "docs/**/*.sh"]
 # The in-place upgrade (CI job `upgrade`, lane B: the published release updates itself to the pull request's wheel) and
 # the macOS unit and integration cells run on a pull request that touches these contexts (their source or their
 # tests) or one of the upgrade paths: what decides how an installed Core replaces itself (#919).
-upgrade = ["runtime-update", "runtime-lifecycle", "daemon", "spec"]
+upgrade = ["runtime-update", "runtime-lifecycle", "daemon", "spec", "services"]
 upgrade_paths = [
     "src/heinzel/_lifecycle_control.py",
     "src/heinzel/heads/cli/_update.py",

@@ -5,7 +5,6 @@ import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
-from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, cast, get_args, get_origin
 
 import pluggy
@@ -20,6 +19,7 @@ from heinzel.kernel._bindings import (
     CapabilityView,
     Requester,
 )
+from heinzel.kernel._compose import ServiceSet, default_services
 from heinzel.kernel._config import KERNEL_SECTION, Config, ModuleSettings, config_file_stamp
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._identity import PRIVATE_READ, PRIVATE_WRITE, CurrentUser
@@ -39,14 +39,11 @@ from heinzel.kernel._lets import (
     SetupLet,
     settings_parameters,
 )
-from heinzel.kernel._local_web import LocalWebRuntime
 from heinzel.kernel._logging import log_event
 from heinzel.kernel._module import Module
 from heinzel.kernel._notifications import notice_producer_scope
 from heinzel.kernel._org import OrgContext
 from heinzel.kernel._prerequisites import PrerequisiteLet
-from heinzel.kernel._progress import Progress
-from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._settings import Settings
 from heinzel.kernel._spec import PROJECT_NAME, Spec
@@ -54,7 +51,7 @@ from heinzel.kernel.ai._agent_writes import Caller, current_caller
 from heinzel.kernel.ai._ai_models import AiModelOptions, AiModels, AiModelsSource
 from heinzel.kernel.ai._capabilities import CAPABILITIES, Capability, capability_of, declared_unsupported
 from heinzel.kernel.ai._playbooks import PlaybookLet
-from heinzel.kernel.install._installation import CORE_DISTRIBUTION, Installation
+from heinzel.kernel.install._installation import CORE_DISTRIBUTION
 from heinzel.kernel.session._self_chat import SelfChat
 
 if TYPE_CHECKING:
@@ -104,24 +101,18 @@ class ModuleRecord:
         return tuple(self.qualname.split("."))
 
 
-def _current_user() -> CurrentUser:
-    """Build identity from trusted user settings only when a head actually needs it."""
-    home = Path.home()
-    state = Config.load(home).settings(Settings, KERNEL_SECTION).state_dir.expanduser()
-    # Relative user settings must not implicitly select the repository a head happened to start in.
-    return CurrentUser((state if state.is_absolute() else home / state) / "identity")
-
-
 class Kernel:
     """Holds the registered modules, hands out their lets and injects services."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - retain the published positional parameters and add keyword-only services
         self,
         settings: Settings | None = None,
         records: Iterable[ModuleRecord] = (),
         errors: Mapping[str, str] | None = None,
         config: Config | None = None,
         source_discovery: "SourceDiscovery | None" = None,
+        *,
+        services: ServiceSet | None = None,
     ) -> None:
         """Register modules. Disabled modules (and their submodules) are blocked, not registered.
 
@@ -131,6 +122,7 @@ class Kernel:
             errors: Plugins that failed to load, by entry point name, for reporting.
             config: Configuration files and their content; none (defaults and environment only) if not given.
             source_discovery: Optional host-owned source continuity catalog.
+            services: Optional instances and factories supplied by the host.
 
         A plugin module that collides with a registered one — same qualified name, a submodule named like one of its
         parent's operations, or a service type provided twice — is skipped and reported in `errors`, so one bad
@@ -160,22 +152,19 @@ class Kernel:
             self._manager.register(record.module, name=record.qualname)
             self._records[record.qualname] = record
 
+        services = services or ServiceSet()
+        composed = default_services(services)
         self._instances: dict[type[Any], object] = {
+            **composed.instances,
             Kernel: self,
             Settings: self.settings,
             Config: self.config,
-            Progress: Progress(),
-            LocalWebRuntime: LocalWebRuntime(),
-            Prompter: Prompter(),
         }
         self._factory_instances: dict[type[Any], object] = {}
         """Instances constructed by registered factories; explicit binds invalidate this provenance."""
         self._self_chat: tuple[tuple[str | None, tuple[int, ...]], tuple[Adapter, ...], SelfChat | None] | None = None
         """The last `self_chat()` and the binding it was found for: settings show it often, the binding rarely moves."""
-        self._factories: dict[type[Any], Callable[..., Any]] = {
-            Installation: Installation,
-            CurrentUser: _current_user,
-        }
+        self._factories: dict[type[Any], Callable[..., Any]] = dict(composed.factories)
         self._layers: Layers | None = None
         self._providers: dict[type[Any], str] = {}
         """The module providing each service type, by qualified name."""
@@ -187,6 +176,7 @@ class Kernel:
             renamed = record.module.renamed_from if record.parent is None else None
             factory = partial(self.config.settings, declared.model, record.qualname, renamed_from=renamed)
             self._provide(declared.model, factory, record)
+        self._apply_host_services(services)
         self._records = dict(sorted(self._records.items(), key=lambda item: item[1].path))
         callback_owners: dict[int, set[str]] = {}
         callbacks: list[tuple[ModuleRecord, OperationLet | JobLet]] = [*self.lets(OperationLet), *self.lets(JobLet)]
@@ -214,6 +204,16 @@ class Kernel:
         # Modules get a view that reports; handles come only through declarations and injection (ADR 0028).
         self._instances[CapabilityView] = self._capabilities.view
         self._config_stamp = config_file_stamp(self.config)
+
+    def _apply_host_services(self, services: ServiceSet) -> None:
+        supplied = services.instances.keys() | services.factories.keys()
+        if supplied & {Kernel, Settings, Config, CapabilityView}:
+            msg = "Host services cannot replace the kernel, configuration, settings, or capability view."
+            raise HeinzelError(msg)
+        for kind in supplied:
+            self._providers.pop(kind, None)  # Host overrides cannot inherit a registered service's provenance.
+        self._factories.update(services.factories)
+        self._instances.update(services.instances)
 
     @property
     def modules(self) -> tuple[ModuleRecord, ...]:
