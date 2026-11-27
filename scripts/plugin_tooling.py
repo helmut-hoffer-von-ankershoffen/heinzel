@@ -355,6 +355,10 @@ def run(program: str, arguments: list[str], requirements: Path = REQUIREMENTS, t
             "PATH": f"{environment / 'bin'}{os.pathsep}{os.environ.get('PATH', '')}",
             "VIRTUAL_ENV": str(environment),
         }
+        # Starter acceptance's bare uv must retain the resolver used to create its hashed lock.
+        # Parent uv run can shadow that wrapper with its own environment's uv executable.
+        if wrapper := env.get("PLUGIN_TEST_UV"):
+            env["PATH"] = f"{Path(wrapper).parent}{os.pathsep}{env['PATH']}"
         # Allowlisted executable in the verified environment, intentional local argv
         return subprocess.run(  # noqa: S603
             [str(environment / "bin" / program), *arguments],

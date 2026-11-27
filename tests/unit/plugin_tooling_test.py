@@ -159,11 +159,15 @@ def test_local_candidate_with_option_shaped_name_becomes_an_absolute_path(tmp_pa
     assert tooling.candidate_wheel(str(candidate), tmp_path) == candidate.resolve()
 
 
-def test_toolkit_runs_with_its_environment_first_on_path(monkeypatch):
+@pytest.mark.parametrize("wrapper", [None, "/reviewed-wrapper/uv"])
+def test_toolkit_runs_with_its_environment_first_on_path(monkeypatch, wrapper):
     """The toolkit finds `typos` and its interpreter in the disposable environment, as under `uv run`."""
     runs = []
     monkeypatch.setattr(tooling.shutil, "which", lambda _: "/fictional/uv")
     monkeypatch.setenv("PATH", "/usr/bin")
+    monkeypatch.delenv("PLUGIN_TEST_UV", raising=False)
+    if wrapper:
+        monkeypatch.setenv("PLUGIN_TEST_UV", wrapper)
     monkeypatch.setattr(
         tooling.subprocess,
         "run",
@@ -172,7 +176,8 @@ def test_toolkit_runs_with_its_environment_first_on_path(monkeypatch):
     assert tooling.run("hz-plugin", ["check"]) == 0
     command, kwargs = runs[-1]
     environment = Path(command[0]).parent.parent
-    assert kwargs["env"]["PATH"] == f"{environment / 'bin'}{tooling.os.pathsep}/usr/bin"
+    prefix = f"{Path(wrapper).parent}{tooling.os.pathsep}" if wrapper else ""
+    assert kwargs["env"]["PATH"] == f"{prefix}{environment / 'bin'}{tooling.os.pathsep}/usr/bin"
     assert kwargs["env"]["VIRTUAL_ENV"] == str(environment)
 
 
