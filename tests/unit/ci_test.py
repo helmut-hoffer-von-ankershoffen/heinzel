@@ -71,7 +71,7 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
-        "uv run --script scripts/check_confidentiality.py": (
+        "uv run --no-build --script scripts/check_confidentiality.py\n": (
             "runs bounded site policy checks while the app workload is omitted"
         ),
         'version="$(sed -n': "archives a release candidate's desktop apps under its version for Publish to promote",

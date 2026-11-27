@@ -53,7 +53,7 @@ def test_ci_checks_the_manifest_through_make_lint(release_policy):
     )
     homepage = next(step for step in steps if step.get("name") == "Check homepage policy")
     assert homepage["if"] == "needs.changes.outputs.homepage_only == 'true'"
-    assert "uv run --script scripts/release_policy.py --check" in homepage["run"].splitlines()
+    assert "uv run --no-build --script scripts/release_policy.py --check" in homepage["run"].splitlines()
     template = (ROOT / "template/Makefile").read_text(encoding="utf-8")
     assert "release_policy" not in template  # plugins have no Core release policy
 
