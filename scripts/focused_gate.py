@@ -74,6 +74,14 @@ FULL_EXECUTION_INPUTS = (*PROTECTED_FILES, "Makefile", "pyproject.toml")
 FULL_PR_KIND = "full-pr-reviewed"
 UPLOAD_NAME = "Upload focused CI evidence"
 CANDIDATE_UPLOAD_NAME = "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+# Verify the producer's presentation-only claim on the authenticated Git diff.
+HOMEPAGE_PATH_LIMIT = 200
+HOMEPAGE_PATH = re.compile(
+    r"(?:docs/README[.]md|docs/assets/hero-(?:dark|light)[.]svg|"
+    r"docs/assets/website/(?:[^/]+[.](?:css|js|svg|png|jpg|webp)|album/(?:[^/]+[.](?:svg|png|jpg|webp)|ARTWORK[.]txt))|"
+    r"docs/overrides/(?:partials/)?[^/]+[.]html)"
+)
+
 STATIC_JOBS = {
     "Main batch admission",
     "Changed paths",
@@ -99,6 +107,14 @@ class GateSource:
     run: dict[str, Any]
     source: WorkloadSource
     commit: str
+
+
+@dataclass(frozen=True)
+class FullPrWorkload:
+    """Validated job inventory and any proven presentation-only exception."""
+
+    jobs: list[dict[str, Any]]
+    homepage_only: bool
 
 
 def _positive(value: object) -> bool:
@@ -682,7 +698,7 @@ def full_pr_jobs(
     base: str,
     read: Callable[[str], bytes],
     authorization: dict[str, Any] | None = None,
-) -> list[dict[str, Any]]:
+) -> FullPrWorkload:
     """Verify ordinary full CI without inventing a focused plan or release-candidate identity."""
     require(source.run["event"] == "pull_request", "full PR evidence requires the PR event")
     associated = source.run["pull_requests"]
@@ -703,7 +719,16 @@ def full_pr_jobs(
     changed_jobs = [job for job in jobs if job["name"] == "Changed paths"]
     require(len(changed_jobs) == 1 and changed_jobs[0]["conclusion"] == "success", "full PR selector job is missing")
     log = read(f"actions/jobs/{changed_jobs[0]['id']}/logs")
-    inventory = selected_pr_inventory(selector_output(log))
+    selected = selector_output(log)
+    homepage = selected.get("homepage_only", False)
+    if homepage:
+        changed = changed_paths(raw_diff(base, source.commit))
+        require(
+            0 < len(changed) < HOMEPAGE_PATH_LIMIT
+            and all(status != "T" and HOMEPAGE_PATH.fullmatch(path) for path, status in changed.items()),
+            "homepage selector includes changes outside its presentation-only paths",
+        )
+    inventory = selected_pr_inventory(selected)
     require(
         len(jobs) == len(inventory) and {job["name"] for job in jobs} == set(inventory), "full PR job inventory differs"
     )
@@ -712,7 +737,7 @@ def full_pr_jobs(
         if job["conclusion"] == "success":
             _check(gate, source, job)
     require(full_checkout(log) == source.commit, "full CI tested another merge commit")
-    return jobs
+    return FullPrWorkload(jobs, homepage)
 
 
 def verify(  # noqa: PLR0913 - one linear verdict; the notes only describe it
@@ -760,9 +785,13 @@ def verify(  # noqa: PLR0913 - one linear verdict; the notes only describe it
             source.source.payload["pull_request"],
             pr_base_limit=None if candidate else snapshot[2],
         )
-    if not isinstance(scope, Scope):
+    if full_jobs is not None and full_jobs.homepage_only:
+        verdict = "Homepage presentation scope passed site and policy checks"
+    elif not isinstance(scope, Scope):
         jobs = [
-            job for job in (full_jobs if full_jobs is not None else jobs_for(gate, source)) if job["name"] == "Coverage"
+            job
+            for job in (full_jobs.jobs if full_jobs is not None else jobs_for(gate, source))
+            if job["name"] == "Coverage"
         ]
         require(len(jobs) == 1, "canonical candidate requires the exact Coverage job")
         _check(gate, source, jobs[0])

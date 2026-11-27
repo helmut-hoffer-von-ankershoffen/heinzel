@@ -1100,7 +1100,9 @@ def test_full_pr_inventory_binds_existing_checkout_without_a_focused_plan(focuse
         with pytest.raises(focused_gate.CandidateError):
             focused_gate.full_pr_jobs(judge, source, base, lambda _path: log, authorization)
     else:
-        assert focused_gate.full_pr_jobs(judge, source, base, lambda _path: log, authorization) == jobs
+        workload = focused_gate.full_pr_jobs(judge, source, base, lambda _path: log, authorization)
+        assert workload.jobs == jobs
+        assert not workload.homepage_only
         assert set(checked) == {name for name, conclusion in inventory.items() if conclusion == "success"}
 
 
@@ -1119,7 +1121,7 @@ def test_full_pr_verdict_keeps_original_coverage_and_final_source_guards(
 
     def full_jobs(*args):
         received.append(args[-1])
-        return [lane]
+        return focused_gate.FullPrWorkload([lane], homepage_only=False)
 
     monkeypatch.setattr(focused_gate, "full_pr_jobs", full_jobs)
     authorization = {"kind": focused_gate.FULL_PR_KIND} if reviewed or defect == "duplicate" else None
@@ -1173,6 +1175,63 @@ def test_full_pr_verdict_keeps_original_coverage_and_final_source_guards(
         result = focused_gate.verify(gate, run, manifest, logs.__getitem__, slots=slots)
         assert result == "Whole-project coverage measured by full PR CI"
     assert received == ([] if defect in {"rerun", "unknown-kind", "duplicate"} else [authorization])
+
+
+@pytest.mark.parametrize(
+    ("path", "valid"), [("docs/assets/website/album/demo.webp", True), ("src/heinzel/kernel/demo.py", False)]
+)
+def test_full_homepage_pr_binds_the_selector_to_the_authenticated_git_diff(focused_gate, monkeypatch, path, valid):
+    from types import SimpleNamespace
+
+    base, head, merge = (letter * 40 for letter in "abc")
+    source = SimpleNamespace(
+        run={"id": 123, "event": "pull_request", "pull_requests": [{"base": {"sha": base}}]},
+        source=SimpleNamespace(head=head),
+        commit=merge,
+    )
+    jobs = [
+        {"id": index, "name": name, "conclusion": conclusion}
+        for index, (name, conclusion) in enumerate(focused_gate.selected_pr_inventory(HOMEPAGE_SELECTED).items())
+    ]
+    log = (
+        f"2026-11-16T11:36:16Z [command]/usr/bin/git log -1 --format=%H\n2026-11-16T11:36:16Z {merge}\n"
+        + selector_log(HOMEPAGE_SELECTED)
+    ).encode()
+    monkeypatch.setattr(focused_gate, "full_pr_inputs", lambda *_: None)
+    monkeypatch.setattr(focused_gate, "jobs_for", lambda *_: jobs)
+    monkeypatch.setattr(focused_gate, "_check", lambda *_: None)
+    monkeypatch.setattr(focused_gate, "raw_diff", lambda *_: f":100644 100644 {base} {merge} M\0{path}\0".encode())
+    monkeypatch.setattr(
+        focused_gate,
+        "git",
+        lambda *args: (
+            f"{merge} {base} {head}".encode()
+            if args[0] == "rev-list"
+            else (
+                b"name: Run the complete CI workload without an external admission plan\n"
+                b"run: echo 'selected=true' >> \"$GITHUB_OUTPUT\""
+            )
+        ),
+    )
+    if valid:
+        assert focused_gate.full_pr_jobs(SimpleNamespace(), source, base, lambda _: log).homepage_only
+    else:
+        with pytest.raises(focused_gate.CandidateError, match="outside its presentation-only paths"):
+            focused_gate.full_pr_jobs(SimpleNamespace(), source, base, lambda _: log)
+
+
+def test_homepage_verdict_requires_site_and_policy_instead_of_a_coverage_artifact(
+    focused_gate, first_attempt, monkeypatch
+):
+    gate, run, _manifest, lane, rows, _logs, _git_rows = first_attempt
+    lane.update(name="Coverage", conclusion="skipped")
+    monkeypatch.setattr(
+        focused_gate, "full_pr_jobs", lambda *_: focused_gate.FullPrWorkload([lane], homepage_only=True)
+    )
+    monkeypatch.setattr(type(gate), "github", lambda _gate, path: rows[path])
+    assert focused_gate.verify(gate, run, "{}", lambda _: pytest.fail("homepage must not read coverage artifacts")) == (
+        "Homepage presentation scope passed site and policy checks"
+    )
 
 
 def test_full_pr_refuses_changes_to_each_protected_execution_input(focused_gate, monkeypatch):
