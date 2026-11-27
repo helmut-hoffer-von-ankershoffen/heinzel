@@ -143,7 +143,7 @@ def contracts_block(config: dict[str, Any]) -> str:
         + _ignores(allow.get("heads", [])),
     ]
     if "src/heinzel/spec/**" in contexts["spec"]["src"]:
-        layers = ["heinzel.kernel", "heinzel.spec"]
+        layers = ["heinzel.kernel", "heinzel.spec", "heinzel.ports"]
         if "services" in contexts:
             layers.insert(1, "heinzel.services")
         blocks.append(

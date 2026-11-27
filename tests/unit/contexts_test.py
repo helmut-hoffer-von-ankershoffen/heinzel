@@ -87,6 +87,16 @@ def test_the_import_contracts_in_pyproject_are_generated_from_the_map():
     assert problems == []
 
 
+def test_kernel_layers_keep_ports_below_spec():
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    layers = next(
+        contract["layers"]
+        for contract in project["tool"]["importlinter"]["contracts"]
+        if contract["name"] == "Kernel composition depends on declarative spec (contexts.toml)"
+    )
+    assert layers == ["heinzel.kernel", "heinzel.services", "heinzel.spec", "heinzel.ports"]
+
+
 def _exception_problems(entries: list[str], approved: set[str]) -> list[str]:
     counts = Counter(entries)
     return [

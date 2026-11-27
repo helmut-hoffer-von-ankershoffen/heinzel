@@ -1,6 +1,6 @@
 """The named ports through which code that updates or restarts Heinzelmännchen reaches the world.
 
-Protocols only; they import nothing of ours but the spec types they return. A real adapter lives in an `_adapter*.py`
+Protocols only, independent of the kernel and service implementations. A real adapter lives in an `_adapter*.py`
 of the context that owns it, a fake in `heinzel.testing`, and one contract test per port holds both to the same
 behaviour. A plugin gets a port injected by type, like a module gets a service (ADR 0026: this file is public).
 """
@@ -15,8 +15,6 @@ if TYPE_CHECKING:
     from contextlib import AbstractContextManager
     from datetime import datetime
     from pathlib import Path
-
-    from heinzel.kernel import EdgeRelease, ReleaseFacts
 
 __all__ = [
     "Clock",
@@ -164,6 +162,26 @@ class ServiceManager(Protocol):
         ...
 
 
+class _EdgeRelease(Protocol):
+    @property
+    def version(self) -> str: ...
+    @property
+    def wheel(self) -> str: ...
+    @property
+    def sha256(self) -> str: ...
+
+
+class _ReleaseFacts(Protocol):
+    @property
+    def version(self) -> str: ...
+    @property
+    def published_at(self) -> datetime | None: ...
+    @property
+    def commit(self) -> str | None: ...
+    @property
+    def prerelease(self) -> bool: ...
+
+
 @runtime_checkable
 class ReleaseSource(Protocol):
     """Where releases come from: the newest, the facts about one, whether it passed acceptance."""
@@ -176,11 +194,11 @@ class ReleaseSource(Protocol):
         """The highest published version among the newest releases, in version order rather than by date."""
         ...
 
-    def edge_release(self, timeout: float) -> EdgeRelease:
+    def edge_release(self, timeout: float) -> _EdgeRelease:
         """The newest edge release; asked only after someone chose the edge channel."""
         ...
 
-    def release_facts(self, version: str, timeout: float) -> ReleaseFacts:
+    def release_facts(self, version: str, timeout: float) -> _ReleaseFacts:
         """When `version` was published and which commit its tag names."""
         ...
 
