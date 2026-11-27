@@ -3,12 +3,13 @@ import { randomUUID } from "node:crypto";
 import { release } from "node:os";
 import { fileURLToPath } from "node:url";
 import { BrowserWindow, app, dialog, session, shell, webContents } from "electron";
-import { menuScript } from "./app-menu.js";
+import { installLegacyWorkspaceMenu, menuScript } from "./app-menu.js";
 import { lifecycle } from "./connection.js";
 import { attachClientHeader, machineName } from "./client-identity.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createNativePermissions } from "./native-permissions.js";
 import { guardUiNavigation, openProductUi } from "./ui-navigation.js";
+import { verifyWorkspaceRenderer } from "./workspace-attachment.js";
 import { windowOptions } from "./window-options.js";
 import { createWorkspaceAudio, systemAudioAvailable } from "./workspace-audio.js";
 import { showConnection } from "./main-picker.js";
@@ -23,14 +24,15 @@ export function createWindowLifecycle() {
       if (!window.isVisible()) window.show();
       window.focus();
     },
-    createWindow: (connection) => openProductUi({
+    createWindow: (connection, superseded) => openProductUi({
       connection,
       lifecycle: async (target) => {
         const state = await lifecycle(target);
         if (!target.remote) ctx.localBackendVersion = state.version;
         return state;
       },
-      cancelled: () => ctx.stopping || ctx.quitting,
+      cancelled: () => ctx.stopping || ctx.quitting || superseded?.(),
+      verifyRenderer: verifyWorkspaceRenderer,
       createWindow: async () => {
         const workspaceSession = session.fromPartition(`workspace-${randomUUID()}`);
         if (!connection.remote) await workspaceSession.setProxy({ mode: "direct" });
@@ -49,8 +51,12 @@ export function createWindowLifecycle() {
         },
         });
       },
-      prepareWindow: (window) => {
+      prepareWindow: (window, server) => {
+        if (server?.version) ctx.windowVersions.set(window, server.version);
         productWindows.add(window);
+        window.webContents.on("dom-ready", () => {
+          void window.webContents.executeJavaScript(`(${installLegacyWorkspaceMenu})(${JSON.stringify(connection.origin)})`).catch(() => {});
+        });
         const workspaceSession = window.webContents.session;
         window.on("closed", () => {
           void workspaceSession.clearStorageData().catch(() => {});
@@ -58,7 +64,8 @@ export function createWindowLifecycle() {
           if (!ctx.switching && !ctx.startingProductWindow && !ctx.pickerLoading && !ctx.quitting && !ctx.picker?.isVisible()) app.quit();
         });
         const recover = () => {
-          if (ctx.switching || ctx.stopping || ctx.quitting) return;
+          if (ctx.switching || ctx.stopping || ctx.quitting || window !== ctx.instance.currentWindow()) return;
+          ctx.rendererFailed = true; ctx.monitor?.select(null);
           ctx.workspaceController?.failed(connection, new Error("Workspace unavailable"));
           showConnection();
         };
@@ -72,14 +79,14 @@ export function createWindowLifecycle() {
           guardUiNavigation(window.webContents, connection, (url) => shell.openExternal(url));
           return;
         }
-        windows.add(window);
+        if (!superseded) windows.add(window);
         const windowPermissions = createNativePermissions({
           windows,
           fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
           connection: () => (ctx.stopping || ctx.quitting ? null : ctx.instance.currentConnection()),
           prompt: (owner, options) => dialog.showMessageBox(owner, options),
         });
-        ctx.permissions = windowPermissions;
+
         const audio = createWorkspaceAudio({
           windows,
           fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
@@ -88,7 +95,8 @@ export function createWindowLifecycle() {
           prompt: (owner, options) => dialog.showMessageBox(owner, options),
           system: systemAudioAvailable(process.platform, release()),
         });
-        ctx.workspaceAudio = audio;
+        ctx.windowCapabilities.set(window, { permissions: windowPermissions, audio });
+        if (!superseded) { ctx.workspaceAudio = audio; ctx.permissions = windowPermissions; }
         window.webContents.session.setPermissionCheckHandler((contents, permission, origin, details) =>
           permission === "display-capture" ? audio.check(contents, permission, origin, details) :
             windowPermissions.check(contents, permission, origin, details));

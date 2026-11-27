@@ -13,6 +13,7 @@ import {
   Info,
   type LucideIcon,
   Moon,
+  Network,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
@@ -44,6 +45,7 @@ import { BellButton } from "./NotificationCenter";
 import { CONTRACTS_SECTION, contractPath, railItems, sections, visibleSections } from "./navigation";
 import { useDark, useSelectedTheme } from "./ThemeTokens";
 import { useTheme } from "./theme";
+import { nativeWorkspaces } from "./titlebar";
 
 const link = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -548,6 +550,12 @@ function Footer({ compact = false, onPopOut }: { compact?: boolean; onPopOut?: (
             <MenuLink to="?settings=" icon={Settings} onSelect={close} shortcut="⌘,">
               {t("nav.settings")}
             </MenuLink>
+            <WorkspacesItem
+              onSelect={() => {
+                close();
+                trigger.current?.focus({ preventScroll: true });
+              }}
+            />
             <MenuLink to="/profile" icon={UserRound} onSelect={close}>
               {t("nav.profile")}
             </MenuLink>
@@ -616,23 +624,85 @@ type MenuLinkProps = {
   children: React.ReactNode;
 } & ({ to: string; href?: never } | { href: string; to?: never });
 
+const accountMenuRow =
+  "flex w-full items-center gap-3 rounded-lg px-2.5 py-1.5 text-left text-ui text-foreground/90 transition-colors hover:bg-accent [&_svg]:size-(--icon) [&_svg]:shrink-0 [&_svg]:stroke-[1.75] [&_svg]:text-icon";
+
+/** Mounts with the profile popup, so each opening reads the current native selection. */
+function WorkspacesItem({ onSelect }: { onSelect: () => void }) {
+  const workspaces = nativeWorkspaces();
+  const [name, setName] = useState("");
+  const [opening, setOpening] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!workspaces) return;
+    let active = true;
+    async function readName() {
+      try {
+        const current = await workspaces?.currentName();
+        if (active && typeof current === "string") setName(current.trim());
+      } catch {
+        // The native sheet is still usable when the current name cannot be read.
+      }
+    }
+    void readName();
+    return () => {
+      active = false;
+    };
+  }, [workspaces]);
+  if (!workspaces) return null;
+  return (
+    <button
+      ref={button}
+      type="button"
+      role="menuitem"
+      aria-haspopup="dialog"
+      aria-label={[t("account.workspaces"), name].filter(Boolean).join(" ")}
+      disabled={opening}
+      className={accountMenuRow}
+      onClick={async () => {
+        setOpening(true);
+        try {
+          if ((await workspaces.open()) && button.current) onSelect();
+        } catch {
+          // A temporarily unavailable native sheet leaves the menu open for another attempt.
+        } finally {
+          if (button.current) setOpening(false);
+        }
+      }}
+    >
+      <Network aria-hidden />
+      <span className="shrink-0">{t("account.workspaces")}</span>
+      {name && (
+        <span className="ml-auto min-w-0 truncate text-right text-ui-sm text-muted-foreground" title={name}>
+          {name}
+        </span>
+      )}
+    </button>
+  );
+}
+
 /** One row of the account menu: a screen of the app, or an external page in a new tab. */
 function MenuLink({ icon: Icon, onSelect, shortcut, children, ...target }: MenuLinkProps) {
-  const row =
-    "flex w-full items-center gap-3 rounded-lg px-2.5 py-1.5 text-left text-ui text-foreground/90 transition-colors hover:bg-accent [&_svg]:size-(--icon) [&_svg]:shrink-0 [&_svg]:stroke-[1.75] [&_svg]:text-icon";
   const tail = shortcut ? (
     <kbd className="ml-auto font-sans text-xs text-muted-foreground">{shortcut}</kbd>
   ) : target.href ? (
     <ExternalLink aria-hidden className="ml-auto !size-3.5" />
   ) : null;
   return target.to === undefined ? (
-    <a role="menuitem" href={target.href} target="_blank" rel="noreferrer" className={row} onClick={onSelect}>
+    <a
+      role="menuitem"
+      href={target.href}
+      target="_blank"
+      rel="noreferrer"
+      className={accountMenuRow}
+      onClick={onSelect}
+    >
       <Icon aria-hidden />
       {children}
       {tail}
     </a>
   ) : (
-    <NavLink role="menuitem" to={target.to} className={row} onClick={onSelect}>
+    <NavLink role="menuitem" to={target.to} className={accountMenuRow} onClick={onSelect}>
       <Icon aria-hidden />
       {children}
       {tail}

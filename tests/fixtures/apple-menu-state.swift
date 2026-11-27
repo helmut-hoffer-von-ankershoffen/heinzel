@@ -66,6 +66,26 @@ import Foundation
         var empty = MacWorkspaceSwitchState(choosingWorkspace: false, connectionPresented: false, hasEndpoint: false)
         empty.localStartFailed()
         precondition(!empty.connectionPresented, "empty startup cannot present a sheet requiring an endpoint")
+        let alder = URL(string: "https://alder.example.invalid")!
+        let cedar = URL(string: "https://cedar.example.invalid")!
+        let prompt = ShortcutRequest(route: .writePrompt, origin: alder)
+        let repeatPrompt = ShortcutRequest(route: .writePrompt, origin: alder)
+        precondition(prompt.id != repeatPrompt.id)
+        precondition(prompt.destination(selected: nil, saved: alder) == .restore(alder))
+        precondition(prompt.destination(selected: alder, saved: alder) == .current)
+        precondition(prompt.destination(selected: cedar, saved: alder) == .superseded)
+        precondition(prompt.destination(selected: nil, saved: cedar) == .superseded)
+        precondition(ShortcutRequest(route: .workspace, origin: nil).destination(selected: nil, saved: nil) == .current)
+
+        var sheets = ShortcutSheetDismissal()
+        precondition(sheets.next(entry: true, connection: true) == .entry)
+        precondition(!sheets.finished(.connection))
+        precondition(sheets.next(entry: false, connection: true) == nil)
+        precondition(sheets.finished(.entry))
+        precondition(sheets.next(entry: false, connection: true) == .connection)
+        precondition(sheets.finished(.connection))
+        precondition(sheets.next(entry: false, connection: false) == nil && sheets.waiting == nil)
+
         var intent = MacConnectionIntent()
         let startup = intent.revision
         precondition(state(endpoint: false, starting: true).connectionRoute == .setup)

@@ -191,6 +191,14 @@ export const useReleased = (version: string) =>
     staleTime: 60 * 60 * 1000,
   });
 
+export const useWorkspaceVersion = (enabled: boolean) =>
+  useQuery({
+    queryKey: ["workspace-version"],
+    queryFn: () => unwrap(api.GET("/workspace-version")),
+    enabled,
+    retry: false,
+  });
+
 export const useInfo = () =>
   useQuery({ queryKey: ["system", "info"], queryFn: () => unwrap(api.GET("/system/info")), staleTime: 10 * 60 * 1000 });
 

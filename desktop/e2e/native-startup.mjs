@@ -33,12 +33,12 @@ const request = new Promise((resolve) => {
 const server = createServer((incoming, outgoing) => {
   if (incoming.method === "GET" && incoming.url === "/") {
     outgoing.writeHead(200, { "content-type": "text/html", "content-security-policy": "default-src 'self'; script-src 'self'" });
-    outgoing.end('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Native UI fixture</title></head><body><p>Isolated native fixture</p><script src="/native-fixture.js"></script></body></html>');
+    outgoing.end('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Native UI fixture</title></head><body data-testid="app-shell"><p>Isolated native fixture</p><script src="/native-fixture.js"></script></body></html>');
     return;
   }
   if (incoming.method === "GET" && incoming.url === "/native-fixture.js") {
     outgoing.writeHead(200, { "content-type": "text/javascript" });
-    outgoing.end('const credential = new URLSearchParams(location.hash.slice(1)).get("token"); history.replaceState(null, "", "/"); window.heinzelDesktop.lifecycle().then(() => fetch("/native-ready", { headers: { Authorization: `Bearer ${credential}` } }));');
+    outgoing.end('const credential = new URLSearchParams(location.hash.slice(1)).get("token"); sessionStorage.setItem("hz.token", credential); history.replaceState(null, "", "/"); window.heinzelDesktop.lifecycle().then(() => fetch("/native-ready", { headers: { Authorization: `Bearer ${credential}` } }));');
     return;
   }
   const accepted = incoming.method === "GET" && incoming.url === "/api/lifecycle";

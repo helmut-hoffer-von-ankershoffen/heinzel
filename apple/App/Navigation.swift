@@ -16,19 +16,11 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     // This context is fixed for the lifetime of the WKWebView. Never replace it
     // in response to a later callback from the same view.
     private let widgetActivation: ActivityCatalog.Activation?
+    private let requiresVerification: () -> Bool
+    private let isSelected: () -> Bool
     private let ready: () -> Void
     private let reportHostName: (String) -> Void
     private let reportBackendVersion: (WorkspaceVersionObservation) -> Void
-    private let reportFooterSlot: (CGRect?) -> Void
-    #if os(iOS)
-    private var footerWidth: CGFloat = 88
-    private var footerBottom: CGFloat = 0
-    private var footerGeneration = 0
-    private var lastFooterMetrics: (CGFloat, CGFloat, Int)?
-    private var pendingFooterMetrics: (CGFloat, CGFloat, Int)?
-    private var footerDeliveryAttempts = 0
-    private var footerDeliveryID = 0
-    #endif
     private let versionRefresh = WorkspaceVersionRefresh()
     private var lookedUpHostName = false
     weak var workspace: WKWebView?
@@ -260,23 +252,29 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     private let reportError: (WorkspaceProblem) -> Void
     private let isWidgetWorkspaceCurrent: () -> Bool
     private let isMenuWorkspaceCurrent: () -> Bool
+    private let openWorkspaceChooser: () -> Bool
+    private let selectedWorkspaceName: () -> String?
     private let isEnrollmentViewCurrent: () -> Bool
 
-    init(endpoint: Endpoint, ready: @escaping () -> Void, reportHostName: @escaping (String) -> Void,
+    init(endpoint: Endpoint, isSelected: @escaping () -> Bool, requiresVerification: @escaping () -> Bool, ready: @escaping () -> Void, reportHostName: @escaping (String) -> Void,
          reportBackendVersion: @escaping (WorkspaceVersionObservation) -> Void,
-         reportFooterSlot: @escaping (CGRect?) -> Void,
          reportError: @escaping (WorkspaceProblem) -> Void, isWidgetWorkspaceCurrent: @escaping () -> Bool,
-         isMenuWorkspaceCurrent: @escaping () -> Bool, isEnrollmentViewCurrent: @escaping () -> Bool) {
+         isMenuWorkspaceCurrent: @escaping () -> Bool, selectedWorkspaceName: @escaping () -> String?,
+         openWorkspaceChooser: @escaping () -> Bool = { false },
+         isEnrollmentViewCurrent: @escaping () -> Bool) {
         self.endpoint = endpoint
+        self.requiresVerification = requiresVerification
+        self.isSelected = isSelected
         let activation = ActivityWidgetData.currentActivation()
         self.widgetActivation = activation?.endpoint == endpoint.origin.absoluteString ? activation : nil
         self.ready = ready
         self.reportHostName = reportHostName
         self.reportBackendVersion = reportBackendVersion
-        self.reportFooterSlot = reportFooterSlot
         self.reportError = reportError
         self.isWidgetWorkspaceCurrent = isWidgetWorkspaceCurrent
         self.isMenuWorkspaceCurrent = isMenuWorkspaceCurrent
+        self.openWorkspaceChooser = openWorkspaceChooser
+        self.selectedWorkspaceName = selectedWorkspaceName
         self.isEnrollmentViewCurrent = isEnrollmentViewCurrent
         super.init()
         for name in [AlbumLibrary.changed, AlbumLibrary.progress, SoundscapePlayback.changed] {
@@ -385,14 +383,31 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
               endpoint.permitsNavigation(to: url, inMainFrame: response.isForMainFrame) else { return .cancel }
         if response.isForMainFrame, let http = response.response as? HTTPURLResponse,
            let problem = WorkspaceProblem(response: http.statusCode) {
-            if (http.statusCode == 401 || http.statusCode == 403), let widgetActivation {
-                _ = WidgetCredentialStore.invalidateShared(widgetActivation)
-                ActivityWidgetData.reload()
-            }
-            reportError(problem)
+            navigationFailed(problem, in: webView)
             return .cancel
         }
         return .allow
+    }
+
+    private func navigationFailed(_ problem: WorkspaceProblem, in view: WKWebView) {
+        guard isSelected(), hasCommittedWorkspace, !requiresVerification() else {
+            reportError(problem)
+            return
+        }
+        // A failed resource navigation leaves the current document mounted. Only that
+        // document's authenticated lifecycle response can establish a workspace problem.
+        let revision = documentRevision
+        Task { [weak self, weak view] in
+            guard let self, let view else { return }
+            let issue = await WorkspaceWebSession.issue(in: view, for: endpoint, requireRenderedShell: false)
+            guard isSelected(), workspace === view, revision == documentRevision, !requiresVerification(),
+                  let issue else { return }
+            if issue.revokesAccess, let widgetActivation {
+                _ = WidgetCredentialStore.invalidateShared(widgetActivation)
+                ActivityWidgetData.reload()
+            }
+            reportError(issue)
+        }
     }
 
     func webView(
@@ -406,7 +421,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     private func handOffExternalNavigation(_ action: WKNavigationAction, from webView: WKWebView) {
         // A button can use window.open or assign location. Redirects from a provisional load may
         // call the same delegate, so allow handoffs only from the committed workspace.
-        guard case .idle = provisionalLoad, webView === workspace, webView.url.map(endpoint.owns) == true,
+        guard isSelected(), case .idle = provisionalLoad, webView === workspace, webView.url.map(endpoint.owns) == true,
               action.navigationType == .linkActivated || action.navigationType == .other,
               action.sourceFrame.isMainFrame,
               action.sourceFrame.request.url.map(endpoint.owns) == true,
@@ -414,7 +429,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
               let value = action.request.url?.absoluteString,
               let target = externalLinks.take(value, from: endpoint, needsActivation: true) else { return }
         Task { [weak self, weak webView] in
-            guard let self, let webView, case .idle = provisionalLoad,
+            guard let self, isSelected(), let webView, case .idle = provisionalLoad,
                   webView === workspace, webView.url.map(endpoint.owns) == true else { return }
             _ = await openExternal(target)
         }
@@ -425,27 +440,14 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         initiatedBy frame: WKFrameInfo, type: WKMediaCaptureType
     ) async -> WKPermissionDecision {
         let requestIsOwned = frame.request.url.map(endpoint.owns) == true
-        return frame.isMainFrame && requestIsOwned && type == .microphone ? .prompt : .deny
+        return isSelected() && frame.isMainFrame && requestIsOwned && type == .microphone ? .prompt : .deny
     }
 
     func userContentController(
         _ controller: WKUserContentController, didReceive message: WKScriptMessage,
         replyHandler: @escaping @MainActor (Any?, String?) -> Void
     ) {
-        #if os(iOS)
-        if message.name == "heinzelFooter" {
-            guard case .idle = provisionalLoad, let view = verifiedWorkspace(for: message),
-                  let values = message.body as? [String: Any] else {
-                replyHandler(false, nil)
-                return
-            }
-            let accepted = WorkspaceFooterGeometry.receive(values, viewport: view.bounds.size,
-                width: footerWidth, bottom: footerBottom, revision: documentRevision,
-                generation: footerGeneration, report: reportFooterSlot)
-            replyHandler(accepted, nil)
-            return
-        }
-        #endif
+        guard isSelected() else { replyHandler(nil, "Workspace is not selected"); return }
         if message.name == "heinzelExternalLink", message.body as? String == "browser-external" {
             guard case .idle = provisionalLoad, let workspace = verifiedWorkspace(for: message),
                   workspace.window?.isKeyWindow == true, let target = browser.externalTarget(),
@@ -459,7 +461,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             Task { [weak self, weak workspace] in
                 guard let self else { replyHandler(false, nil); return }
                 let resolved = await guestDNS.resolve(host) { BrowserAddress.resolve($0) != nil }
-                guard let workspace, resolved, requestedAt.duration(to: .now) <= .seconds(1), self.workspace === workspace,
+                guard isSelected(), let workspace, resolved, requestedAt.duration(to: .now) <= .seconds(1), self.workspace === workspace,
                       revision == documentRevision, case .idle = provisionalLoad,
                       workspace.window?.isKeyWindow == true, browser.isCurrent(target) else {
                     replyHandler(false, nil)
@@ -505,71 +507,16 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     @objc private func albumChanged() {
-        guard case .idle = provisionalLoad, let workspace, workspace.url.map(endpoint.owns) == true else { return }
+        guard isSelected(), case .idle = provisionalLoad, let workspace, workspace.url.map(endpoint.owns) == true else { return }
         workspace.evaluateJavaScript("window.dispatchEvent(new Event('heinzel-album-change'))")
     }
 
     private func verifiedWorkspace(for message: WKScriptMessage) -> WKWebView? {
-        guard message.frameInfo.isMainFrame, message.frameInfo.request.url.map(endpoint.owns) == true,
+        guard isSelected(), message.frameInfo.isMainFrame, message.frameInfo.request.url.map(endpoint.owns) == true,
               let workspace, message.webView === workspace,
               workspace.url.map(endpoint.owns) == true else { return nil }
         return workspace
     }
-
-    #if os(iOS)
-    func updateFooterMetrics(in view: WKWebView, width: CGFloat, bottom: CGFloat, generation: Int) {
-        guard view === workspace, width.isFinite, bottom.isFinite else { return }
-        let newWidth = min(180, max(44, width))
-        let newBottom = min(80, max(0, bottom))
-        if footerWidth != newWidth || footerBottom != newBottom || footerGeneration != generation {
-            footerDeliveryAttempts = 0
-            footerDeliveryID &+= 1
-            lastFooterMetrics = nil
-            pendingFooterMetrics = nil
-        }
-        footerWidth = newWidth
-        footerBottom = newBottom
-        footerGeneration = generation
-        guard view === workspace, view.url.map(endpoint.owns) == true, case .idle = provisionalLoad else { return }
-        let metrics = (footerWidth, footerBottom, footerGeneration)
-        if let lastFooterMetrics, lastFooterMetrics == metrics { return }
-        if let pendingFooterMetrics, pendingFooterMetrics == metrics { return }
-        guard footerDeliveryAttempts < 10 else { return }
-        footerDeliveryAttempts += 1
-        footerDeliveryID &+= 1
-        let delivery = footerDeliveryID
-        pendingFooterMetrics = metrics
-        let revision = documentRevision
-        let script = "typeof window.__heinzelUpdateFooter === 'function' ? (window.__heinzelUpdateFooter(\(footerWidth), \(footerBottom), \(revision), \(footerGeneration)), true) : false"
-        view.evaluateJavaScript(script) { [weak self, weak view] value, error in
-            guard let self, let view, self.workspace === view, self.footerDeliveryID == delivery,
-                  WorkspaceFooterGeometry.deliveryIsCurrent(revision: revision, currentRevision: self.documentRevision,
-                    requested: metrics, current: (self.footerWidth, self.footerBottom, self.footerGeneration)) else { return }
-            self.pendingFooterMetrics = nil
-            if error == nil, value as? Bool == true {
-                self.lastFooterMetrics = metrics
-            } else {
-                Task { @MainActor [weak self, weak view] in
-                    do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
-                    guard let self, let view, self.workspace === view,
-                          WorkspaceFooterGeometry.deliveryIsCurrent(revision: revision, currentRevision: self.documentRevision,
-                            requested: metrics, current: (self.footerWidth, self.footerBottom, self.footerGeneration)) else { return }
-                    self.updateFooterMetrics(in: view, width: metrics.0, bottom: metrics.1, generation: metrics.2)
-                }
-            }
-        }
-        Task { @MainActor [weak self, weak view] in
-            do { try await Task.sleep(for: .seconds(1)) } catch { return }
-            guard let self, let view, self.workspace === view,
-                  self.footerDeliveryID == delivery, self.pendingFooterMetrics != nil,
-                  WorkspaceFooterGeometry.deliveryIsCurrent(revision: revision, currentRevision: self.documentRevision,
-                    requested: metrics, current: (self.footerWidth, self.footerBottom, self.footerGeneration)) else { return }
-            self.footerDeliveryID &+= 1
-            self.pendingFooterMetrics = nil
-            self.updateFooterMetrics(in: view, width: metrics.0, bottom: metrics.1, generation: metrics.2)
-        }
-    }
-    #endif
 
     private func handle(_ message: WKScriptMessage, at revision: Int) async -> (Any?, String?) {
         guard let workspace = verifiedWorkspace(for: message) else { return (nil, "Workspace command unavailable") }
@@ -615,6 +562,22 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                   let target = externalLinks.take(value, from: endpoint, needsActivation: false) else { return (false, nil) }
             return (await openExternal(target), nil)
         }
+        if message.name == "heinzelWorkspaces", let action = message.body as? String {
+            #if os(macOS)
+            guard workspace.window?.attachedSheet == nil, acceptsMenuAction(in: workspace) else {
+                return (nil, "Workspace selector unavailable")
+            }
+            #else
+            guard workspace.window?.isKeyWindow == true else { return (nil, "Workspace selector unavailable") }
+            #endif
+            guard revision == documentRevision, case .idle = provisionalLoad, hasCommittedWorkspace,
+                  isMenuWorkspaceCurrent(), let name = selectedWorkspaceName() else {
+                return (nil, "Workspace selector unavailable")
+            }
+            if action == "workspace-name" { return (name, nil) }
+            guard action == "workspaces" else { return (nil, "Unknown workspace action") }
+            return (openWorkspaceChooser(), nil)
+        }
         #if os(macOS)
         if message.name == "heinzelWindow", message.body as? String == "fullscreen" {
             observeWindow(workspace.window)
@@ -629,7 +592,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         if message.name == "heinzelWindow", message.body as? String == "lifecycle" {
             guard endpoint.origin.scheme == "http", revision == documentRevision, case .idle = provisionalLoad,
                   let state = try? await endpoint.readLifecycle(),
-                  self.workspace === workspace, revision == documentRevision else {
+                  isSelected(), self.workspace === workspace, revision == documentRevision else {
                 return (nil, "Local service unavailable")
             }
             return (["instance": state.instance, "version": state.version, "restartable": state.restartable == true], nil)
@@ -661,13 +624,13 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                 nativeAudio = capture
                 #if os(macOS)
                 guard await capture.confirm(in: window),
-                      revision == documentRevision, nativeAudio === capture else {
+                      isSelected(), revision == documentRevision, nativeAudio === capture else {
                     if nativeAudio === capture { nativeAudio = nil }
                     return (false, nil)
                 }
                 #endif
                 let started = await capture.start()
-                guard started, revision == documentRevision, nativeAudio === capture else {
+                guard started, isSelected(), revision == documentRevision, nativeAudio === capture else {
                     capture.stop()
                     if nativeAudio === capture { nativeAudio = nil }
                     return (false, nil)
@@ -697,7 +660,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     private func handleNotice(_ request: [String: Any], in view: WKWebView) async -> Any? {
         let notices = WorkspaceNotifications.shared
         let revision = documentRevision
-        let current = { self.workspace === view && self.documentRevision == revision }
+        let current = { self.isSelected() && self.workspace === view && self.documentRevision == revision }
         switch request["action"] as? String {
         case "status": return await notices.status(for: endpoint)
         case "enable":
@@ -753,11 +716,13 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     #endif
 
     @objc private func nativeNoticeChanged() {
+        guard isSelected() else { return }
         guard let workspace, workspace.url.map(endpoint.owns) == true else { return }
         workspace.evaluateJavaScript("window.dispatchEvent(new Event('heinzel-notification-permissions-changed'))")
     }
 
     @objc private func nativeNoticeOpened() {
+        guard isSelected() else { return }
         guard let workspace, workspace.url.map(endpoint.owns) == true else { return }
         workspace.evaluateJavaScript("window.dispatchEvent(new Event('hz:native-notice'))") { _, _ in
             // The event is advisory; a disconnected page needs no completion action.
@@ -765,10 +730,11 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     private func openExternal(_ target: URL) async -> Bool {
+        guard isSelected() else { return false }
         #if os(macOS)
-        NSWorkspace.shared.open(target)
+        return NSWorkspace.shared.open(target)
         #else
-        await UIApplication.shared.open(target)
+        return await UIApplication.shared.open(target)
         #endif
     }
 
@@ -786,7 +752,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         }
         // Use WebKit's last layout while AppKit is still handling the original mouse-down.
         mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-            guard let self, let window = self.observedWindow, event.window === window,
+            guard let self, self.isSelected(), let window = self.observedWindow, event.window === window,
                   !window.styleMask.contains(.fullScreen), window.attachedSheet == nil,
                   let view = self.workspace, view.window === window,
                   let layout = self.dragLayout, layout.contains(event, in: view) else { return event }
@@ -796,20 +762,24 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     @objc private func windowChanged() {
+        guard isSelected() else { return }
         workspace?.evaluateJavaScript("window.dispatchEvent(new Event('heinzel-window-change'))")
+    }
+
+    private func acceptsMenuAction(in workspace: WKWebView) -> Bool {
+        let loading: Bool
+        if case .idle = provisionalLoad { loading = false } else { loading = true }
+        return MacMenuDelivery.allowed(available: isMenuWorkspaceCurrent(),
+                                visible: !workspace.isHiddenOrHasHiddenAncestor,
+                                keyWindow: workspace.window?.isKeyWindow == true,
+                                ownsOrigin: workspace.url.map(endpoint.owns) == true,
+                                committed: hasCommittedWorkspace, loading: loading)
     }
 
     @objc private func menuAction(_ notification: Notification) {
         guard let request = notification.object as? WorkspaceMenuRequest,
               let workspace else { return }
-        let loading: Bool
-        if case .idle = provisionalLoad { loading = false } else { loading = true }
-        guard MacMenuDelivery.allowed(available: isMenuWorkspaceCurrent(),
-                                      visible: !workspace.isHiddenOrHasHiddenAncestor,
-                                      keyWindow: workspace.window?.isKeyWindow == true,
-                                      ownsOrigin: workspace.url.map(endpoint.owns) == true,
-                                      committed: hasCommittedWorkspace, loading: loading),
-              request.claim() else { return }
+        guard acceptsMenuAction(in: workspace), request.claim() else { return }
         let action = request.action
         switch action {
         case .about:
@@ -828,7 +798,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     #endif
 
     func close(_ view: WKWebView) {
-        if workspace === view { workspace = nil; reportFooterSlot(nil) }
+        if workspace === view { workspace = nil }
         documentRevision &+= 1
         versionRefresh.cancel()
         enrollmentTask?.cancel()
@@ -837,6 +807,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         for name in [AlbumLibrary.changed, AlbumLibrary.progress, SoundscapePlayback.changed] {
             NotificationCenter.default.removeObserver(self, name: name, object: nil)
         }
+        view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelWorkspaces", contentWorld: .page)
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelAlbum", contentWorld: .page)
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelNotices", contentWorld: .page)
         view.configuration.userContentController.removeScriptMessageHandler(
@@ -848,7 +819,6 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelWindow", contentWorld: .page)
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelDrag", contentWorld: .defaultClient)
         #else
-        view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelFooter", contentWorld: .page)
         backgroundObservation?.invalidate()
         noticeAlert?.dismiss(animated: false)
         finishNoticeConfirmation(false)
@@ -863,13 +833,6 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         guard webView === workspace, let navigation else { return }
-        #if os(iOS)
-        reportFooterSlot(nil)
-        lastFooterMetrics = nil
-        pendingFooterMetrics = nil
-        footerDeliveryAttempts = 0
-        footerDeliveryID &+= 1
-        #endif
         currentNavigation = navigation
         documentRevision &+= 1
         versionRefresh.cancel()
@@ -895,14 +858,29 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard webView === workspace, let navigation, currentNavigation === navigation else { return }
         endProvisionalLoad(navigation)
-        #if os(iOS)
-        lastFooterMetrics = nil
-        pendingFooterMetrics = nil
-        footerDeliveryAttempts = 0
-        footerDeliveryID &+= 1
-        updateFooterMetrics(in: webView, width: footerWidth, bottom: footerBottom, generation: footerGeneration)
-        #endif
-        if endpoint.origin.scheme == "https", endpoint.token == nil {
+        guard isSelected() || requiresVerification() else { return }
+        if requiresVerification() {
+            let revision = documentRevision
+            Task {
+                await WorkspaceWebSession.verify(in: webView, for: endpoint) {
+                    self.requiresVerification() && self.workspace === webView && revision == self.documentRevision &&
+                        self.currentNavigation === navigation
+                } completed: { issue in
+                    if let issue { self.reportError(issue) } else { self.ready() }
+                }
+                guard isSelected(), !requiresVerification() else { return }
+                #if os(macOS)
+                observeWindow(webView.window)
+                windowChanged()
+                #endif
+                nativeNoticeChanged()
+                nativeNoticeOpened()
+                albumChanged()
+                scheduleWidgetEnrollment(in: webView, revision: revision)
+                refreshWorkspaceVersion()
+                await resolveWorkspaceName(in: webView)
+            }
+        } else if endpoint.origin.scheme == "https", endpoint.token == nil {
             let revision = documentRevision
             Task {
                 // A host installed before native onboarding may show its desktop command on a fresh phone.
@@ -912,7 +890,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                     !sessionStorage.getItem('hz.token') && !localStorage.getItem('hz.device') &&
                     !new URLSearchParams(location.hash.slice(1)).has('token')
                     """) as? Bool
-                guard workspace === webView, revision == documentRevision, currentNavigation === navigation else { return }
+                guard isSelected(), workspace === webView, revision == documentRevision, currentNavigation === navigation else { return }
                 if needsSignIn == true {
                     if let widgetActivation { _ = WidgetCredentialStore.invalidateShared(widgetActivation); ActivityWidgetData.reload() }
                     reportError(.signIn)
@@ -954,7 +932,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             return await self.resolveWorkspaceVersion(in: view)
         }, isCurrent: { [weak self, weak view] in
             guard let self, let view else { return false }
-            return self.workspace === view && self.documentRevision == document &&
+            return self.isSelected() && self.workspace === view && self.documentRevision == document &&
                 view.url.map(self.endpoint.owns) == true
         }, report: { [weak self] observation in self?.reportBackendVersion(observation) })
     }
@@ -972,35 +950,10 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         for attempt in 0..<5 {
             guard !Task.isCancelled, workspace === view, revision == documentRevision,
                   view.url.map(endpoint.owns) == true else { return nil }
-            let data = try? await inspectWorkspace(in: view, arguments: ["clientIdentity": identity], body: """
-                const date = value => {
-                    if (typeof value !== 'string') return null;
-                    const m = /^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(?:[.][0-9]{1,6})?(?:Z|[+-]([0-9]{2}):([0-9]{2}))$/.exec(value);
-                    if (!m) return null;
-                    const [, year, month, day, hour, minute, second, offsetHour, offsetMinute] = m.map(Number);
-                    if (year < 1970 || month < 1 || month > 12 || day < 1 || day > new Date(Date.UTC(year, month, 0)).getUTCDate() ||
-                        hour > 23 || minute > 59 || second > 59 || (offsetHour || 0) > 23 || (offsetMinute || 0) > 59) return null;
-                    const ms = Date.parse(value); return Number.isFinite(ms) ? ms : null;
-                };
-                const response = await fetch('/api/workspace-version', { ...options,
-                    headers: { ...options.headers, ...(clientIdentity ? { 'X-Heinzel-Client': clientIdentity } : {}) }, redirect: 'error', mode: 'same-origin' });
-                if (response.ok) {
-                    const info = await response.json();
-                    return {version:info?.web?.version ?? null, installedVersion:info?.installed?.version ?? null,
-                            installedUpdatedAt:date(info?.installed?.updated_at), daemonLastVersion:info?.daemon?.last_observed_version ?? null,
-                            daemonLastObservedAt:date(info?.daemon?.last_observed_at),
-                            daemonObservationStale:typeof info?.daemon?.observation_stale === 'boolean' ? info.daemon.observation_stale : null};
-                }
-                if (response.status !== 404) return null;
-                const fallback = await fetch('/api/system/info', options);
-                if (!fallback.ok) return null;
-                const info = await fallback.json();
-                return {version:info?.version ?? null};
-                """) as? [String: Any]
-            guard !Task.isCancelled, workspace === view, revision == documentRevision, view.url.map(endpoint.owns) == true else { return nil }
-            if let data, let observation = WorkspaceVersionObservation.fromPayload(data, now: .now) {
-                return observation
-            }
+            let observation = await WorkspaceDocumentFacts.version(in: view, origin: endpoint.origin, clientIdentity: identity)
+            guard !Task.isCancelled, workspace === view, revision == documentRevision,
+                  view.url.map(endpoint.owns) == true else { return nil }
+            if let observation { return observation }
             if attempt < 4 { do { try await Task.sleep(for: .seconds(1)) } catch { return nil } }
         }
         return nil
@@ -1022,7 +975,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             }
             return null;
             """) as? String
-        guard workspace === view, revision == documentRevision, let name else { return }
+        guard isSelected(), workspace === view, revision == documentRevision, let name else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty && trimmed.count <= 128 && trimmed.rangeOfCharacter(from: .controlCharacters) == nil {
             reportHostName(trimmed)
@@ -1047,7 +1000,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         guard webView === workspace, let navigation, currentNavigation === navigation else { return }
         endProvisionalLoad(navigation)
-        pageFailed(error)
+        pageFailed(error, in: webView)
         nativeNoticeOpened()
     }
 
@@ -1057,18 +1010,11 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         guard webView === workspace, let navigation, currentNavigation === navigation else { return }
-        pageFailed(error)
+        pageFailed(error, in: webView)
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         guard webView === workspace else { return }
-        #if os(iOS)
-        reportFooterSlot(nil)
-        lastFooterMetrics = nil
-        pendingFooterMetrics = nil
-        footerDeliveryAttempts = 0
-        footerDeliveryID &+= 1
-        #endif
         documentRevision &+= 1
         versionRefresh.cancel()
         currentNavigation = nil
@@ -1083,17 +1029,12 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         reportError(.interrupted)
     }
 
-    private func pageFailed(_ error: Error) {
+    private func pageFailed(_ error: Error, in view: WKWebView) {
         let failure = error as NSError
         if failure.domain == NSURLErrorDomain, failure.code == NSURLErrorCancelled { return }
         // WebKit reports a cancelled policy decision as a frame load interruption. The previous
         // workspace remains visible when a cross-origin redirect or external handoff is denied.
         if failure.domain == "WebKitErrorDomain", failure.code == 102 { return }
-        if failure.domain == NSURLErrorDomain, failure.code == NSURLErrorUserAuthenticationRequired,
-           let widgetActivation {
-            _ = WidgetCredentialStore.invalidateShared(widgetActivation)
-            ActivityWidgetData.reload()
-        }
-        reportError(WorkspaceProblem(navigationError: error))
+        navigationFailed(WorkspaceProblem(navigationError: error), in: view)
     }
 }

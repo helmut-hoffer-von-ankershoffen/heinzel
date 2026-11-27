@@ -30,7 +30,7 @@ export function startWhenReady() {
       ctx.instance.setReady();
       ctx.browserBridge.start();
       ctx.startingProductWindow = true;
-      return ctx.instance.open().finally(() => { ctx.startingProductWindow = false; });
+      return ctx.instance.open().then((window) => { if (window && ctx.instance.currentConnection() === connection) ctx.selected(connection); }).finally(() => { ctx.startingProductWindow = false; });
     });
   }).catch((error) => {
     if (ctx.stopping) return;
@@ -40,7 +40,7 @@ export function startWhenReady() {
       : "The local service could not start. Check that Heinzelmännchen is installed and try again.";
     let failedConnection = null;
     try { failedConnection = ctx.instance.currentConnection(); } catch { /* Service did not start. */ }
-    ctx.workspaceController?.failed(failedConnection, new Error(message));
+    ctx.workspaceController?.failed(failedConnection, Object.assign(new Error(message), { userMessage: error?.message?.includes("too old") ? error.message : message }));
     showConnection();
   });
 }

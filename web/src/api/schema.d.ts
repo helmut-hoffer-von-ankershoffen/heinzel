@@ -18064,6 +18064,11 @@ export interface components {
          */
         WorkspaceWebVersion: {
             /**
+             * Backend Ip
+             * @description Local HTTP server socket IP, not a proxy or client address; null when unavailable.
+             */
+            backend_ip?: string | null;
+            /**
              * Observed Since
              * Format: date-time
              * @description When this server instance was initialized; not process start time.
@@ -18071,7 +18076,7 @@ export interface components {
             observed_since: string;
             /**
              * Running Since
-             * @description Unknown without a verified process start time.
+             * @description OS-reported start time of the answering process; null when unavailable or invalid.
              */
             running_since?: string | null;
             /**

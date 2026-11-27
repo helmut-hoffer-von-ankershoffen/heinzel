@@ -22868,6 +22868,18 @@
       "WorkspaceWebVersion": {
         "description": "The answering server's own loaded code and when this server instance was created.",
         "properties": {
+          "backend_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Local HTTP server socket IP, not a proxy or client address; null when unavailable.",
+            "title": "Backend Ip"
+          },
           "observed_since": {
             "description": "When this server instance was initialized; not process start time.",
             "format": "date-time",
@@ -22884,7 +22896,7 @@
                 "type": "null"
               }
             ],
-            "description": "Unknown without a verified process start time.",
+            "description": "OS-reported start time of the answering process; null when unavailable or invalid.",
             "title": "Running Since"
           },
           "version": {

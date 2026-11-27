@@ -39,17 +39,37 @@ if mode == "oversized":
     exit(0)
 
 token = "x" * 43
+if mode == "backoff" and os.path.exists("listener.port"):
+    # A later explicit attach supplies a new launch token for the existing listener.
+    with open("listener.port") as listener:
+        port = listener.read().strip()
+    with open("rotation", "w"):
+        pass
+    print(f"http://127.0.0.1:{port}/#token=" + "y" * 43)
+    exit(0)
+
 answered = []
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.headers.get("Authorization") != "Bearer " + token:
+        accepted = "y" * 43 if mode == "backoff" and os.path.exists("rotation") else token
+        if self.headers.get("Authorization") != "Bearer " + accepted:
             self.send_error(401)
             return
         answered.append(self.path)
+        if mode == "prepare":
+            with open("probes", "a") as record:
+                record.write("checked\\n")
         if mode == "flaky" and self.path == "/api/lifecycle" and len(answered) in {2, 3}:
             self.send_error(503)  # two failed probes during a restart, then it answers again
             return
         if self.path == "/api/lifecycle":
+            # The first response attaches. Then exercise the four failure cases and recover.
+            if mode == "lifecycle-errors" and 2 <= len(answered) <= 5:
+                status, body = [(401, b""), (403, b""), (503, b""), (200, b"{}")][len(answered) - 2]
+                self.send_response(status)
+                self.end_headers()
+                self.wfile.write(body)
+                return
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b'{"instance":"fixture","version":"1.0","restartable":true}')
@@ -58,6 +78,9 @@ class Handler(BaseHTTPRequestHandler):
 
 # The owned service: not a child of the app. The attach command forks it off, prints its link and exits.
 server = LoopbackThreadingHTTPServer(("127.0.0.1", 0), Handler)
+if mode == "backoff":
+    with open("listener.port", "w") as listener:
+        listener.write(str(server.server_port))
 service = os.fork()
 if service == 0:
     os.setsid()
@@ -71,7 +94,17 @@ exit(1 if mode == "fails" else 0)
 """
 
 
-PROBES = {"lost", "flaky", "overlap", "backoff", "outdated"}
+PROBES = {
+    "lost",
+    "flaky",
+    "overlap",
+    "backoff",
+    "outdated",
+    "prepare",
+    "lifecycle-errors",
+    "continuity",
+    "page-authorization",
+}
 
 
 @pytest.fixture(scope="module")
@@ -102,7 +135,22 @@ def local_service_probe(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.mark.timeout(75)  # Includes a cold Swift compiler and SDK module cache.
 @pytest.mark.parametrize(
-    "mode", ["attach", "lost", "flaky", "overlap", "backoff", "outdated", "fails", "eof", "oversized"]
+    "mode",
+    [
+        "attach",
+        "lost",
+        "flaky",
+        "overlap",
+        "backoff",
+        "outdated",
+        "prepare",
+        "continuity",
+        "fails",
+        "eof",
+        "oversized",
+        "lifecycle-errors",
+        "page-authorization",
+    ],
 )
 def test_mac_app_attaches_to_the_owned_service_and_never_spawns_or_stops_one(
     local_service_probe: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
@@ -119,9 +167,9 @@ def test_mac_app_attaches_to_the_owned_service_and_never_spawns_or_stops_one(
             check=True,
             timeout=15,
         )
-        # One attach per start, never `serve`; a lost service is attached again; overlapping starts share one.
-        if mode != "backoff":
-            assert (tmp_path / "argv").read_text(encoding="utf-8") == ("attach\n" * (2 if mode == "lost" else 1))
+        # Loss and explicit reattachment after rotation need a second attach. Concurrent starts share one.
+        expected_attaches = 2 if mode in {"lost", "backoff"} else 1
+        assert (tmp_path / "argv").read_text(encoding="utf-8") == "attach\n" * expected_attaches
     finally:
         record = tmp_path / "service.pid"
         if record.exists():

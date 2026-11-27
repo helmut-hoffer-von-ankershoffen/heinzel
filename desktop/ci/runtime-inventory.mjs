@@ -12,7 +12,7 @@ export const RUNTIME_FILES = Object.freeze([
   "mini-browser.js", "native-permissions.js", "owned-cli.js", "preload.cjs", "public-media.js", "reattach.js",
   "settings-store.js",
   "shutdown.js", "signal-quit.js", "ui-navigation.js", "window-options.js",
-  "workspace-audio.js", "workspace-brand.svg",
+  "workspace-attachment.js", "workspace-audio.js", "workspace-facts.js", "workspace-monitor.js", "workspace-brand.svg",
   "workspace-controller.js", "workspace-directory.js", "workspace-picker-preload.cjs", "workspace-picker.css",
   "workspace-picker.html", "workspace-picker.js", "workspace-remote-preload.cjs",
 ]);

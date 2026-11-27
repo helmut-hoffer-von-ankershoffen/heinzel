@@ -36,6 +36,20 @@ struct OpenConnectionHelpIntent: AppIntent {
     }
 }
 
+struct AskHeinzelIntent: AppIntent {
+    static let title: LocalizedStringResource = "Ask Heinzel"
+    static let description = IntentDescription("Open the prompt composer to choose a Heinzel and send a question.")
+    static let openAppWhenRun = true
+    @available(iOS 26.0, *)
+    static var supportedModes: IntentModes { .foreground(.immediate) }
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        AppShortcutRouter.shared.pending = .writePrompt
+        return .result()
+    }
+}
+
 struct HeinzelShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppIntents.AppShortcut(
@@ -49,6 +63,12 @@ struct HeinzelShortcuts: AppShortcutsProvider {
             phrases: ["Get connection help in \(.applicationName)"],
             shortTitle: "Connection Help",
             systemImageName: "questionmark.circle"
+        )
+        AppIntents.AppShortcut(
+            intent: AskHeinzelIntent(),
+            phrases: ["Ask \(.applicationName)", "Write a prompt in \(.applicationName)"],
+            shortTitle: "Ask Heinzel",
+            systemImageName: "square.and.pencil"
         )
     }
 }

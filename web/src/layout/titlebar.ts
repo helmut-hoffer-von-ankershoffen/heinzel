@@ -3,9 +3,12 @@ import { useEffect, useState } from "react";
 /** The desktop app's title bar row: its height and the room the window controls take on either side (px). */
 export type Titlebar = { height: number; left: number; right: number };
 
+type Workspaces = { currentName(): Promise<string>; open(): Promise<boolean> };
+
 type Bridge = {
   titlebar?: Titlebar | null;
   mobileWorkspace?: boolean;
+  workspaces?: Workspaces;
   onFullscreen?: (callback: (full: boolean) => void) => (() => void) | undefined;
 };
 
@@ -15,6 +18,11 @@ function bridge(): Bridge | undefined {
 
 export function nativeMobileWorkspace(): boolean {
   return bridge()?.mobileWorkspace === true;
+}
+
+export function nativeWorkspaces(): Workspaces | undefined {
+  const workspaces = bridge()?.workspaces;
+  return typeof workspaces?.open === "function" ? workspaces : undefined;
 }
 
 /** The desktop bridge's title bar, or null in a browser or PWA, whose layout stays as it is. */

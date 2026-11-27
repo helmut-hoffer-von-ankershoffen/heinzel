@@ -6,6 +6,8 @@ export function workspaceProblem(error) {
   const code = error?.cause?.code ?? error?.code ?? "";
   if (/CERT|TLS|SSL/.test(code)) return "Secure connection unavailable. Ask the host to check the workspace’s HTTPS certificate.";
   if (["ENETUNREACH", "EHOSTUNREACH"].includes(code)) return "You’re offline. Connect to your network, then try again.";
+  if (error?.message === "Heinzelmännchen could not find its installed local service.") return "Reinstall the local service, then select This Mac.";
+  if (error?.message?.startsWith("This hz is too old for the app.")) return "Update the local service with hz system update, then select This Mac.";
   if (error?.name === "TimeoutError") return "Still trying to connect. Check that the host is awake, then try again.";
   if (error?.status === 401) return "Sign-in required. Ask the host for a fresh private sign-in link.";
   if (error?.status === 403) return "This workspace denied access. Check your access to the host’s private network.";
@@ -14,14 +16,16 @@ export function workspaceProblem(error) {
 }
 
 /** Serialize transitions; verification finishes before a working renderer is removed. */
-export function createWorkspaceController({ directory, local, verify, replace, changed, current }) {
+export function createWorkspaceController({ directory, local, verify, replace, changed, current, hold = () => {}, selected = () => {} }) {
+  let revision = 0;
+  let pending = null;
   let busy = false;
   let message = "";
   let problem = false;
   let retry = null;
   let needsSignIn = false;
-  let sharedOrigin = null;
-  const state = () => ({ busy, message, problem, needsSignIn, current: current(), recent: directory.list(), canRetry: retry !== null });
+  let sharedOrigin = null, signInOrigin = null;
+  const state = () => ({ busy, message, problem, needsSignIn, signInOrigin, current: current(), recent: directory.list(), canRetry: retry !== null });
   function linkTarget(link) {
     let target;
     try { target = parseWorkspaceLink(link); }
@@ -43,55 +47,77 @@ export function createWorkspaceController({ directory, local, verify, replace, c
     if (request.kind === "recent") {
       sharedOrigin = null;
       const target = request.origin === current() ? { origin: request.origin } : directory.connection(request.origin);
+      if (!target && directory.hasCredential?.(request.origin)) throw inputError("Saved sign-in is unavailable. Unlock your credentials and try again.");
       if (!target) throw Object.assign(inputError("Sign-in required. Paste a fresh private sign-in link below."), { status: 401 });
       return target;
     }
-    if (request.kind === "link") return linkTarget(request.link);
+    if (request.kind === "link") {
+      if (request.origin) sharedOrigin = request.origin;
+      return linkTarget(request.link);
+    }
     throw inputError("Choose a workspace to continue.");
   }
   async function connect(request, force = false) {
-    if (busy) return state();
+    if (busy && pending?.kind === request.kind && pending.origin === request.origin && pending.link === request.link) return state();
+    pending = request;
+    const ticket = ++revision;
+    const valid = () => ticket === revision;
+    hold(true);
     const recovering = retry?.origin === current();
     busy = true;
     problem = false;
-    needsSignIn = false;
+    needsSignIn = false; signInOrigin = null;
     retry = null;
     message = request.kind === "local" ? "Starting the local workspace…" : "Checking workspace connection…";
     changed(state());
     try {
       const target = request.kind === "local" ? await resolveTarget(request) : resolveTarget(request);
+      if (!valid()) return state();
       if (!force && !recovering && request.kind !== "link" && target.origin === current()) {
         message = "Connected";
       } else {
         retry = target;
-        await verify(target);
-        await replace(target);
-        const saved = !target.remote || directory.remember(target);
+        const facts = await verify(target);
+        if (!valid()) return state();
+        await replace(target, valid);
+        if (!valid()) return state();
+        selected(target, facts);
+        const saved = !target.remote || directory.remember(target, facts?.version);
         message = saved ? "Connected" : "Connected. Sign-in is saved for this session only.";
         retry = null;
       }
     } catch (error) {
+      if (!valid()) return state();
       problem = true; needsSignIn = error?.status === 401;
-      if (needsSignIn) retry = null;
+      if (needsSignIn) {
+        signInOrigin = request.kind === "recent" ? request.origin : sharedOrigin ?? request.origin;
+        retry = null;
+      }
       message = error?.userMessage ?? workspaceProblem(error);
     }
-    finally { busy = false; changed(state()); }
+    finally { if (valid()) { busy = false; pending = null; hold(false); changed(state()); } }
     return state();
   }
   return {
     state,
     connect,
-    failed(target, error) { retry = target; problem = true; message = workspaceProblem(error); changed(state()); },
+    cancel() {
+      revision++; busy = false; pending = null; retry = null; needsSignIn = problem = false;
+      sharedOrigin = signInOrigin = null; message = ""; hold(false); changed(state());
+    },
+    failed(target, error) { retry = target; problem = true; message = error.userMessage ?? workspaceProblem(error); changed(state()); },
     async inspect(target) {
       if (!target || busy) return state();
+      const ticket = ++revision;
       busy = true; problem = false; needsSignIn = false; message = "Checking connection…"; changed(state());
       try {
         await verify(target);
+        if (ticket !== revision) return state();
         if (retry?.origin === target.origin) message = "Connection restored. Try again to reopen the workspace.";
         else { retry = null; message = "Connected"; }
       }
-      catch (error) { needsSignIn = error?.status === 401; retry = needsSignIn ? null : target; problem = true; message = workspaceProblem(error); }
-      finally { busy = false; changed(state()); }
+      catch (error) { if (ticket !== revision) return state(); needsSignIn = error?.status === 401; retry = needsSignIn ? null : target; problem = true; message = workspaceProblem(error); }
+      finally { if (ticket === revision) { busy = false; changed(state()); } }
       return state();
     },
     async retry() {

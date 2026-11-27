@@ -20,10 +20,11 @@ export function createNativePermissions({ windows, fromWebContents, connection, 
   let generation = 0;
   let pending = null;
   const grants = new Map();
+  let notificationChoice = null;
 
   function revoke() {
     generation++;
-    grants.clear();
+    grants.clear(); notificationChoice = null;
     if (pending) pending.finish(false);
   }
 
@@ -71,7 +72,11 @@ export function createNativePermissions({ windows, fromWebContents, connection, 
       if (completed || generation !== epoch || !same(contents, details, original)) return null;
       return prompt(original.window, PROMPTS[kind]);
     }).then(
-      (result) => finish(result?.response === 1 && generation === epoch && Boolean(same(contents, details, original))),
+      (result) => {
+        const current = generation === epoch && Boolean(same(contents, details, original));
+        if (kind === "notifications" && result && current) notificationChoice = result.response === 1;
+        finish(result?.response === 1 && current);
+      },
       () => finish(false),
     ).finally(() => { if (pending?.finish === finish) pending = null; });
   }
@@ -89,5 +94,7 @@ export function createNativePermissions({ windows, fromWebContents, connection, 
     if (details?.isMainFrame === true) revoke();
   }
 
-  return Object.freeze({ request, check, revoke, navigation });
+  const notificationStatus = () => notificationChoice === null ? "Ask for workspace access"
+    : notificationChoice ? "Allowed in workspace · system permission unknown" : "Denied in workspace";
+  return Object.freeze({ request, check, revoke, navigation, notificationStatus });
 }

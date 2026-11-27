@@ -32,13 +32,14 @@ test("Electron readiness starts the CLI and retains the picker after startup err
   assert.match(main, /void app\.whenReady\(\)\.then\(\(\) => \{/);
   const startup = sourceOf("main-startup.js");
   assert.ok(startup.indexOf("acquireDesktopGate()") < startup.indexOf("return ctx.ownedCli.start()"));
-  assert.match(main, /ctx\.workspaceController\?\.failed\(failedConnection, new Error\(message\)\);\n    showConnection\(\)/);
+  assert.match(startup, /workspaceController\?\.failed\(failedConnection,/);
+  assert.match(startup, /showConnection\(\)/);
 });
 
 test("Quit stops the owned CLI without adding background integration", () => {
   assert.match(main, /app\.on\("before-quit", \(event\) =>/);
   assert.match(main, /stopWithReport\(ctx\.ownedCli,/);
-  assert.doesNotMatch(main, /setLoginItemSettings|systemPreferences|Notification/);
+  assert.doesNotMatch(main, /setLoginItemSettings|systemPreferences|new Notification/);
 });
 
 

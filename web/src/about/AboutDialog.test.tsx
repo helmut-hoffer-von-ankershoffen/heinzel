@@ -33,7 +33,11 @@ const info = {
 };
 
 let current: unknown = info;
-vi.mock("@/api/queries", () => ({ useInfo: () => ({ data: current, isError: false }) }));
+let observation: { web: { version: string }; installed: { version: string | null } } | undefined;
+vi.mock("@/api/queries", () => ({
+  useInfo: () => ({ data: current, isError: false }),
+  useWorkspaceVersion: () => ({ data: observation }),
+}));
 
 const show = () =>
   render(
@@ -47,9 +51,26 @@ const show = () =>
 afterEach(() => {
   vi.restoreAllMocks();
   current = info;
+  observation = undefined;
 });
 
 describe("About dialog", () => {
+  it.each(["0.9.58", "0.9.57", null, "Unknown"])(
+    "compares installed Core %s with the answering workspace",
+    (installed) => {
+      observation = { web: { version: "0.9.58" }, installed: { version: installed } };
+      show();
+      act(() => requestMenuAction("about"));
+      const dialog = within(screen.getByRole("dialog"));
+      expect(dialog.getByText("Version", { selector: "dt" }).nextSibling).toHaveTextContent("hz 0.9.58");
+      if (installed === "0.9.57") {
+        expect(dialog.getByText("Installed version").nextSibling).toHaveTextContent("0.9.57");
+      } else {
+        expect(dialog.queryByText("Installed version")).toBeNull();
+      }
+    },
+  );
+
   it("acknowledges the native request only while mounted, including when About is already open", () => {
     const request = () => window.dispatchEvent(new CustomEvent(MENU_EVENT, { detail: "about", cancelable: true }));
     expect(request()).toBe(true);
@@ -129,22 +150,30 @@ describe("About dialog", () => {
     expect(clientHere({ about })).toBe("electron");
     expect(clientHere({ about, workspaceAudio: false })).toBe("native");
     expect(clientHere({ about, clientFlavor: "native" })).toBe("native");
+    expect(clientHere({ remoteWorkspace: true, clientFlavor: "native" })).toBe("native");
+    expect(clientHere({ remoteWorkspace: true, clientFlavor: "electron" })).toBe("electron");
     expect(clientHere({ clientFlavor: "electron" })).toBe("electron");
   });
 
-  it("shows the Native app row and the client it runs in", async () => {
+  it("keeps the installed Native host separate from the remote Electron client and its OS", async () => {
     current = {
       ...info,
       desktop_app: { path: "/Applications/Heinzelmaennchen.app", variant: "native", version: "0.9.53" },
     };
-    Object.defineProperty(window, "heinzelDesktop", { value: {}, configurable: true });
+    vi.stubGlobal("heinzelDesktop", { remoteWorkspace: true, clientFlavor: "electron", clientOS: "Windows" });
     try {
       show();
       act(() => requestMenuAction("about"));
       const dialog = await screen.findByRole("dialog");
       expect(within(dialog).getByText("Native app 0.9.53")).toBeInTheDocument();
       expect(within(dialog).getByText("/Applications/Heinzelmaennchen.app")).toBeInTheDocument();
-      expect(within(dialog).getByText("Running in").nextSibling).toHaveTextContent("Native app");
+      expect(within(dialog).getByText("Type").nextSibling).toHaveTextContent("Electron");
+      expect(within(dialog).getByText("Operating system").nextSibling).toHaveTextContent("Windows");
+      expect(within(dialog).getByText("Platform").nextSibling).toHaveTextContent("macOS");
+      expect(within(dialog).queryByText("Location")).toBeNull();
+      expect(detailsText(info as never, null)).toContain(
+        "application type Electron\napplication operating system Windows",
+      );
     } finally {
       Reflect.deleteProperty(window, "heinzelDesktop");
     }
@@ -167,12 +196,26 @@ describe("About dialog", () => {
       show();
       act(() => requestMenuAction("about"));
       const dialog = await screen.findByRole("dialog");
-      expect(await within(dialog).findByText("Native app 0.9.53")).toBeInTheDocument();
-      expect(within(dialog).getByText("Running in").nextSibling).toHaveTextContent("Native app");
+      expect(await within(dialog).findByText("0.9.53")).toBeInTheDocument();
+      expect(within(dialog).getByText("Type").nextSibling).toHaveTextContent("Native");
+      expect(within(dialog).getByText("Location").nextSibling).toHaveTextContent("/Applications/Heinzelmaennchen.app");
+      expect(within(dialog).queryByText("Desktop app")).toBeNull();
       expect(detailsText(info as never, await about())).toContain("desktop Native app 0.9.53");
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("shows the Electron application's own version, location and OS when workspace metadata is unavailable", async () => {
+    current = null;
+    const about = async () => ({ version: "2.1.0", path: "/opt/heinzel/Heinzel", operatingSystem: "Linux 6.8" });
+    vi.stubGlobal("heinzelDesktop", { clientFlavor: "electron", about });
+    show();
+    act(() => requestMenuAction("about"));
+    expect(await screen.findByText("2.1.0")).toBeVisible();
+    expect(screen.getByText("Type").nextSibling).toHaveTextContent("Electron");
+    expect(screen.getByText("Operating system").nextSibling).toHaveTextContent("Linux 6.8");
+    expect(screen.getByText("Location").nextSibling).toHaveTextContent("/opt/heinzel/Heinzel");
   });
 
   it("includes the loaded entrypoint and safe surface snapshot separately from backend version", () => {

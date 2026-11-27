@@ -12,7 +12,9 @@ import { createLifecycleHandler } from "../src/lifecycle-ipc.js";
 import { createWorkspaceController, isPickerFrame } from "../src/workspace-controller.js";
 import { guardUiNavigation, openProductUi } from "../src/ui-navigation.js";
 import { stopWithReport } from "../src/shutdown.js";
-import { reattach } from "../src/reattach.js";
+import { createWorkspaceMonitor } from "../src/workspace-monitor.js";
+import { workspaceName } from "../src/workspace-directory.js";
+import { isOwnedMainFrame } from "../src/public-media.js";
 import { createMiniBrowser } from "../src/mini-browser.js";
 import { createMediaPlayer } from "../src/media-player.js";
 
@@ -22,10 +24,10 @@ const local = { origin: "http://127.0.0.1:1234", token: "l".repeat(32) };
 const remote = { kind: "link", link: `https://studio.example/#token=${"r".repeat(32)}` };
 const flush = () => new Promise(setImmediate);
 
-async function fixture({ startupFails = false, failSecondProbe = false, initialLoadFails = false, deferredStartup = false, deferredLoad = false, reattachFailures = 0 } = {}) {
+async function fixture({ startupFails = false, failSecondProbe = false, initialLoadFails = false, deferredStartup = false, deferredLoad = false, closeChildWindows = false } = {}) {
   const windows = [], sessions = [], handlers = new Map(), events = [];
   let menu, rejected = false, focused;
-  let remoteProbes = 0;
+  let remoteProbes = 0, outage = false;
   let finishLoad, failLoad, expireLoad;
   const load = new Promise((resolve, reject) => { finishLoad = resolve; failLoad = reject; });
   class Window extends EventEmitter {
@@ -52,7 +54,13 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
     focus() { focused = this; }
     hide() { this.visible = false; }
     close() { this.destroy(); }
-    destroy() { this.destroyed = true; this.webContents.emit("destroyed"); this.emit("closed"); }
+    destroy() {
+      this.destroyed = true;
+      if (closeChildWindows) {
+        for (const child of Window.getAllWindows()) if (child.options.parent === this) child.destroy();
+      }
+      this.webContents.emit("destroyed"); this.emit("closed");
+    }
     static getAllWindows() { return windows.filter((window) => !window.destroyed); }
     static fromWebContents(contents) { return windows.find((window) => window.webContents === contents); }
     static getFocusedWindow() { return focused; }
@@ -71,7 +79,8 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
   }
   const app = Object.assign(new EventEmitter(), {
     isPackaged: false, name: "Heinzelmännchen", requestSingleInstanceLock: () => true,
-    whenReady: () => Promise.resolve(), getPath: () => "/fixture", getVersion: () => "1.0.0", setAboutPanelOptions() {},
+    whenReady: () => Promise.resolve(), getPath: () => "/fixture", getAppPath: () => "/fixture/application",
+    getVersion: () => "1.0.0", setAboutPanelOptions() {},
     quit: () => events.push("quit"),
   });
   const native = () => ({ revoke() {}, navigation() {}, check: () => true, request() {}, display() {} });
@@ -89,12 +98,10 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
   let serviceCount = 0, running = !startupFails;
   let finishStartup, failStartup;
   const startup = new Promise((resolve, reject) => { finishStartup = resolve; failStartup = reject; });
-  const cliOptions = [], losses = [], waits = [];
-  let onWait = () => {};
-  let failuresLeft = reattachFailures;
-  const cli = (options = {}) => {
+  const losses = [];
+  const cli = () => {
     serviceCount++;
-    cliOptions.push(options);
+
     const connection = serviceCount === 1 ? local : { origin: "http://127.0.0.1:4567", token: "n".repeat(32) };
     let lose;
     const exited = new Promise((resolve) => { lose = resolve; });
@@ -104,21 +111,22 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
         events.push("start-local");
         if (deferredStartup && serviceCount === 1) await startup;
         if (startupFails) throw new Error("startup");
-        if (serviceCount > 1 && failuresLeft > 0) {
-          failuresLeft--;
-          // As the real handle does: a failed attach also settles its exited() with failedToStart. It settles once the
-          // controller is idle again, so a handler that wrongly reacts to it can start a connection of its own.
-          setImmediate(() => lose({ code: null, signal: null, failedToStart: true }));
-          throw new Error("service still restarting");
-        }
         running = true; return connection;
       },
       stop: async () => { events.push("stop-local"); running = false; return { outcome: "graceful" }; },
     };
   };
   runInNewContext(source, {
+    probeWorkspaceRenderer: async (_window, connection) => {
+      events.push(["renderer-verify", connection.origin]);
+      if (outage) throw new Error("unreachable");
+      return { version: "1.0.0", instance: "fixture" };
+    },
+    createWorkspaceMonitor, workspaceName, isOwnedMainFrame, AbortSignal, AbortController,
+    Notification: { isSupported: () => true }, net: { fetch: async () => ({}), isOnline: () => true },
+    powerMonitor: new EventEmitter(), readWorkspaceFacts: async () => ({}), verifyWorkspaceRenderer: async () => {},
     moduleUrl, URL, path, fileURLToPath, randomUUID: () => String(sessions.length), console,
-    process: Object.assign(new EventEmitter(), { argv: [], env: {}, platform: "darwin" }),
+    process: Object.assign(new EventEmitter(), { argv: [], env: {}, platform: "darwin", getSystemVersion: () => "26.1" }),
     app, BrowserWindow: Window, dialog: { showErrorBox: () => events.push("error-box") },
     ipcMain: { handle: (name, handler) => handlers.set(name, handler) },
     Menu: { buildFromTemplate: (value) => value, setApplicationMenu: (value) => { menu = value; } },
@@ -131,6 +139,7 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
     } : options),
     lifecycle: async (connection) => {
       events.push(["verify", connection.origin]);
+      if (outage && !connection.remote) throw new Error("unreachable");
       if (connection.remote) remoteProbes++;
       if (rejected || (failSecondProbe && remoteProbes === 2)) throw Object.assign(new Error("Sign-in required"), { status: 401 });
       return {};
@@ -146,18 +155,18 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
     installSignalQuit: () => ({}), createAboutHandler: () => () => {}, createAboutLinkHandler: () => () => {},
     createPublicMediaHandler: () => () => {}, appMenuTemplate, menuLogLine: () => "menu", stopWithReport,
     developmentCli: () => "hz",
-    reattach: (attempt, options) => reattach(attempt, { ...options, wait: async (ms) => { waits.push(ms); await onWait(ms); } }),
+
   });
   await flush(); await flush();
   const openPicker = async () => {
-    menu[0].submenu.find((item) => item.label === "Switch Workspace…").click(); await flush();
+    menu[0].submenu.find((item) => item.label === "Workspaces…").click(); await flush();
     return Window.getAllWindows().find((window) => window.options.webPreferences.preload.endsWith("workspace-picker-preload.cjs"));
   };
   const request = (picker, value) => handlers.get("hz:workspace")({ sender: picker.webContents, senderFrame: picker.webContents.mainFrame }, value);
   const surface = (window, name, value) => handlers.get(name)({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, value);
   return { windows, sessions, handlers, events, openPicker, request, surface, services: () => serviceCount,
-    cliOptions, waits, loseService: () => losses.at(-1)(), duringWait: (callback) => { onWait = callback; },
-    reject: () => { rejected = true; }, stopLocal: () => { running = false; }, finishStartup, failStartup, finishLoad, failLoad,
+    loseService: () => losses.at(-1)(),
+    outage: (value) => { outage = value; }, reject: () => { rejected = true; }, stopLocal: () => { running = false; }, finishStartup, failStartup, finishLoad, failLoad,
     expireLoad: () => expireLoad() };
 }
 
@@ -170,6 +179,8 @@ test("main switches local to remote and back with fresh sessions and no remote n
     requestHeaders: { Authorization: "Bearer fixture" } }, (result) => { headers = result.requestHeaders; });
   assert.equal(headers["X-Heinzel-Client"], "flavor=electron;app=1.0.0;backend=unknown;machine=Air");
   const picker = await f.openPicker();
+  const { application } = await f.request(picker, { kind: "state" });
+  assert.deepEqual({ ...application }, { type: "Electron", version: "1.0.0", path: "/fixture/application", operatingSystem: "macOS 26.1" });
   assert.equal((await f.request(picker, remote)).message, "Connected");
   const remoteWindow = f.windows.at(-1);
   assert.equal(first.isDestroyed(), true);
@@ -184,8 +195,8 @@ test("main switches local to remote and back with fresh sessions and no remote n
   assert.equal(f.services(), 1);
   assert.equal(f.events.includes("stop-local"), false);
   assert.equal(f.events.filter((event) => event === "bridge-start").length, 1);
-  await f.openPicker();
-  await f.request(picker, { kind: "local" });
+  const reopened = await f.openPicker();
+  await f.request(reopened, { kind: "local" });
   assert.equal(remoteWindow.isDestroyed(), true);
   assert.equal(remoteWindow.webContents.session.cleared, true);
   assert.equal(f.services(), 1);
@@ -213,19 +224,19 @@ test("a failed second probe rolls back to the old renderer and local bridge", as
   assert.equal(result.current, local.origin);
   assert.equal(first.isDestroyed(), false);
   assert.equal(first.webContents.session.cleared, undefined);
-  assert.equal(f.events.filter((event) => event === "bridge-start").length, 2);
+  assert.equal(f.events.filter((event) => event === "bridge-start").length, 1, "failed candidate never stopped the bridge");
   assert.equal((await f.surface(first, "hz:player", { action: "state" })).ready, true);
   await f.surface(first, "hz:browser", { action: "navigate", url: "https://example.org/" });
 });
 
-test("returning to local restores real Browser and player controllers", async () => {
-  const f = await fixture();
+test("returning to local restores Browser and player when macOS destroys the former workspace's sheet", async () => {
+  const f = await fixture({ closeChildWindows: true });
   const first = f.windows[0], picker = await f.openPicker();
   await f.surface(first, "hz:browser", { action: "navigate", url: "https://example.com/" });
   await f.surface(first, "hz:player", { action: "open", video: "abcdefghijk" });
   await f.request(picker, remote);
-  await f.openPicker();
-  await f.request(picker, { kind: "local" });
+  const reopened = await f.openPicker();
+  await f.request(reopened, { kind: "local" });
   const current = f.windows.at(-1);
   await f.surface(current, "hz:browser", { action: "navigate", url: "https://example.org/" });
   assert.equal((await f.surface(current, "hz:player", { action: "open", video: "abcdefghijk" })).ready, true);
@@ -244,7 +255,7 @@ test("retry after initial renderer failure reopens the running local service", a
   const picker = f.windows.find((window) => window.options.webPreferences.preload.endsWith("workspace-picker-preload.cjs"));
   const state = await f.request(picker, { kind: "state" });
   assert.equal(state.canRetry, true);
-  assert.match(state.message, /Connection restored|out of reach/);
+  assert.match(state.message, /Connection restored/);
   assert.equal((await f.request(picker, { kind: "retry" })).message, "Connected");
   assert.equal(f.services(), 1);
   assert.equal(f.windows[0].isDestroyed(), true);
@@ -327,9 +338,9 @@ test("remote selection wins over an in-flight local startup and keeps the servic
   await flush(); await flush();
   assert.equal(selected.isDestroyed(), false);
   assert.equal(f.windows.at(-1), selected);
-  await f.openPicker();
-  assert.equal((await f.request(picker, { kind: "state" })).canRetry, false);
-  assert.equal((await f.request(picker, { kind: "local" })).message, "Connected");
+  const reopened = await f.openPicker();
+  assert.equal((await f.request(reopened, { kind: "state" })).canRetry, false);
+  assert.equal((await f.request(reopened, { kind: "local" })).message, "Connected");
   assert.equal(f.services(), 1);
   assert.equal(selected.isDestroyed(), true);
   assert.equal(f.windows.at(-1).webContents.mainFrame.url, `${local.origin}/#token=${local.token}`);
@@ -342,8 +353,8 @@ test("a late local startup failure does not mark the selected remote workspace f
   const selected = f.windows.at(-1);
   f.failStartup(new Error("local startup failed"));
   await flush(); await flush();
-  await f.openPicker();
-  const state = await f.request(picker, { kind: "state" });
+  const reopened = await f.openPicker();
+  const state = await f.request(reopened, { kind: "state" });
   assert.equal(state.current, "https://studio.example");
   assert.equal(state.canRetry, false);
   assert.equal(state.problem, false);
@@ -366,8 +377,8 @@ for (const fails of [false, true]) {
     assert.equal(selected.webContents.mainFrame.url, `https://studio.example/#token=${"r".repeat(32)}`);
     assert.equal(selected.isVisible(), true);
     assert.equal(f.events.includes("quit"), false);
-    await f.openPicker();
-    assert.equal((await f.request(picker, { kind: "local" })).message, "Connected");
+    const reopened = await f.openPicker();
+    assert.equal((await f.request(reopened, { kind: "local" })).message, "Connected");
     assert.equal(f.services(), 1);
     assert.equal(f.windows.at(-1).webContents.mainFrame.url, `${local.origin}/#token=${local.token}`);
   });
@@ -406,70 +417,38 @@ test("a stalled initial window is destroyed and the selected remote opens despit
 });
 
 
-test("a lost service is attached again with a new session link and the same bridge token re-registered", async () => {
-  const f = await fixture();
+test("confirmed local loss shows its row immediately; recovery keeps the document and does not start a service", async () => {
+  const f = await fixture(), first = f.windows[0];
+  f.outage(true); f.loseService(); await flush();
+  const picker = f.windows.at(-1);
+  assert.equal(picker.isVisible(), true);
+  assert.equal((await f.request(picker, { kind: "state" })).recovery.phase, "reconnecting");
+  await f.request(picker, { kind: "pause", origin: local.origin });
+  f.outage(false);
+  await f.request(picker, { kind: "network" });
+  assert.equal((await f.request(picker, { kind: "state" })).recovery.phase, "paused");
+  await f.request(picker, { kind: "resume", origin: local.origin }); await flush();
+  assert.equal(first.isDestroyed(), false);
+  assert.equal(first.isVisible(), true);
+  assert.equal(picker.isVisible(), false);
   assert.equal(f.services(), 1);
-  assert.equal(f.cliOptions[0].bridgeToken, "bridge-secret");
-  f.loseService(); // the owned service crashed: launchd restarted it with a new session token
-  for (let i = 0; i < 10 && f.services() < 2; i++) await flush();
-  await flush(); await flush();
-  assert.equal(f.services(), 2, "the app attached again");
-  assert.equal(f.cliOptions[1].bridgeToken, "bridge-secret", "the bridge token goes to the new attach");
-  assert.ok(f.windows.at(-1).webContents.mainFrame.url.startsWith("http://127.0.0.1:4567"), "the new session link is loaded");
-  assert.ok(f.events.filter((event) => event === "bridge-start").length >= 2, "the browser bridge starts again");
-  assert.deepEqual(f.waits, []);
-  assert.equal(f.events.includes("error-box"), false);
 });
 
-test("re-attach retries with bounded backoff before it gives up", async () => {
-  const f = await fixture({ reattachFailures: 2 });
-  f.loseService();
-  for (let i = 0; i < 40 && f.waits.length < 2; i++) await flush();
-  for (let i = 0; i < 10; i++) await flush();
-  assert.deepEqual(f.waits, [5000, 10000]);
-  assert.ok(f.windows.at(-1).webContents.mainFrame.url.startsWith("http://127.0.0.1:4567"));
-});
-
-test("when every re-attach fails the connection screen opens with Try Again", async () => {
-  const f = await fixture({ reattachFailures: 99 });
-  f.loseService();
-  for (let i = 0; i < 80 && f.waits.length < 4; i++) await flush();
-  for (let i = 0; i < 10; i++) await flush();
-  assert.deepEqual(f.waits, [5000, 10000, 20000, 40000]);
-  assert.equal(f.services(), 6, "one attempt now and one after each delay");
-  const picker = f.windows.find((window) => window.options.webPreferences.preload.endsWith("workspace-picker-preload.cjs"));
-  assert.ok(picker && picker.isVisible(), "the connection screen is shown");
-  assert.equal((await f.request(picker, { kind: "back" })).canRetry, true, "it offers Try Again");
-});
-
-
-test("a failed re-attach attempt never opens the connection screen before the last attempt", async () => {
-  const f = await fixture({ reattachFailures: 99 });
-  const pickerShown = () => f.windows.some((window) => window.options.webPreferences.preload.endsWith("workspace-picker-preload.cjs") && window.isVisible());
-  const shownDuringBackoff = [];
-  f.duringWait(async () => { await flush(); await flush(); shownDuringBackoff.push(pickerShown()); });
-  f.loseService();
-  for (let i = 0; i < 120 && f.waits.length < 4; i++) await flush();
-  for (let i = 0; i < 10; i++) await flush();
-  assert.deepEqual(shownDuringBackoff, [false, false, false, false]);
-  assert.deepEqual(f.waits, [5000, 10000, 20000, 40000], "one backoff, not one per failed attempt");
-  assert.equal(f.services(), 6);
-  assert.equal(f.events.includes("error-box"), false);
-  assert.equal(pickerShown(), true, "after the last attempt it opens");
-});
-
-test("switching to a remote workspace during the backoff ends the re-attach", async () => {
-  const f = await fixture({ reattachFailures: 99 });
-  let switched = false;
-  f.duringWait(async () => {
-    if (switched) return;
-    switched = true;
-    const picker = await f.openPicker();
-    assert.equal((await f.request(picker, remote)).message, "Connected");
-  });
-  f.loseService();
-  for (let i = 0; i < 120; i++) await flush();
-  assert.deepEqual(f.waits, [5000], "no attempt after the person chose a remote workspace");
-  assert.equal(f.services(), 2);
-  assert.match(f.windows.at(-1).options.webPreferences.preload, /workspace-remote-preload/);
+test("profile and native menu share a chooser and disconnect keeps the local service running", async () => {
+  const f = await fixture(), first = f.windows[0], picker = await f.openPicker();
+  assert.equal(await f.surface(first, "hz:workspace-menu", "name"), "This Mac");
+  assert.equal(await f.surface(first, "hz:workspace-menu", "open"), true);
+  assert.equal(f.windows.at(-1), picker);
+  await f.request(picker, { kind: "disconnect", origin: local.origin }); await flush();
+  const full = f.windows.at(-1);
+  assert.equal((await f.request(full, { kind: "state" })).current, null);
+  assert.equal(first.isDestroyed(), true);
+  assert.equal(f.events.includes("stop-local"), false);
+  await f.request(full, remote);
+  const remoteWindow = f.windows.at(-1);
+  assert.equal(await f.surface(remoteWindow, "hz:workspace-menu", "name"), "studio.example");
+  await f.surface(remoteWindow, "hz:workspace-menu", "open"); await flush();
+  const next = f.windows.at(-1);
+  await f.request(next, { kind: "local" });
+  assert.equal(f.services(), 1);
 });

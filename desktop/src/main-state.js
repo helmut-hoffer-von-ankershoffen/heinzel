@@ -7,6 +7,8 @@ export const ctx = {
   quitting: false,
   stopping: false,
   permissions: undefined,
+  windowCapabilities: new WeakMap(),
+  windowVersions: new WeakMap(),
   desktopGate: undefined,
   gateReleasing: false,
   workspaceAudio: undefined,

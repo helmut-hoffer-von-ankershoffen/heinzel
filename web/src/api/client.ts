@@ -2,7 +2,7 @@
 import createClient, { type Middleware } from "openapi-fetch";
 import { dropRefusedDevice } from "./device";
 import type { paths } from "./schema";
-import { authorityEpoch, token } from "./token";
+import { authorityEpoch, deviceToken, sessionToken, token } from "./token";
 
 export type * from "./schema";
 
@@ -23,17 +23,52 @@ const bearer: Middleware = {
     if (value) request.headers.set("Authorization", `Bearer ${value}`);
     return request;
   },
-  onResponse({ request, response }) {
-    dropRefusedDevice(response.status, request.headers.get("Authorization")?.replace(/^Bearer /, "") ?? null);
-    return response;
-  },
 };
+
+const pinnedRequests = new WeakSet<Request>();
+const readResponses = new WeakSet<Response>();
+const readFailures = new WeakSet<object>();
+
+/** The restore signal refetches only active queries whose failing operation was an ordinary workspace read. */
+export function failedWorkspaceRead(error: unknown): boolean {
+  return typeof error === "object" && error !== null && readFailures.has(error);
+}
+
+async function fetchWorkspace(request: Request): Promise<Response> {
+  const ordinaryRead =
+    (request.method === "GET" || request.method === "HEAD") &&
+    new URL(request.url).origin === window.location.origin &&
+    !pinnedRequests.has(request);
+  const sent = request.headers.get("Authorization")?.replace(/^Bearer /, "") ?? null;
+  const paired = ordinaryRead && sent && sent === sessionToken() ? deviceToken() : null;
+  try {
+    let response = await globalThis.fetch(request);
+    if (response.status === 401) {
+      await dropRefusedDevice(401, sent);
+      if (paired && !sessionToken() && token() === paired && !request.signal.aborted) {
+        const revision = authorityEpoch();
+        const headers = new Headers(request.headers);
+        headers.set("Authorization", `Bearer ${paired}`);
+        response = await globalThis.fetch(
+          new Request(request, { headers, mode: "same-origin", redirect: "error", cache: "no-store" }),
+        );
+        if (revision !== authorityEpoch()) throw new Error("Browser authority changed");
+        await dropRefusedDevice(response.status, paired);
+      }
+    }
+    if (ordinaryRead && !response.ok) readResponses.add(response);
+    return response;
+  } catch (error) {
+    if (ordinaryRead && error instanceof TypeError && !request.signal.aborted) readFailures.add(error);
+    throw error;
+  }
+}
 
 // Absolute, from this page's origin: the API is always on the same origin (ADR 0039).
 // `fetch` looked up per call, not captured once, so tests can answer it.
 export const api = createClient<paths>({
   baseUrl: `${window.location.origin}/api`,
-  fetch: (request) => globalThis.fetch(request),
+  fetch: fetchWorkspace,
 });
 api.use(bearer);
 
@@ -45,6 +80,7 @@ export function authorityMiddleware(expected: number): Middleware[] {
         if (authorityEpoch() !== expected) throw new Error("Browser authority changed");
         const value = token();
         if (!value) throw new Error("Browser authority is unavailable");
+        pinnedRequests.add(request);
         request.headers.set("Authorization", `Bearer ${value}`);
         return request;
       },
@@ -70,5 +106,7 @@ export async function unwrap<T>(call: Promise<{ data?: T; error?: unknown; respo
   const { data, error, response } = await call;
   if (data !== undefined) return data;
   if (response.status === 503 && error && typeof error === "object" && !("error" in error)) return error as T;
-  throw problem(response.status, error);
+  const failure = problem(response.status, error);
+  if (readResponses.has(response)) readFailures.add(failure);
+  throw failure;
 }

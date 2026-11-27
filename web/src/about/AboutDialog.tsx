@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Copy, ExternalLink, FileText, X } from "lucide-react";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useInfo } from "@/api/queries";
+import { useInfo, useWorkspaceVersion } from "@/api/queries";
 import { HeinzelSwarm } from "@/components/HeinzelSwarm";
 import { PaneAction, PaneActions } from "@/components/PaneActions";
 import { t } from "@/i18n";
@@ -15,10 +15,11 @@ import { RecentClients } from "./RecentClients";
 const REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel";
 const loadedAsset = loadedFrontend(document);
 
-type Desktop = { version: string; path: string };
+type Desktop = { version: string; path: string; operatingSystem?: string };
 type Bridge = {
   about?: () => Promise<Desktop>;
   clientFlavor?: "native" | "electron";
+  clientOS?: string;
   workspaceAudio?: boolean;
   remoteWorkspace?: boolean;
 };
@@ -31,12 +32,25 @@ export type Client = "native" | "electron" | "browser";
 /** The older Native bridge advertised no workspace audio, even when it offered local About details. */
 export const clientHere = (bridge: Bridge | undefined = desktopBridge()): Client => {
   if (!bridge) return "browser";
+  if (bridge.clientFlavor) return bridge.clientFlavor;
   if (bridge.remoteWorkspace === true) return "electron";
-  return bridge.clientFlavor ?? (bridge.workspaceAudio === false || !bridge.about ? "native" : "electron");
+  return bridge.workspaceAudio === false || !bridge.about ? "native" : "electron";
 };
 
 const clientLabel = (client: Client) =>
   t(client === "native" ? "about.nativeApp" : client === "electron" ? "about.electronApp" : "about.browser");
+
+function currentApplication(desktop: Desktop | null) {
+  const bridge = desktopBridge();
+  const client = clientHere(bridge);
+  if (client === "browser") return null;
+  return {
+    type: client === "native" ? "Native" : "Electron",
+    version: desktop?.version,
+    path: desktop?.path,
+    os: desktop?.operatingSystem ?? bridge?.clientOS,
+  };
+}
 
 /** The desktop app's row: its variant and version (`Native app 0.9.53`) and path, from the API, else the bridge. */
 export function desktopApp(info: Info, desktop: Desktop | null): { name: string; path: string } | null {
@@ -74,6 +88,13 @@ export function detailsText(
   const app = desktopApp(info, desktop);
   if (app) lines.push(`desktop ${app.name} ${app.path}`);
   lines.push(`client ${clientLabel(clientHere())}`);
+  const application = currentApplication(desktop);
+  if (application) {
+    lines.push(`application type ${application.type}`);
+    if (application.version) lines.push(`application version ${application.version}`);
+    if (application.path) lines.push(`application location ${application.path}`);
+    if (application.os) lines.push(`application operating system ${application.os}`);
+  }
   if (frontend) lines.push(`loaded frontend entrypoint ${frontend}`);
   else if (desktop) lines.push("loaded frontend entrypoint unavailable");
   lines.push(...surfaces);
@@ -110,10 +131,14 @@ export function AboutDialog() {
   const closeButton = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const info = useInfo();
+  const version = useWorkspaceVersion(open);
+  const answeringVersion = version.data?.web?.version ?? info.data?.version;
+  const installedCore = version.data?.installed?.version?.trim();
   const desktop = useDesktop(true);
   const [copied, setCopied] = useState(false);
   const titleId = useId();
-  const app = info.data ? desktopApp(info.data, desktop.data ?? null) : null;
+  const installed = info.data ? desktopApp(info.data, null) : null;
+  const application = currentApplication(desktop.data ?? null);
   const details = info.data ? detailsText(info.data, desktop.data ?? null, loadedAsset, surfaceDetails()) : null;
   const currentDetails = useCallback(
     () => (info.data ? detailsText(info.data, desktop.data ?? null, loadedAsset, surfaceDetails()) : null),
@@ -202,24 +227,39 @@ export function AboutDialog() {
               <p className="text-xs text-muted-foreground">{t("status.tagline")}</p>
             </div>
           </header>
+          {application && (
+            <>
+              <h3 className="mt-4 mb-1 font-medium">{t("about.application")}</h3>
+              <dl>
+                <Row label={t("about.type")}>{application.type}</Row>
+                {application.version && <Row label={t("about.version")}>{application.version}</Row>}
+                {application.path && <Row label={t("about.location")}>{application.path}</Row>}
+                {application.os && <Row label={t("about.operatingSystem")}>{application.os}</Row>}
+              </dl>
+              <h3 className="mt-4 mb-1 font-medium">{t("about.workspace")}</h3>
+            </>
+          )}
           {data ? (
             <>
               <dl className="mt-4">
                 <Row label={t("about.version")}>
-                  hz {data.version}
+                  hz {answeringVersion}
                   {data.installed && (
                     <span className="block text-xs text-muted-foreground">
                       {t("about.installedOn", { date: installedTime(data.installed) })}
                     </span>
                   )}
                 </Row>
-                {app && (
+                {installedCore && installedCore.toLowerCase() !== "unknown" && installedCore !== answeringVersion && (
+                  <Row label={t("about.installedVersion")}>{installedCore}</Row>
+                )}
+                {installed && (
                   <Row label={t("about.desktop")}>
-                    {app.name}
-                    <span className="block text-xs text-muted-foreground">{app.path}</span>
+                    {installed.name}
+                    <span className="block text-xs text-muted-foreground">{installed.path}</span>
                   </Row>
                 )}
-                <Row label={t("about.client")}>{clientLabel(clientHere())}</Row>
+                {!application && <Row label={t("about.client")}>{t("about.browser")}</Row>}
                 <Row label={t("about.daemon")}>{t("about.daemonRunning", { version: data.version })}</Row>
                 <Row label={t("about.python")}>{data.python_version}</Row>
                 <Row label={t("about.platform")}>{data.platform}</Row>

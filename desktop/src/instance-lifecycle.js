@@ -3,7 +3,7 @@ export function createInstanceLifecycle({ app, parseConnection, createWindow, fo
   let window = null;
   let connection = null;
   let opening = null;
-  let replacing = false;
+  let revision = 0;
   let ready = false;
   let focusWhenReady = false;
 
@@ -62,7 +62,9 @@ export function createInstanceLifecycle({ app, parseConnection, createWindow, fo
       return window;
     }
     if (!opening) {
+      const ticket = revision;
       opening = Promise.resolve(createWindow(connection)).then((created) => {
+        if (ticket !== revision) { created.destroy(); return null; }
         return trackWindow(created);
       }).finally(() => { opening = null; });
     }
@@ -81,31 +83,30 @@ export function createInstanceLifecycle({ app, parseConnection, createWindow, fo
     connection = value;
   }
 
-  async function replaceConnection(value) {
-    if (!value || typeof value.origin !== "string" || typeof value.token !== "string")
-      throw new Error("An authenticated workspace is required.");
-    if (replacing) throw new Error("A workspace is already opening.");
-    replacing = true;
-    try {
-      // The first local window may still be loading when the person selects a workspace.
-      // Let that attempt settle, then replace it (or open the selection if it failed).
-      if (opening) {
-        try { await opening; } catch { /* The selected workspace can still open. */ }
-      }
-      const previous = window;
-      const previousConnection = connection;
-      connection = value;
-      opening = Promise.resolve().then(() => createWindow(value));
-      try {
-        const created = await opening;
-        if (previous && !previous.isDestroyed()) previous.destroy();
-        return trackWindow(created);
-      } catch (error) {
-        connection = previousConnection;
-        throw error;
-      } finally { opening = null; }
-    } finally { replacing = false; }
+  function disconnect() {
+    revision++;
+    connection = null;
+    if (window && !window.isDestroyed()) window.destroy();
+    window = null;
   }
 
-  return Object.freeze({ acquire, open, currentConnection, focus, setReady, setConnection, replaceConnection });
+  async function replaceConnection(value, valid = () => true) {
+    if (!value || typeof value.origin !== "string" || typeof value.token !== "string")
+      throw new Error("An authenticated workspace is required.");
+    // Let startup settle, retaining the previous document until its successor has authenticated and rendered.
+    if (opening) { try { await opening; } catch { /* The new selection can still open. */ } }
+    if (!valid()) throw new Error("Selection cancelled.");
+    const ticket = ++revision;
+    const cancelled = () => ticket !== revision || !valid();
+    const created = await createWindow(value, cancelled);
+    if (cancelled()) { created.destroy(); throw new Error("Selection cancelled."); }
+    const previous = window;
+    connection = value;
+    trackWindow(created);
+    if (previous && !previous.isDestroyed()) previous.destroy();
+    return created;
+  }
+
+  return Object.freeze({ acquire, open, currentConnection, currentWindow: () => window,
+    focus, setReady, setConnection, replaceConnection, disconnect });
 }

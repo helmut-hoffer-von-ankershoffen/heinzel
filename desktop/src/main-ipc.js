@@ -1,12 +1,13 @@
 // The IPC handlers of the product windows and of the Connection window.
-import path from "node:path";
-import { BrowserWindow, app, ipcMain, shell } from "electron";
+import { BrowserWindow, clipboard, ipcMain, shell } from "electron";
 import { lifecycle } from "./connection.js";
 import { createAboutHandler, createAboutLinkHandler, createLifecycleHandler } from "./lifecycle-ipc.js";
 import { createPublicMediaHandler, isOwnedMainFrame } from "./public-media.js";
 import { isPickerFrame } from "./workspace-controller.js";
-import { settings } from "./main-services.js";
-import { activations, ctx, pickerURL, windows } from "./main-state.js";
+import { applicationInfo, settings } from "./main-services.js";
+import { showConnection } from "./main-picker.js";
+import { workspaceName } from "./workspace-directory.js";
+import { activations, ctx, pickerURL, productWindows, windows } from "./main-state.js";
 
 export function registerIpc() {
   ipcMain.handle("hz:browser", (event, request) => ctx.miniBrowser.handle(event, request));
@@ -48,11 +49,7 @@ export function registerIpc() {
     windows,
     fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
     connection: () => ctx.instance.currentConnection(),
-    about: () => ({
-      version: app.getVersion(),
-      // A packaged app runs from <name>.app/Contents/MacOS/<exe>; show the bundle, not the inner file.
-      path: app.isPackaged ? path.resolve(app.getPath("exe"), "..", "..", "..") : app.getAppPath(),
-    }),
+    about: applicationInfo,
   }));
   ipcMain.handle("hz:about-link", createAboutLinkHandler({
     windows,
@@ -67,14 +64,62 @@ export function registerIpc() {
 }
 
 export function registerWorkspaceIpc() {
-    ipcMain.handle("hz:workspace", async (event, request) => {
-      if (!isPickerFrame(event, ctx.picker, pickerURL)) throw new Error("Unknown window or frame.");
-      if (!request || typeof request !== "object") throw new Error("Unknown workspace request.");
-      if (request.kind === "back") { if (ctx.workspaceController.state().current) ctx.picker.close(); }
-      else if (request.kind === "forget") ctx.workspaceController.forget(request.origin);
-      else if (request.kind === "retry") await ctx.workspaceController.retry();
-      else if (["local", "link", "recent"].includes(request.kind)) await ctx.workspaceController.connect(request);
-      if (ctx.workspaceController.state().message === "Connected" && ctx.picker && !ctx.picker.isDestroyed()) ctx.picker.hide();
-      return { ...ctx.workspaceController.state(), version: app.getVersion() };
-    });
+  ipcMain.handle("hz:workspace-menu", (event, action) => {
+    const window = ctx.instance.currentWindow();
+    if (!window || window.webContents !== event.sender || event.senderFrame !== event.sender.mainFrame ||
+        !isOwnedMainFrame(event, { windows: productWindows, fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
+          connection: () => ctx.instance.currentConnection() })) throw new Error("Unknown window or frame.");
+    const target = ctx.instance.currentConnection();
+    if (action === "name") return target.remote ? workspaceName(target.origin) : "This Mac";
+    if (action === "open") { showConnection(); return true; }
+    return false;
+  });
+  ipcMain.handle("hz:workspace", async (event, request) => {
+    if (!isPickerFrame(event, ctx.picker, pickerURL)) throw new Error("Unknown window or frame.");
+    if (!request || typeof request !== "object") throw new Error("Unknown workspace request.");
+    const controller = ctx.workspaceController, picker = ctx.picker;
+    const active = controller.state().current;
+    switch (request.kind) {
+      case "notifications": {
+        const contents = ctx.instance.currentWindow()?.webContents;
+        if (!contents || !ctx.permissions || ctx.monitor.state()) break;
+        ctx.monitor.hold(true);
+        try {
+          await new Promise((done) => ctx.permissions.request(contents, "notifications", done,
+            { isMainFrame: true, requestingUrl: contents.mainFrame.url }));
+        } finally { ctx.monitor.hold(ctx.editing === true); }
+        break;
+      }
+      case "paste": return clipboard.readText().slice(0, 4097);
+      case "pause": ctx.monitor.pause(request.origin); break;
+      case "resume": ctx.monitor.resume(request.origin); break;
+      case "network": ctx.monitor.wake(); ctx.refreshPicker(); break;
+      case "information": ctx.showInformation(request.show === true); break;
+      case "edit": ctx.editing = true; controller.cancel(); break;
+      case "cancel": ctx.editing = false; controller.cancel(); break;
+      case "back":
+        controller.cancel();
+        if (active && !ctx.monitor.state()) picker.close();
+        break;
+      case "disconnect":
+        if (active && active === request.origin) {
+          ctx.selected(null); controller.cancel();
+          showConnection(true);
+          ctx.browserBridge.stop(); ctx.instance.disconnect();
+        }
+        break;
+      case "forget":
+        if (request.origin !== active) { controller.cancel(); controller.forget(request.origin); }
+        break;
+      case "local": case "link": case "recent": case "retry": {
+        const revision = ctx.selectionRevision = (ctx.selectionRevision ?? 0) + 1;
+        const state = request.kind === "retry" ? await controller.retry()
+          : await controller.connect(request, request.force === true || Boolean(ctx.monitor.state() && request.kind === "local"));
+        if (revision === ctx.selectionRevision && !picker.isDestroyed() && !state.busy && !state.problem &&
+            state.message.startsWith("Connected") && !ctx.monitor.state()) picker.hide();
+        break;
+      }
+    }
+    return ctx.pickerState();
+  });
 }

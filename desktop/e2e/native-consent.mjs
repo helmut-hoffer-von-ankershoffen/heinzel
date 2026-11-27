@@ -23,7 +23,7 @@ const server = createServer((request, response) => {
     response.end(JSON.stringify({instance:'isolated',version:'0.0.0'}));
   } else {
     response.writeHead(200, {'content-type':'text/html'});
-    response.end('<button id="notification">Notification</button><button id="microphone">Microphone</button><script>notification.onclick=async()=>{document.title=await Notification.requestPermission()};microphone.onclick=async()=>{try{await navigator.mediaDevices.getUserMedia({audio:true});document.title="unexpected"}catch(e){document.title=e.name}}</script>');
+    response.end('<main data-testid="app-shell"><button id="notification">Notification</button><button id="microphone">Microphone</button><script>sessionStorage.setItem("hz.token", new URLSearchParams(location.hash.slice(1)).get("token"));notification.onclick=async()=>{document.title=await Notification.requestPermission()};microphone.onclick=async()=>{try{await navigator.mediaDevices.getUserMedia({audio:true});document.title="unexpected"}catch(e){document.title=e.name}}</script>');
   }
 });
 await new Promise((ok) => server.listen(0, '127.0.0.1', ok));

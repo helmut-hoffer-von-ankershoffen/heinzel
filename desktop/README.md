@@ -120,13 +120,13 @@ user must launch the app while it is on `PATH`.
 
 ## Workspace connections
 
-Choose **Switch Workspace…** in the application menu (Shift-Command-comma on Mac) to switch between **This Mac** and a
+Choose **Workspaces…** in the application menu (Shift-Command-comma on Mac) or **Workspaces** in the profile menu to switch between **This Mac** and a
 private HTTPS workspace. Paste the host's private sign-in link. Recent hosts appear in the same paper-style picker
 as the Swift app, with a sign-in prompt when their saved access is unavailable. **Try Again** retries a failed
-connection; **Back to Workspace** returns to the current workspace without switching.
+renderer attachment. Confirmed session loss opens the chooser. Pause and Resume control authenticated, read-only retries on the affected row.
 
 Remote sign-ins use OS-encrypted storage when available; otherwise the picker reports that access is remembered
 only for this session. Forget removes the saved sign-in. Each opened workspace has a separate temporary browser
 session. Remote pages cannot access local native tools, the local service token or another workspace's sign-in.
-The local service stays running during workspace switches and stops when the app quits. iCloud sign-in sync is
+The managed local service keeps running across workspace switches, disconnect and app quit. iCloud sign-in sync is
 available in the Swift shell only. See [ADR 0165](../docs/adr/0165-electron-workspace-switching-and-remote-isolation.md).

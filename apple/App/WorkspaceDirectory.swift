@@ -1,6 +1,7 @@
 import CoreFoundation
 import CoreGraphics
 import Foundation
+import Network
 import Security
 
 enum WorkspaceFooterGeometry {
@@ -75,6 +76,28 @@ struct WorkspaceVersionObservation: Codable, Equatable {
     var daemonLastVersion: String? = nil
     var daemonLastObservedAt: Date? = nil
     var daemonObservationStale: Bool? = nil
+    var backendObservedAt: Date?
+    var backendIP: String?
+    var webObservedSince: Date?
+    var webRunningSince: Date?
+    var daemonRunningVersion: String?
+    var daemonRunningSince: Date?
+    var daemonRegisteredAt: Date?
+    var daemonLoaded: Bool?
+    var daemonOwned: Bool?
+    var daemonStatusObservedAt: Date?
+
+    var differentInstalledVersion: String? {
+        guard let installed = installedVersion?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !installed.isEmpty, installed.lowercased() != "unknown", installed != version else { return nil }
+        return installed
+    }
+
+    /// Both timestamps came from the answering backend in one authenticated response.
+    var uptimeAtObservation: TimeInterval? {
+        guard let backendObservedAt, let webRunningSince, webRunningSince <= backendObservedAt else { return nil }
+        return backendObservedAt.timeIntervalSince(webRunningSince)
+    }
 
     static func fromPayload(_ data: [String: Any], now: Date) -> Self? {
         func text(_ value: Any?) -> String? {
@@ -82,26 +105,59 @@ struct WorkspaceVersionObservation: Codable, Equatable {
                   value.rangeOfCharacter(from: .controlCharacters) == nil else { return nil }
             return value
         }
-        func date(_ value: Any?) -> Date? {
+        func timestamp(_ value: Any?) -> Date? {
             guard let value = value as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID(),
-                  value.doubleValue.isFinite, value.doubleValue > 0 else { return nil }
-            let date = Date(timeIntervalSince1970: value.doubleValue / 1000)
-            return date <= now ? date : nil
+                  (1...253_402_300_799_999).contains(value.doubleValue) else { return nil }
+            return Date(timeIntervalSince1970: value.doubleValue / 1000)
+        }
+        func flag(_ key: String) -> Bool? {
+            guard let number = data[key] as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+            return number.boolValue
         }
         guard let version = text(data["version"]) else { return nil }
         var observation = Self(version: version, observedAt: now)
+        let reported = timestamp(data["backendObservedAt"])
+        func date(_ value: Any?) -> Date? {
+            guard let date = timestamp(value), date <= (reported ?? now) else { return nil }
+            return date
+        }
+        observation.backendObservedAt = reported
+        if let ip = text(data["backendIP"]), !ip.contains("%"),
+           let bytes = IPv4Address(ip)?.rawValue ?? IPv6Address(ip)?.rawValue,
+           bytes.contains(where: { $0 != 0 }) {
+            observation.backendIP = ip
+        }
+        observation.webObservedSince = date(data["webObservedSince"])
+        observation.webRunningSince = date(data["webRunningSince"])
         observation.installedVersion = text(data["installedVersion"])
         observation.installedUpdatedAt = observation.installedVersion == nil ? nil : date(data["installedUpdatedAt"])
         observation.daemonLastVersion = text(data["daemonLastVersion"])
         observation.daemonLastObservedAt = date(data["daemonLastObservedAt"])
-        observation.daemonObservationStale = data["daemonObservationStale"] as? Bool
+        observation.daemonObservationStale = flag("daemonObservationStale")
+        observation.daemonRunningVersion = text(data["daemonRunningVersion"])
+        observation.daemonRunningSince = date(data["daemonRunningSince"])
+        observation.daemonRegisteredAt = date(data["daemonRegisteredAt"])
+        observation.daemonLoaded = flag("daemonLoaded")
+        observation.daemonOwned = flag("daemonOwned")
+        // The backend obtains daemon status after it timestamps the start of this request.
+        observation.daemonStatusObservedAt = timestamp(data["daemonStatusObservedAt"])
         return observation
+    }
+
+    static func lastLocal(in observations: [String: Self]) -> Self? {
+        observations.compactMap { address, observation in
+            guard let url = URL(string: address), url.scheme == "http", url.host == "127.0.0.1" else { return nil }
+            return observation
+        }.max { $0.observedAt < $1.observedAt }
     }
 
     static func record(_ observation: Self, origin: String, selectedOrigin: String,
                        requestRevision: Int, currentRevision: Int, into values: inout [String: Self]) -> Bool {
         guard origin == selectedOrigin, requestRevision == currentRevision else { return false }
-        values[origin] = observation
+        var cached = observation
+        // The socket address describes this request, and the directory only needs historical versions.
+        cached.backendIP = nil
+        values[origin] = cached
         return true
     }
 }
@@ -109,7 +165,7 @@ struct WorkspaceVersionObservation: Codable, Equatable {
 /// One bounded metadata lookup at a time; failed or superseded requests never relabel cached observations.
 @MainActor
 final class WorkspaceVersionRefresh {
-    private var lastRevision = 0
+    private(set) var lastRevision = 0
     private var generation = 0
     private var task: Task<Void, Never>?
 
@@ -154,7 +210,23 @@ struct RecentWorkspace: Codable, Identifiable {
 
     var id: String { address }
 
+    var isUserAdded: Bool { source == .pasted }
+
     var name: String { Self.displayName(for: address, hostName: hostName) }
+
+    /// Distinct HTTPS origins can share both their display name and their resolved address.
+    static func disambiguatingAddresses(for rows: [Self], probes: [URL: WorkspaceHostProbe]) -> [String: String] {
+        var labels: [String: String] = [:]
+        for group in Dictionary(grouping: rows, by: { $0.name.lowercased() }).values where group.count > 1 {
+            let origins = group.compactMap { Endpoint($0.address) }
+            let addresses = origins.map { $0.displayAddress(observedIP: probes[$0.origin]?.address) }
+            let useHostNames = Set(addresses).count != addresses.count
+            for (endpoint, address) in zip(origins, addresses) {
+                labels[endpoint.origin.absoluteString] = useHostNames ? endpoint.displayAddress() : address
+            }
+        }
+        return labels
+    }
 
     static func displayName(for address: String, hostName: String? = nil) -> String {
         let host = hostName ?? URL(string: address)?.host() ?? address
@@ -165,6 +237,29 @@ struct RecentWorkspace: Codable, Identifiable {
             }.joined(separator: " ")
         }
         return host
+    }
+}
+
+/// A failed synchronizable Keychain read leaves the last readable names available for recovery.
+struct WorkspaceCloudDirectory {
+    enum Access { case checking, unavailable, empty, available }
+    private(set) var access: Access = .checking
+    private(set) var workspaces: [RecentWorkspace] = []
+
+    init(_ read: [RecentWorkspace]?) { update(read) }
+    init() {}
+
+    mutating func update(_ read: [RecentWorkspace]?) {
+        guard let read else { access = .unavailable; return }
+        workspaces = read
+        access = read.isEmpty ? .empty : .available
+    }
+
+    mutating func observedSignIn(_ workspace: RecentWorkspace) {
+        workspaces.removeAll { $0.address == workspace.address }
+        workspaces.append(workspace)
+        // Reading one credential doesn't establish that the full directory is readable.
+        if access == .empty { access = .available }
     }
 }
 

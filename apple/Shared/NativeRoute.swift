@@ -144,3 +144,39 @@ enum NativeRoute: Equatable {
         value.wholeMatch(of: /hz-[0-9A-HJKMNP-TV-Z]{26}/) != nil
     }
 }
+
+/// A system shortcut can arrive while a nested sign-in sheet is covering Connection.
+struct ShortcutSheetDismissal {
+    enum Sheet { case entry, connection }
+    private(set) var waiting: Sheet?
+
+    mutating func next(entry: Bool, connection: Bool) -> Sheet? {
+        guard waiting == nil else { return nil }
+        if entry { waiting = .entry } else if connection { waiting = .connection }
+        return waiting
+    }
+
+    mutating func finished(_ sheet: Sheet) -> Bool {
+        guard waiting == sheet else { return false }
+        waiting = nil
+        return true
+    }
+}
+
+/// A repeated invocation has its own identity and keeps the workspace it was requested for.
+struct ShortcutRequest: Equatable {
+    let id = UUID()
+    let route: NativeRoute
+    let origin: URL?
+
+    enum Destination: Equatable {
+        case current, restore(URL), superseded
+    }
+
+    func destination(selected: URL?, saved: URL?) -> Destination {
+        if route == .connectionHelp { return .current }
+        if let selected { return selected == origin ? .current : .superseded }
+        guard let origin else { return .current }
+        return saved == origin ? .restore(origin) : .superseded
+    }
+}

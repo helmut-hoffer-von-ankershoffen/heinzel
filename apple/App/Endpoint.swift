@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 #if os(macOS)
 import CFNetwork
 #endif
@@ -62,6 +63,21 @@ struct Endpoint: Equatable {
         origin.path = ""
         self.origin = origin.url!
         self.url = url
+    }
+
+    func displayAddress(observedIP: String? = nil) -> String {
+        let host = observedIP ?? origin.host(percentEncoded: false) ?? origin.absoluteString
+        let formatted = host.contains(":") && !host.hasPrefix("[") ? "[" + host + "]" : host
+        return origin.port.map { formatted + ":" + String($0) } ?? formatted
+    }
+
+    /// Add and Sign In require a private URL. Address-only links retain their separate open flow.
+    static func signInInputIssue(_ value: String, expectedOrigin: URL?) -> String? {
+        let input = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !input.isEmpty else { return nil }
+        guard let target = Endpoint(input) else { return "Invalid link. Paste the full private HTTPS sign-in URL from the host." }
+        if let expectedOrigin, !target.owns(expectedOrigin) { return "This sign-in URL is for another workspace." }
+        return target.token == nil ? "Ask the host for a private sign-in URL that includes access." : nil
     }
 
     /// Shared links identify a workspace. Authentication remains a separate in-app step.
@@ -137,6 +153,10 @@ struct Endpoint: Equatable {
     }
 
     static func connectionIssue(at origin: URL, using existingSession: URLSession? = nil) async -> WorkspaceProblem? {
+        await probeHost(at: origin, using: existingSession).issue
+    }
+
+    static func probeHost(at origin: URL, using existingSession: URLSession? = nil) async -> WorkspaceHostProbe {
         let session = existingSession ?? probeSession()
         defer { if existingSession == nil { session.finishTasksAndInvalidate() } }
         let request = URLRequest(
@@ -144,20 +164,22 @@ struct Endpoint: Equatable {
             cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 4
         )
         do {
-            let (data, response) = try await session.data(for: request)
-            guard let response = response as? HTTPURLResponse else { return .unavailable }
+            let route = RefuseRedirects()
+            let (data, response) = try await session.data(for: request, delegate: route)
+            let path = route.connectionAddresses.withLock { $0 }
+            guard let response = response as? HTTPURLResponse else { return WorkspaceHostProbe(.unknown, .unavailable) }
             switch response.statusCode {
             case 200..<300: break
-            case 403: return .denied
-            case 404, 410: return .wrongAddress
-            default: return .unavailable
+            case 403: return WorkspaceHostProbe(.online, .denied, address: path.backend, clientAddress: path.client)
+            case 404, 410: return WorkspaceHostProbe(.unknown, .wrongAddress, address: path.backend, clientAddress: path.client)
+            default: return WorkspaceHostProbe(.online, .serviceUnavailable, address: path.backend, clientAddress: path.client)
             }
             guard response.mimeType == "application/manifest+json",
                   let manifest = try? JSONDecoder().decode(WorkspaceManifest.self, from: data),
-                  manifest.name == "Heinzelmännchen", manifest.short_name == "hz" else { return .wrongAddress }
-            return nil
+                  manifest.name == "Heinzelmännchen", manifest.short_name == "hz" else { return WorkspaceHostProbe(.unknown, .wrongAddress, address: path.backend, clientAddress: path.client) }
+            return WorkspaceHostProbe(.online, nil, address: path.backend, clientAddress: path.client)
         } catch {
-            return WorkspaceProblem(navigationError: error)
+            return WorkspaceHostProbe(error: error)
         }
     }
 
@@ -172,10 +194,13 @@ struct Endpoint: Equatable {
 
     func readLifecycle() async throws -> Lifecycle {
         let (body, status) = try await readAuthenticatedAPI("api/lifecycle")
+        // Only a rejected credential should start sign-in recovery or renew an iCloud token.
+        if status == 401 { throw ConnectionError.authentication }
+        if status == 403 { throw ConnectionError.accessDenied }
         guard status == 200,
               let lifecycle = try? JSONDecoder().decode(Lifecycle.self, from: body),
               !lifecycle.instance.isEmpty, !lifecycle.version.isEmpty else {
-            throw ConnectionError.authentication
+            throw ConnectionError.unverifiedWorkspace
         }
         return lifecycle
     }
@@ -251,7 +276,7 @@ struct Endpoint: Equatable {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (body, response) = try await session.data(for: request)
-        guard let response = response as? HTTPURLResponse else { throw ConnectionError.authentication }
+        guard let response = response as? HTTPURLResponse else { throw ConnectionError.unverifiedWorkspace }
         return (body, response.statusCode)
     }
 
@@ -262,8 +287,84 @@ struct Endpoint: Equatable {
     }
 }
 
+struct WorkspaceHostProbe {
+    enum Reachability: String { case online = "Online", offline = "Offline", unknown = "Unknown" }
+    let reachability: Reachability
+    let issue: WorkspaceProblem?
+    let address: String?
+    let clientAddress: String?
+
+    init(_ reachability: Reachability, _ issue: WorkspaceProblem?, address: String? = nil, clientAddress: String? = nil) {
+        self.reachability = reachability
+        self.clientAddress = clientAddress
+        self.address = address
+        self.issue = issue
+    }
+
+    init(error: Error) {
+        address = nil
+        clientAddress = nil
+        let code = (error as? URLError)?.code
+        switch code {
+        case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .timedOut, .networkConnectionLost:
+            reachability = .offline
+        default:
+            reachability = .unknown
+        }
+        issue = WorkspaceProblem(navigationError: error)
+    }
+
+    /// Results are discarded on every path change. A response on this path is stronger
+    /// evidence for its origin than the system's general internet route.
+    static func routeAvailable(networkAvailable: Bool?, probe: Self?) -> Bool? {
+        probe?.reachability == .online ? true : networkAvailable
+    }
+
+    static func canAttemptConnection(networkAvailable: Bool?, probe: Self?) -> Bool {
+        routeAvailable(networkAvailable: networkAvailable, probe: probe) != false
+            && remoteReachability(networkAvailable: networkAvailable, probe: probe) != .offline
+    }
+
+    static func remoteReachability(networkAvailable: Bool?, probe: Self?) -> Reachability {
+        routeAvailable(networkAvailable: networkAvailable, probe: probe) == true ? probe?.reachability ?? .unknown : .unknown
+    }
+}
+
+struct WorkspaceRemoteRecovery {
+    var issue: WorkspaceProblem
+    private(set) var paused = false
+    private var interval = 0
+
+    init(issue: WorkspaceProblem) { self.issue = issue }
+
+    mutating func togglePause() {
+        paused.toggle()
+        interval = 0
+    }
+
+    mutating func nextDelay(jitter: Double) -> Double {
+        defer { interval = min(interval + 1, 4) }
+        return min(40, [0.0, 5, 10, 20, 40][interval] * jitter)
+    }
+
+    func label(network: Bool?) -> String {
+        if paused { return "Paused" }
+        switch issue {
+        case .signIn: return "Sign in"
+        case .denied: return "Access denied"
+        case .wrongAddress: return "Check workspace address"
+        case .insecure: return "Secure connection unavailable"
+        default:
+            if network == false { return "Waiting for network" }
+            return issue == .serviceUnavailable ? "Unavailable · Reconnecting…" : "Reconnecting…"
+        }
+    }
+}
+
 enum WorkspaceProblem {
-    case offline, unavailable, slow, signIn, denied, wrongAddress, insecure, interrupted
+    case offline, unavailable, serviceUnavailable, slow, signIn, denied, wrongAddress, insecure, interrupted
+
+    var revokesAccess: Bool { self == .signIn || self == .denied }
 
     init(navigationError: Error) {
         switch (navigationError as? URLError)?.code {
@@ -281,7 +382,8 @@ enum WorkspaceProblem {
         case 401: self = .signIn
         case 403: self = .denied
         case 404, 410: self = .wrongAddress
-        case 400..<600: self = .unavailable
+        case 500..<600: self = .serviceUnavailable
+        case 400..<500: self = .unavailable
         default: return nil
         }
     }
@@ -290,6 +392,7 @@ enum WorkspaceProblem {
         switch self {
         case .offline: "You’re offline"
         case .unavailable: "Workspace out of reach"
+        case .serviceUnavailable: "Workspace service unavailable"
         case .slow: "Still trying to connect"
         case .signIn: "Sign-in required"
         case .denied: "This workspace denied access"
@@ -303,6 +406,7 @@ enum WorkspaceProblem {
         switch self {
         case .offline: "Connect to Wi-Fi or mobile data. Heinzel will try again when your network returns."
         case .unavailable: "Check that the workspace host is running. Heinzel will try again."
+        case .serviceUnavailable: "The host answered. Try the workspace again shortly."
         case .slow: "Heinzel is waiting for the workspace to answer. You can try again now or choose another workspace."
         case .signIn: "Ask the host for a fresh private sign-in link, then paste it into Heinzel."
         case .denied: "Check that you have access to the host’s private network, or ask the host for help."
@@ -315,7 +419,7 @@ enum WorkspaceProblem {
     var icon: String {
         switch self {
         case .offline: "wifi.slash"
-        case .unavailable, .interrupted: "exclamationmark.circle"
+        case .unavailable, .serviceUnavailable, .interrupted: "exclamationmark.circle"
         case .slow: "clock"
         case .signIn: "person.crop.circle.badge.exclamationmark"
         case .denied, .insecure: "lock"
@@ -324,13 +428,20 @@ enum WorkspaceProblem {
     }
 
     var canReconnectAutomatically: Bool {
-        self == .offline || self == .unavailable || self == .slow
+        self == .offline || self == .unavailable || self == .serviceUnavailable || self == .slow
     }
 
     var shouldEnterLink: Bool { self == .signIn || self == .wrongAddress }
 }
 
-private final class RefuseRedirects: NSObject, URLSessionTaskDelegate {
+final class RefuseRedirects: NSObject, URLSessionTaskDelegate {
+    let connectionAddresses = Mutex<(client: String?, backend: String?)>((nil, nil))
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        guard let hop = metrics.transactionMetrics.last else { return }
+        connectionAddresses.withLock { $0 = (hop.localAddress, hop.isProxyConnection ? nil : hop.remoteAddress) }
+    }
+
     func urlSession(
         _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
         newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
@@ -340,11 +451,13 @@ private final class RefuseRedirects: NSObject, URLSessionTaskDelegate {
 }
 
 enum ConnectionError: LocalizedError {
-    case authentication, missingCLI, managedInstall, startup, stopped, outdatedCLI
+    case authentication, accessDenied, unverifiedWorkspace, missingCLI, managedInstall, startup, stopped, outdatedCLI
 
     var errorDescription: String? {
         switch self {
         case .authentication: "Heinzel did not accept the sign-in link. Copy a fresh link from the host and try again."
+        case .accessDenied: WorkspaceProblem.denied.detail
+        case .unverifiedWorkspace: "The workspace could not confirm its status. Try connecting again."
         case .missingCLI: "Install Heinzel with uvx heinzel@latest, or connect to an existing server."
         case .managedInstall: "The installed Heinzel service is unavailable or in use. Close other Heinzel apps and try again. If the problem persists, run hz app install --flavor=swift."
         case .startup: "The local Heinzel service could not start. Run hz ui attach in Terminal to see why."

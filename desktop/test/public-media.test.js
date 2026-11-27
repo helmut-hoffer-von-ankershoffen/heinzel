@@ -89,11 +89,12 @@ test("the isolated preload exposes no opener and requires trusted activated prim
   });
   vm.runInContext(readFileSync(new URL("../src/preload.cjs", import.meta.url), "utf8"), context);
   assert.deepEqual(Object.keys(exposed), [
-    "clientFlavor",
+    "workspaces", "clientFlavor",
     "workspaceAudio", "titlebar", "browser", "player", "linkMode", "lifecycle", "about", "systemAudio", "audioSource",
     "onFullscreen",
   ]);
   assert.equal(exposed.clientFlavor, "electron");
+  assert.deepEqual(Object.keys(exposed.workspaces), ["currentName", "open"]);
   const anchor = new Anchor();
   let prevented = 0;
   const event = { isTrusted: true, button: 0, target: anchor, preventDefault: () => { prevented++; } };

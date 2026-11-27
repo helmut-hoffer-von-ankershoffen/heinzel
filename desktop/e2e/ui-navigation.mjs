@@ -46,7 +46,7 @@ const source = createServer((request, response) => {
     response.end();
   } else {
     response.writeHead(200, { "content-type": "text/html" });
-    response.end(`<!doctype html><title>Isolated fixture</title><p>ready</p>
+    response.end(`<!doctype html><title>Isolated fixture</title><p data-testid="app-shell">ready</p><script>sessionStorage.setItem("hz.token",new URLSearchParams(location.hash.slice(1)).get("token"))</script>
       <a id="capture" data-hz-public-media target="_blank" rel="noreferrer noopener" href="https://raw.githubusercontent.com/fictional-lab/harbor/${"a".repeat(40)}/docs/ui.png">Full-size capture</a>
       <a id="sound" data-hz-public-media target="_blank" rel="noreferrer noopener" href="https://www.youtube.com/watch?v=abcdefghijk">Soundscape</a>
       <a id="failed" data-hz-public-media target="_blank" rel="noreferrer noopener" href="https://www.youtube.com/watch?v=abcdefghijl">Unavailable opener</a>

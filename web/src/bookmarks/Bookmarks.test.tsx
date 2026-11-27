@@ -1,9 +1,9 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MENU_EVENT } from "@/about/menu";
-import type { SchemaBookmarkList } from "@/api/client";
+import { api, type SchemaBookmarkList } from "@/api/client";
 import { Providers, queryClient } from "@/app/providers";
 import { shell } from "@/test/fixtures";
 import { expectAccessible, mockApi } from "@/test/render";
@@ -321,6 +321,89 @@ describe("the bookmark manager", () => {
     await user.click(screen.getByRole("button", { name: "New folder" }));
     await waitFor(() => expect(writes).toContainEqual(["folder", { title: "Reading" }]));
     expect(await screen.findByText("Reading", { selector: "li > span" })).toBeVisible();
+  });
+
+  it("keeps the mounted folder draft while a refused write falls back to the paired browser", async () => {
+    localStorage.setItem("hz.device", "paired-device");
+    const refused = { status: 401, body: { error: "refused" } };
+    const { calls } = bookmarkApi(tree(), {
+      "/api/system/runner/chat/confirm": refused,
+      "/api/lifecycle": (request: Request) =>
+        request.headers.get("Authorization") === "Bearer paired-device"
+          ? { instance: "test-instance", version: "0.9.58" }
+          : refused,
+    });
+    try {
+      await open();
+      const field = screen.getByRole("textbox", { name: "Folder name" });
+      await userEvent.type(field, "Field notes");
+      const result = await api.POST("/system/runner/chat/confirm", {
+        params: { query: { session: "test", action: "draft-share" } },
+      });
+      expect(result.response.status).toBe(401);
+      expect((await api.GET("/lifecycle")).response.ok).toBe(true);
+      expect(screen.getByRole("textbox", { name: "Folder name" })).toBe(field);
+      expect(field).toHaveValue("Field notes");
+      expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/chat/confirm"))).toHaveLength(1);
+      expect(
+        calls
+          .filter((request) => new URL(request.url).pathname === "/api/lifecycle")
+          .map((request) => [request.method, request.headers.get("Authorization")]),
+      ).toEqual([
+        ["GET", "Bearer test-token"],
+        ["GET", "Bearer paired-device"],
+      ]);
+    } finally {
+      sessionStorage.removeItem("hz.token");
+      localStorage.removeItem("hz.device");
+    }
+  });
+
+  it("restores the same folder draft after a failed background read and server restart", async () => {
+    vi.stubGlobal("heinzelDesktop", { workspaces: { open: vi.fn(), currentName: async () => "Field Studio" } });
+    localStorage.setItem("hz.device", "paired-device");
+    let phase: "ready" | "offline" | "restarted" = "ready";
+    const unavailable = { status: 503, body: { error: "unavailable" } };
+    const refused = { status: 401, body: { error: "refused" } };
+    const { calls, writes } = bookmarkApi(tree(), {
+      "/api/lifecycle": refused,
+      "/api/system/bookmark/list": (request: Request) => {
+        if (phase === "offline") return unavailable;
+        if (phase === "restarted" && request.headers.get("Authorization") !== "Bearer paired-device") return refused;
+        return tree();
+      },
+    });
+    try {
+      const { client } = await open();
+      const field = screen.getByRole("textbox", { name: "Folder name" });
+      await userEvent.type(field, "Field notes");
+      phase = "offline";
+      await act(async () => {
+        await client.refetchQueries({ queryKey: ["system", "bookmark", "list"] });
+      });
+      await waitFor(() => expect(field).not.toBeVisible());
+      phase = "restarted";
+      const before = calls.length;
+      await act(async () => {
+        window.dispatchEvent(new Event("hz:workspace-restored"));
+      });
+      expect(await screen.findByRole("textbox", { name: "Folder name" })).toBe(field);
+      expect(field).toHaveValue("Field notes");
+      expect(writes).toEqual([]);
+      expect(
+        calls
+          .slice(before)
+          .filter((request) => new URL(request.url).pathname.endsWith("/bookmark/list"))
+          .map((request) => [request.method, request.headers.get("Authorization")]),
+      ).toEqual([
+        ["GET", "Bearer test-token"],
+        ["GET", "Bearer paired-device"],
+      ]);
+    } finally {
+      sessionStorage.removeItem("hz.token");
+      localStorage.removeItem("hz.device");
+      Reflect.deleteProperty(window, "heinzelDesktop");
+    }
   });
 
   it("renames an entry in place", async () => {

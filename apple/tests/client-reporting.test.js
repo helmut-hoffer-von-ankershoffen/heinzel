@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const source = readFileSync(new URL("../App/Navigation.swift", import.meta.url), "utf8");
-const version = source.split("private func resolveWorkspaceVersion")[1].split("private func resolveWorkspaceName")[0];
-const body = version.split('body: """')[1].split('""")')[0];
-const inspection = source.split("private func inspectWorkspace")[1].split('callAsyncJavaScript("""')[1].split('""", arguments:')[0];
-const run = new Function("location", "origin", "sessionStorage", "localStorage", "fetch", "clientIdentity", "AbortSignal",
-  `return (async () => { ${inspection.replace("\\(body)", body)} })()`);
+const source = readFileSync(new URL("../App/WorkspaceDocumentFacts.swift", import.meta.url), "utf8");
+const authority = source.split('let authorityScript = """')[1].split('"""')[0];
+const body = source.split('callAsyncJavaScript(authorityScript + """')[1].split('""", arguments:')[0]
+  .replace(String.raw`\nif`, "if");
+const run = new Function("location", "origin", "sessionStorage", "localStorage", "fetch", "clientIdentity", "AbortSignal", "expected",
+  `return (async () => { ${authority}
+${body} })()`);
 
 test("native reporting requires the owned document and a credential, and refuses redirects", async () => {
   const requests = [];
@@ -17,8 +18,8 @@ test("native reporting requires the owned document and a credential, and refuses
     return { ok: true, json: async () => ({ web: { version: "1" } }) };
   };
   const invoke = (document, session, device, identity = "flavor=native;app=1;backend=unknown;machine=Demo") =>
-    run({ origin: document }, "https://workspace.example", storage(session), storage(device), fetch, identity,
-      { timeout: () => undefined });
+    run(new URL(document), "https://workspace.example", storage(session), storage(device), fetch, identity,
+      { timeout: () => undefined }, "");
   await invoke("https://external.example", "fixture", null);
   await invoke("https://workspace.example", null, null);
   assert.equal(requests.length, 0);

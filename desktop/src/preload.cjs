@@ -7,6 +7,10 @@ const titlebar = mac ? Object.freeze({ height: 44, left: 80, right: 0 }) : null;
 // The bridge exposes fixed product operations, a capability label, the title bar insets and a full-screen listener;
 // no raw IPC or credential material reaches the page.
 contextBridge.exposeInMainWorld("heinzelDesktop", Object.freeze({
+  workspaces: Object.freeze({
+    currentName: () => ipcRenderer.invoke("hz:workspace-menu", "name"),
+    open: () => ipcRenderer.invoke("hz:workspace-menu", "open"),
+  }),
   clientFlavor: "electron",
   workspaceAudio: true,
   titlebar,
