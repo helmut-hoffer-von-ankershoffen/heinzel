@@ -36,7 +36,7 @@ class ClientObservation(BaseModel):
 class UiStatus(WebStatus):
     """Existing service status plus an optional, independently fallible API read."""
 
-    client_observations: list[ClientObservation] = Field(default_factory=list, max_length=50)
+    client_observations: list[ClientObservation] = Field(default_factory=list[ClientObservation], max_length=50)
     client_observations_status: Literal["available", "unsupported", "unavailable"] = "unavailable"
 
 
