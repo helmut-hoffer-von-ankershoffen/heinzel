@@ -126,6 +126,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         var view: WKWebView?
         var urlObservation: NSKeyValueObservation?
         var loadingObservation: NSKeyValueObservation?
+        var fullscreenObservation: NSKeyValueObservation?
         var viewIdentity: UUID?
         var historyAttempt: Int?
         var navigationIdentity = NavigationIdentity<WKNavigation>()
@@ -343,6 +344,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         view.removeFromSuperview()
         tab.urlObservation = nil
         tab.loadingObservation = nil
+        tab.fullscreenObservation = nil
         tab.viewIdentity = nil
         tab.historyAttempt = nil
         tab.view = nil
@@ -350,11 +352,12 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     private func hide() {
         frame = nil
-        surface?.isHidden = true
+        updateVisibility()
     }
 
     private func updateVisibility() {
-        guard let surface else { return }
+        // WebKit temporarily owns the guest's window and geometry during element fullscreen.
+        guard let surface, surface.fullscreenState == .notInFullscreen else { return }
         if let frame { surface.frame = frame }
         surface.isHidden = frame == nil || status == "unavailable"
     }
@@ -443,6 +446,12 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
                 self?.observedNavigationState(tabID: tabID, viewIdentity: viewIdentity)
             }
         }
+        tab.fullscreenObservation = view.observe(\.fullscreenState, options: [.new]) { [weak self, tabID = tab.id, viewIdentity] _, _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.selected?.id == tabID, self.selected?.viewIdentity == viewIdentity else { return }
+                self.updateVisibility()
+            }
+        }
         workspace.addSubview(view)
         tab.view = view
         updateVisibility()
@@ -469,6 +478,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         let configuration = WKWebViewConfiguration()
         // WebRTC can open direct UDP sockets outside WebKit's HTTPS proxy.
         configuration.defaultWebpagePreferences.isLockdownModeEnabled = true
+        configuration.preferences.isElementFullscreenEnabled = true
         configuration.websiteDataStore = .nonPersistent()
         configuration.websiteDataStore.proxyConfigurations = [proxy]
         configuration.userContentController.add(rules)

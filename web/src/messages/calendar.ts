@@ -32,6 +32,7 @@ export const calendar = {
   "browser.title": "Browser",
   "browser.open": "Open the browser",
   "browser.close": "Close the browser",
+  "browser.closePanel": "Close browser panel",
   "browser.tabs": "Browser tabs",
   "browser.linkRefused": "This link cannot open here: the built-in browser opens public HTTPS websites only.",
   "browser.linkLimit": "All 8 tabs are in use. Close one, or open this link in your default browser.",
