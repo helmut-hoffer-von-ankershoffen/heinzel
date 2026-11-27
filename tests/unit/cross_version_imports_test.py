@@ -18,13 +18,14 @@ import ast
 import gzip
 import importlib
 import importlib.util
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import MappingProxyType
 
 import pytest
 
-# Each test parses the whole source tree, which takes seconds on a loaded runner: the integration limit, scaled by CI.
+# Parsing the source tree takes seconds on a loaded runner: the integration limit, scaled by CI.
 pytestmark = [pytest.mark.unit, pytest.mark.timeout(15)]
 
 REPO = Path(__file__).resolve().parents[2]
@@ -116,12 +117,22 @@ class Tree:
     def defines(self, module: str, name: str) -> bool:
         if f"{module}.{name}" in self.modules:
             return True
+        return name in self.defined_names(module)
+
+    def defined_names(self, module: str) -> frozenset[str]:
+        """Names anywhere in the file, preserving the cross-version model's broad definition."""
         tree, _ = self.modules[module]
-        return name in {
-            *(n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)),
-            *(n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))),
-            *(a.asname or a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) for a in n.names),
-        }
+        return frozenset(
+            {
+                *(n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)),
+                *(
+                    n.name
+                    for n in ast.walk(tree)
+                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                ),
+                *(a.asname or a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) for a in n.names),
+            }
+        )
 
     def hook_imports(self, module: str) -> Iterator[tuple[str, list[str]]]:
         """What the module's PEP 562 `__getattr__` imports when it serves a name on first use."""
@@ -165,6 +176,47 @@ class Tree:
         yield from visit(tree.body)
 
 
+type Imports = tuple[tuple[str, tuple[str, ...]], ...]
+
+
+@dataclass(frozen=True)
+class SourceTree:
+    """Immutable scan summaries; no AST or mutable container escapes into another test."""
+
+    modules: Mapping[str, tuple[frozenset[str], frozenset[str], Imports, Imports]]
+
+    def defines(self, module: str, name: str) -> bool:
+        return f"{module}.{name}" in self.modules or name in self.modules[module][0]
+
+    def classes(self, module: str) -> frozenset[str]:
+        return self.modules[module][1]
+
+    def top_level_imports(self, module: str) -> Imports:
+        return self.modules[module][2]
+
+    def hook_imports(self, module: str) -> Imports:
+        return self.modules[module][3]
+
+
+@pytest.fixture(scope="session")
+def source_tree() -> SourceTree:
+    """Read the fixed repository source once per worker; mutation probes still construct Tree."""
+    tree = Tree(SOURCE)
+    return SourceTree(
+        MappingProxyType(
+            {
+                module: (
+                    tree.defined_names(module),
+                    frozenset(tree.classes(module)),
+                    tuple((target, tuple(names)) for target, names in tree.top_level_imports(module)),
+                    tuple((target, tuple(names)) for target, names in tree.hook_imports(module)),
+                )
+                for module in tree.modules
+            }
+        )
+    )
+
+
 def _guards_import(handler: ast.ExceptHandler) -> bool:
     caught = handler.type
     if caught is None:
@@ -179,23 +231,23 @@ def _relative(module: str, package: bool, node: ast.ImportFrom) -> str:
     return ".".join(base + ([node.module] if node.module else []))
 
 
-def _loads(tree: Tree, target: str, names: list[str]) -> list[str]:
+def _loads(tree: Tree | SourceTree, target: str, names: list[str] | tuple[str, ...]) -> list[str]:
     parts = target.split(".")
     chain = [".".join(parts[:i]) for i in range(1, len(parts) + 1)] + [f"{target}.{n}" for n in names]
     return [name for name in chain if name in tree.modules]
 
 
-def swap_problems(old: Published, tree: Tree) -> dict[str, list[str]]:
+def swap_problems(old: Published, tree: Tree | SourceTree) -> dict[str, list[str]]:
     """Per import a published process makes after a swap: what the new files ask of its modules in memory."""
     return _swap(old, tree)[0]
 
 
-def swap_fresh_loads(old: Published, tree: Tree) -> dict[str, set[str]]:
+def swap_fresh_loads(old: Published, tree: Tree | SourceTree) -> dict[str, set[str]]:
     """Per import a published process makes after a swap: the files of the new tree it loads fresh."""
     return _swap(old, tree)[1]
 
 
-def _swap(old: Published, tree: Tree) -> tuple[dict[str, list[str]], dict[str, set[str]]]:
+def _swap(old: Published, tree: Tree | SourceTree) -> tuple[dict[str, list[str]], dict[str, set[str]]]:
     problems: dict[str, list[str]] = {}
     loaded: dict[str, set[str]] = {}
     for _importer, target, names in old.lazy:
@@ -233,7 +285,7 @@ def _swap(old: Published, tree: Tree) -> tuple[dict[str, list[str]], dict[str, s
     return found_problems, {target: fresh for target, fresh in loaded.items() if fresh}
 
 
-def moved_classes(old: Published, tree: Tree) -> dict[str, str]:
+def moved_classes(old: Published, tree: Tree | SourceTree) -> dict[str, str]:
     """`module.Class` a published process defines in a file that no longer defines it itself (moved or gone)."""
     return {
         f"{module}.{name}": module
@@ -243,7 +295,7 @@ def moved_classes(old: Published, tree: Tree) -> dict[str, str]:
     }
 
 
-def _moved_to(old_module: str, name: str, new_module: str, tree: Tree) -> bool:
+def _moved_to(old_module: str, name: str, new_module: str, tree: Tree | SourceTree) -> bool:
     """A move keeps the file name, or the old file re-exports the class from its new file."""
     if old_module.rpartition(".")[2] == new_module.rpartition(".")[2]:
         return True
@@ -252,7 +304,7 @@ def _moved_to(old_module: str, name: str, new_module: str, tree: Tree) -> bool:
     )
 
 
-def swap_identity_problems(old: Published, tree: Tree) -> dict[str, list[str]]:
+def swap_identity_problems(old: Published, tree: Tree | SourceTree) -> dict[str, list[str]]:
     """Per import after a swap: fresh files that define again a class the process holds, or that only facades load."""
     moved: dict[str, set[str]] = {}
     for qualified, module in moved_classes(old, tree).items():
@@ -273,8 +325,8 @@ def swap_identity_problems(old: Published, tree: Tree) -> dict[str, list[str]]:
 
 
 @pytest.mark.parametrize("version", VERSIONS)
-def test_a_published_process_can_finish_its_update_on_the_current_tree(version: str) -> None:
-    broken = swap_problems(published(version), Tree(SOURCE))
+def test_a_published_process_can_finish_its_update_on_the_current_tree(version: str, source_tree: SourceTree) -> None:
+    broken = swap_problems(published(version), source_tree)
     new = {target: found for target, found in broken.items() if target not in KNOWN_BROKEN[version]}
     assert new == {}, "keep these imports light or keep the names; see heinzel.modules.system.updater"
     assert KNOWN_BROKEN[version] <= set(broken), "remove the entries that work now from KNOWN_BROKEN"
@@ -300,17 +352,20 @@ def test_recent_evidence_loads_without_any_resident_kernel_exports() -> None:
 
 
 @pytest.mark.parametrize("version", DEFINING)
-def test_a_published_process_never_loads_a_second_definition_of_a_class_it_holds(version: str) -> None:
-    found = {line for lines in swap_identity_problems(published(version), Tree(SOURCE)).values() for line in lines}
+def test_a_published_process_never_loads_a_second_definition_of_a_class_it_holds(
+    version: str,
+    source_tree: SourceTree,
+) -> None:
+    found = {line for lines in swap_identity_problems(published(version), source_tree).values() for line in lines}
     known = {line for line in found if line.split(" ")[0] in KNOWN_SPLIT[version]}
     assert sorted(found - known) == [], "keep the old file as a re-export and import the class from there"
     assert {line.split(" ")[0] for line in known} == KNOWN_SPLIT[version], "remove what is fixed from KNOWN_SPLIT"
 
 
 @pytest.mark.parametrize("version", DEFINING)
-def test_a_moved_class_is_the_same_object_at_its_old_path(version: str) -> None:
+def test_a_moved_class_is_the_same_object_at_its_old_path(version: str, source_tree: SourceTree) -> None:
     """The current tree: every class a published version defined is, where its old file still exists, one object."""
-    tree = Tree(SOURCE)
+    tree = source_tree
     split: list[str] = []
     for qualified, module in moved_classes(published(version), tree).items():
         name = qualified.rpartition(".")[2]
@@ -366,9 +421,9 @@ def test_the_identity_check_catches_a_second_definition() -> None:
     assert f"{copy} is facade-only and loads fresh" in found
 
 
-def test_the_update_result_renders_after_the_published_015_updater_swapped_the_files() -> None:
+def test_the_update_result_renders_after_the_published_015_updater_swapped_the_files(source_tree: SourceTree) -> None:
     """The exact failure of #895: `hz system update` of 0.9.15 renders its result with the new `_render`."""
-    broken = swap_problems(published("0.9.15"), Tree(SOURCE))
+    broken = swap_problems(published("0.9.15"), source_tree)
     assert "heinzel.modules.system._render" not in broken
 
 
