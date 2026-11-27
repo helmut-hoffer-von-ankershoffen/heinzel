@@ -21,23 +21,19 @@ events as it runs
 
 import hmac
 import inspect
-from collections.abc import Awaitable, Callable, Coroutine, Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any, Literal, get_args, get_origin
+from typing import Literal
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from fastapi.routing import APIRoute
 from fastapi.security import HTTPBearer
-from pydantic import ConfigDict, create_model
-from pydantic.fields import FieldInfo
-from starlette.types import Message
 
 from heinzel import __version__
 from heinzel.heads import _kit
-from heinzel.heads._exposure import API_PRIVATE, Exposed, exposed
+from heinzel.heads._exposure import API_PRIVATE, exposed
 from heinzel.heads._kit import API_HOST_HELP as API_HOST_HELP
 from heinzel.heads._kit import DEFAULT_PORTS as DEFAULT_PORTS
 from heinzel.heads._kit import FORBIDDEN as FORBIDDEN
@@ -45,18 +41,20 @@ from heinzel.heads._kit import LOOPBACK as LOOPBACK
 from heinzel.heads._kit import WEB_HOST_HELP as WEB_HOST_HELP
 from heinzel.heads._kit import refusal as refusal
 from heinzel.heads._kit import request_refusal as request_refusal
-from heinzel.heads._presence import mark_authenticated_presence
 from heinzel.heads._served_tools import bind_served_tools
-from heinzel.heads._stream import error_body, request_person, streamed
+from heinzel.heads._stream import error_body
 from heinzel.heads.api._auth import ApiBearer
+from heinzel.heads.api._routes import UNAVAILABLE, _bounded_body_route, _normal_body, _parameters
+from heinzel.heads.api._routes import _arguments as _arguments
+from heinzel.heads.api._routes import _query as _query
+from heinzel.heads.api._routes import endpoint as endpoint
+from heinzel.heads.api._routes import stream_endpoint as stream_endpoint
 from heinzel.kernel import CallIdentity, CurrentUser, HeinzelError, Kernel, boot
 from heinzel.kernel._errors import NotSupportedError as NotSupportedError
 from heinzel.kernel._errors import SubscriptionUsageLimitError as SubscriptionUsageLimitError
 from heinzel.kernel._identity import LOCAL_PERMISSIONS
-from heinzel.kernel.ai._agent_writes import calling
 
 HEAD = "api"
-UNAVAILABLE = 503
 UNAUTHORIZED = 401
 
 
@@ -228,114 +226,6 @@ def _authorized(request: Request, header: str, bearer: bytes, accept: Callable[[
         request.state.device = device
         return True
     return False
-
-
-def _normal_body(item: Exposed) -> bool:
-    return item.operation.private and item.operation.http_method == "POST"
-
-
-def endpoint(
-    kernel: Kernel, item: Exposed, *, body_parameters: list[inspect.Parameter] | None = None
-) -> Callable[..., Any]:
-    """Bind public parameters, keeping opted-in private input in a strict JSON body."""
-    body = _normal_body(item)
-
-    def run(response: Response, **kwargs: Any) -> Any:  # noqa: ANN401 - whatever the operation returns
-        mark_authenticated_presence(kernel, item.record.qualname)
-        with calling(request_person(kernel)):
-            result = kernel.invoke(item.operation, **_arguments(item, kwargs, body=body))
-        if item.operation.exit_code is not None and item.operation.exit_code(result):
-            response.status_code = UNAVAILABLE
-        return result
-
-    response_parameter = inspect.Parameter("response", inspect.Parameter.KEYWORD_ONLY, annotation=Response)
-    run.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
-        [*(body_parameters if body_parameters is not None else _parameters(item, body=body)), response_parameter],
-        return_annotation=item.returns,
-    )
-    run.__name__ = item.name
-    return run
-
-
-def _bounded_body_route(limit: int) -> type[APIRoute]:
-    """Limit bytes as the router reads them, including chunked requests and JSON padding."""
-
-    class BoundedBodyRoute(APIRoute):
-        def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
-            handler = super().get_route_handler()
-
-            async def bounded(request: Request) -> Response:
-                size = 0
-
-                async def receive() -> Message:
-                    nonlocal size
-                    message = await request.receive()
-                    if message["type"] == "http.request":
-                        size += len(message.get("body", b""))
-                        if size > limit:
-                            raise HTTPException(status_code=413, detail="Request body too large.")
-                    return message
-
-                return await handler(Request(request.scope, receive=receive))
-
-            return bounded
-
-    return BoundedBodyRoute
-
-
-def stream_endpoint(
-    kernel: Kernel, item: Exposed, *, body_parameters: list[inspect.Parameter] | None = None
-) -> Callable[..., Any]:
-    """Like `endpoint`, but the answer is the operation's events as a server-sent event stream."""
-
-    async def run(**kwargs: Any) -> Any:  # noqa: ANN401 - a streaming response
-        return streamed(
-            kernel, item.operation, _arguments(item, kwargs, body=item.operation.private), module=item.record.qualname
-        )
-
-    run.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
-        body_parameters if body_parameters is not None else _parameters(item, body=item.operation.private)
-    )
-    run.__name__ = f"{item.name}_stream"
-    return run
-
-
-def _parameters(item: Exposed, *, body: bool) -> list[inspect.Parameter]:
-    if not body:
-        return [_query(parameter) for parameter in item.parameters]
-    fields: dict[str, Any] = {  # runtime function annotations become Pydantic field definitions
-        parameter.name: (
-            parameter.annotation,
-            ... if parameter.default is inspect.Parameter.empty else parameter.default,
-        )
-        for parameter in item.parameters
-    }
-    model = create_model(f"{item.name}_Input", __config__=ConfigDict(extra="forbid"), **fields)
-    return [
-        inspect.Parameter(
-            "_input",
-            inspect.Parameter.KEYWORD_ONLY,
-            annotation=Annotated[model, Body()],
-            default=inspect.Parameter.empty if item.parameters else model(),
-        )
-    ]
-
-
-def _arguments(item: Exposed, values: dict[str, Any], *, body: bool) -> dict[str, Any]:
-    if not body:
-        return values
-    # FastAPI's strict model refuses unknown fields; the kernel still owns operation validation and enforcement.
-    return {parameter.name: getattr(values["_input"], parameter.name) for parameter in item.parameters}
-
-
-def _query(parameter: inspect.Parameter) -> inspect.Parameter:
-    annotation, description = parameter.annotation, None
-    if get_origin(annotation) is Annotated:
-        annotation, *metadata = get_args(annotation)
-        description = next((m.description for m in metadata if isinstance(m, FieldInfo)), None)
-    return parameter.replace(
-        annotation=Annotated[annotation, Query(description=description)], kind=inspect.Parameter.KEYWORD_ONLY
-    )
 
 
 def serve(
