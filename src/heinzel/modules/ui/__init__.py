@@ -9,8 +9,9 @@ from heinzel import Check, Config, Kernel, Module, Settings, Status, __version__
 from heinzel import HeinzelError as HeinzelError
 from heinzel.kernel import HeadRefresh, Installation, PersistentWeb, WebHeadRefresh, WebOverview
 from heinzel.modules.system.lifecycle._runtime import runtime_checks
-from heinzel.modules.system.lifecycle._service import WebChange, WebRestart, WebService, WebStatus
+from heinzel.modules.system.lifecycle._service import WebChange, WebRestart, WebService
 from heinzel.modules.system.lifecycle._strays import retire_strays
+from heinzel.modules.ui._clients import UiStatus, read_status, render_status
 from heinzel.modules.ui._overview import WebOverviewService
 
 module = Module("ui", "Open the web workspace or manage its optional persistent service.")
@@ -110,10 +111,10 @@ def install(
     return service.install(port, dry_run=dry_run)
 
 
-@module.operation(heads={"cli"}, audience="everyday")
-def status(service: WebService) -> WebStatus:
-    """Show exact OS ownership and the live web server's readiness and version."""
-    return service.status()
+@module.operation(heads={"cli"}, audience="everyday", render=render_status)
+def status(service: WebService) -> UiStatus:
+    """Show service readiness and recently observed desktop use (never live connections)."""
+    return read_status(service)
 
 
 @module.operation(read_only=False, heads={"cli"}, audience="everyday")

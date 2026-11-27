@@ -51,6 +51,17 @@ import Foundation
         precondition(!WorkspaceVersionObservation.record(observed, origin: origin, selectedOrigin: origin,
                                                          requestRevision: 1, currentRevision: 2, into: &versions))
         try verifyAppBuildObservation(now: now)
+        let token = ClientIdentity.header(appVersion: "0.9.54", backendVersion: nil, machine: "Demo's Air (2)")
+        precondition(token == "flavor=native;app=0.9.54;backend=unknown;machine=Demo%27s%20Air%20%282%29")
+        precondition(ClientIdentity.header(appVersion: nil, backendVersion: "", machine: nil)
+                     == "flavor=native;app=unknown;backend=unknown;machine=unknown")
+        let bounded = String(repeating: "𐐀 ", count: 32)
+        precondition(ClientIdentity.header(appVersion: nil, backendVersion: nil, machine: bounded + "extra")
+                     == "flavor=native;app=unknown;backend=unknown;machine="
+                        + bounded.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!)
+        ClientIdentity.backendVersion = "0.9.54"
+        precondition(ClientIdentity.backendVersion == "0.9.54")
+        ClientIdentity.backendVersion = nil
         verifyCloudSyncPreference()
         await verifyVersionRefresh(now: now)
         print("PASS: native footer slot is bounded to the current viewport")

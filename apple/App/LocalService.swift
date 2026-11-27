@@ -120,7 +120,8 @@ final class LocalService: NSObject, NSApplicationDelegate {
                           let endpoint = Endpoint(value, loopback: true) else {
                         throw ConnectionError.startup
                     }
-                    try await endpoint.verify()
+                    // The workspaces this app connects to list it with this backend version.
+                    ClientIdentity.backendVersion = endpoint.token == nil ? nil : try await endpoint.readLifecycle().version
                     return endpoint
                 }
                 defer { group.cancelAll() }
@@ -147,7 +148,7 @@ final class LocalService: NSObject, NSApplicationDelegate {
                 try? await Task.sleep(for: interval)
                 if Task.isCancelled { return }
                 do {
-                    _ = try await endpoint.readLifecycle()
+                    ClientIdentity.backendVersion = try await endpoint.readLifecycle().version
                     failures = 0
                 } catch {
                     failures += 1

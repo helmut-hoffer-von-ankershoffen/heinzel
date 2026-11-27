@@ -637,7 +637,7 @@ Open the web workspace or manage its optional persistent service.
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
 | Install web availability after login, separately from scheduled Heinzels. | `hz ui install` | — | — | — | yes |  |
-| Show exact OS ownership and the live web server's readiness and version. | `hz ui status` | — | — | — |  |  |
+| Show service readiness and recently observed desktop use (never live connections). | `hz ui status` | — | — | — |  |  |
 | Restart the owned web service with its existing port and authenticated session. | `hz ui restart` | — | — | — | yes |  |
 | Remove only the owned web login service, preserving your data and paired devices. | `hz ui uninstall` | — | — | — | yes |  |
 

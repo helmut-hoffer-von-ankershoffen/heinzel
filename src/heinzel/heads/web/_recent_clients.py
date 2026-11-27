@@ -6,7 +6,13 @@ from http import HTTPStatus
 
 from fastapi import FastAPI, Request, Response
 
-from heinzel.kernel.recent_clients import RecentClient, RecentUse, recent_clients
+from heinzel.kernel.recent_clients import (
+    ClientObservation,
+    RecentClient,
+    RecentUse,
+    parse_client_labels,
+    recent_clients,
+)
 
 
 def add_recent_clients(app: FastAPI) -> None:
@@ -23,11 +29,21 @@ def add_recent_clients(app: FastAPI) -> None:
             and HTTPStatus.OK <= response.status_code < HTTPStatus.MULTIPLE_CHOICES
             and request.url.path.rstrip("/") != "/api/recent-clients"
             and request.url.path.rstrip("/") != "/recent-clients"
+            and request.url.path.rstrip("/") not in {"/client-observations", "/api/client-observations"}
         ):
-            evidence.observe(datetime.now(UTC))
+            now = datetime.now(UTC)
+            evidence.observe(now)
+            if labels := parse_client_labels(request.headers):
+                device_id = getattr(request.state, "device", None) if request.state.auth == "device" else None
+                evidence.observe_labels(now, labels, device_id)
         return response
 
     @app.get("/recent-clients", tags=["web"])
     def observations(response: Response) -> list[RecentClient]:
         response.headers["Cache-Control"] = "no-store"
         return recent_clients(evidence, datetime.now(UTC))
+
+    @app.get("/client-observations", tags=["web"])
+    def labelled_observations(response: Response) -> list[ClientObservation]:
+        response.headers["Cache-Control"] = "no-store"
+        return evidence.observations(datetime.now(UTC))
