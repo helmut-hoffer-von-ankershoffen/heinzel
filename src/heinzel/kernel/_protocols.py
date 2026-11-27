@@ -646,6 +646,14 @@ class EventCancellation(BaseModel):
     notified: bool = Field(description="Whether the attendees were told by mail.")
 
 
+class CalendarSource(BaseModel):
+    """A readable calendar exposed by a calendar adapter."""
+
+    id: str = Field(min_length=1, max_length=1024, description="Stable opaque source id, suitable for events_for.")
+    title: str = Field(min_length=1, max_length=256, description="Name of the calendar shown to its owner.")
+    primary: bool = Field(default=False, description="Whether this is the owner's primary calendar.")
+
+
 class Calendar(Protocol):
     """The user's calendar, such as Google Calendar (capability `calendar`).
 
@@ -659,6 +667,14 @@ class Calendar(Protocol):
 
         Mode: read.
         """
+        ...
+
+    def calendars(self) -> list[CalendarSource]:
+        """List readable calendars with stable ids. Mode: read."""
+        ...
+
+    def events_for(self, calendar: str, window: Window) -> list[Event]:
+        """Read occurrences from the exact calendar id returned by calendars. Mode: read."""
         ...
 
     def free_busy(self, people: str, window: Window) -> list[FreeBusy]:

@@ -1,8 +1,8 @@
 """The REST head: every operation becomes an HTTP endpoint with an OpenAPI schema (served at `/docs`).
 
-Read-only operations are `GET`, the others `POST`; parameters are query parameters described by their `Field`. A
-`HeinzelError` becomes `400 {"error": ...}`; an operation whose exit code would be non-zero answers `503`, so
-`GET /system/doctor` doubles as a health probe.
+Read-only operations default to `GET` and the others to `POST`. Private operations may opt into a bounded JSON body
+and `POST` even for reads. A `HeinzelError` becomes `400 {"error": ...}`. An operation whose exit code would be
+non-zero answers `503`, so `GET /system/doctor` doubles as a health probe.
 
 The default server has no authentication, so it answers only requests that name a loopback host (or one listed in
 `[hz] api_allowed_hosts`) on its own port, and refuses requests from another origin with `403`: a web page in your
@@ -21,18 +21,20 @@ events as it runs
 
 import hmac
 import inspect
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal, get_args, get_origin
 
-from fastapi import Body, Depends, FastAPI, Query, Request, Response
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from fastapi.security import HTTPBearer
 from pydantic import ConfigDict, create_model
 from pydantic.fields import FieldInfo
 from starlette.datastructures import Headers
+from starlette.types import Message
 
 from heinzel import __version__
 from heinzel.heads._exposure import API_PRIVATE, Exposed, exposed
@@ -160,15 +162,15 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
         return _error_response(exc, private=head == "web" or selected == API_PRIVATE)
 
     for item in exposed(kernel, selected):
-        # A private mutation has the same strict JSON input on its normal and streaming routes.
-        body_parameters = (
-            _parameters(item, body=True) if item.operation.private and not item.operation.read_only else None
-        )
+        # The private body model and byte limit apply equally to the normal and streaming routes.
+        limit = item.operation.request_body_limit
+        route_class = _bounded_body_route(limit) if limit is not None else None
+        body_parameters = _parameters(item, body=True) if _normal_body(item) else None
         returns = item.returns if item.returns is not inspect.Signature.empty else None
-        app.add_api_route(
+        app.router.add_api_route(
             "/" + "/".join(item.path),
             endpoint(kernel, item, body_parameters=body_parameters),
-            methods=["GET" if item.operation.read_only else "POST"],
+            methods=[item.operation.http_method],
             summary=item.operation.summary,
             description=inspect.getdoc(item.operation.func) or "",
             response_model=returns,
@@ -178,13 +180,15 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
             else None,
             tags=[item.record.path[0]],
             operation_id=item.name,
+            route_class_override=route_class,
         )
         if token is not None or credentials is not None:  # Streams retain the authenticated call context.
-            app.add_api_route(
+            app.router.add_api_route(
                 "/stream/" + "/".join(item.path),
                 stream_endpoint(kernel, item, body_parameters=body_parameters),
                 methods=["POST"],
                 include_in_schema=False,
+                route_class_override=route_class,
             )
     return app
 
@@ -308,11 +312,15 @@ def _split(host: str) -> tuple[str, str]:
     return name, port
 
 
+def _normal_body(item: Exposed) -> bool:
+    return item.operation.private and item.operation.http_method == "POST"
+
+
 def endpoint(
     kernel: Kernel, item: Exposed, *, body_parameters: list[inspect.Parameter] | None = None
 ) -> Callable[..., Any]:
-    """Bind public parameters, keeping private mutation input in a strict JSON body."""
-    body = item.operation.private and not item.operation.read_only
+    """Bind public parameters, keeping opted-in private input in a strict JSON body."""
+    body = _normal_body(item)
 
     def run(response: Response, **kwargs: Any) -> Any:  # noqa: ANN401 - whatever the operation returns
         mark_authenticated_presence(kernel, item.record.qualname)
@@ -329,6 +337,32 @@ def endpoint(
     )
     run.__name__ = item.name
     return run
+
+
+def _bounded_body_route(limit: int) -> type[APIRoute]:
+    """Limit bytes as the router reads them, including chunked requests and JSON padding."""
+
+    class BoundedBodyRoute(APIRoute):
+        def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+            handler = super().get_route_handler()
+
+            async def bounded(request: Request) -> Response:
+                size = 0
+
+                async def receive() -> Message:
+                    nonlocal size
+                    message = await request.receive()
+                    if message["type"] == "http.request":
+                        size += len(message.get("body", b""))
+                        if size > limit:
+                            raise HTTPException(status_code=413, detail="Request body too large.")
+                    return message
+
+                return await handler(Request(request.scope, receive=receive))
+
+            return bounded
+
+    return BoundedBodyRoute
 
 
 def stream_endpoint(

@@ -201,6 +201,7 @@ class Module:
         audience: Audience = "expert",
         aliases: Iterable[str] = (),
         agents: AgentWrites | ByArguments | None = None,
+        request_body_limit: int | None = None,
     ) -> Callable[[F], F]: ...
 
     def operation[F: Callable[..., Any]](  # noqa: PLR0913 - keyword-only options of a decorator
@@ -220,13 +221,14 @@ class Module:
         audience: Audience = "expert",
         aliases: Iterable[str] = (),
         agents: AgentWrites | ByArguments | None = None,
+        request_body_limit: int | None = None,
     ) -> F | Callable[[F], F]:
         """Advertise a function as an operation. Its docstring is required: it becomes the help text.
 
         Args:
             func: The function, when used as a bare decorator.
             name: Operation name; defaults to the function name with underscores as dashes.
-            read_only: False if the operation changes state; heads use this for confirmations and HTTP verbs.
+            read_only: False if the operation changes state; heads use this for confirmations and default HTTP verbs.
             private: Require authenticated call identity; never expose on unauthenticated network heads.
             render: How human-facing heads present the result; the JSON form is the default.
             exit_code: Maps the result to an exit code for heads that have one; 0 when not given.
@@ -249,6 +251,7 @@ class Module:
                 publishing, credentials, installing code), `"never"` is the person's own (confirming, approving),
                 `"propose"` or nothing keeps the behaviour before the policy. `ByArguments` makes some calls
                 stricter. Mark it as strict as everything the operation can trigger.
+            request_body_limit: Accept bounded JSON in both HTTP POST forms of a private operation, even for a read.
 
         Raises:
             ValueError: If the docstring is missing, the audience unknown, a requirement is malformed or writes from
@@ -281,6 +284,7 @@ class Module:
                     audience=audience,
                     aliases=tuple(" ".join(a.split()) for a in old_paths),
                     agents=agents,
+                    request_body_limit=request_body_limit,
                 )
             )
             return target
