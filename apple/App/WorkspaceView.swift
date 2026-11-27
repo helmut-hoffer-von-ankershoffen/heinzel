@@ -45,6 +45,14 @@ struct WorkspaceView: WebRepresentable {
 
     private func makeWebView(_ context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
+        #if os(macOS)
+        let machine = Host.current().localizedName
+        #else
+        let machine = UIDevice.current.name
+        #endif
+        configuration.applicationNameForUserAgent = ClientIdentity.userAgentToken(
+            appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+            backendVersion: ClientIdentity.backendVersion, machine: machine)
         configuration.allowsInlineMediaPlaybackIfSupported()
         configuration.userContentController.addScriptMessageHandler(
             context.coordinator, contentWorld: .defaultClient, name: "heinzelExternalLink"

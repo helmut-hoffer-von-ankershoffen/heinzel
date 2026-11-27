@@ -196,6 +196,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/connected-clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connected Clients */
+        get: operations["connected_clients_connected_clients_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/document/read": {
         parameters: {
             query?: never;
@@ -7586,6 +7603,42 @@ export interface components {
             values: {
                 [key: string]: components["schemas"]["JsonValue"];
             };
+        };
+        /**
+         * ConnectedClient
+         * @description One client machine as the workspace last saw it.
+         */
+        ConnectedClient: {
+            /**
+             * App Version
+             * @description The desktop app's version, or `unknown`.
+             * @default unknown
+             */
+            app_version: string;
+            /**
+             * Backend Version
+             * @description The backend version the client runs, or `unknown`.
+             * @default unknown
+             */
+            backend_version: string;
+            /**
+             * Flavor
+             * @description `native`, `electron` or `unknown` for a client sending nothing.
+             * @default unknown
+             */
+            flavor: string;
+            /**
+             * Last Seen
+             * Format: date-time
+             * @description When this client last called the workspace.
+             */
+            last_seen: string;
+            /**
+             * Machine
+             * @description The client's machine name, or `unknown`.
+             * @default unknown
+             */
+            machine: string;
         };
         /**
          * ConnectedGrantProposal
@@ -18853,6 +18906,7 @@ export type SchemaConfigFileInfo = components['schemas']['ConfigFileInfo'];
 export type SchemaConfigReport = components['schemas']['ConfigReport'];
 export type SchemaConfigRevealed = components['schemas']['ConfigRevealed'];
 export type SchemaConflictView = components['schemas']['ConflictView'];
+export type SchemaConnectedClient = components['schemas']['ConnectedClient'];
 export type SchemaConnectedGrantProposal = components['schemas']['ConnectedGrantProposal'];
 export type SchemaConnectedItemIdentity = components['schemas']['ConnectedItemIdentity'];
 export type SchemaConnectedReadOption = components['schemas']['ConnectedReadOption'];
@@ -19446,6 +19500,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connected_clients_connected_clients_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectedClient"][];
                 };
             };
         };

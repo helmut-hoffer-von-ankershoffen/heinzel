@@ -26,6 +26,33 @@ enum WorkspaceFooterGeometry {
     }
 }
 
+/// What the native app tells every workspace it connects to, so the workspace can list its clients. The web view cannot
+/// add a header to page requests, so the text rides in the user agent as `HeinzelClient(...)`; the server reads both.
+enum ClientIdentity {
+    private final class Backend: @unchecked Sendable {
+        private let lock = NSLock()
+        private var version: String?
+        func get() -> String? { lock.lock(); defer { lock.unlock() }; return version }
+        func set(_ value: String?) { lock.lock(); defer { lock.unlock() }; version = value }
+    }
+    private static let backend = Backend()
+
+    /// The version of the hz this app started or attached to, read from its lifecycle; nil until it answered.
+    static var backendVersion: String? {
+        get { backend.get() }
+        set { backend.set(newValue) }
+    }
+
+    static func userAgentToken(appVersion: String?, backendVersion: String?, machine: String?) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_+"))
+        func field(_ value: String?) -> String {
+            guard let value, !value.isEmpty else { return "unknown" }
+            return String(value.prefix(64)).addingPercentEncoding(withAllowedCharacters: allowed) ?? "unknown"
+        }
+        return "HeinzelClient(flavor=native;app=\(field(appVersion));backend=\(field(backendVersion));machine=\(field(machine)))"
+    }
+}
+
 struct AppBuildObservation: Codable, Equatable {
     struct Build: Codable, Equatable {
         let version: String

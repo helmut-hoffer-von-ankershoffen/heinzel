@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { attachClientHeader } from "../src/client-identity.js";
 import { EventEmitter } from "node:events";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,7 +64,7 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
       setPermissionRequestHandler: (value) => { session.requestPermission = value; },
       setDisplayMediaRequestHandler() {},
       setDevicePermissionHandler() {}, setBluetoothPairingHandler() {},
-      webRequest: { onBeforeRequest() {} }, on() {},
+      webRequest: { onBeforeRequest() {}, onBeforeSendHeaders(filter, handler) { session.clientHeader = { filter, handler }; } }, on() {},
       clearStorageData: async () => { session.cleared = true; }, clearCache: async () => {},
     };
     sessions.push(session); return session;
@@ -123,7 +124,7 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
     Menu: { buildFromTemplate: (value) => value, setApplicationMenu: (value) => { menu = value; } },
     session: { fromPartition: makeSession }, safeStorage: {}, shell: { openExternal() {} },
     createWorkspaceDirectory: () => ({ list: () => [], connection: () => null, remember: () => true, forget: () => true }),
-    createWorkspaceController, isPickerFrame, createInstanceLifecycle, createLifecycleHandler, guardUiNavigation,
+    attachClientHeader, machineName: () => "Air", createWorkspaceController, isPickerFrame, createInstanceLifecycle, createLifecycleHandler, guardUiNavigation,
     openProductUi: (options) => openProductUi(deferredLoad ? { ...options,
       schedule: (callback) => { if (!expireLoad) { expireLoad = callback; return null; } return setTimeout(callback, 15000); },
       unschedule: (timer) => { if (timer) clearTimeout(timer); },

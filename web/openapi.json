@@ -4813,6 +4813,46 @@
         "title": "ConflictView",
         "type": "object"
       },
+      "ConnectedClient": {
+        "description": "One client machine as the workspace last saw it.",
+        "properties": {
+          "app_version": {
+            "default": "unknown",
+            "description": "The desktop app's version, or `unknown`.",
+            "title": "App Version",
+            "type": "string"
+          },
+          "backend_version": {
+            "default": "unknown",
+            "description": "The backend version the client runs, or `unknown`.",
+            "title": "Backend Version",
+            "type": "string"
+          },
+          "flavor": {
+            "default": "unknown",
+            "description": "`native`, `electron` or `unknown` for a client sending nothing.",
+            "title": "Flavor",
+            "type": "string"
+          },
+          "last_seen": {
+            "description": "When this client last called the workspace.",
+            "format": "date-time",
+            "title": "Last Seen",
+            "type": "string"
+          },
+          "machine": {
+            "default": "unknown",
+            "description": "The client's machine name, or `unknown`.",
+            "title": "Machine",
+            "type": "string"
+          }
+        },
+        "required": [
+          "last_seen"
+        ],
+        "title": "ConnectedClient",
+        "type": "object"
+      },
       "ConnectedGrantProposal": {
         "additionalProperties": false,
         "description": "One private exact capability/source/account/window proposal; no access until trusted approval.",
@@ -24703,6 +24743,31 @@
         "summary": "Show the tokens and cost of AI runs today and this week, by access, model, Heinzelmännchen or cause.",
         "tags": [
           "ai"
+        ]
+      }
+    },
+    "/connected-clients": {
+      "get": {
+        "operationId": "connected_clients_connected_clients_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectedClient"
+                  },
+                  "title": "Response Connected Clients Connected Clients Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Connected Clients",
+        "tags": [
+          "web"
         ]
       }
     },

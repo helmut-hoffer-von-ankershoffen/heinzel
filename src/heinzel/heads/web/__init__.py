@@ -47,6 +47,7 @@ import threading
 import webbrowser as webbrowser
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
@@ -67,7 +68,7 @@ from heinzel.heads.web._stream import add_stream
 from heinzel.heads.web._supervision import WebPublication, restart_when_settled
 from heinzel.heads.web._updates import add_updates
 from heinzel.heads.web._widget import add_widget
-from heinzel.heads.web._workspace_version import add_workspace_version
+from heinzel.heads.web._workspace_version import add_connected_clients, add_workspace_version
 from heinzel.kernel import (
     FONT_ROUTE,
     KERNEL_SECTION,
@@ -89,6 +90,9 @@ from heinzel.kernel import (
     read_view_asset,
 )
 from heinzel.modules.system.client import Devices, McpTokens, tokens_for_user
+
+if TYPE_CHECKING:
+    from heinzel.modules.system.client import ConnectedClients
 
 HEAD = "web"
 WEB_LIFECYCLE_WAIT_SECONDS = 10.0
@@ -142,6 +146,8 @@ Execute = Callable[[str, list[str], dict[str, str]], object]
 """Replaces the process: `os.execve`, or a fake in tests."""
 
 
+HTTP_ERROR = 400
+
 NOT_BUILT = (
     "The web app isn't built into this installation. In a checkout of the repository run `make web-build`; an "
     "installed release ships it."
@@ -152,6 +158,23 @@ def devices_for_user() -> Devices:
     """The paired devices in the user's state directory: a project's `hz.toml` can't move them."""
     settings = Config.load(Path.home()).settings(Settings, KERNEL_SECTION)
     return Devices(settings.state_dir / "web")
+
+
+def _connected_clients(directory: Path) -> "ConnectedClients":
+    """The list of connected desktop apps, imported late for the same reason as in `_noting_client`."""
+    from heinzel.modules.system.client import ConnectedClients  # noqa: PLC0415 - late: old names in a swapped process
+
+    return ConnectedClients(directory)
+
+
+def _noting_client(clients: "ConnectedClients", request: Request, response: Response) -> Response:
+    """Record which desktop app called the API, once it was let in; the response passes through."""
+    if request.url.path.startswith("/api/") and response.status_code < HTTP_ERROR:
+        # Imported here: a published process finishing its update has the package's old names (cross-version test).
+        from heinzel.modules.system.client import now_utc, parse_client  # noqa: PLC0415 - late: old names in a swapped process
+
+        clients.touch(parse_client(request.headers, now_utc()))
+    return response
 
 
 def api_app(
@@ -183,6 +206,7 @@ def api_app(
 
     add_lifecycle(app, kernel, restart)
     add_workspace_version(app, kernel)
+    add_connected_clients(app, kernel.settings.state_dir / "web")
     app.state.chatgpt_sign_in = sign_in = ChatGptSignIn(kernel, port)
     sign_in.add_start(app)
     return app
@@ -229,7 +253,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     kernel.bind(LocalWebRuntime, runtime)
     kernel.bind(Progress, StreamProgress())  # operations' events reach the stream of the request that runs them
     kernel.bind(DaemonLifecycleWait, DaemonLifecycleWait(WEB_LIFECYCLE_WAIT_SECONDS))
-    activity = Activity()
+    activity, clients = Activity(), _connected_clients(kernel.settings.state_dir / "web")
 
     @app.middleware("http")
     async def guarded(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
@@ -249,7 +273,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
             response = await as_work(activity, call_next, request)
         else:
             response = await call_next(request)
-        secure(response, request.url.path)
+        secure(_noting_client(clients, request, response), request.url.path)
         return response
 
     paired = devices or devices_for_user()

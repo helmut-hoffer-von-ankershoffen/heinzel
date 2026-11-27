@@ -63,6 +63,31 @@ describe("About dialog", () => {
     expect(screen.getByText("No plugins installed.")).toBeInTheDocument();
   });
 
+  it("lists the connected clients with app flavor and versions, and unknown for old clients", async () => {
+    const seen = "2026-11-22T10:00:00Z";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json([
+          { flavor: "electron", app_version: "0.9.54", backend_version: "0.9.54", machine: "Air", last_seen: seen },
+          {
+            flavor: "unknown",
+            app_version: "unknown",
+            backend_version: "unknown",
+            machine: "unknown",
+            last_seen: seen,
+          },
+        ]),
+      ),
+    );
+    show();
+    act(() => requestMenuAction("about"));
+    const list = await screen.findByTestId("connected-clients");
+    expect(within(list).getByText("Air")).toBeInTheDocument();
+    expect(list).toHaveTextContent("electron app 0.9.54, backend 0.9.54");
+    expect(list).toHaveTextContent("unknown app unknown, backend unknown");
+  });
+
   it("shows one row per plugin, many or long-named, in cells that break instead of overflowing", () => {
     const long = `heinzel-${"x".repeat(200)}`;
     current = {

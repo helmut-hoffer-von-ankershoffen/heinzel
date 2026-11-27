@@ -49,6 +49,13 @@ import Foundation
         precondition(!WorkspaceVersionObservation.record(observed, origin: origin, selectedOrigin: origin,
                                                          requestRevision: 1, currentRevision: 2, into: &versions))
         try verifyAppBuildObservation(now: now)
+        let token = ClientIdentity.userAgentToken(appVersion: "0.9.54", backendVersion: nil, machine: "Helmut's Air (2)")
+        precondition(token == "HeinzelClient(flavor=native;app=0.9.54;backend=unknown;machine=Helmut%27s%20Air%20%282%29)")
+        precondition(ClientIdentity.userAgentToken(appVersion: nil, backendVersion: "", machine: nil)
+                     == "HeinzelClient(flavor=native;app=unknown;backend=unknown;machine=unknown)")
+        ClientIdentity.backendVersion = "0.9.54"
+        precondition(ClientIdentity.backendVersion == "0.9.54")
+        print("PASS: native client identity is quoted and unknown when missing")
         verifyCloudSyncPreference()
         await verifyVersionRefresh(now: now)
         print("PASS: native footer slot is bounded to the current viewport")
