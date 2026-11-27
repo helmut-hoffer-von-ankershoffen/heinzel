@@ -20,6 +20,10 @@ tests = ["tests/unit/kernel/**"]
 summary = "kernel service implementations, composed by the kernel"
 src = ["src/heinzel/services/**"]
 
+[context.testing]
+summary = "public test harnesses and pytest integration"
+src = ["src/heinzel/testing/**"]
+
 [context.runtime-update]
 summary = "update plan, apply, schedule and retry; the web head's auto update keeps only its routes"
 src = ["src/heinzel/modules/system/updater/**", "src/heinzel/heads/web/_updates.py"]

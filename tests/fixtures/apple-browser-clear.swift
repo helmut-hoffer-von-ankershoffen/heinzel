@@ -152,6 +152,7 @@ struct BrowserClearProbe {
         let guest = guestViews()[0]
         precondition(!guest.configuration.websiteDataStore.isPersistent)
         precondition(guest.configuration.websiteDataStore !== workspace.configuration.websiteDataStore)
+        precondition(guest.configuration.preferences.isElementFullscreenEnabled)
         browser.reset()
     }
 

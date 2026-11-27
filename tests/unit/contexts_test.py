@@ -146,6 +146,7 @@ def _adapter_only_files() -> list[str]:
         path
         for path, names in OWNERS.items()
         if path.endswith(".py")
+        and len(names) == 1
         and CONFIG["context"][names[0]].get("adapters_only")
         and not PurePosixPath(path).name.startswith("_adapter")
     )
