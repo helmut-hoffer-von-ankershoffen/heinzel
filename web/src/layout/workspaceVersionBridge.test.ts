@@ -19,7 +19,8 @@ function versionRequest(clientIdentity = "") {
     ?.split('callAsyncJavaScript("""')[1]
     ?.split('"""')[0];
   if (!wrapper?.includes("\\(body)")) throw new Error("missing native inspection wrapper");
-  const evaluate = runInThisContext(`(async ({ origin, clientIdentity, fetch, location, sessionStorage, localStorage }) => {
+  const evaluate =
+    runInThisContext(`(async ({ origin, clientIdentity, fetch, location, sessionStorage, localStorage }) => {
     ${wrapper.replace("\\(body)", body)}
   })`) as (bindings: Record<string, unknown>) => Promise<Record<string, unknown> | null>;
   return (fetch: typeof globalThis.fetch, pageOrigin = "https://workspace.example") => {
