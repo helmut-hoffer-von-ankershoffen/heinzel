@@ -220,7 +220,7 @@ def repair(
     return service.repair(automatic=automatic)
 
 
-@module.operation(read_only=False, heads={"cli"}, render=render_unpin)
+@module.operation(read_only=False, heads={"cli", "web"}, render=render_unpin)
 def unpin(
     service: PluginService,
     distribution: Distribution,

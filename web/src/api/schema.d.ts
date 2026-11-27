@@ -3759,6 +3759,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/plugin/unpin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove an exact index version pin while keeping the installed plugin.
+         * @description Remove an exact index version pin while keeping the installed plugin.
+         *
+         *     Without `confirm`, show the installed version and the exact confirmation command. The confirmed change removes
+         *     only its version requirement, so future ordinary updates may move it. Git, local and constrained sources refuse.
+         */
+        post: operations["system_plugin_unpin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/prerequisite/check": {
         parameters: {
             query?: never;
@@ -12555,6 +12578,42 @@ export interface components {
             url: string;
         };
         /**
+         * PluginUnpin
+         * @description The exact installed plugin whose update policy would change or changed.
+         */
+        PluginUnpin: {
+            /**
+             * Confirmation
+             * @description Digest binding this preview to the observed installed generation.
+             */
+            confirmation: string | null;
+            /**
+             * Distribution
+             * @description The installed distribution whose index pin is selected.
+             */
+            distribution: string;
+            /**
+             * Done
+             * @description Whether the exact confirmed pin was removed.
+             */
+            done: boolean;
+            /**
+             * Message
+             * @description What happens to the current plugin and its future updates.
+             */
+            message: string;
+            /**
+             * Next
+             * @description Command that confirms this exact preview, if still applicable.
+             */
+            next: string[];
+            /**
+             * Version
+             * @description The installed version, which the unpin leaves in place.
+             */
+            version: string;
+        };
+        /**
          * PluginUpdate
          * @description What `hz system update` did to one installed plugin.
          */
@@ -19000,6 +19059,7 @@ export type SchemaPluginScreenshot = components['schemas']['PluginScreenshot'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaPluginShowcase = components['schemas']['PluginShowcase'];
 export type SchemaPluginSoundscape = components['schemas']['PluginSoundscape'];
+export type SchemaPluginUnpin = components['schemas']['PluginUnpin'];
 export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
 export type SchemaPluginWrite = components['schemas']['PluginWrite'];
 export type SchemaPluginWrites = components['schemas']['PluginWrites'];
@@ -24768,6 +24828,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SetupBind"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_plugin_unpin: {
+        parameters: {
+            query: {
+                /** @description Distribution name, as `hz system plugin list` shows it. */
+                distribution: string;
+                /** @description Confirm the exact installation generation and version shown by the unpin preview. */
+                confirm?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginUnpin"];
                 };
             };
             /** @description Validation Error */
