@@ -95,7 +95,8 @@ def test_journey_uses_private_uv_and_state_directories(starter, tmp_path, monkey
     assert "UV_FROZEN" not in environment
 
 
-def test_interrupted_starter_command_terminates_its_process_group(starter, tmp_path):
+@pytest.mark.parametrize("resists_term", [False, True])
+def test_interrupted_starter_command_terminates_its_process_group(starter, tmp_path, resists_term):
     parent_ready = tmp_path / "parent.pid"
     child_ready = tmp_path / "child.pid"
     child_stopped = tmp_path / "child.stopped"
@@ -104,14 +105,15 @@ def test_interrupted_starter_command_terminates_its_process_group(starter, tmp_p
         "import os, pathlib, signal, time\n"
         f"stopped = pathlib.Path({str(child_stopped)!r})\n"
         "def stop(_signum, _frame): stopped.write_text('stopped'); raise SystemExit(0)\n"
-        "signal.signal(signal.SIGTERM, stop)\n"
+        f"signal.signal(signal.SIGTERM, {'signal.SIG_IGN' if resists_term else 'stop'})\n"
         f"pathlib.Path({str(child_ready)!r}).write_text(str(os.getpid()))\n"
         "while True: time.sleep(.05)\n",
         encoding="utf-8",
     )
     command = tmp_path / "command.py"
     command.write_text(
-        "import os, pathlib, subprocess, sys, time\n"
+        "import os, pathlib, signal, subprocess, sys, time\n"
+        f"if {resists_term}: signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
         f"child = subprocess.Popen([sys.executable, {str(child)!r}])\n"
         f"pathlib.Path({str(parent_ready)!r}).write_text(str(os.getpid()))\n"
         "while True: time.sleep(.05)\n",
@@ -127,7 +129,7 @@ def test_interrupted_starter_command_terminates_its_process_group(starter, tmp_p
         "dict(__import__('os').environ), sys.stdout)\n",
         encoding="utf-8",
     )
-    process = subprocess.Popen([sys.executable, str(runner)], start_new_session=True, stdout=subprocess.DEVNULL)
+    process = subprocess.Popen([sys.executable, str(runner)], start_new_session=True, stdout=subprocess.PIPE)
     try:
         deadline = time.monotonic() + 5
         while not child_ready.exists() and time.monotonic() < deadline:
@@ -135,8 +137,13 @@ def test_interrupted_starter_command_terminates_its_process_group(starter, tmp_p
         assert parent_ready.exists()
         assert child_ready.exists()
         process.send_signal(signal.SIGTERM)
-        assert process.wait(timeout=5) == 143
-        assert child_stopped.read_text() == "stopped"
+        # EOF also requires the child to release its inherited output pipe.
+        process.communicate(timeout=3 if resists_term else 5)
+        assert process.returncode == 143
+        if resists_term:
+            assert not child_stopped.exists()
+        else:
+            assert child_stopped.read_text() == "stopped"
     finally:
         if process.poll() is None:
             process.kill()
