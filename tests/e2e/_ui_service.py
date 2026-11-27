@@ -216,6 +216,8 @@ def startup_diagnostics(prefix, directory):
     destination.chmod(0o600)
     phases = directory / "startup-phases.txt"
     phases.touch(mode=0o600, exist_ok=False)
+    crash = directory / "startup-crash.txt"
+    crash.touch(mode=0o600, exist_ok=False)
     source = (
         "import faulthandler, os, sys\n"
         # Observe both the initial shebang interpreter and the isolated exec. -I ignores environment flags.
@@ -227,6 +229,9 @@ def startup_diagnostics(prefix, directory):
         "finally:\n"
         "    os.close(_hz_phases)\n"
         "if sys.flags.isolated:\n"
+        # A fatal signal writes its trace to this private file, not only to a stderr the server may have replaced.
+        f"    _hz_crash = os.open({str(crash)!r}, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW)\n"
+        "    faulthandler.enable(file=_hz_crash, all_threads=True)\n"
         f"    _hz_stacks = os.open({str(destination)!r}, os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW)\n"
         "    faulthandler.dump_traceback_later(4, repeat=False, file=_hz_stacks)\n"
     )
@@ -328,7 +333,8 @@ class RunningService:
                     f"owned process exit={returncode}, signal={-returncode if returncode < 0 else None}, "
                     f"publication failure={self.publication_failure(output + errors)}"
                     + (
-                        f", last observed Python phase={self.startup_phase()}, crash trace={self.crash_trace(errors)}."
+                        f", last observed Python phase={self.startup_phase()}, "
+                        f"crash trace={self.crash_trace(errors + b'\n' + self.crash_file())}."
                         if returncode < 0
                         else "."
                     )
@@ -356,6 +362,14 @@ class RunningService:
             return "unobserved"
         phases = {f"{pid} {name}".encode(): name for name in ("initial", "isolated")}
         return next((phases[line] for line in reversed(lines) if line in phases), "unobserved")
+
+    def crash_file(self):
+        """The bounded fatal-signal trace the isolated interpreter wrote to this fixture's private file, if any."""
+        try:
+            with (self.service.directory / "startup-crash.txt").open("rb") as handle:
+                return handle.read(64 * 1024)
+        except (OSError, AttributeError):
+            return b""
 
     @staticmethod
     def crash_trace(errors):
