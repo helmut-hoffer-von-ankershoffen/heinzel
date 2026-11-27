@@ -142,6 +142,14 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
     private var status: String { selected?.status ?? emptyStatus }
     private var clearFailed = false
     private let guestClear = GuestDataClear<([WKWebView], WKWebsiteDataStore)>()
+    /// The browser whose guests "Import cookies from your browser" writes into: the last one that opened its panel.
+    static weak var current: IntegratedBrowser?
+
+    /// The guests' own in-memory cookie store; nil until the panel opened. Never the workspace's or a persistent store.
+    var guestCookieStore: WKHTTPCookieStore? {
+        guard let store = configuration?.websiteDataStore, !store.isPersistent, !guestClear.clearing else { return nil }
+        return store.httpCookieStore
+    }
 
     func handle(_ request: [String: Any], in workspace: WKWebView, excluding endpoint: Endpoint) async -> [String: Any] {
         self.endpoint = endpoint
@@ -360,6 +368,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
                 let proxy = try await broker.start()
                 guard revision == generation else { throw URLError(.cancelled) }
                 configuration = Self.guestConfiguration(proxy: proxy, rules: rules)
+                Self.current = self
             } catch {
                 broker.close()
                 if revision == generation { network = nil }

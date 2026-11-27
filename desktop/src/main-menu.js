@@ -1,6 +1,7 @@
 // The application menu: it only asks the page to open About, Settings and Updates.
 import { BrowserWindow, Menu, app, shell } from "electron";
 import { appMenuTemplate, helpLogLine, isAllowedHelpUrl, menuLogLine, menuScript } from "./app-menu.js";
+import { showCookieImport } from "./main-cookies.js";
 import { showConnection } from "./main-picker.js";
 import { productWindows } from "./main-state.js";
 
@@ -12,6 +13,7 @@ export function installAppMenu() {
     Menu.setApplicationMenu(Menu.buildFromTemplate(appMenuTemplate({
       name: app.name,
       devTools: !app.isPackaged,
+      cookies: process.platform === "darwin" ? (view) => showCookieImport(view) : null,
       open: (url) => {
         const allowed = isAllowedHelpUrl(url);
         console.info(helpLogLine(url, allowed));

@@ -33,6 +33,8 @@ export function registerQuitHandler() {
         ctx.gateReleasing = true;
         await refreshAfterQuit({ eligible, gate: ctx.desktopGate, executable: installedCli, spawn });
       }
+      // Cookies imported for this session only end with it.
+      await ctx.cookieImport?.dropSessionOnly().catch(() => {});
       ctx.quitting = true;
       if (!ctx.signalQuit.exitIfUnclean(unclean)) app.quit();
     }).catch(() => {

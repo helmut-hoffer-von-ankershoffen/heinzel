@@ -3,6 +3,7 @@ import { app } from "electron";
 import { acquireDesktopGate } from "./owned-cli.js";
 import { createController } from "./main-controller.js";
 import { registerWorkspaceIpc } from "./main-ipc.js";
+import { registerCookieImport } from "./main-cookies.js";
 import { installAppMenu } from "./main-menu.js";
 import { keepDesktopGate, showConnection } from "./main-picker.js";
 import { ctx } from "./main-state.js";
@@ -12,6 +13,7 @@ export function startWhenReady() {
     if (ctx.stopping) return;
     createController();
     registerWorkspaceIpc();
+    registerCookieImport();
     installAppMenu();
     return (ctx.managedMac ? acquireDesktopGate() : Promise.resolve(null)).then((gate) => {
       if (gate) {

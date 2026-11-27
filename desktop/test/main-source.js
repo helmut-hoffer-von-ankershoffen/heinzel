@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 // The main process is split by concern into main-*.js files. These tests read it as one script: the files in
 // dependency order, with the module syntax (imports, exports) removed.
 const FILES = [
-  "main-state.js", "main-picker.js", "main-services.js", "main-window.js", "main-controller.js", "main-ipc.js",
+  "main-state.js", "main-picker.js", "main-services.js", "main-window.js", "main-controller.js", "main-ipc.js", "main-cookies.js",
   "main-service-watch.js", "main-quit.js", "main-menu.js", "main-startup.js", "main.js",
 ];
 

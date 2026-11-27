@@ -171,6 +171,11 @@ struct HeinzelApp: App {
         .commands {
             WorkspaceCommands()
         }
+        Window("Import Cookies", id: "cookie-import") {
+            ChromeCookieImportView()
+        }
+        .defaultSize(width: 520, height: 600)
+        .windowResizability(.contentMinSize)
         #else
         WindowGroup {
             ConnectionView()
@@ -216,6 +221,7 @@ enum WorkspaceMenuAction: String {
 private struct WorkspaceCommands: Commands {
     @FocusedValue(\.workspaceMenuAvailable) private var workspaceAvailable
     @FocusedValue(\.connectionMenuAvailable) private var connectionAvailable
+    @Environment(\.openWindow) private var openWindow
     private let website = "https://heinzel.team"
     private let repository = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
 
@@ -234,6 +240,10 @@ private struct WorkspaceCommands: Commands {
         }
         CommandGroup(replacing: .newItem) {
             command("New Chat", .newChat).keyboardShortcut("n")
+            Divider()
+            // The app's own window, from the person's click in the menu; no page can open it.
+            Button("Import Cookies from Browser…") { CookieImportModel.shared.show(.start); openWindow(id: "cookie-import") }
+            Button("Manage Imported Cookies…") { CookieImportModel.shared.show(.manage); openWindow(id: "cookie-import") }
         }
         CommandGroup(before: .toolbar) {
             command("Search…", .search).keyboardShortcut("k")

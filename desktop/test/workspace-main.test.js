@@ -13,6 +13,7 @@ import { guardUiNavigation, openProductUi } from "../src/ui-navigation.js";
 import { stopWithReport } from "../src/shutdown.js";
 import { reattach } from "../src/reattach.js";
 import { createMiniBrowser } from "../src/mini-browser.js";
+import { isDialogFrame } from "../src/cookie-import.js";
 import { createMediaPlayer } from "../src/media-player.js";
 
 const moduleUrl = new URL("../src/main.js", import.meta.url).href;
@@ -140,6 +141,7 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
     createMiniBrowser: (options) => createMiniBrowser({ ...options, createView: guestView,
       createNetwork: async () => ({ configure: async () => {}, close() {}, authenticate: (_info, callback) => callback() }) }),
     createMediaPlayer: (options) => createMediaPlayer({ ...options, createView: guestView }),
+    createCookieImport: () => ({ handle: async () => [], dropSessionOnly: async () => 0 }), isDialogFrame,
     createBrowserAgent: () => ({}), createBrowserBridge: () => ({ start: () => events.push("bridge-start"), stop: () => events.push("bridge-stop") }),
     newBridgeToken: () => "bridge-secret", BRIDGE_TOKEN_ENV: "BRIDGE", createOwnedCli: cli,
     installSignalQuit: () => ({}), createAboutHandler: () => () => {}, createAboutLinkHandler: () => () => {},
@@ -154,7 +156,7 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
   };
   const request = (picker, value) => handlers.get("hz:workspace")({ sender: picker.webContents, senderFrame: picker.webContents.mainFrame }, value);
   const surface = (window, name, value) => handlers.get(name)({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, value);
-  return { windows, sessions, handlers, events, openPicker, request, surface, services: () => serviceCount,
+  return { windows, sessions, handlers, events, openPicker, menu: () => menu, request, surface, services: () => serviceCount,
     cliOptions, waits, loseService: () => losses.at(-1)(), duringWait: (callback) => { onWait = callback; },
     reject: () => { rejected = true; }, stopLocal: () => { running = false; }, finishStartup, failStartup, finishLoad, failLoad,
     expireLoad: () => expireLoad() };
@@ -467,4 +469,23 @@ test("switching to a remote workspace during the backoff ends the re-attach", as
   assert.deepEqual(f.waits, [5000], "no attempt after the person chose a remote workspace");
   assert.equal(f.services(), 2);
   assert.match(f.windows.at(-1).options.webPreferences.preload, /workspace-remote-preload/);
+});
+
+test("only the menu opens the cookie import dialog, and only its own frame reaches the importer", async () => {
+  const f = await fixture();
+  const product = f.windows[0];
+  const menu = f.menu();
+  const file = menu.find((item) => item.label === "File").submenu;
+  file.find((item) => item.label === "Import Cookies from Browser\u2026").click();
+  await flush();
+  const dialog = f.windows.find((window) => window.options.webPreferences.preload?.endsWith("cookie-import-preload.cjs"));
+  assert.ok(dialog);
+  const prefs = dialog.options.webPreferences;
+  assert.deepEqual([prefs.contextIsolation, prefs.nodeIntegration, prefs.sandbox], [true, false, true]);
+  assert.match(prefs.partition, /^cookie-import-/);
+  assert.equal(dialog.webContents.session.permission(), false);
+  const ask = (window) => f.handlers.get("hz:cookie-import")({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, { action: "profiles" });
+  await assert.rejects(ask(product), /Unknown window or frame/);
+  assert.deepEqual(await ask(dialog), []);
+  await assert.rejects(f.handlers.get("hz:cookie-import")({ sender: dialog.webContents, senderFrame: { url: dialog.webContents.mainFrame.url } }, { action: "profiles" }), /Unknown window or frame/);
 });

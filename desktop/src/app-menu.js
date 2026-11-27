@@ -39,8 +39,9 @@ export function isAllowedHelpUrl(target) {
 /**
  * The macOS application menu, as data: About and Settings and Check for Updates open the web app's own screens
  * through `send(action)`; the rest are the standard roles. Pure, so a unit test can read it without Electron.
+ * `cookies(view)` (macOS only) opens the app's own cookie import dialog; no page can raise it.
  */
-export function appMenuTemplate({ name, send, open, devTools = false }) {
+export function appMenuTemplate({ name, send, open, cookies = null, devTools = false }) {
   return [
     {
       label: name,
@@ -68,6 +69,11 @@ export function appMenuTemplate({ name, send, open, devTools = false }) {
         // The page may take Cmd+W for the browser's selected tab; the window closes when it does not.
         { label: "New Tab", accelerator: "CommandOrControl+T", click: () => send("new-tab") },
         { label: "Close Tab", accelerator: "CommandOrControl+W", click: () => send("close-tab") },
+        ...(cookies ? [
+          { type: "separator" },
+          { label: "Import Cookies from Browser\u2026", click: () => cookies("import") },
+          { label: "Manage Imported Cookies\u2026", click: () => cookies("manage") },
+        ] : []),
         { role: "close", label: "Close Window", accelerator: "CommandOrControl+Shift+W" },
       ],
     },
