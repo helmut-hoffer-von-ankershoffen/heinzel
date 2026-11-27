@@ -1,153 +1,60 @@
-"""The agent runner capability: one bounded agent session, whatever the agent (ADR 0029).
+"""Compatibility path for the agent models held by processes that update in place."""
 
-A run has a prompt, the contract it serves, a read-only tool profile, a timeout and a budget. It reports its draft,
-the tool calls it made and what it cost, in one shape for every agent, so receipts read the same. A run that exceeds
-its timeout or budget is stopped and reported, never extended. Adapters call agent CLIs; the core has no agent SDK.
-"""
+from types import ModuleType
+from typing import TYPE_CHECKING
 
-from datetime import timedelta
-from pathlib import Path
-from typing import Annotated, Literal, Protocol
+from heinzel.kernel import _agents as _resident
 
-from pydantic import BaseModel, Field, StringConstraints
-
-RunStatus = Literal["completed", "timeout", "budget", "failed"]
-Effort = Literal["low", "medium", "high", "xhigh", "max"]
-"""How hard the model thinks: more effort, better answers to hard questions, and more tokens."""
-Billing = Literal["plan", "api"]
-"""Who pays: `plan`, a subscription the agent is signed in with (the cost it reports is what the run would cost at
-API prices); `api`, an API key, billed per token."""
-ChatToolSet = Literal["everyday", "all", "personal-check-in"]
-"""Which operations a chat's agent gets: the everyday ones (ADR 0041, 0057), all, or a check-in's one proposal."""
-
-
-class McpServer(BaseModel):
-    """A local MCP server the agent may use as tools: a process it starts over stdio, never a network port.
-
-    The server decides what its tools do. Heinzelmännchen's own, `hz system serve mcp --chat <session>`, runs read
-    operations and holds every other one until the person confirms it in the chat (ADR 0045), so a session that has
-    it still changes nothing by itself.
-    """
-
-    command: list[str] = Field(min_length=1, description="The server's command line, one argument per item.")
-    env: dict[str, str] = Field(default_factory=dict, description="Variables to set for it besides the run's own.")
-
-
-class HzTools(BaseModel):
-    """hz's own operations for one chat turn, which a runner that runs its model inside hz calls directly (ADR 0162).
-
-    The same turn also lists hz's private stdio pipe in `mcp_servers` under `server`, for a runner that drives an
-    agent CLI, which takes tools only over MCP. A runner that calls the tools in-process (`chat_tools` and
-    `ChatTool.call` in the kernel) leaves that entry out and starts no process: the toolset and its policy are the
-    same on both paths.
-    """
-
-    session: str = Field(min_length=1, description="The chat session the tools act for; proposals wait in it.")
-    tools: ChatToolSet = Field(default="everyday", description="Which of hz's operations the chat's agent gets.")
-    attended: bool = Field(
-        default=False,
-        description="Whether the person started this turn and watches it; a turn nobody watches writes less.",
-    )
-    server: Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_-]{0,31}$")] = Field(
-        default="hz", description="The `mcp_servers` entry that is this toolset's stdio pipe, for agent CLIs."
+if TYPE_CHECKING:
+    from heinzel.kernel._agent_models import (
+        AgentResult,
+        AgentRunner,
+        Billing,
+        Budget,
+        ChatToolSet,
+        Effort,
+        HzTools,
+        McpServer,
+        RunStatus,
+        TokenUsage,
+        ToolProfile,
     )
 
 
-class ToolProfile(BaseModel):
-    """The tools an agent session may use: always read-only; writes happen only in publish operations."""
+def _source_models() -> ModuleType:
+    """Reuse the resident generation when it contains the complete chat-tool contract."""
+    if hasattr(_resident, "ChatToolSet") and hasattr(_resident, "HzTools"):
+        return _resident
+    # 0.9.14 and 0.9.15 still need the newer model contract as a complete generation.
+    from heinzel.kernel import _agent_models  # noqa: PLC0415 - only this older generation needs fresh definitions
 
-    tools: list[str] = Field(
-        default_factory=list,
-        description="Read-only tools to allow, in the runner's own naming (e.g. `Read`, `Grep`); empty for the "
-        "runner's read-only default. A runner refuses tools it doesn't know to be read-only.",
-    )
-    working_dir: Path | None = Field(
-        default=None, description="Directory the agent works in and may read; the current one when none."
-    )
-    read_files: bool = Field(
-        default=True,
-        description="Whether the agent gets the runner's read-only file tools; false leaves it only its MCP servers' "
-        "tools (a chat: it reads through hz, never your files).",
-    )
-    mcp_servers: dict[Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_-]{0,31}$")], McpServer] = Field(
-        default_factory=dict,
-        description="Local MCP servers whose tools the agent may call, by name. Each must change nothing on its own "
-        "(hz's chat server only proposes; ADR 0045), so the session stays read-only. A runner that can't hand them to "
-        "its agent says so in the result's warnings.",
-    )
-    hz_tools: HzTools | None = Field(
-        default=None,
-        description="hz's own operations for a chat turn, for a runner that calls them in-process instead of "
-        "starting their stdio pipe in `mcp_servers` (ADR 0162).",
-    )
+    return _agent_models
 
 
-class Budget(BaseModel):
-    """How much a run may spend; the runner stops it when the agent lets it enforce that."""
+if not TYPE_CHECKING:
+    _models = _source_models()
+    AgentResult = _models.AgentResult
+    AgentRunner = _models.AgentRunner
+    Billing = _models.Billing
+    Budget = _models.Budget
+    ChatToolSet = _models.ChatToolSet
+    Effort = _models.Effort
+    HzTools = _models.HzTools
+    McpServer = _models.McpServer
+    RunStatus = _models.RunStatus
+    TokenUsage = _models.TokenUsage
+    ToolProfile = _models.ToolProfile
 
-    max_usd: float | None = Field(default=None, gt=0, description="Most a run may cost in US dollars; none: no cap.")
-
-
-class TokenUsage(BaseModel):
-    """What a run consumed, as far as the agent reports it; unknown values are none."""
-
-    input_tokens: int | None = Field(default=None, description="Tokens sent to the model, without cache reads.")
-    output_tokens: int | None = Field(default=None, description="Tokens the model produced.")
-    cache_read_tokens: int | None = Field(default=None, description="Input tokens read from the prompt cache.")
-    cache_write_tokens: int | None = Field(default=None, description="Input tokens written to the prompt cache.")
-    cost_usd: float | None = Field(default=None, description="Cost of the run in US dollars, as the agent reports it.")
-
-
-class AgentResult(BaseModel):
-    """The outcome of one agent session, for the job's result and its receipt."""
-
-    runner: str = Field(description="The adapter that ran it, e.g. `claude-code` or `command`.")
-    model: str | None = Field(default=None, description="The model the agent reported using; none if unknown.")
-    status: RunStatus = Field(
-        description="`completed`; `timeout` or `budget` when stopped for exceeding a limit; `failed` otherwise."
-    )
-    draft: str = Field(default="", description="The text the agent produced; empty unless completed.")
-    tool_calls: dict[str, int] = Field(
-        default_factory=dict, description="Tool calls the agent made, by tool name; empty if the runner can't tell."
-    )
-    turns: int | None = Field(default=None, description="Agent turns taken, if reported.")
-    usage: TokenUsage = Field(default_factory=TokenUsage, description="Tokens and cost, as far as reported.")
-    duration_seconds: float = Field(description="Wall-clock time of the run.")
-    detail: str = Field(default="", description="Why the run did not complete; empty when it did.")
-    fix: str = Field(
-        default="", description="A command that fixes why it did not complete, e.g. `claude auth login`; often empty."
-    )
-    warnings: list[str] = Field(
-        default_factory=list, description="Limits the runner could not enforce, e.g. a budget the agent ignores."
-    )
-    billing: Billing | None = Field(
-        default=None,
-        description="`plan` when the agent ran on a subscription (its cost is at API prices, covered by the plan), "
-        "`api` when on an API key; none when the runner can't tell.",
-    )
-
-
-class AgentRunner(Protocol):
-    """Runs one bounded agent session with read-only tools (capability `agent-runner`)."""
-
-    def run(  # noqa: PLR0913 - a run's whole contract, by keyword
-        self,
-        prompt: str,
-        *,
-        contract: str,
-        tools: ToolProfile,
-        timeout: timedelta,
-        budget: Budget,
-        model: str | None = None,
-        effort: Effort | None = None,
-    ) -> AgentResult:
-        """Run `prompt` under `contract` with read-only `tools`; stop at `timeout` or `budget`. Mode: read.
-
-        `model` and `effort` override the runner's configured ones for this run (a chat's picker, ADR 0057); a runner
-        that can't set one says so in the result's warnings.
-
-        Raises:
-            HeinzelError: If the runner is misconfigured (its CLI is missing, a tool isn't read-only); a session that
-                fails, times out or runs over budget is a result, not an error.
-        """
-        ...
+__all__ = [
+    "AgentResult",
+    "AgentRunner",
+    "Billing",
+    "Budget",
+    "ChatToolSet",
+    "Effort",
+    "HzTools",
+    "McpServer",
+    "RunStatus",
+    "TokenUsage",
+    "ToolProfile",
+]

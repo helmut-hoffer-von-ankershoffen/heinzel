@@ -64,7 +64,6 @@ KNOWN_BROKEN: dict[str, set[str]] = {
 # list may only shrink; nothing may be added to it.
 _MOVED_BY_895 = {
     "heinzel.kernel.ai._agent_writes",
-    "heinzel.kernel.ai._agents",
     "heinzel.kernel.ai._ai_models",
     "heinzel.kernel.session._chat",
     "heinzel.kernel.session._chat_services",
@@ -545,3 +544,18 @@ def test_the_published_055_process_cannot_load_spec_errors_directly() -> None:
     found = {line for lines in swap_identity_problems(old, tree).values() for line in lines}
     assert "heinzel.spec._errors is facade-only and loads fresh" in found
     assert "heinzel.spec._errors defines HeinzelError again; the process holds it from heinzel.kernel._errors" in found
+
+
+@pytest.mark.parametrize("version", ["0.9.52", "0.9.53"])
+def test_a_published_process_cannot_move_agent_models_directly_to_spec(version: str) -> None:
+    """Neither facade may cause an older running process to load a second agent model definition."""
+    old, tree = published(version), Tree(SOURCE)
+    legacy = "heinzel.kernel._agents"
+    current = "heinzel.kernel.ai._agents"
+    spec = "heinzel.spec._agents"
+    tree.modules[spec] = tree.modules["heinzel.kernel._agent_models"]
+    facade = ast.parse(f"from {spec} import AgentResult")
+    tree.modules[legacy] = tree.modules[current] = (facade, False)
+    found = {line for lines in swap_identity_problems(old, tree).values() for line in lines}
+    assert f"{spec} is facade-only and loads fresh" in found
+    assert f"{spec} defines AgentResult again; the process holds it from {legacy}" in found
