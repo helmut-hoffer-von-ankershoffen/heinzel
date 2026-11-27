@@ -1,115 +1,113 @@
-/* The film and its album form the two halves of a concert ticket. */
+.hz-album-frame { container: album / inline-size; }
+
 .hz-album-ticket {
+  --ink: #fff5e7;
+  --muted: #e5cfbd;
+  --apricot: #ffbd86;
+  --hairline: #ffce9c38;
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(15rem, 1fr);
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  width: 100%;
+  min-height: 318px;
   overflow: hidden;
-  border-radius: .45rem;
-  background: #281911;
-  color: #fff7ec;
+  border-radius: 9px;
+  background: #271615;
+  color: var(--ink);
+  font-family: system-ui, sans-serif;
 }
-.hz-album-film {
+.hz-album-film, .hz-album-panel {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  gap: .75rem;
-  min-height: 16rem;
-  padding: clamp(1.1rem, 3.2vw, 2.4rem);
-  background: linear-gradient(90deg, #1a1011ed, #211413aa 41%, transparent 82%),
-    url("album/singularity.webp") 64% center / cover no-repeat;
+  min-width: 0;
 }
-.md-typeset .hz-album-ticket a { color: inherit; font-weight: 650; }
-.md-typeset .hz-album-ticket a:focus-visible { outline: 3px solid currentColor; outline-offset: 3px; }
-.hz-album-band, .hz-album-listen a {
+.hz-album-film {
+  justify-content: flex-end;
+  gap: 12px;
+  padding: clamp(16px, 3.4cqw, 35px);
+  background: linear-gradient(90deg, #120c0bed, #120c0b63 54%, transparent),
+    linear-gradient(0deg, #120c0b85, transparent 70%),
+    url("album/singularity.webp") 66% 52% / cover;
+}
+.hz-album-panel {
+  gap: 13px;
+  padding: clamp(16px, 3.2cqw, 33px);
+  border-left: 1px solid var(--hairline);
+  background: #331e1b;
+}
+.md-typeset .hz-album-ticket h2 {
+  margin: 0;
+  color: inherit;
+  font: 600 clamp(25px, 4cqw, 43px)/1.02 Georgia, serif;
+  letter-spacing: -.04em;
+}
+.md-typeset .hz-album-ticket .hz-album-film-title {
+  max-width: 12ch;
+  font-size: clamp(27px, 4.3cqw, 48px);
+}
+.hz-album-name { max-width: 14ch; }
+.md-typeset .hz-album-tagline {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.4;
+}
+.md-typeset .hz-album-ticket a { color: inherit; text-decoration: none; }
+.md-typeset .hz-album-ticket a:focus-visible { outline: 2px solid var(--apricot); outline-offset: 3px; }
+.hz-album-band, .hz-album-listen a, .hz-album-play {
   display: inline-flex;
   align-items: center;
-  gap: .25em;
-  min-height: 44px;
-  text-decoration: underline;
-  text-underline-offset: .22em;
+  gap: 5px;
 }
-.hz-album-band { font-size: .78rem; }
-.md-typeset .hz-album-film-title, .md-typeset .hz-album-name {
-  margin: 0;
-  font-family: Georgia, serif;
-  font-weight: 700;
-}
-.md-typeset .hz-album-film-title {
-  color: #fff7ec;
-  font-size: clamp(1.8rem, 4vw, 3.1rem);
-  letter-spacing: -.045em;
-  line-height: 1;
-}
-.hz-album-playback, .hz-album-listen {
+.hz-album-band { margin-bottom: auto; font-size: 14px; font-weight: 650; }
+.hz-album-playback, .hz-album-actions, .hz-album-listen {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: .25rem .65rem;
-  font-size: .68rem;
+  gap: 9px 12px;
+  color: var(--muted);
+  font-size: 12px;
 }
-.hz-album-playback > span { color: #fff7ec; text-shadow: 0 1px 3px #1a1011; }
-.md-typeset .hz-album-ticket .hz-album-play {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  gap: .4rem;
-  padding: 0 .9rem;
-  border-radius: 2rem;
-  text-decoration: none;
-  background: #ffc793;
-  color: #241710;
-  font-size: .78rem;
-}
-.hz-album-play span { font-size: .68em; }
-.md-typeset .hz-album-ticket .hz-album-play:focus-visible { outline-color: #fff7ec; }
-.hz-album-stub {
-  display: grid;
-  align-content: center;
-  gap: .65rem;
-  min-width: 0;
-  padding: .95rem 1.1rem .5rem;
-  border-left: 2px dashed #986e4e;
-  color: #fff1d9;
-  background: #2b211d;
-}
-.hz-album-release { display: flex; align-items: center; gap: .65rem; }
-.hz-album-release { min-height: 44px; }
 .hz-album-out {
-  display: inline-block;
-  padding: .12rem .34rem;
-  border-radius: 2px;
-  background: #ffc793;
-  color: #241710;
-  font: 750 .53rem/1.35 system-ui, sans-serif;
-  letter-spacing: .08em;
+  color: var(--apricot);
+  font-weight: 800;
+  letter-spacing: .1em;
   text-transform: uppercase;
 }
-.md-typeset .hz-album-name { margin-top: .2rem; font-size: 1.15rem; line-height: 1.05; }
-.md-typeset .hz-album-stub .hz-album-cities {
+.md-typeset .hz-album-ticket .hz-album-play {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 4px;
+  background: var(--apricot);
+  color: #25140e;
+  font-size: 13px;
+  font-weight: 760;
+}
+.md-typeset .hz-album-ticket .hz-album-play:hover { background: #ffe0be; }
+.hz-album-band:hover, .hz-album-listen a:hover { text-decoration: underline; }
+.md-typeset .hz-album-ticket .hz-album-cities {
+  grid-column: 1 / -1;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: .14rem;
   margin: 0;
-  padding: .3rem 0;
-  border-block: 2px dotted #bc936e;
+  padding: 0;
   list-style: none;
+  border-top: 1px solid var(--hairline);
 }
-.md-typeset .hz-album-stub .hz-album-cities li {
-  margin: 0;
-  min-width: 0;
-}
+.md-typeset .hz-album-ticket .hz-album-cities li { min-width: 0; margin: 0; }
+.hz-album-cities li + li { border-left: 1px solid var(--hairline); }
 .hz-album-cities a {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-end;
-  gap: .22rem;
-  min-height: 5.2rem;
-  height: 100%;
-  padding: .3rem .18rem;
   isolation: isolate;
-  background: #281911;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 66px;
+  padding: 7px clamp(8px, 1.45cqw, 16px);
+  font-size: clamp(11px, 1.86cqw, 16px);
+  font-weight: 650;
 }
 .hz-album-cities img, .hz-album-cities a::before {
   position: absolute;
@@ -117,33 +115,21 @@
   width: 100%;
   height: 100%;
 }
-.hz-album-cities img { z-index: -2; object-fit: cover; }
-.hz-album-cities a::before {
-  content: "";
-  z-index: -1;
-  background: linear-gradient(transparent 25%, #180e0bf2 94%);
+.hz-album-cities img { z-index: -2; object-fit: cover; object-position: center 56%; }
+.hz-album-cities a::before { content: ""; z-index: -1; background: linear-gradient(90deg, #1b1212ed, #1b1212b2); }
+.hz-album-cities a:hover img { filter: brightness(1.28); }
+.md-typeset .hz-album-ticket .hz-album-cities a:focus-visible { outline-offset: -3px; }
+.hz-album-city-play { color: #ffe0bf; font-size: clamp(11px, 1.55cqw, 13px); white-space: nowrap; }
+
+@container album (max-width: 560px) {
+  .hz-album-ticket { grid-template-columns: minmax(0, 1fr); }
+  .hz-album-film { min-height: 170px; }
+  .hz-album-panel { border-left: 0; border-top: 1px solid var(--hairline); }
+  .md-typeset .hz-album-ticket .hz-album-cities { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hz-album-cities li:nth-child(3) { border-left: 0; }
+  .hz-album-cities li:nth-child(n+3) { border-top: 1px solid var(--hairline); }
+  .hz-album-cities a { min-height: 50px; padding-inline: 12px; }
 }
-.hz-album-disc {
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  width: 1.15rem;
-  height: 1.15rem;
-  border-radius: 50%;
-  background: #ffc793;
-  color: #241710;
-  font: 700 .59rem/1 system-ui, sans-serif;
-}
-.hz-album-release .hz-album-disc { width: 2.05rem; height: 2.05rem; font-size: .85rem; }
-.hz-album-city-name { color: #fff; font-size: .6rem; font-weight: 700; line-height: 1.15; }
-.md-typeset .hz-album-cities a:focus-visible { outline-offset: -3px; outline-color: #fff; }
-.hz-album-ticket a:hover .hz-album-disc { background: white; }
-@media (min-width: 44.01rem) and (max-width: 53rem), (max-width: 23rem) {
-  .md-typeset .hz-album-stub .hz-album-cities { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .hz-album-cities a { min-height: 2.9rem; }
-}
-@media (max-width: 44rem) {
-  .hz-album-ticket { grid-template-columns: 1fr; }
-  .hz-album-film { min-height: 12.5rem; }
-  .hz-album-stub { border-left: 0; border-top: 2px dashed #986e4e; padding: .8rem .9rem .35rem; }
+@media (pointer: coarse) {
+  .hz-album-band, .hz-album-listen a, .md-typeset .hz-album-ticket .hz-album-play { min-height: 44px; }
 }
