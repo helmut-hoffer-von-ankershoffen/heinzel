@@ -47,13 +47,16 @@ const STEP_MS = 100;
 const PLAYBACK_WAIT_MS = 15_000;
 const button = "min-h-8 rounded-lg border border-border px-2.5 py-1 hover:bg-accent";
 
+/** Whether the desktop app shows this page: it has no use for a link that opens YouTube in its own session. */
+export const inDesktop = (): boolean =>
+  typeof (window as Window & { heinzelDesktop?: { lifecycle?: unknown } }).heinzelDesktop?.lifecycle === "function";
+
 /** A private player by default, with explicit account playback and recovery for restricted browsers (ADR 0092). */
 export function StreamPlayer(props: Props) {
   const [account, setAccount] = useState(readYouTubeAccount);
   const [attempt, setAttempt] = useState(0);
   const alternative = accountStream(props.stream);
-  const desktop =
-    typeof (window as Window & { heinzelDesktop?: { lifecycle?: unknown } }).heinzelDesktop?.lifecycle === "function";
+  const desktop = inDesktop();
   const activeAccount = !desktop && account && alternative !== null;
   const chooseAccount = (next: boolean) => {
     rememberYouTubeAccount(next);

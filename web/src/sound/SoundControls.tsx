@@ -15,7 +15,7 @@ import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { viewportBounds, watchViewport } from "@/lib/viewport";
 import { setDocked, useDockPref } from "./dock";
-import { effective, pendingResume, useSetSound, useSoundSetting, useSoundscapes } from "./queries";
+import { effective, isProgramme, pendingResume, useSetSound, useSoundSetting, useSoundscapes } from "./queries";
 import { play, toggle, useSound } from "./store";
 
 const LONG_PRESS_MS = 500;
@@ -23,6 +23,19 @@ const VOLUME_DEBOUNCE_MS = 400;
 
 /** What a soundscape is, under its title: where a stream plays from, a layer's attribution. */
 function detail(soundscape: SchemaSoundscapeView): string | null {
+  const [first] = soundscape.tracks ?? [];
+  if (first) {
+    const tracks = soundscape.tracks ?? [];
+    return [
+      t("sound.playsFrom", { host: new URL(first.url).hostname }),
+      tracks.length === 1
+        ? t("sound.oneTrack")
+        : t("sound.trackCount", {
+            count: tracks.length,
+            minutes: Math.max(1, Math.round(tracks.reduce((total, track) => total + track.duration_seconds, 0) / 60)),
+          }),
+    ].join(" · ");
+  }
   if (soundscape.stream)
     return t("sound.playsFrom", {
       host: soundscape.stream.provider === "youtube" ? "YouTube" : soundscape.stream.provider,
@@ -104,8 +117,10 @@ function VolumeSlider({ list }: { list: SchemaSoundList }) {
   useEffect(() => setValue(list.volume), [list.volume]);
   useEffect(() => () => clearTimeout(timer.current), []);
   const id = useId();
-  if (isIOS() && effective(list)?.stream) {
-    return <p className="px-2.5 py-1.5 text-ui-sm text-muted-foreground">{t("sound.deviceVolume")}</p>;
+  const current = effective(list);
+  if (isIOS() && isProgramme(current)) {
+    const words = current?.tracks?.length ? "sound.deviceVolumeTracks" : "sound.deviceVolume";
+    return <p className="px-2.5 py-1.5 text-ui-sm text-muted-foreground">{t(words)}</p>;
   }
   return (
     <div className="flex items-center gap-3 px-2.5 py-1.5">
@@ -144,7 +159,7 @@ function Toggle({
   const setting = useSoundSetting();
   const id = useId();
   const on = list[field];
-  if (field === "duck_while_typing" && isIOS() && effective(list)?.stream) return null;
+  if (field === "duck_while_typing" && isIOS() && isProgramme(effective(list))) return null;
   return (
     <div className="flex items-center gap-3 px-2.5 py-1.5">
       <label htmlFor={id} className="flex-1 text-ui">
@@ -258,7 +273,7 @@ export function SoundButton({ compact = false, onPopOut }: { compact?: boolean; 
                   : t("sound.play", { title: current.title })
                 : t("sound.choose")}
             </PaneAction>
-            {onPopOut && docked && current?.stream && sound.started && (
+            {onPopOut && docked && isProgramme(current) && sound.started && (
               <PaneAction
                 key="pop-out"
                 icon={PanelLeftOpen}

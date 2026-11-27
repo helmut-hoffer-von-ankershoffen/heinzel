@@ -219,7 +219,7 @@ does not inherit it.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `name` | `HZ_SYSTEM_SOUND__NAME` | `'off'` | The soundscape of the web app; off is no sound, and plugins can bring others. Never read from a project's hz.toml. |
+| `name` | `HZ_SYSTEM_SOUND__NAME` | `'singularity'` | The soundscape of the web app; off is no sound, and plugins can bring others. Singularity until you choose. Never read from a project's hz.toml. |
 | `volume` | `HZ_SYSTEM_SOUND__VOLUME` | `50` | How loud, from 0 to 100. Never read from a project's hz.toml. |
 | `follow_theme` | `HZ_SYSTEM_SOUND__FOLLOW_THEME` | `False` | Play the soundscape that goes with your theme, when it has one, instead of the one you chose. Never read from a project's hz.toml. |
 | `mute_in_meetings` | `HZ_SYSTEM_SOUND__MUTE_IN_MEETINGS` | `True` | Mute while your calendar says you are in a meeting; needs a connected calendar. Never read from a project's hz.toml. |
