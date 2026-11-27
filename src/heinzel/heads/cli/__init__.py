@@ -29,7 +29,10 @@ from rich.text import Text
 from typer.core import TyperGroup
 
 from heinzel import __version__
-from heinzel.heads._compose import UI_HELP, attach_command, serve_group, ui_command
+from heinzel.heads._compose import UI_HELP as UI_HELP
+from heinzel.heads._compose import attach_command as attach_command
+from heinzel.heads._compose import serve_group
+from heinzel.heads._compose import ui_command as ui_command
 from heinzel.heads._exposure import collapses, owns_path, restricts
 from heinzel.heads._served_tools import bind_served_tools
 from heinzel.heads.cli import _playful, _update
@@ -38,6 +41,7 @@ from heinzel.heads.cli._branding import footer as brand_footer
 from heinzel.heads.cli._command import command
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
+from heinzel.heads.cli._serve import register_ui_commands
 from heinzel.heads.cli._update import print_changelog_header, print_notice, start_check
 from heinzel.kernel import (
     DaemonLifecycleWait,
@@ -208,37 +212,7 @@ def _root(kernel: Kernel, *, plain: bool) -> tuple[typer.Typer, "_Mount"]:
 def _mount_ui(app: typer.Typer, groups: dict[str, typer.Typer], kernel: Kernel, error: Console) -> None:
     ui = groups.get("ui") or typer.Typer()
 
-    @ui.callback(invoke_without_command=True, no_args_is_help=False, help=UI_HELP)
-    def group(
-        ctx: typer.Context,
-        port: Annotated[int | None, typer.Option(hidden=True)] = None,
-        browser: Annotated[bool, typer.Option("--browser/--no-browser", hidden=True)] = True,
-        supervised: Annotated[str | None, typer.Option(hidden=True)] = None,
-    ) -> None:
-        # Published service launchers retain this exact legacy vector until explicitly reinstalled.
-        if supervised is not None:
-            if ctx.invoked_subcommand is not None or port is None or browser:
-                problem = "Use `hz ui serve` for foreground serving."
-                raise typer.BadParameter(problem)
-            error.print("The legacy foreground flags are deprecated; use `hz ui serve`.")
-            ui_command(kernel, error)(ctx, port=port, browser=False, supervised=supervised)
-        elif port is not None or getattr(ctx.get_parameter_source("browser"), "name", None) == "COMMANDLINE":
-            # Published updaters trial and exec the older foreground vector; socket handoff still validates in web.
-            if ctx.invoked_subcommand is not None:
-                problem = "Use `hz ui serve` for foreground serving."
-                raise typer.BadParameter(problem)
-            error.print("The legacy foreground flags are deprecated; use `hz ui serve`.")
-            ui_command(kernel, error)(ctx, port=port, browser=browser)
-        elif ctx.invoked_subcommand is None:
-            typer.echo(ctx.get_help())
-
-    ui.command("serve", help="Run the web server in the foreground; Ctrl-C stops it.")(ui_command(kernel, error))
-    ui.command("open", help="Open the owned web service, or run in the foreground when none is installed.")(
-        ui_command(kernel, error, open_existing=True)
-    )
-    ui.command("attach", help="Start the owned web service if needed and print its session link; never serves.")(
-        attach_command(kernel, error)
-    )
+    register_ui_commands(ui, kernel, error)
     if "ui" not in groups:
         app.add_typer(ui, name="ui", cls=SortedGroup, rich_help_panel=CORE_PANEL)
 
