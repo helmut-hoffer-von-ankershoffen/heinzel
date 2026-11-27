@@ -99,7 +99,6 @@ LEGACY = {
     "tests/integration/private_api_test.py": 3,
     "tests/integration/pypi_release_test.py": 1,
     "tests/integration/python_lane_partition_test.py": 2,
-    "tests/integration/pyyaml_bootstrap_test.py": 4,
     "tests/integration/readme_process_test.py": 9,
     "tests/integration/runner_process_test.py": 9,
     "tests/integration/self_chat_helper_test.py": 2,

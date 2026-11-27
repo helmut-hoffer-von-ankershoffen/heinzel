@@ -16,30 +16,69 @@ from heinzel.modules.system.lifecycle._service import WebService, WebStatus
 class ClientLabels(BaseModel):
     """Labels are claims even when a device credential was validated."""
 
-    flavor: Literal["native", "electron", "unknown"] = "unknown"
-    machine: str = Field(default="unknown", max_length=64)
-    app_version: str = Field(default="unknown", max_length=64)
-    backend_version: str = Field(default="unknown", max_length=64)
+    flavor: Literal["native", "electron", "unknown"] = Field(
+        default="unknown", description="Desktop client type reported by the client, or unknown if omitted."
+    )
+    machine: str = Field(default="unknown", max_length=64, description="Machine label supplied by the client.")
+    app_version: str = Field(
+        default="unknown", max_length=64, description="App version reported by the client, or unknown if omitted."
+    )
+    backend_version: str = Field(
+        default="unknown", max_length=64, description="Backend version reported by the client, or unknown if omitted."
+    )
 
 
 class ClientObservation(BaseModel):
     """Successful request evidence, never a connection inventory."""
 
-    labels: ClientLabels = Field(default_factory=ClientLabels)
-    label_provenance: Literal["self-reported"] = "self-reported"
-    identity_provenance: Literal["device-credential", "session-observation", "unknown"] = "unknown"
-    device_id: str | None = None
-    platform: Literal["unknown"] = "unknown"
-    last_seen: AwareDatetime | None = None
-    age_seconds: int | None = Field(default=None, ge=0, strict=True)
-    presence: Literal["fresh", "stale", "unknown"] = "unknown"
+    labels: ClientLabels = Field(
+        default_factory=ClientLabels, description="Self-reported labels accompanying successful authenticated API use."
+    )
+    label_provenance: Literal["self-reported"] = Field(
+        default="self-reported", description="Labels remain self-reported even when a device credential was validated."
+    )
+    identity_provenance: Literal["device-credential", "session-observation", "unknown"] = Field(
+        default="unknown",
+        description="How the server grouped the request, by a validated device credential or by session labels.",
+    )
+    device_id: str | None = Field(
+        default=None, description="Validated device credential ID, or null for observations grouped by session labels."
+    )
+    platform: Literal["unknown"] = Field(
+        default="unknown", description="Platform of the observed client. The server currently reports unknown."
+    )
+    last_seen: AwareDatetime | None = Field(
+        default=None, description="Latest observed successful authenticated API use, or null when not supplied."
+    )
+    age_seconds: int | None = Field(
+        default=None,
+        ge=0,
+        strict=True,
+        description="Seconds since last observed use at the read, or null when unknown.",
+    )
+    presence: Literal["fresh", "stale", "unknown"] = Field(
+        default="unknown",
+        description="Age of the last request. Fresh covers up to two hours. Older retained observations are stale.",
+    )
 
 
 class UiStatus(WebStatus):
     """Existing service status plus an optional, independently fallible API read."""
 
-    client_observations: list[ClientObservation] = Field(default_factory=list[ClientObservation], max_length=50)
-    client_observations_status: Literal["available", "unsupported", "unavailable"] = "unavailable"
+    client_observations: list[ClientObservation] = Field(
+        default_factory=list[ClientObservation],
+        max_length=50,
+        description=(
+            "Up to 50 recent authenticated requests, newest first. Restarting the server clears this history."
+        ),
+    )
+    client_observations_status: Literal["available", "unsupported", "unavailable"] = Field(
+        default="unavailable",
+        description=(
+            "Whether the server returned its observation history. HTTP 404 or 405 indicates an unsupported endpoint. "
+            "A failed or skipped read is unavailable."
+        ),
+    )
 
 
 def read_status(service: WebService) -> UiStatus:
