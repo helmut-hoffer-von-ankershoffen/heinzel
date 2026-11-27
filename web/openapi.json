@@ -12988,6 +12988,12 @@
             "$ref": "#/components/schemas/PluginCandidate",
             "description": "The exact candidate shown before confirmation."
           },
+          "lifecycle_busy": {
+            "default": false,
+            "description": "Whether a previewed install is waiting for a daemon job or another change.",
+            "title": "Lifecycle Busy",
+            "type": "boolean"
+          },
           "operation_id": {
             "description": "Opaque id returned by the preview; it contains no candidate details.",
             "title": "Operation Id",

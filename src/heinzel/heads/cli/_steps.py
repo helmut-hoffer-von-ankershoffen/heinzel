@@ -77,8 +77,16 @@ class StepBoard:
             return
         with self._lock:
             self._checklist = self._checklist or bool(data.get("checklist"))
+            step = Step(label, state, None if detail is None else str(detail))
+            if data.get("numbered") is False and self._mode != "json":
+                detail_line = Text(f"  {self._line_words(step)}")
+                if self._mode == "plain":
+                    self._print(detail_line)
+                else:
+                    self._ensure_live().console.print(TerminalSafe(detail_line), highlight=False)
+                return
             before = self._steps.get(id_)
-            step = self._steps[id_] = Step(label, state, None if detail is None else str(detail))
+            self._steps[id_] = step
             if self._mode == "json":
                 line = json.dumps({"event": "phase", **dict(data)}, ensure_ascii=False, default=str)
                 self._console.print(line, markup=False, highlight=False, soft_wrap=True)
@@ -123,16 +131,19 @@ class StepBoard:
         ids = list(self._steps)
         step = self._steps[id_]
         count = f"[{ids.index(id_) + 1}/{len(ids)}]"
-        detail = f" ({step.detail})" if step.detail and step.state != "running" else ""
-        if step.state == "running":
-            words = f"{step.label} ..."
-        else:
-            words = f"{step.label}: {WORDS.get(step.state, step.state)}{detail}"
+        words = self._line_words(step)
         if mark:
             return Text.assemble(
                 "  ", (MARKS.get(step.state, " "), STYLES.get(step.state, "")), f" {count} ", words.rstrip()
             )
         return Text(f"{count} {words}")
+
+    @staticmethod
+    def _line_words(step: Step) -> str:
+        if step.state == "running":
+            return f"{step.label} ..."
+        detail = f" ({step.detail})" if step.detail else ""
+        return f"{step.label}: {WORDS.get(step.state, step.state)}{detail}"
 
     def bar(self) -> Text:
         """The segmented bar: one segment per step, coloured by how it stands, and how many have ended."""

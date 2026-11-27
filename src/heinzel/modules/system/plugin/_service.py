@@ -126,6 +126,8 @@ PAGE_SIZE = 100
 MAX_CATALOG_BYTES = 512 * 1024
 CATALOG_ROW_FIELDS = 3
 TIMEOUT = 10
+VERIFY_LABEL = "Verifying the plugin installation"
+RECORD_LABEL = "Recording the add"
 BIND_LABEL = "Set up which connector serves what"
 BIND_NOTE = (
     "A company plugin among them then sets which connector serves what, as its playbook recommends; a connector you "
@@ -787,7 +789,8 @@ class PluginService:
             [
                 *plan,
                 ("install", f"Installing {name}"),
-                ("verify", "Checking that exactly it is installed"),
+                ("verify", VERIFY_LABEL),
+                ("record", RECORD_LABEL),
                 ("bind", BIND_LABEL),
             ],
             operation="system.plugin.add",
@@ -1119,7 +1122,7 @@ class PluginService:
                 detail = f"Updated {before[dependency]} → {version}"
             else:
                 detail = f"Already installed: {version}"
-            phases.note(f"needs:{dependency}", label, "done", detail, version=version)
+            phases.note(f"needs:{dependency}", label, "done", detail, version=version, numbered=False)
 
     def _run_candidate_install(
         self, candidate: PluginCandidate, spec: str, mutation: _PackageMutation | None
@@ -1232,7 +1235,10 @@ class PluginService:
 
     def operation(self, operation_id: str) -> PluginOperation:
         """Read the durable status of a preview receipt without repeating its mutation."""
-        return self._receipts.get(operation_id)
+        receipt = self._receipts.get(operation_id)
+        if receipt.status == "previewed" and self._installation.is_tool and self._lifecycle is not None:
+            receipt.lifecycle_busy = self._lifecycle.busy()
+        return receipt
 
     def _confirm_receipt(self, operation_id: str, candidate: PluginCandidate, *, bind: bool = True) -> PluginChange:
         claimed = False
@@ -1271,12 +1277,12 @@ class PluginService:
         versions = self._plugin_versions_or_none()
         with _step(phases, "install", f"Installing {name}"):
             generation = self._run_candidate_install(candidate, spec, mutation)
-        with _step(phases, "verify", "Checking that exactly it is installed"):
+        with _step(phases, "verify", VERIFY_LABEL):
             installed = self._verify_added(candidate, before)
             self._verify_candidate_generation(mutation)
-        if phases is not None:
-            self._tell_dependencies(phases, installed.distribution, versions)
-        with _step(phases, "record", "Recording the add"):
+            if phases is not None:
+                self._tell_dependencies(phases, installed.distribution, versions)
+        with _step(phases, "record", RECORD_LABEL):
             change = self._changed("add", installed.distribution, candidate)
             self._verify_candidate_generation(mutation)
             self._record_add(candidate, installed.distribution)

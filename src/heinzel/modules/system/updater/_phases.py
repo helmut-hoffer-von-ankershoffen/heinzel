@@ -56,13 +56,22 @@ class Phases:
         for id_, label in plan:
             self.note(id_, label, "pending")
 
-    def note(
-        self, id_: str, label: str, state: State, detail: str | None = None, *, version: str | None = None
+    def note(  # noqa: PLR0913 - identity, outcome and optional presentation metadata of one phase event
+        self,
+        id_: str,
+        label: str,
+        state: State,
+        detail: str | None = None,
+        *,
+        version: str | None = None,
+        numbered: bool = True,
     ) -> None:
-        """Say how a step stands, with what the person should know about it (and the `version` it is about)."""
+        """Say how a step stands. Report discovered details without expanding the plan when `numbered` is false."""
         data: dict[str, object] = {"id": id_, "label": label, "state": state}
         if detail:
             data["detail"] = detail
+        if not numbered:
+            data["numbered"] = False
         if self._checklist:
             data["checklist"] = True  # a terminal draws every row in place instead of a bar
         self._emit(EVENT, data)
