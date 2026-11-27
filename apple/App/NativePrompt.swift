@@ -51,6 +51,15 @@ final class NativePromptComposer {
     @ObservationIgnored weak var navigation: Navigation?
     @ObservationIgnored private var sendTask: Task<Void, Never>?
 
+    @ObservationIgnored private let storageRoot: URL?
+    @ObservationIgnored private let deliver: (@MainActor (NativePromptRequest) async -> NativePromptOutcome)?
+
+    init(storageRoot: URL? = nil,
+         deliver: (@MainActor (NativePromptRequest) async -> NativePromptOutcome)? = nil) {
+        self.storageRoot = storageRoot
+        self.deliver = deliver
+    }
+
     var canSend: Bool {
         scope != nil && catalogAvailable && !sending && !accepted &&
         (pending != nil || roster.contains { $0.id == recipientID }) &&
@@ -120,7 +129,7 @@ final class NativePromptComposer {
 
     private func send() async {
         guard !sending, !accepted else { return }
-        guard canSend, let scope, let navigation else {
+        guard canSend, let scope, navigation != nil || deliver != nil else {
             message = "Open the workspace and sign in before sending. Your prompt is still here."
             return
         }
@@ -147,11 +156,17 @@ final class NativePromptComposer {
         }
         sending = true
         message = nil
-        let outcome = await navigation.sendPrompt(request)
+        let outcome: NativePromptOutcome
+        if let deliver { outcome = await deliver(request) }
+        else if let navigation { outcome = await navigation.sendPrompt(request) }
+        else { outcome = .unavailable }
+        // A delayed transport result must only finish the request it started.
+        guard self.scope == request.workspaceScope, pending == request else { return }
         sending = false
         switch outcome {
         case .accepted:
             accepted = true
+            text = ""
             message = "Response received. Open the chat to read it."
             if let directory = try? draftDirectory(scope: scope) {
                 try? FileManager.default.removeItem(at: directory.appendingPathComponent(request.requestID + ".json"))
@@ -164,7 +179,7 @@ final class NativePromptComposer {
             message = "The response wasn’t confirmed. Retry this saved prompt or open the chat to check its status."
         case .rejected:
             if removePendingFile() {
-                pending = nil
+                reloadPending()
                 message = "The host rejected this prompt. Check the recipient and text, then send again."
             }
         }
@@ -172,10 +187,13 @@ final class NativePromptComposer {
 
     func discardPending() {
         guard !sending, removePendingFile() else { return }
-        pending = nil
-        text = ""
-        accepted = false
-        message = nil
+        reloadPending()
+    }
+
+    private func reloadPending() {
+        let previousScope = scope
+        scope = nil
+        prepare(scope: previousScope, roster: roster)
     }
 
     @discardableResult
@@ -192,7 +210,7 @@ final class NativePromptComposer {
     }
 
     func newPrompt() {
-        guard accepted else { return }
+        guard accepted, !sending else { return }
         let previousScope = scope
         scope = nil
         accepted = false
@@ -204,8 +222,8 @@ final class NativePromptComposer {
 
     private func draftDirectory(scope: String) throws -> URL {
         guard scope.wholeMatch(of: /[a-f0-9]{64}/) != nil else { throw CocoaError(.fileWriteInvalidFileName) }
-        var directory = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                                                    appropriateFor: nil, create: true)
+        var directory = try (storageRoot ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                                    appropriateFor: nil, create: true))
             .appendingPathComponent("HeinzelPromptDrafts", isDirectory: true)
             .appendingPathComponent(scope, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
@@ -214,5 +232,24 @@ final class NativePromptComposer {
         values.isExcludedFromBackup = true
         try directory.setResourceValues(values)
         return directory
+    }
+}
+
+/// Both surfaces share one composer per workspace for the app lifetime.
+@MainActor
+final class NativePromptDrafts {
+    static let shared = NativePromptDrafts()
+    private let makeComposer: () -> NativePromptComposer
+
+    init(makeComposer: @escaping () -> NativePromptComposer = { NativePromptComposer() }) {
+        self.makeComposer = makeComposer
+    }
+    private var drafts: [String: NativePromptComposer] = [:]
+
+    func composer(for scope: String) -> NativePromptComposer {
+        if let draft = drafts[scope] { return draft }
+        let draft = makeComposer()
+        drafts[scope] = draft
+        return draft
     }
 }

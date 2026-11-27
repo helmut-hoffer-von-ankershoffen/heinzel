@@ -1,5 +1,21 @@
 import Foundation
 
+/// Presentation retained while a status-menu connection is verified.
+struct MacWorkspaceSwitchState {
+    var choosingWorkspace: Bool
+    var connectionPresented: Bool
+    let hasEndpoint: Bool
+
+    static func protectsEditor(link: String, focused: Bool) -> Bool {
+        focused || !link.isEmpty
+    }
+
+    mutating func localStartFailed() {
+        // Setup already displays errors inline; an active workspace needs its connection sheet.
+        if hasEndpoint && !choosingWorkspace { connectionPresented = true }
+    }
+}
+
 /// Distinguishes an explicit menu request made during an asynchronous connection.
 struct MacConnectionIntent {
     private(set) var revision = 0

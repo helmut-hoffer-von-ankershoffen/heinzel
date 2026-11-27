@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
@@ -27,7 +29,7 @@ def _tracked_text_files() -> list[Path]:
         check=True,
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=scaled(30),
     ).stdout
     return [REPO / name for name in listed.split("\0") if name and (REPO / name).is_file()]
 
@@ -69,7 +71,7 @@ def test_site_stages_the_apple_association_for_the_signed_app(tmp_path: Path) ->
     subprocess.run(
         [sys.executable, str(ASSOCIATION_SCRIPT), "ABCD123456", "--site-dir", str(tmp_path)],
         check=True,
-        timeout=10,
+        timeout=scaled(10),
     )
     association = tmp_path / ".well-known/apple-app-site-association"
     assert json.loads(association.read_text(encoding="utf-8")) == {
@@ -90,7 +92,7 @@ def test_apple_association_staging_refuses_assets_hidden_by_default(tmp_path: Pa
         check=False,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=scaled(10),
     )
     assert result.returncode == 2
     assert "unexpected hidden paths" in result.stderr

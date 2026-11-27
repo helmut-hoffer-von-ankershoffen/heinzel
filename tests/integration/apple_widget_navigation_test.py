@@ -1,5 +1,7 @@
 """Guard request-scoped widget authorization wiring; WebKit runtime is a separate gate."""
 
+import plistlib
+import re
 from pathlib import Path
 
 import pytest
@@ -48,7 +50,9 @@ def test_widget_rotation_recreates_only_the_current_workspace_view() -> None:
     assert "visibleEndpoint: endpoint?.origin.absoluteString" in handler
     assert "retryWorkspace()" in handler
     assert ".id(revision)" in app
-    assert "@State private var promptComposer = NativePromptComposer()" in app
+    composer = app.split("private var promptComposer: NativePromptComposer {", 1)[1].split("\n    }", 1)[0]
+    assert "guard let scope = widgetWorkspaceScope else { return disconnectedPromptComposer }" in composer
+    assert "NativePromptDrafts.shared.composer(for: scope)" in composer
     assert "promptComposer: promptComposer" in app
 
 
@@ -73,5 +77,46 @@ def test_enrollment_is_opt_in_and_uses_view_lifecycle_not_widget_scope() -> None
         "enrollment.abandonInterruptedPreparation(pending)"
     )
     assert "isWidgetWorkspaceCurrent()" not in enrollment
-    info = (ROOT / "apple/App/Info.plist").read_text(encoding="utf-8")
-    assert "HeinzelWidgetEnrollmentEnabled" not in info
+    for target in ("App", "Widgets"):
+        mac_info = plistlib.loads((ROOT / f"apple/{target}/Info.plist").read_bytes())
+        ios_info = plistlib.loads((ROOT / f"apple/{target}/iOS-Info.plist").read_bytes())
+        assert mac_info["HeinzelWidgetEnrollmentEnabled"] == "$(HEINZEL_MAC_WIDGET_REFRESH)"
+        assert ios_info["HeinzelWidgetEnrollmentEnabled"] is True
+
+    project = (ROOT / "apple/Heinzel.xcodeproj/project.pbxproj").read_text(encoding="utf-8")
+    configurations = re.findall(
+        r"isa = XCBuildConfiguration; name = (Debug|Release); buildSettings = \{(.*?)\};",
+        project,
+        re.DOTALL,
+    )
+    assert len(configurations) == 6
+    for name in ("Debug", "Release"):
+        settings = [body for config, body in configurations if config == name]
+        assert len(settings) == 3  # Project, app and extension; both targets inherit NO.
+        defaults = [body for body in settings if "HEINZEL_MAC_WIDGET_REFRESH" in body]
+        assert len(defaults) == 1
+        assert "HEINZEL_MAC_WIDGET_REFRESH = NO;" in defaults[0]
+        assert defaults[0].count("HEINZEL_MAC_WIDGET_REFRESH") == 1
+        targets = [body for body in settings if "INFOPLIST_FILE =" in body]
+        assert len(targets) == 2
+        for target in ("Widgets", "App"):
+            matching = [body for body in targets if f"INFOPLIST_FILE = {target}/Info.plist;" in body]
+            assert len(matching) == 1
+            body = matching[0]
+            assert f"INFOPLIST_FILE = {target}/Info.plist;" in body
+            assert f'"INFOPLIST_FILE[sdk=iphone*]" = {target}/iOS-Info.plist;' in body
+            assert "HEINZEL_MAC_WIDGET_REFRESH" not in body
+
+    store = (ROOT / "apple/Shared/WidgetCredentialStore.swift").read_text(encoding="utf-8")
+    opt_in = store.split("static var enrollmentEnabled: Bool {", 1)[1].split("\n    }", 1)[0]
+    assert "#if os(macOS)" in opt_in
+    mac, ios = opt_in.split("#else", 1)
+    assert (
+        'return Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetEnrollmentEnabled") as? String == "YES"' in mac
+    )
+    assert 'return Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetEnrollmentEnabled") as? Bool == true' in ios
+    configured = store.split("static func configured() -> WidgetCredentialStore? {", 1)[1].split("\n    }", 1)[0]
+    assert "guard enrollmentEnabled," in configured
+    assert "let url = ActivityWidgetData.sharedCatalogURL()" in configured
+    assert 'let group = Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetKeychainGroup") as? String' in configured
+    assert "let keychain = SharedWidgetKeychain(accessGroup: group) else { return nil }" in configured

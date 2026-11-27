@@ -21,9 +21,8 @@ description: What data is processed when you visit heinzel.team or use the hz ap
 The controller within the meaning of Art. 4(7) GDPR is:
 
 Helmut Hoffer von Ankershoffen<br>
-Fangschleusenstrasse 32<br>
-15569 Woltersdorf<br>
-Germany<br>
+[Postal address in the imprint](imprint.md)
+
 Email: [helmut@heinzel.team](mailto:helmut@heinzel.team)
 
 Use the same address for any data protection question.

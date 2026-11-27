@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isLocalServer } from "@/lib/browser";
 import { type Phase, parsePhase } from "@/lib/operationRun";
 import { splash, unreachableError } from "@/splash/store";
-import { api, unwrap } from "./client";
+import { ApiError, api, authorityMiddleware, unwrap } from "./client";
 import type { components } from "./schema";
 import { stream } from "./stream";
 
@@ -159,7 +159,12 @@ export const useSetSetting = () => {
               params: { query: { key: variables.key, value: variables.value, scope: "user" } },
             }),
           ),
-    onSettled: () => client.invalidateQueries({ queryKey: keys.config }),
+    onSettled: async (_data, _error, variables) => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: keys.config }),
+        ...(variables.key.startsWith("org.") ? [client.invalidateQueries({ queryKey: keys.profile })] : []),
+      ]);
+    },
   });
 };
 
@@ -298,6 +303,31 @@ export const useConnectorReport = (enabled: boolean) =>
     queryKey: ["system", "connector", "list"],
     queryFn: ({ signal }) => unwrap(api.GET("/system/connector/list", { signal })),
     enabled,
+  });
+
+const SIGN_IN_ENDED = new Set(["succeeded", "failed", "cancelled", "timed-out"]);
+
+/** The server no longer knows this flow, for example because hz restarted. */
+export const signInFlowMissing = (error: unknown): boolean => error instanceof ApiError && error.status === 400;
+
+/** `hz system connector flow`: a running sign-in, polled every second and a half until it ends. */
+export const useSignInFlow = (flow: string | null, epoch: number) =>
+  useQuery({
+    queryKey: ["system", "connector", "flow", flow, epoch],
+    queryFn: ({ signal }) =>
+      unwrap(
+        api.GET("/system/connector/flow", {
+          params: { query: { flow: flow ?? "" } },
+          middleware: authorityMiddleware(epoch),
+          signal,
+        }),
+      ),
+    enabled: Boolean(flow),
+    refetchInterval: (query) =>
+      signInFlowMissing(query.state.error) || (query.state.data && SIGN_IN_ENDED.has(query.state.data.state))
+        ? false
+        : 1500,
+    retry: false,
   });
 
 /** `hz system plugin list` and `search`: what's installed, and what can be. */

@@ -36,4 +36,6 @@
     <key>NSScreenCaptureUsageDescription</key><string>Use audio from apps included in your system sharing selection to animate the Heinzelmännchen visualizer.</string>
     <key>HeinzelSourceRevision</key><string>$(HEINZEL_SOURCE_REVISION)</string>
     <key>HeinzelWidgetGroup</key><string>$(HEINZEL_WIDGET_GROUP)</string>
+    <key>HeinzelWidgetEnrollmentEnabled</key><string>$(HEINZEL_MAC_WIDGET_REFRESH)</string>
+    <key>HeinzelWidgetKeychainGroup</key><string>$(AppIdentifierPrefix)team.heinzel.widget</string>
 </dict></plist>

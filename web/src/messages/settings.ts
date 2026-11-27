@@ -197,6 +197,8 @@ export const settings = {
   "settings.openFolder": "Open folder",
   "profile.title": "Profile",
   "profile.intro": "Who you are to hz, kept on this machine only.",
+  "profile.edit": "Edit profile",
+  "profile.editField": "Edit {field}, currently {value}",
   "profile.handle": "Handle",
   "profile.role": "Role",
   "profile.timezone": "Time zone",

@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -89,13 +91,22 @@ def test_the_fake_clis_go_first_on_path_and_sign_in_into_the_throwaway_home(scri
     assert env["PATH"].startswith(str(script.FAKE_CLIS))
     for command in script.FAKE_SIGN_INS:
         subprocess.run(
-            [str(script.FAKE_CLIS / command[0]), *command[1:]], env=env, check=True, capture_output=True, timeout=30
+            [str(script.FAKE_CLIS / command[0]), *command[1:]],
+            env=env,
+            check=True,
+            capture_output=True,
+            timeout=scaled(30),
         )
     assert (tmp_path / "config" / "gh" / "hosts.yml").read_text().startswith("github.com:")
     assert (tmp_path / ".config" / "gws" / "credentials.json").is_file()
     assert (tmp_path / ".fake-acli" / "login").is_file()
     version = subprocess.run(
-        [str(script.FAKE_CLIS / "acli"), "--version"], env=env, check=True, capture_output=True, text=True, timeout=30
+        [str(script.FAKE_CLIS / "acli"), "--version"],
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=scaled(30),
     )
     assert version.stdout.startswith("acli version 1.3.39")
 

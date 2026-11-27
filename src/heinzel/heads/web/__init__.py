@@ -61,6 +61,7 @@ from heinzel.heads.web._lifecycle import CANT_RESTART as CANT_RESTART
 from heinzel.heads.web._lifecycle import add_lifecycle
 from heinzel.heads.web._mcp import McpEndpoint, add_endpoint, add_routes
 from heinzel.heads.web._ports import wait_for_port
+from heinzel.heads.web._recent_clients import add_recent_clients
 from heinzel.heads.web._shutdown import GRACE_SECONDS, KEEP_ALIVE_SECONDS, Stopping
 from heinzel.heads.web._shutdown import server as stopping_server
 from heinzel.heads.web._stream import add_stream
@@ -282,11 +283,11 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
         accept=lambda presented: device.id if (device := paired.check(presented)) else None,
     )
     app.state.lifecycle = endpoints.state.lifecycle
+    add_recent_clients(endpoints)
     endpoints.state.chatgpt_sign_in.add_callback(app)
     add_widget(app, endpoints, paired, kernel)
     app.state.auto_update = AutoUpdater(kernel, restart=restart, activity=activity)
-    add_updates(endpoints, kernel, static, restartable=restart is not None, busy=_update_busy(app.state.auto_update))
-    add_auto_update(endpoints, app.state.auto_update)
+    _add_update_routes(endpoints, kernel, static, app.state.auto_update, restartable=restart is not None)
     add_stream(endpoints, kernel, stopping)  # behind the same middleware: Host, Origin and the token
     agents = mcp_tokens or tokens_for_user()
     mcp = McpEndpoint(kernel, agents, stopping)
@@ -318,6 +319,19 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
         return FileResponse(index, headers={"Cache-Control": "no-store", CSP_HEADER: page_csp(kernel)})
 
     return app
+
+
+def _add_update_routes(
+    endpoints: FastAPI,
+    kernel: Kernel,
+    static: Path | None,
+    updater: AutoUpdater,
+    *,
+    restartable: bool,
+) -> None:
+    """Register update checks and automatic-update controls behind the API's authentication."""
+    add_updates(endpoints, kernel, static, restartable=restartable, busy=_update_busy(updater))
+    add_auto_update(endpoints, updater)
 
 
 def add_views(app: FastAPI, kernel: Kernel) -> None:

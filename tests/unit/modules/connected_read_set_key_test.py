@@ -8,6 +8,7 @@ import pytest
 from heinzel import HeinzelError
 from heinzel.kernel._approval import ApprovalConfirmation
 from heinzel.modules.heinzel._input_receipts import ApprovedInputSnapshots, input_receipt_key
+from heinzel.testing import scaled
 from tests.unit.modules.connected_read_set_input_test import _approved, _turn
 
 pytestmark = pytest.mark.unit
@@ -86,7 +87,7 @@ def test_concurrent_initialization_yields_one_owner_key(connected):
 
     def run():
         with current.local("cli"):
-            barrier.wait(timeout=3)
+            barrier.wait(timeout=scaled(3))
             return input_receipt_key(current, create=True)
 
     with ThreadPoolExecutor(max_workers=2) as pool:

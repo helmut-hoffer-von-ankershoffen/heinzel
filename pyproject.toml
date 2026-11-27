@@ -3,7 +3,7 @@ name = "heinzel"
 version = "0.9.56"
 description = "An open-source crew of Heinzels that drafts your team's busywork and asks before anything leaves your machine."
 readme = "PYPI.md"
-authors = [{ name = "Helmut Hoffer von Ankershoffen", email = "helmuthva@gmail.com" }]
+authors = [{ name = "Helmut Hoffer von Ankershoffen", email = "helmut@heinzel.team" }]
 license = "MIT"
 # ATTRIBUTIONS.md: every package hz ships, with its license text; the wheel bundles the web app's (`make attributions`).
 license-files = ["LICENSE", "ATTRIBUTIONS.md"]

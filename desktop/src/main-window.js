@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { BrowserWindow, app, dialog, session, shell, webContents } from "electron";
 import { menuScript } from "./app-menu.js";
 import { lifecycle } from "./connection.js";
+import { attachClientHeader, machineName } from "./client-identity.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createNativePermissions } from "./native-permissions.js";
 import { guardUiNavigation, openProductUi } from "./ui-navigation.js";
@@ -24,11 +25,18 @@ export function createWindowLifecycle() {
     },
     createWindow: (connection) => openProductUi({
       connection,
-      lifecycle,
+      lifecycle: async (target) => {
+        const state = await lifecycle(target);
+        if (!target.remote) ctx.localBackendVersion = state.version;
+        return state;
+      },
       cancelled: () => ctx.stopping || ctx.quitting,
       createWindow: async () => {
         const workspaceSession = session.fromPartition(`workspace-${randomUUID()}`);
         if (!connection.remote) await workspaceSession.setProxy({ mode: "direct" });
+        attachClientHeader(workspaceSession, connection.origin, () => ({
+          appVersion: app.getVersion(), backendVersion: ctx.localBackendVersion, machine: machineName(),
+        }));
         return new BrowserWindow({
         ...windowOptions(process.platform),
         webPreferences: {

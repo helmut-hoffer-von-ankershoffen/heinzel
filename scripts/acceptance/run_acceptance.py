@@ -2083,6 +2083,38 @@ def unchanged_distribution_files(prefix, names):
     return result
 
 
+def inventory_label(value, pattern):
+    """Keep short relative package identifiers; correlate unusual names without publishing their text."""
+    if len(value) <= 180 and re.fullmatch(pattern, value) and redact(value) == value:
+        return value
+    return "sha256:" + sha256(os.fsencode(value))
+
+
+def distribution_file_differences(before, after):
+    """Count all changes and sample the first twelve in stable order, using hashes already computed."""
+    counts = {"added": 0, "removed": 0, "changed": 0}
+    sample = []
+    for name in sorted(before.keys() | after.keys()):
+        old, new = before.get(name, {}), after.get(name, {})
+        for path in sorted(old.keys() | new.keys()):
+            previous, current = old.get(path), new.get(path)
+            if previous == current:
+                continue
+            kind = "changed"
+            if previous is None:
+                kind = "added"
+            elif current is None:
+                kind = "removed"
+            counts[kind] += 1
+            if len(sample) < 12:
+                sample.append({
+                    "distribution": inventory_label(name, r"[a-z0-9]+(?:-[a-z0-9]+)*"),
+                    "path": inventory_label(path, r"(?:[A-Za-z0-9_][A-Za-z0-9_.+-]*/)*[A-Za-z0-9_][A-Za-z0-9_.+-]*"),
+                    "change": kind, "before_sha256": previous, "after_sha256": current,
+                })
+    return {"counts": counts, "sample": sample}
+
+
 def reconcile_historical_plugin(case, target, plugin_target):
     """Use the new CLI's documented pin-moving default once, then leave the strict no-op untouched."""
     before = plugin_map(case, "plugins-before-reconciliation")
@@ -2124,7 +2156,11 @@ def reconcile_historical_plugin(case, target, plugin_target):
         expected = {**old, "version": latest} if name == EXAMPLE_PLUGIN else old
         check(found[name] == expected, f"Reconciliation changed unexpected plugin state: {name}")
     check(installed_distribution_names(prefix) == installed, "Reconciliation changed the dependency set")
-    check(unchanged_distribution_files(prefix, unchanged) == files, "Reconciliation changed Core or another package's files")
+    after_files = unchanged_distribution_files(prefix, unchanged)
+    files_unchanged = after_files == files
+    if not files_unchanged:
+        case.notes["reconciliation_file_differences"] = distribution_file_differences(files, after_files)
+    check(files_unchanged, "Reconciliation changed Core or another package's files")
     check(snapshot_files(case.root / "config_home") == config, "Reconciliation changed user configuration")
     check(installed_interpreter(case) == python, "Reconciliation changed the managed interpreter")
     check_installed_version(case, EXAMPLE_PLUGIN, latest, "reconciled-user-plugin")

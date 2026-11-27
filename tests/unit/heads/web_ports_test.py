@@ -7,6 +7,7 @@ import pytest
 
 from heinzel import HeinzelError
 from heinzel.heads.web._ports import wait_for_port
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -46,7 +47,9 @@ def test_wait_is_bounded_and_explains_a_still_running_instance():
         raise OSError(errno.EADDRINUSE, "busy")
 
     with pytest.raises(HeinzelError, match=r"still in use after 3 seconds.*--port 0"):
-        wait_for_port(bind, 8737, messages.append, clock=clock, pause=clock.pause, timeout=3)
+        wait_for_port(
+            bind, 8737, messages.append, clock=clock, pause=clock.pause, timeout=3
+        )  # unscaled: a FakeClock deadline, named in the message
     assert clock() == 3
     assert len(messages) == 1
 
@@ -130,4 +133,4 @@ def test_a_second_bind_to_a_listening_port_says_the_port_is_in_use():
     with free_socket() as other:
         port = other.getsockname()[1]
         with pytest.raises(HeinzelError, match="still in use"):
-            wait_for_port(lambda: free_socket("127.0.0.1", port), port, lambda _: None, timeout=0)
+            wait_for_port(lambda: free_socket("127.0.0.1", port), port, lambda _: None, timeout=scaled(0))

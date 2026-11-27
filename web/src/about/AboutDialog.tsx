@@ -10,12 +10,18 @@ import { t } from "@/i18n";
 import { loadedFrontend, surfaceDetails } from "@/lib/surfaceDiagnostics";
 import { installedTime } from "@/lib/zoneTime";
 import { onMenuAction } from "./menu";
+import { RecentClients } from "./RecentClients";
 
 const REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel";
 const loadedAsset = loadedFrontend(document);
 
 type Desktop = { version: string; path: string };
-type Bridge = { about?: () => Promise<Desktop>; clientFlavor?: "native" | "electron"; workspaceAudio?: boolean };
+type Bridge = {
+  about?: () => Promise<Desktop>;
+  clientFlavor?: "native" | "electron";
+  workspaceAudio?: boolean;
+  remoteWorkspace?: boolean;
+};
 
 const desktopBridge = (): Bridge | undefined => (window as Window & { heinzelDesktop?: Bridge }).heinzelDesktop;
 
@@ -25,6 +31,7 @@ export type Client = "native" | "electron" | "browser";
 /** The older Native bridge advertised no workspace audio, even when it offered local About details. */
 export const clientHere = (bridge: Bridge | undefined = desktopBridge()): Client => {
   if (!bridge) return "browser";
+  if (bridge.remoteWorkspace === true) return "electron";
   return bridge.clientFlavor ?? (bridge.workspaceAudio === false || !bridge.about ? "native" : "electron");
 };
 
@@ -257,6 +264,7 @@ export function AboutDialog() {
           ) : (
             <p className="mt-4 text-muted-foreground">{info.isError ? t("about.unavailable") : t("about.loading")}</p>
           )}
+          {open && <RecentClients />}
         </div>
         <footer className="shrink-0 px-4 pb-3">
           <PaneActions>

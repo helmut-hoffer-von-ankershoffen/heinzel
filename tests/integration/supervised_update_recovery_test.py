@@ -29,6 +29,7 @@ from heinzel.modules.system.updater import _announced as announced
 from heinzel.modules.system.updater import _recovery_staging
 from heinzel.modules.system.updater._adapter_state import FileInstallationState
 from heinzel.modules.system.updater._update import UpdateService
+from heinzel.testing import scaled
 from tests.unit.runtime.updater import supervised_recovery_entry_test as launcher_fixture
 from tests.unit.runtime.updater.system_announced_test import Releases, news, replace_tool_prefix, service
 
@@ -67,7 +68,10 @@ with (
 def _interrupt(web):
     state = web.directory.parent
     dead = subprocess.run(
-        [sys.executable, "-c", _UPDATE, str(state), str(web.prefix)], check=False, capture_output=True, timeout=15
+        [sys.executable, "-c", _UPDATE, str(state), str(web.prefix)],
+        check=False,
+        capture_output=True,
+        timeout=scaled(15),
     )
     assert dead.returncode == -signal.SIGKILL, dead.stderr
     assert (state / "daemon" / "mutation-pending.json").is_file()
@@ -161,7 +165,7 @@ def kill_at_update_phase(tmp_path, phase):
             phase,
         ],
         check=False,
-        timeout=20,
+        timeout=scaled(20),
     )
     assert child.returncode == -signal.SIGKILL
 
@@ -218,7 +222,7 @@ def test_legacy_launcher_refuses_new_updates_and_keeps_its_original_guard(instal
     assert not (state / "auto-update" / "before-update").exists()
     assert not (state / "daemon" / "mutation-pending.json").exists()
     _interrupt(web)
-    refused = subprocess.run(command, check=False, capture_output=True, timeout=5)
+    refused = subprocess.run(command, check=False, capture_output=True, timeout=scaled(5))
     assert refused.returncode == 75
     assert refused.stdout == refused.stderr == b""
 
@@ -229,20 +233,23 @@ def test_sealed_worker_restores_checkpoint_before_launcher_enters_the_tool(insta
     assert selected is not None
     command = launcher_fixture._launch(web, recovery=selected)
     state = web.directory.parent
-    assert subprocess.run(command, check=True, capture_output=True, timeout=5).stdout == b"old generation started\n"
+    assert (
+        subprocess.run(command, check=True, capture_output=True, timeout=scaled(5)).stdout
+        == b"old generation started\n"
+    )
     with _recovery_staging.supervised_recovery(installation, state / "auto-update", web.recovery_ready):
         _interrupt(web)
     staged = state / NAME / "site" / worker
     trusted = staged.read_text()
     staged.write_text("raise AssertionError('modified worker')\n")
-    refused = subprocess.run(command, check=False, capture_output=True, timeout=15)
+    refused = subprocess.run(command, check=False, capture_output=True, timeout=scaled(15))
     assert refused.returncode == 75
     assert refused.stdout == b""
     assert b"modified worker" not in refused.stderr
     assert (state / "auto-update" / "before-update").is_dir()
 
     staged.write_text(trusted)
-    recovered = subprocess.run(command, check=False, capture_output=True, timeout=15)
+    recovered = subprocess.run(command, check=False, capture_output=True, timeout=scaled(15))
     assert recovered.returncode == 0, recovered.stderr
     assert recovered.stdout == b"old generation started\n"
     assert installation.startup_state_matches()

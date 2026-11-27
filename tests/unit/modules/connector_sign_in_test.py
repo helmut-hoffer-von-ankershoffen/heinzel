@@ -10,6 +10,7 @@ from heinzel import Document, Grant, GrantStatus, HeinzelError, Module, SignInOu
 from heinzel.kernel import CapabilityView, Prompter, ScriptedPrompter
 from heinzel.modules.system.connector import ConnectorService, SignInFlow, SignIns, connect
 from heinzel.modules.system.connector._sign_in import wanted
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -74,7 +75,7 @@ class Fake:
             raise Fake.raises
         progress(SignInProgress(url=PAGE, finish_on="host"))
         while not (Fake.release.is_set() or stop.is_set()):
-            stop.wait(0.01)
+            stop.wait(scaled(0.01))
         if stop.is_set():
             return SignInOutcome(state="cancelled", message="stopped by the caller")
         return Fake.outcome
@@ -106,7 +107,7 @@ def wait_for(sign_ins: SignIns, flow: str, state: str) -> None:
     for _ in range(500):
         if sign_ins.flow(flow).state == state:
             return
-        threading.Event().wait(0.01)
+        threading.Event().wait(scaled(0.01))
     pytest.fail(f"never {state}: {sign_ins.flow(flow)}")
 
 

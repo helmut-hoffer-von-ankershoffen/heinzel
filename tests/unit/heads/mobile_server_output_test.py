@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
 from tests.e2e._mobile_server_output import MobileServerOutput, redact, sanitize_timeout
 
 pytestmark = pytest.mark.unit
@@ -32,7 +33,7 @@ def test_flood_is_drained_and_tail_bounded_without_losing_startup():
     capture = MobileServerOutput(child)
     try:
         assert capture.wait_url() == "http://127.0.0.1:1/#token=fixture-secret"
-        assert child.wait(timeout=5) == 0
+        assert child.wait(timeout=scaled(5)) == 0
         capture.close()
         text = capture.diagnostic("fixture-secret")
         assert len(text.encode()) <= 32768
@@ -41,7 +42,7 @@ def test_flood_is_drained_and_tail_bounded_without_losing_startup():
     finally:
         if child.poll() is None:
             child.kill()
-            child.wait(timeout=5)
+            child.wait(timeout=scaled(5))
         if child.stderr is not None:
             child.stderr.close()
 
@@ -52,14 +53,14 @@ def test_crash_before_cleanup_is_observed_and_missing_token_hides_stderr():
     )
     capture = MobileServerOutput(child)
     try:
-        assert child.wait(timeout=5) == 17
+        assert child.wait(timeout=scaled(5)) == 17
         assert child.poll() == 17
         capture.close()
         assert "private-value" not in capture.diagnostic()
     finally:
         if child.poll() is None:
             child.kill()
-            child.wait(timeout=5)
+            child.wait(timeout=scaled(5))
         if child.stderr is not None:
             child.stderr.close()
 
@@ -73,13 +74,13 @@ def test_bare_startup_requires_owned_loopback_and_token():
     child = subprocess.Popen([sys.executable, "-c", code], stderr=subprocess.PIPE)
     capture = MobileServerOutput(child, bare_url=True)
     try:
-        assert capture.wait_url(timeout=5) == "http://127.0.0.1:1234/#token=fictional"
-        assert child.wait(timeout=5) == 0
+        assert capture.wait_url(timeout=scaled(5)) == "http://127.0.0.1:1234/#token=fictional"
+        assert child.wait(timeout=scaled(5)) == 0
         capture.close()
     finally:
         if child.poll() is None:
             child.kill()
-            child.wait(timeout=5)
+            child.wait(timeout=scaled(5))
         if child.stderr is not None:
             child.stderr.close()
 
@@ -117,7 +118,7 @@ def test_pytest_failure_does_not_render_completed_process_secret(tmp_path):
         env=env,
         capture_output=True,
         text=True,
-        timeout=15,
+        timeout=scaled(15),
         check=False,
     )
     assert result.returncode != 0

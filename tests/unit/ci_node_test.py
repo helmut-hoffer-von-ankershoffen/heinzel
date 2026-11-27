@@ -180,7 +180,7 @@ def test_python_sync_adds_only_existing_build_group_for_unit_bearing_cells(tmp_p
         ["/bin/bash", "-eu", "-c", command],
         env={"PATH": str(tmp_path), "CI_NODE_GROUP_ARGUMENT": "" if level == "integration" else "--group=build"},
         check=True,
-        timeout=2,
+        timeout=scaled(2),
     )
     expected = ["sync", "--frozen", "--no-build", "--no-dev", "--group", "test"]
     if level != "integration":

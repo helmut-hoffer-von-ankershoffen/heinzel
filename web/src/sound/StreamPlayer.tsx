@@ -311,7 +311,7 @@ function Player({
             ref={surface}
             role="img"
             aria-label={t("sound.player", { title: soundscape.title })}
-            className="aspect-video min-h-[200px] w-full"
+            className="aspect-video min-h-[200px] min-w-[200px] w-full"
           />
         ) : blocked ? (
           <div className="flex flex-col items-start gap-2 p-3 text-ui-sm">
@@ -343,7 +343,7 @@ function Player({
             title={t("sound.player", { title: soundscape.title })}
             src={src}
             onLoad={() => listen(frame.current, origin)}
-            className="aspect-video min-h-[200px] w-full border-0"
+            className="aspect-video min-h-[200px] min-w-[200px] w-full border-0"
             referrerPolicy={FRAME_ATTRIBUTES.referrerPolicy}
             sandbox={account ? ACCOUNT_SANDBOX : FRAME_ATTRIBUTES.sandbox}
             allow={FRAME_ATTRIBUTES.allow}

@@ -99,6 +99,17 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     }
 
     func setWidgetActivityEnabled(_ enabled: Bool, revision: Int = 0) {
+        #if os(macOS)
+        guard enabled, isWidgetWorkspaceCurrent(), widgetContextCurrent, let host = workspace else {
+            MacMenuHostSource.scheduler.remove(owner: ObjectIdentifier(self))
+            return
+        }
+        // The retained host is the only Mac refresh source. iOS retains its own cadence.
+        MacMenuHostSource.scheduler.install(owner: ObjectIdentifier(self), revision: revision) { [self, host] in
+            guard !Task.isCancelled, workspace === host else { return }
+            await refreshWidgetActivity()
+        }
+        #else
         guard enabled else {
             widgetActivity?.cancel()
             widgetActivity = nil
@@ -113,6 +124,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                 do { try await Task.sleep(for: .seconds(45)) } catch { return }
             }
         }
+        #endif
     }
 
     private func refreshWidgetActivity() async {
@@ -267,6 +279,9 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         self.isMenuWorkspaceCurrent = isMenuWorkspaceCurrent
         self.isEnrollmentViewCurrent = isEnrollmentViewCurrent
         super.init()
+        for name in [AlbumLibrary.changed, AlbumLibrary.progress, SoundscapePlayback.changed] {
+            NotificationCenter.default.addObserver(self, selector: #selector(albumChanged), name: name, object: nil)
+        }
         NotificationCenter.default.addObserver(
             self, selector: #selector(nativeNoticeOpened), name: WorkspaceNotifications.opened, object: nil
         )
@@ -467,6 +482,13 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         let startsAudio = message.name == "heinzelAudio" && message.body as? String == "start"
         let enablesNotices = message.name == "heinzelNotices"
             && (message.body as? [String: Any])?["action"] as? String == "enable"
+        if message.name == "heinzelAlbum", message.body as? String != "status" {
+            guard case .idle = provisionalLoad, verifiedWorkspace(for: message) != nil,
+                  externalLinks.consumeActivation() else {
+                replyHandler(nil, "Choose an album action in Sound.")
+                return
+            }
+        }
         if startsAudio || enablesNotices {
             guard case .idle = provisionalLoad, verifiedWorkspace(for: message) != nil,
                   externalLinks.consumeActivation() else {
@@ -480,6 +502,11 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             let (value, error) = await handle(message, at: revision)
             replyHandler(value, error)
         }
+    }
+
+    @objc private func albumChanged() {
+        guard case .idle = provisionalLoad, let workspace, workspace.url.map(endpoint.owns) == true else { return }
+        workspace.evaluateJavaScript("window.dispatchEvent(new Event('heinzel-album-change'))")
     }
 
     private func verifiedWorkspace(for message: WKScriptMessage) -> WKWebView? {
@@ -546,6 +573,37 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     private func handle(_ message: WKScriptMessage, at revision: Int) async -> (Any?, String?) {
         guard let workspace = verifiedWorkspace(for: message) else { return (nil, "Workspace command unavailable") }
+        if message.name == "heinzelAlbum" {
+            guard revision == documentRevision, case .idle = provisionalLoad,
+                  let action = (message.body as? String) ?? ((message.body as? [String: Any])?["action"] as? String) else { return (nil, "Workspace command unavailable") }
+            let library = AlbumLibrary.shared
+            let playback = SoundscapePlayback.shared
+            do {
+                switch action {
+                case "status": break
+                case "play": try await playback.playAlbum()
+                case "pausePlayback": playback.pause()
+                case "toggle": try await playback.toggleApp()
+                case "previous": try await playback.previousApp()
+                case "next": try await playback.nextApp()
+                case "repeat": playback.cycleRepeat()
+                case "picker": playback.openPicker()
+                case "openVideo":
+                    let geometry = (message.body as? [String: Any])?["geometry"] as? [String: NSNumber]
+                    playback.dockWidth = SoundDockGeometry.requestedWidth(geometry, viewport: workspace.bounds.width)
+                    playback.openVideo()
+                case "pauseDownload": try library.pauseDownloads()
+                case "resumeDownload": try library.resumeDownloads()
+                case "cancelDownload": try library.cancelDownloads()
+                default: return (nil, "Unknown album action")
+                }
+                var snapshot = library.snapshot()
+                snapshot["playing"] = playback.isPlaying
+                snapshot["title"] = playback.currentTitle
+                snapshot["repeatMode"] = playback.repeatMode
+                return (snapshot, nil)
+            } catch { return (nil, "Album action failed. Check Sound for download status.") }
+        }
         if message.name == "heinzelNotices", let request = message.body as? [String: Any] {
             guard revision == documentRevision, case .idle = provisionalLoad else {
                 return (nil, "Workspace command unavailable")
@@ -776,6 +834,10 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         enrollmentTask?.cancel()
         NotificationCenter.default.removeObserver(self, name: WorkspaceNotifications.opened, object: nil)
         NotificationCenter.default.removeObserver(self, name: WorkspaceNotifications.changed, object: nil)
+        for name in [AlbumLibrary.changed, AlbumLibrary.progress, SoundscapePlayback.changed] {
+            NotificationCenter.default.removeObserver(self, name: name, object: nil)
+        }
+        view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelAlbum", contentWorld: .page)
         view.configuration.userContentController.removeScriptMessageHandler(forName: "heinzelNotices", contentWorld: .page)
         view.configuration.userContentController.removeScriptMessageHandler(
             forName: "heinzelExternalLink", contentWorld: .defaultClient
@@ -899,11 +961,18 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     private func resolveWorkspaceVersion(in view: WKWebView) async -> WorkspaceVersionObservation? {
         guard view.url.map(endpoint.owns) == true else { return nil }
+        #if os(macOS)
+        let machine = ProcessInfo.processInfo.hostName
+        let identity = ClientIdentity.header(appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+                                             backendVersion: ClientIdentity.backendVersion, machine: machine)
+        #else
+        let identity = ""
+        #endif
         let revision = documentRevision
         for attempt in 0..<5 {
             guard !Task.isCancelled, workspace === view, revision == documentRevision,
                   view.url.map(endpoint.owns) == true else { return nil }
-            let data = try? await inspectWorkspace(in: view, body: """
+            let data = try? await inspectWorkspace(in: view, arguments: ["clientIdentity": identity], body: """
                 const date = value => {
                     if (typeof value !== 'string') return null;
                     const m = /^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(?:[.][0-9]{1,6})?(?:Z|[+-]([0-9]{2}):([0-9]{2}))$/.exec(value);
@@ -913,7 +982,8 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                         hour > 23 || minute > 59 || second > 59 || (offsetHour || 0) > 23 || (offsetMinute || 0) > 59) return null;
                     const ms = Date.parse(value); return Number.isFinite(ms) ? ms : null;
                 };
-                const response = await fetch('/api/workspace-version', options);
+                const response = await fetch('/api/workspace-version', { ...options,
+                    headers: { ...options.headers, ...(clientIdentity ? { 'X-Heinzel-Client': clientIdentity } : {}) }, redirect: 'error', mode: 'same-origin' });
                 if (response.ok) {
                     const info = await response.json();
                     return {version:info?.web?.version ?? null, installedVersion:info?.installed?.version ?? null,

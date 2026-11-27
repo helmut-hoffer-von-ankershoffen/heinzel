@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 HEAD, MERGE, BASE, TREE = (letter * 40 for letter in "abcd")
@@ -84,7 +86,7 @@ def test_isolated_launcher_loads_only_the_checked_out_chain(tmp_path):
     gh = tmp_path / "gh"
     gh.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
     gh.chmod(0o755)
-    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, timeout=15).strip()
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, timeout=scaled(15)).strip()
     result = subprocess.run(
         [sys.executable, "-I", str(ROOT / "scripts/release_latest.py"), TAG, head],
         cwd=ROOT,
@@ -92,7 +94,7 @@ def test_isolated_launcher_loads_only_the_checked_out_chain(tmp_path):
         text=True,
         capture_output=True,
         check=False,
-        timeout=15,
+        timeout=scaled(15),
     )
     assert result.returncode == 1
     assert "the tag commit has no unique merged release PR" in result.stderr
@@ -250,7 +252,7 @@ def test_actual_publish_shell_uses_the_verified_mode_only(tmp_path, mode, reposi
         "BUNDLE": str(bundle),
     }
     result = subprocess.run(
-        ["bash", "-e", "-o", "pipefail", "-c", script], cwd=tmp_path, env=env, check=False, timeout=15
+        ["bash", "-e", "-o", "pipefail", "-c", script], cwd=tmp_path, env=env, check=False, timeout=scaled(15)
     )
     if deferred is None:
         assert result.returncode
@@ -274,7 +276,7 @@ def test_release_tag_dispatch_refuses_a_different_ref_or_commit(tmp_path, ref, r
         capture_output=True,
         text=True,
         check=False,
-        timeout=15,
+        timeout=scaled(15),
     )
     assert result.returncode == 1
     assert "Release tag dispatch does not bind the exact protected main merge" in result.stderr
@@ -317,7 +319,7 @@ def test_release_tag_retry_never_retags_or_repairs_completed_lineage(tmp_path, p
         "PUBLISHED": str(published).lower(),
     }
     result = subprocess.run(
-        ["bash", "-e", "-o", "pipefail", "-c", script], cwd=tmp_path, env=env, check=False, timeout=15
+        ["bash", "-e", "-o", "pipefail", "-c", script], cwd=tmp_path, env=env, check=False, timeout=scaled(15)
     )
     assert (result.returncode == 0) is (expect_tag is not None)
     assert output.exists() is (expect_tag is True)

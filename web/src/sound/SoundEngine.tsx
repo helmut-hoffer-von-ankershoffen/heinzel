@@ -10,9 +10,12 @@ import { useThemes } from "@/api/queries";
 import { publishOwnAudio } from "@/audio/own";
 import { t } from "@/i18n";
 import { isIOS } from "@/lib/browser";
+import { AlbumControls } from "./AlbumControls";
+import { ALBUM_TITLE, nativeAlbum, useAlbum } from "./album";
 import { type Inputs, rampSeconds, type Signals, targetGain, type Why, why } from "./machine";
 import { type EarconView, type LayerView, Mixer } from "./mixer";
 import { NativePlayer } from "./NativePlayer";
+import { PlayerCard } from "./PlayerCard";
 import {
   effective,
   isProgramme,
@@ -27,7 +30,7 @@ import {
   useSoundscapes,
 } from "./queries";
 import { StreamPlayer } from "./StreamPlayer";
-import { fail, pause, resume, soundState, stop, useSound } from "./store";
+import { closeAlbum, fail, pause, resume, selectAlbum, soundState, stop, useSound } from "./store";
 
 const SUSPENDED_MS = 1500;
 
@@ -46,6 +49,16 @@ function useLevel(inputs: Inputs, fadeSeconds: number): Level {
 export function SoundEngine() {
   const list = useSoundscapes();
   const sound = useSound();
+  const album = useAlbum();
+  const restoredAlbum = useRef(false);
+  useEffect(() => {
+    if (!album) return;
+    const restore = !restoredAlbum.current && Boolean(album.title || album.phase !== "idle");
+    restoredAlbum.current = true;
+    // Reading status restores native playback and download progress without a command
+    // that consumes activation. Later native starts also stop ordinary tab audio.
+    if ((restore || album.playing) && !soundState().albumSelected) selectAlbum();
+  }, [album]);
   const current = effective(list.data);
   const deviceStream = isProgramme(current) && isIOS();
   const meeting = useMeeting(Boolean(list.data?.mute_in_meetings && sound.started));
@@ -111,6 +124,12 @@ export function SoundEngine() {
     publishOwnAudio({ mode: "frame", label: streamTitle });
     return () => publishOwnAudio({ mode: "none" });
   }, [streaming, streamTitle]);
+  if (nativeAlbum() && sound.albumSelected && album && (album.playing || album.title || album.phase !== "idle"))
+    return (
+      <PlayerCard title={ALBUM_TITLE} host="Latent Heinzels" onClose={() => void closeAlbum()}>
+        <AlbumControls />
+      </PlayerCard>
+    );
   if (!current || !sound.started) return null;
   // Stopping takes an effect, and tracks would play (and ask their host) in the layout effect before it.
   if (retracked || (renamed && tracks)) return null;

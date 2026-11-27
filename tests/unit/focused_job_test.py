@@ -204,6 +204,7 @@ def _run_rounds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str, ro
     return failures.nodeids
 
 
+@pytest.mark.timeout(10)
 def test_the_round_plugin_repeats_in_one_process_and_tallies(tmp_path, monkeypatch):
     """Failures on a later execution in the same process, plain and parametrized, land in their own round under
     pytest's real ids; a test that always passes keeps its rounds green."""

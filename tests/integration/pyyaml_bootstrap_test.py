@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/bootstrap-pyyaml.sh"
@@ -29,7 +31,11 @@ def test_core_locks_a_pyyaml_with_wheels_so_the_bootstrap_has_nothing_to_build()
     assert any("-cp315-" in wheel["url"] for wheel in package["wheels"])
     pins = json.loads(
         subprocess.run(
-            [sys.executable, "-I", "-S", str(MODULE), "pins"], capture_output=True, text=True, check=True, timeout=10
+            [sys.executable, "-I", "-S", str(MODULE), "pins"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=scaled(10),
         ).stdout
     )
     assert pins["version"] == "6.0.3"  # the reviewed source stays for consumers whose lock still selects it
@@ -56,7 +62,11 @@ def project_environment(tmp_path):
     (environment / "bin/python").symlink_to(sys.executable)
     pins = json.loads(
         subprocess.run(
-            [sys.executable, "-I", "-S", str(MODULE), "pins"], capture_output=True, text=True, check=True, timeout=10
+            [sys.executable, "-I", "-S", str(MODULE), "pins"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=scaled(10),
         ).stdout
     )
     (tmp_path / "uv.lock").write_text(reviewed_lock(pins))
@@ -80,7 +90,7 @@ def test_tampered_source_never_reaches_build_backend(tmp_path):
         capture_output=True,
         text=True,
         check=False,
-        timeout=10,
+        timeout=scaled(10),
     )
     assert result.returncode != 0
     assert not marker.exists()
@@ -118,8 +128,29 @@ def test_unreviewed_lock_cannot_download_or_start_a_backend(tmp_path, mismatch):
         capture_output=True,
         text=True,
         check=False,
-        timeout=10,
+        timeout=scaled(10),
     )
     assert result.returncode != 0
     assert "lock differs from the reviewed PyYAML bootstrap" in result.stderr
     assert not marker.exists()
+
+
+def test_wheel_directory_uses_the_consumer_pin_for_an_upstream_core_lock(tmp_path):
+    # Exercise the actual shell wrapper and module CLI. Replace only the network/backend build.
+    script = tmp_path / SCRIPT.name
+    script.write_bytes(SCRIPT.read_bytes())
+    (tmp_path / "uv.lock").write_bytes((ROOT / "uv.lock").read_bytes())
+    (tmp_path / "bootstrap_pyyaml.py").write_text(
+        "import runpy\n"
+        f"main = runpy.run_path({str(MODULE)!r})['main']\n"
+        "def fixture_build(work, python):\n"
+        "    wheel = work / 'fixture.whl'\n"
+        "    wheel.write_bytes(b'reviewed fixture')\n"
+        "    return wheel\n"
+        "main.__globals__['build'] = fixture_build\n"
+        "raise SystemExit(main())\n"
+    )
+    for flag, name in (("--wheel-dir", "core"), ("--plugin-wheel-dir", "plugin")):
+        subprocess.run(["bash", str(script), flag, name], cwd=tmp_path, check=True, timeout=scaled(10))
+    assert list((tmp_path / "core").iterdir()) == []
+    assert (tmp_path / "plugin" / "fixture.whl").read_bytes() == b"reviewed fixture"

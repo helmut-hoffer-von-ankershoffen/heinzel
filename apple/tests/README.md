@@ -30,3 +30,39 @@ certificate, signed-app or real enrollment acceptance; those still require the s
 
 The circular Lock Screen Heinzel artwork and inline workspace name intentionally retain identity outside the app.
 Home-screen launcher labels explain the destination; snapshot widgets prioritize status and always disclose age.
+
+## Synthetic local-first album
+
+On macOS 15+ with Xcode command-line tools, Python 3 and local `ffmpeg` (libx264/AAC),
+from the repository root, use a new, nonexistent scratch directory:
+
+```sh
+python3 apple/tests/run_soundscape_album.py --scratch "${TMPDIR:-/tmp}/soundscape-proof-$(uuidgen)"
+```
+
+This command generates two tiny playable videos and PNG posters, compiles the current
+injected library/player with the CLI assertions, and runs muted probes. It selects
+`dreaming-of-electric-snow` using fictional `Example Track 1` / `Example Track 2` titles.
+All generated media, source copies and SHA-256 pins, compile/probe logs and isolated
+HOME/cache directories stay in scratch. Each invocation uses a unique defaults suite;
+the shared-container lookup is shimmed to nil and widget publishing stays in memory.
+The HTTP host binds only to loopback, supports byte ranges and delays the second
+track to exercise partial download controls.
+
+Coverage includes initial streaming Play and widget-style pause, durable cancellation,
+pre-manifest pause/cancel restoration, rapid download pause/resume, cold ready restoration,
+local decode, transport/repeat, Watch and persisted selection. Cold playback runs in a
+fresh process after the listener shuts down, using an ephemeral URLSession with no cache.
+`PASS` is written only after every probe exits successfully; failures retain their logs.
+This is a synthetic API proof, not installed app, widget extension or visual acceptance.
+
+### Repeat at playback boundaries
+
+Run the native two-track fixture on a test Mac with Xcode and ffmpeg. Supply a new scratch directory for each run. The report records the selected track, player position and observed end event for Off, Album and Track, first while streaming from loopback and then in fresh processes playing saved files with network access denied.
+
+```sh
+sm gate run -- python3 apple/tests/run_soundscape_repeat.py --execute --scratch "$repeat_run"
+sm gate run -- python3 apple/tests/run_soundscape_repeat.py --iphoneos-build-only --scratch "$iphone_build"
+```
+
+The second command compiles the probe for arm64 iPhoneOS. Exercise the same transitions with the signed iPhone app and both widget sizes for device acceptance.

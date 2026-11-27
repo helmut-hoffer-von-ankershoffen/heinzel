@@ -1,5 +1,6 @@
 // One search field for the Heinzel chat (canvas board Search): this chat or all Heinzels, results as a list, and a
 // result jumps to its message. The server pages are bounded and never claim complete history.
+import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, problem } from "@/api/client";
 import { useHeinzelSessions } from "@/api/queries";
@@ -201,8 +202,16 @@ export function ChatSearch({
         <Button type="submit" className="min-h-11" disabled={busy || (!query.trim() && !since && !until)}>
           {t("chatSearch.go")}
         </Button>
-        <Button type="button" variant="outline" className="min-h-11" onClick={onClose}>
-          {t("chatSearch.close")}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="min-h-11 min-w-11"
+          aria-label={t("chatSearch.close")}
+          title={t("chatSearch.close")}
+          onClick={onClose}
+        >
+          <X aria-hidden className="size-4" />
         </Button>
       </div>
       <details className="space-y-2">

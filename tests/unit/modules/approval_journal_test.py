@@ -18,6 +18,7 @@ from heinzel.kernel._approval import (
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionCosts
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -107,7 +108,7 @@ def test_concurrent_consumers_append_only_once(setup):
 
     def worker():
         with current.local("cli"):
-            start.wait(timeout=10)
+            start.wait(timeout=scaled(10))
             return consume(repository, session, intent)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -155,10 +156,10 @@ def test_revocation_recorded_while_consumer_waits_for_lock_wins(setup):
     with current.local("cli"), ThreadPoolExecutor(max_workers=1) as executor:
         with repository.control_writer(session) as writer:
             pending = executor.submit(worker)
-            assert started.wait(5)
+            assert started.wait(scaled(5))
             writer.append("approval.revoked", key=record.nonce)
         with pytest.raises(HeinzelError, match="invalid or unavailable"):
-            pending.result(timeout=10)
+            pending.result(timeout=scaled(10))
         assert not any(event.kind == "approval.intent" for event in repository.control_read(session).events)
 
 
@@ -184,10 +185,10 @@ def test_expiry_is_read_after_waiting_for_the_control_lock(setup):
     with current.local("cli"), ThreadPoolExecutor(max_workers=1) as executor:
         with repository.control_writer(session):
             pending = executor.submit(worker)
-            assert started.wait(5)
+            assert started.wait(scaled(5))
             now[0] = NOW + timedelta(minutes=5)
         with pytest.raises(HeinzelError, match="invalid or unavailable"):
-            pending.result(timeout=10)
+            pending.result(timeout=scaled(10))
         assert not any(event.kind == "approval.intent" for event in repository.control_read(session).events)
 
 

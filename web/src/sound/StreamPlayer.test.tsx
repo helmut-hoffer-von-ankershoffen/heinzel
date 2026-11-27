@@ -251,10 +251,25 @@ describe("video link placement", () => {
   it("retains the header link in a browser and no bottom row", () => {
     mount();
     const link = screen.getByRole("link", { name: "Open on YouTube" });
-    expect(link.closest("header")).not.toBeNull();
+    const card = screen.getByRole("region", { name: "FM player" });
+    const header = link.closest("header");
+    expect(header).not.toBeNull();
+    expect(card).toContainElement(header);
+    expect(link.tagName).toBe("A");
+    expect(link).toHaveAttribute("href", stream.watch_url);
     expect(link).toHaveAttribute("title", "Open on YouTube");
     expect(link.textContent?.trim()).toBe("");
-    expect(player().closest("section")?.lastElementChild).toBe(player().parentElement);
+    // The wider-view wrapper keeps the header and video together without adding controls below the video.
+    const video = player().parentElement as HTMLElement;
+    expect(card.lastElementChild).toContainElement(video);
+    expect(header?.nextElementSibling).toBe(video);
+    expect(video.nextElementSibling).toBeNull();
+    expect(card.querySelector("[data-pane-actions]")).toBeNull();
+    expect(
+      [...card.querySelectorAll("button, a[href]")].every(
+        (action) => header?.contains(action) || video.contains(action),
+      ),
+    ).toBe(true);
   });
 
   it("does not expose a nonfunctional permanent desktop header link", () => {

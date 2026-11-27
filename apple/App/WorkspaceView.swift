@@ -64,6 +64,9 @@ struct WorkspaceView: WebRepresentable {
             context.coordinator, contentWorld: .page, name: "heinzelFooter"
         )
         #endif
+        configuration.userContentController.addScriptMessageHandler(
+            context.coordinator, contentWorld: .page, name: "heinzelAlbum"
+        )
         var audioMember = ""
         #if os(macOS) || canImport(ScreenCaptureKit)
         if #available(iOS 27, *), offersSystemAudio {
@@ -126,6 +129,8 @@ struct WorkspaceView: WebRepresentable {
                     if (action === "start" && !navigator.userActivation?.isActive) return Promise.resolve(false);
                     return window.webkit.messageHandlers.heinzelAudio.postMessage(action);
                 };
+                const album = (action, geometry) => window.webkit.messageHandlers.heinzelAlbum.postMessage(
+                    geometry ? { action, geometry } : action);
                 const browser = request => window.webkit.messageHandlers.heinzelBrowser.postMessage(request);
                 const notices = request => window.webkit.messageHandlers.heinzelNotices.postMessage(request);
                 let footerMetrics = { width: 88, bottom: 0, revision: -1, generation: -1 };
@@ -200,7 +205,7 @@ struct WorkspaceView: WebRepresentable {
                     window.dispatchEvent(new Event("heinzel-native-footer-metrics"));
                 }});
                 Object.defineProperty(window, "heinzelDesktop", {
-                    value: Object.freeze({ clientFlavor: "native", \(chrome) \(connection) browser, notices, workspaceAudio: false, \(audioMember) })
+                    value: Object.freeze({ clientFlavor: "native", \(chrome) \(connection) browser, notices, album, workspaceAudio: false, \(audioMember) })
                 });
             })();
             """,

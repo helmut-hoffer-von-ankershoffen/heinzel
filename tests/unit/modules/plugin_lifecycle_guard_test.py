@@ -17,6 +17,7 @@ from heinzel.modules.system.daemon._runtime import lock
 from heinzel.modules.system.daemon._service import DaemonService
 from heinzel.modules.system.plugin._models import PluginCandidate, PluginChange, PluginSettings
 from heinzel.modules.system.plugin._service import PluginService
+from heinzel.testing import scaled
 
 pytestmark = [pytest.mark.unit, pytest.mark.timeout(30)]  # subprocess-heavy: past 5 s in a loaded hook
 
@@ -149,7 +150,7 @@ def test_waiting_for_a_real_busy_tick_then_confirms_only_once(guarded):
         try:
             while service.operation(operation_id).lifecycle_busy:
                 observed.set()
-                if done.wait(0.01):
+                if done.wait(scaled(0.01)):
                     return
             assert service.add("heinzel-demo", confirm=True, operation_id=operation_id).done
             assert service.add("heinzel-demo", confirm=True, operation_id=operation_id).done
@@ -162,13 +163,13 @@ def test_waiting_for_a_real_busy_tick_then_confirms_only_once(guarded):
             assert lifecycle
             assert tick
             worker.start()
-            assert observed.wait(5), "installer did not observe the held lifecycle lock"
+            assert observed.wait(scaled(5)), "installer did not observe the held lifecycle lock"
             assert not events
-        assert done.wait(10), "installer did not resume after the lock was released"
+        assert done.wait(scaled(10)), "installer did not resume after the lock was released"
     finally:
         done.set()
         if worker.ident is not None:
-            worker.join(timeout=1)
+            worker.join(timeout=scaled(1))
     assert not worker.is_alive()
     assert events == ["uv", "target-probe"]
 

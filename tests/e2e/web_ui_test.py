@@ -23,6 +23,7 @@ from urllib.request import Request, urlopen
 
 import pytest
 
+from heinzel.testing import scaled
 from tests.e2e._mobile_server_output import MobileServerOutput, check_driver, redact, sanitize_timeout
 from tests.e2e._reopen_server import receipt_tail
 
@@ -130,7 +131,7 @@ def verify_tracks_fixture(url: str) -> None:
     parsed = urlsplit(url)
     assert parsed.scheme == "http"
     assert parsed.hostname == "127.0.0.1"
-    with urlopen(f"http://127.0.0.1:{parsed.port}/", timeout=10) as response:
+    with urlopen(f"http://127.0.0.1:{parsed.port}/", timeout=scaled(10)) as response:
         policy = response.headers.get("Content-Security-Policy", "")
     assert policy.endswith("; media-src https://media.heinzel.team")
     assert "frame-src" not in policy

@@ -8,12 +8,38 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.macos_specific,
     pytest.mark.skipif(sys.platform != "darwin", reason="The Apple catalog uses the macOS Swift SDK"),
 ]
 ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.mark.timeout(75)
+def test_mac_extra_large_roster_bounds_order_fallback_and_overflow(tmp_path: Path) -> None:
+    probe = tmp_path / "roster-probe"
+    subprocess.run(
+        [
+            "xcrun",
+            "swiftc",
+            "-swift-version",
+            "6",
+            "-target",
+            f"{platform.machine()}-apple-macosx15.0",
+            str(ROOT / "apple/Shared/ActivityCatalog.swift"),
+            str(ROOT / "apple/Shared/ActivityWidgetData.swift"),
+            str(ROOT / "apple/Shared/NativeRoute.swift"),
+            str(ROOT / "tests/fixtures/apple-widget-roster.swift"),
+            "-o",
+            str(probe),
+        ],
+        check=True,
+        timeout=scaled(55),
+    )
+    subprocess.run([str(probe)], check=True, timeout=scaled(20))
 
 
 @pytest.mark.timeout(75)
@@ -35,9 +61,9 @@ def test_catalog_publishes_complete_scoped_generations_atomically(tmp_path: Path
             str(probe),
         ],
         check=True,
-        timeout=55,
+        timeout=scaled(55),
     )
-    subprocess.run([str(probe), str(tmp_path / "catalog.sqlite")], check=True, timeout=20)
+    subprocess.run([str(probe), str(tmp_path / "catalog.sqlite")], check=True, timeout=scaled(20))
 
 
 def test_refresh_keeps_old_requested_pin_in_bounded_artwork_and_all_eligible_choices() -> None:
@@ -73,7 +99,7 @@ assert.deepEqual(Object.keys(catalog[0]).sort(), ['activity', 'asks', 'id', 'las
 assert.deepEqual([catalog.at(-1).activity, catalog.at(-1).asks, catalog.at(-1).lastApproved], ['stuck', 3, 1767225600]);
 """
     )
-    subprocess.run([node, "-e", script], check=True, timeout=10)
+    subprocess.run([node, "-e", script], check=True, timeout=scaled(10))
 
 
 def test_foreground_waiting_count_matches_pending_nonretired_sessions() -> None:
@@ -96,4 +122,4 @@ assert.equal(count(), 2);
 sessions = Array.from({length: 10001}, () => ({state:'awake', waiting_count:1}));
 assert.equal(count(), 9999);
 """.replace("EXPR", expression)
-    subprocess.run([node, "-e", script], check=True, timeout=10)
+    subprocess.run([node, "-e", script], check=True, timeout=scaled(10))

@@ -7,6 +7,7 @@ from rich.console import Console
 from heinzel import Kernel, Settings, __version__
 from heinzel.heads.cli import _update
 from heinzel.kernel import ReleaseCache, ReleaseSource, discover
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -45,7 +46,7 @@ def test_a_check_asks_and_caches():
     hz = kernel(source := Source())
     check = _update.start_check(hz)
     assert check is not None
-    check.thread.join(5)
+    check.thread.join(scaled(5))
     assert source.asked.is_set()
     assert cache_of(hz).latest == "9.0.0"
 
@@ -88,7 +89,7 @@ def test_a_source_that_fails_records_why():
     hz = kernel(Source(OSError("no route to host")))
     check = _update.start_check(hz)
     assert check is not None
-    check.thread.join(5)
+    check.thread.join(scaled(5))
     assert cache_of(hz).error == "OSError: no route to host"
 
 

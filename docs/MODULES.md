@@ -449,7 +449,7 @@ Find, add, remove, enable, disable, list and scaffold plugins.
 | Show what a plugin would install, then add it with `--confirm`; adding it again replaces it. | `hz system plugin add` | `system_plugin_add` | — | `POST /api/system/plugin/add` | yes | expert |
 | Add an optional client of hz itself, such as OpenAI's for the ChatGPT plan; a restart loads it. | `hz system plugin add-extra` | `system_plugin_add_extra` | — | `POST /api/system/plugin/add-extra` | yes | expert |
 | Install every plugin an installed plugin requires that is missing or too old, from the same catalog. | `hz system plugin repair` | `system_plugin_repair` | — | `POST /api/system/plugin/repair` | yes | expert |
-| Remove an exact index version pin while keeping the installed plugin. | `hz system plugin unpin` | — | — | — | yes | expert |
+| Remove an exact index version pin while keeping the installed plugin. | `hz system plugin unpin` | — | — | `POST /api/system/plugin/unpin` | yes | expert |
 | List plugins changed on this machine since this server started: what a restart would load. | `hz system plugin pending` | `system_plugin_pending` | — | `GET /api/system/plugin/pending` |  | expert |
 | Read the status and result of a plugin add without repeating it. | `hz system plugin operation` | `system_plugin_operation` | — | `GET /api/system/plugin/operation` |  | expert |
 | Add the plugin in a directory on this machine, to try a plugin you are writing. | `hz system plugin develop` | — | — | — | yes | expert |
@@ -637,7 +637,7 @@ Open the web workspace or manage its optional persistent service.
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
 | Install web availability after login, separately from scheduled Heinzels. | `hz ui install` | — | — | — | yes |  |
-| Show exact OS ownership and the live web server's readiness and version. | `hz ui status` | — | — | — |  |  |
+| Show service readiness and recently observed desktop use (never live connections). | `hz ui status` | — | — | — |  |  |
 | Restart the owned web service with its existing port and authenticated session. | `hz ui restart` | — | — | — | yes |  |
 | Remove only the owned web login service, preserving your data and paired devices. | `hz ui uninstall` | — | — | — | yes |  |
 

@@ -15,6 +15,7 @@ from heinzel import Progress
 from heinzel.kernel import Installation, private_write
 from heinzel.modules.system.lifecycle._profile import default_profile
 from heinzel.modules.system.lifecycle._recovery_launcher import interpreter
+from heinzel.testing import scaled
 from tests.e2e._ui_service import RunningService, startup_diagnostics
 from tests.e2e.tool_install_test import sandbox, seed_uv_cache, wheel
 from tests.integration.auto_update_real_uv_test import wheel as fixture_wheel
@@ -211,18 +212,18 @@ def test_installed_supervisor_recovers_its_server_after_the_update_owner_is_kill
     assert service.recovery_interpreter() == service.recovery
     process = running.processes[-1]
     first = running.ready()
-    response = httpx.get(f"http://127.0.0.1:{port}/api/lifecycle", headers=session_headers(url), timeout=2)
+    response = httpx.get(f"http://127.0.0.1:{port}/api/lifecycle", headers=session_headers(url), timeout=scaled(2))
     assert response.status_code == 200, response.text
     assert response.json()["instance"] == first.instance
     process.kill()
-    process.communicate(timeout=3)
+    process.communicate(timeout=scaled(3))
     state = service.directory.parent
     interrupted = subprocess.run(
         [service.prefix / "bin/python", "-I", "-B", "-c", _INTERRUPT_INSTALLED_UPDATE, state, service.prefix],
         env={**sandbox.env, "HOME": str(service.home)},
         capture_output=True,
         check=False,
-        timeout=90,
+        timeout=scaled(90),
     )
     assert interrupted.returncode == -signal.SIGKILL, interrupted.stderr.decode(errors="replace")
     pending = state / "daemon/mutation-pending.json"
@@ -319,7 +320,7 @@ def test_historical_migration_recovers_interrupted_real_uv_replacement(supervise
         env={**sandbox.env, "HOME": str(service.home)},
         capture_output=True,
         check=False,
-        timeout=180,
+        timeout=scaled(180),
     )
     assert interrupted.returncode == -signal.SIGKILL, interrupted.stderr.decode(errors="replace")
     snapshot = state / "auto-update/before-update"
@@ -335,7 +336,7 @@ def test_historical_migration_recovers_interrupted_real_uv_replacement(supervise
         assert replacement.version == "999.0.0"
         assert snapshot.is_dir()
     running.processes[-1].kill()
-    running.processes[-1].communicate(timeout=3)
+    running.processes[-1].communicate(timeout=scaled(3))
     if interrupt == "recovery":
         # Fault-inject the staged worker in its own process without changing its sealed files.
         # The real launcher below must authenticate the same staging and finish the interrupted restore.
@@ -344,7 +345,7 @@ def test_historical_migration_recovers_interrupted_real_uv_replacement(supervise
             env={"HOME": str(service.home)},
             capture_output=True,
             check=False,
-            timeout=90,
+            timeout=scaled(90),
         )
         assert recovering.returncode == -signal.SIGKILL, recovering.stderr.decode(errors="replace")
         assert (state / "auto-update/after-update").is_dir()

@@ -20,6 +20,7 @@ from heinzel.heads._exposure import exposed
 from heinzel.kernel import ChatTool
 from heinzel.kernel.session._chat_tools import RESULT_LIMIT
 from heinzel.modules.system.runner.chat._service import ChatService
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -145,6 +146,7 @@ def test_a_chat_asked_for_all_tools_gets_every_tool_the_mcp_head_has_and_nothing
     }  # it can consume a human grant, never confirm/authorize directly
 
 
+@pytest.mark.timeout(10)
 def test_chat_read_uses_only_the_local_stdio_identity(kernel):
     assert json.loads(tools(kernel)["notes_authenticated_read"]()) == "mcp-stdio:private:read"
 
@@ -209,7 +211,7 @@ def test_schedule_approval_reads_the_fresh_challenge_from_the_controlling_termin
     match = re.search(r"Type exactly: ([^\r\n]+)", shown)
     assert match is not None
     os.write(master, f"{match.group(1)}\n".encode())
-    worker.join(timeout=2)
+    worker.join(timeout=scaled(2))
     os.close(master)
     os.close(slave)
     assert not worker.is_alive()
@@ -274,10 +276,10 @@ def test_schedule_approval_full_terminal_output_queue_respects_the_deadline(monk
         patcher.setattr(mcp, "_SCHEDULE_APPROVAL_TIMEOUT_SECONDS", 0.02)
         try:
             worker.start()
-            assert finished.wait(2), "approval output remained blocked by the full PTY queue"
+            assert finished.wait(scaled(2)), "approval output remained blocked by the full PTY queue"
         finally:
             os.close(master)
-            worker.join(timeout=2)
+            worker.join(timeout=scaled(2))
             os.close(slave)
     assert not worker.is_alive()
     assert outcomes == ["MCP schedule approval was not confirmed"]
@@ -332,7 +334,7 @@ def test_schedule_approval_rejects_a_wrong_terminal_challenge_and_missing_tty(mo
             pytest.fail("MCP did not display its terminal approval prompt")
         prompt.extend(os.read(master, 4096))
     os.write(master, b"no\n")
-    worker.join(timeout=2)
+    worker.join(timeout=scaled(2))
     os.close(master)
     os.close(slave)
     assert not worker.is_alive()

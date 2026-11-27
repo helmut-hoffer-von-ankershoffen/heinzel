@@ -123,10 +123,11 @@ describe("chat search", () => {
     expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
 
-  it("closes on Escape and on the Close button", async () => {
+  it("closes on Escape and on its labeled icon button", async () => {
     const { user, onClose } = setup();
     await user.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Close search")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Close search" }));
     expect(onClose).toHaveBeenCalledTimes(2);
   });

@@ -10,6 +10,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("release_chain", ROOT / "scripts/release_chain.py")
@@ -1175,7 +1177,9 @@ def test_retry_rechecks_acceptance_before_resuming_latest(tmp_path, monkeypatch,
 
 
 def git(cwd, *args):
-    done = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, check=True, timeout=60)
+    done = subprocess.run(
+        ["git", "-C", str(cwd), *args], capture_output=True, text=True, check=True, timeout=scaled(60)
+    )
     return done.stdout.strip()
 
 
@@ -1493,7 +1497,7 @@ def test_release_mode_never_grants_a_hosted_writer(tmp_path, inputs, accepted):
         capture_output=True,
         text=True,
         check=False,
-        timeout=5,
+        timeout=scaled(5),
     )
     if accepted:
         assert result.returncode == 0, result.stderr

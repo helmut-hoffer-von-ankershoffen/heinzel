@@ -15,6 +15,7 @@ from heinzel.modules.system.notify import NotifyService, NotifySettings
 from heinzel.modules.system.notify._macos import NotifierApp
 from heinzel.modules.system.notify._native import ALLOW, HEINZEL, Native
 from heinzel.modules.system.notify._service import SETTINGS_URL, STRAY_EVERY, _open, _with_command, event_route
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -401,7 +402,7 @@ def test_the_opener_starts_a_program_without_waiting(tmp_path):
             break
         import time
 
-        time.sleep(0.05)
+        time.sleep(scaled(0.05))
     assert marker.exists()
 
 

@@ -10,5 +10,8 @@
         <string>com.apple.widgetkit-extension</string>
     </dict>
     <key>HeinzelWidgetGroup</key><string>$(HEINZEL_WIDGET_GROUP)</string>
+    <key>HeinzelWidgetEnrollmentEnabled</key><string>$(HEINZEL_MAC_WIDGET_REFRESH)</string>
+    <key>HeinzelWidgetKeychainGroup</key><string>$(AppIdentifierPrefix)team.heinzel.widget</string>
+    <key>HeinzelSourceRevision</key><string>$(HEINZEL_SOURCE_REVISION)</string>
 </dict>
 </plist>

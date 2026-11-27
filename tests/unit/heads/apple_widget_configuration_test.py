@@ -22,6 +22,13 @@ REVISION = "a" * 40
 SIGNED_ENTITLEMENTS = guard.signed_entitlements
 
 
+@pytest.mark.parametrize(
+    "target", ["App/Info.plist", "App/iOS-Info.plist", "Widgets/Info.plist", "Widgets/iOS-Info.plist"]
+)
+def test_paired_products_map_source_revision(target):
+    assert guard.plist(guard.APPLE / target)[guard.SOURCE_REVISION] == "$(HEINZEL_SOURCE_REVISION)"
+
+
 @pytest.mark.skipif(sys.platform != "darwin", reason="Apple project parsing uses plutil")
 @pytest.mark.parametrize("changed", [None, guard.PROJECT, *(Path(path) for path, _ in guard.TARGETS.values())])
 def test_source_rejects_each_file_from_the_footer_omission(tmp_path, changed):
@@ -53,8 +60,11 @@ def write_plist(path, values):
     [
         ("App/iOS-Info.plist", None),
         ("App/iOS-Info.plist", ["audio"]),
-        ("App/iOS-Info.plist", ["screen-capture", "audio"]),
+        ("App/iOS-Info.plist", ["screen-capture"]),
+        ("App/iOS-Info.plist", ["screen-capture", "audio", "fetch"]),
         ("Widgets/iOS-Info.plist", ["screen-capture"]),
+        ("Widgets/iOS-Info.plist", ["audio"]),
+        ("Widgets/iOS-Info.plist", []),
     ],
 )
 def test_source_refuses_wrong_background_modes(tmp_path, target, modes):
@@ -92,7 +102,7 @@ def signed_archive(tmp_path, monkeypatch):
         if bundle == widget:
             info["NSExtension"] = {"NSExtensionPointIdentifier": "com.apple.widgetkit-extension"}
         else:
-            info["UIBackgroundModes"] = ["screen-capture"]
+            info["UIBackgroundModes"] = ["screen-capture", "audio"]
         write_plist(bundle / "Info.plist", info)
         signed[bundle] = {
             "application-identifier": private,
@@ -117,8 +127,11 @@ def signed_archive(tmp_path, monkeypatch):
         ("app", "UIBackgroundModes", None, "background capture modes"),
         ("app", "UIBackgroundModes", [], "background capture modes"),
         ("app", "UIBackgroundModes", "screen-capture", "background capture modes"),
-        ("app", "UIBackgroundModes", ["screen-capture", "audio"], "background capture modes"),
+        ("app", "UIBackgroundModes", ["screen-capture"], "background capture modes"),
+        ("app", "UIBackgroundModes", ["audio"], "background capture modes"),
+        ("app", "UIBackgroundModes", ["screen-capture", "audio", "fetch"], "background capture modes"),
         ("widget", "UIBackgroundModes", ["screen-capture"], "background capture modes"),
+        ("widget", "UIBackgroundModes", ["audio"], "background capture modes"),
         ("widget", "UIBackgroundModes", [], "background capture modes"),
         ("signed", guard.KEYCHAIN, [], "Signed private and shared Keychain"),
         ("signed", guard.GROUPS, [], "Signed widget App Group"),

@@ -13792,6 +13792,61 @@
         "title": "PluginSoundscape",
         "type": "object"
       },
+      "PluginUnpin": {
+        "description": "The exact installed plugin whose update policy would change or changed.",
+        "properties": {
+          "confirmation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Digest binding this preview to the observed installed generation.",
+            "title": "Confirmation"
+          },
+          "distribution": {
+            "description": "The installed distribution whose index pin is selected.",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "done": {
+            "description": "Whether the exact confirmed pin was removed.",
+            "title": "Done",
+            "type": "boolean"
+          },
+          "message": {
+            "description": "What happens to the current plugin and its future updates.",
+            "title": "Message",
+            "type": "string"
+          },
+          "next": {
+            "description": "Command that confirms this exact preview, if still applicable.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "version": {
+            "description": "The installed version, which the unpin leaves in place.",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "distribution",
+          "version",
+          "done",
+          "confirmation",
+          "message",
+          "next"
+        ],
+        "title": "PluginUnpin",
+        "type": "object"
+      },
       "PluginUpdate": {
         "description": "What `hz system update` did to one installed plugin.",
         "properties": {
@@ -33118,6 +33173,69 @@
           }
         },
         "summary": "Undo the connector bindings setup wrote for a module; one you changed since stays as you set it.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/plugin/unpin": {
+      "post": {
+        "description": "Remove an exact index version pin while keeping the installed plugin.\n\nWithout `confirm`, show the installed version and the exact confirmation command. The confirmed change removes\nonly its version requirement, so future ordinary updates may move it. Git, local and constrained sources refuse.",
+        "operationId": "system_plugin_unpin",
+        "parameters": [
+          {
+            "description": "Distribution name, as `hz system plugin list` shows it.",
+            "in": "query",
+            "name": "distribution",
+            "required": true,
+            "schema": {
+              "description": "Distribution name, as `hz system plugin list` shows it.",
+              "title": "Distribution",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Confirm the exact installation generation and version shown by the unpin preview.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Confirm the exact installation generation and version shown by the unpin preview.",
+              "title": "Confirm"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginUnpin"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove an exact index version pin while keeping the installed plugin.",
         "tags": [
           "system"
         ]

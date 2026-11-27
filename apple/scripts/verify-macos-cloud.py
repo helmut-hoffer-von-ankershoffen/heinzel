@@ -50,6 +50,7 @@ def verify_metadata(  # noqa: PLR0913 - decoded inputs from the three tools and 
     signed: Plist,
     certificate: bytes,
     now: datetime,
+    widget_refresh: bool = False,
 ) -> None:
     """Compare the profile's authorization to the identity and claims in the signature.
 
@@ -88,9 +89,22 @@ def verify_metadata(  # noqa: PLR0913 - decoded inputs from the three tools and 
     for entitlements in (authorized, signed):
         _require(entitlements.get(TEAM_ID, team) == team, "entitlement signing team differs")
     _require(signed.get(GROUPS) == [f"{team}.team.heinzel.apple.activity"], "signed app group differs")
+    if widget_refresh:
+        shared = f"{prefix}.team.heinzel.widget"
+        _require(info.get("HeinzelWidgetEnrollmentEnabled") == "YES", "widget enrollment differs")
+        _require(info.get("HeinzelWidgetKeychainGroup") == shared, "widget Keychain metadata differs")
+        _require(info.get("HeinzelWidgetGroup") == f"{team}.team.heinzel.apple.activity", "widget container differs")
+        _require(
+            signed.get(KEYCHAIN) == [expected_id, shared]
+            and all(_allows_group(authorized.get(KEYCHAIN), group) for group in (expected_id, shared)),
+            "signed or authorized widget Keychain group differs",
+        )
+        if bundle_id == WIDGET:
+            _require(signed.get("com.apple.security.network.client") is True, "widget network access differs")
     if bundle_id == APP:
         _require(
-            signed.get(KEYCHAIN) == [expected_id] and _allows_group(authorized.get(KEYCHAIN), expected_id),
+            widget_refresh
+            or (signed.get(KEYCHAIN) == [expected_id] and _allows_group(authorized.get(KEYCHAIN), expected_id)),
             "signed or authorized Keychain group differs",
         )
         _require(signed.get("com.apple.security.device.audio-input") is True, "signed audio access differs")
@@ -98,7 +112,7 @@ def verify_metadata(  # noqa: PLR0913 - decoded inputs from the three tools and 
         _require(signed.get("com.apple.security.app-sandbox") is True, "signed widget sandbox differs")
 
 
-def _verify_bundle(bundle: Path, bundle_id: str, team: str) -> None:
+def _verify_bundle(bundle: Path, bundle_id: str, team: str, *, widget_refresh: bool = False) -> str:
     contents = bundle / "Contents"
     profile_file = contents / "embedded.provisionprofile"
     _require(profile_file.is_file() and profile_file.stat().st_size, "no embedded provisioning profile")
@@ -119,26 +133,39 @@ def _verify_bundle(bundle: Path, bundle_id: str, team: str) -> None:
         certificate = Path(folder) / "signer"
         _output("/usr/bin/codesign", "--display", f"--extract-certificates={certificate}", str(bundle))
         leaf = certificate.with_name("signer0").read_bytes()
-    verify_metadata(bundle_id, team, info=info, profile=profile, signed=signed, certificate=leaf, now=datetime.now(UTC))
+    verify_metadata(
+        bundle_id,
+        team,
+        info=info,
+        profile=profile,
+        signed=signed,
+        certificate=leaf,
+        now=datetime.now(UTC),
+        widget_refresh=widget_refresh,
+    )
+    return str(signed[APP_ID]).partition(".")[0]
 
 
 def main() -> None:
     """Refuse a package when either Mac target has mismatched signing metadata."""
-    app_path, team = sys.argv[1:]
+    app_path, team, *refresh = sys.argv[1:]
+    _require(refresh in ([], ["YES"], ["NO"]), "expected YES or NO for widget refresh")
     _require(re.fullmatch(r"[A-Z0-9]{10}", team), "expected a signing team")
     app = Path(app_path)
     widget = app / "Contents/PlugIns/HeinzelWidgets.appex"
+    prefixes: set[str] = set()
     for bundle, bundle_id in ((app, APP), (widget, WIDGET)):
         try:
             _require(
                 not bundle.is_symlink() and bundle.resolve(strict=True).is_relative_to(app.resolve(strict=True)),
                 "signed product escapes the archive's app",
             )
-            _verify_bundle(bundle, bundle_id, team)
+            prefixes.add(_verify_bundle(bundle, bundle_id, team, widget_refresh=refresh == ["YES"]))
         except ConfigurationError as exc:
             sys.exit(f"{bundle_id}: {exc}")
         except (OSError, ValueError, plistlib.InvalidFileException, subprocess.SubprocessError):
             sys.exit(f"{bundle_id}: could not read or verify the signing metadata")
+    _require(len(prefixes) == 1, "app and widget signing prefixes differ")
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ from heinzel.kernel._approval import ApprovalConfirmation
 from heinzel.modules.heinzel._connected_read_set_approvals import ConnectedReadSetApprovals
 from heinzel.modules.heinzel._connected_read_set_reviews import ConnectedReadSetReviews
 from heinzel.modules.heinzel._connected_read_sets import ConnectedReadSets
+from heinzel.testing import scaled
 from tests.unit.modules.connected_read_set_review_test import _terms
 
 pytestmark = pytest.mark.unit
@@ -127,7 +128,7 @@ def test_two_concurrent_confirmations_do_not_approve_twice(connected):
         confirmation = ApprovalConfirmation()
         args = {"session_id": session, "request_id": "review", "review": payload, "approval_proof": proof}
         with current.local("cli"), confirmation.using("heinzel", "approve-connected-read-set", args):
-            barrier.wait(timeout=3)
+            barrier.wait(timeout=scaled(3))
             try:
                 approvals.approve(session, "review", payload, proof, confirmation)
             except HeinzelError:

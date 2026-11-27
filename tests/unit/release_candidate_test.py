@@ -16,6 +16,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("release_candidate", ROOT / "scripts/release_candidate.py")
@@ -368,7 +370,9 @@ def test_recorder_binds_real_git_tree_and_exact_project_version(tmp_path, monkey
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
 
     def git(*args):
-        return subprocess.run(["git", *args], capture_output=True, text=True, check=True, timeout=3).stdout.strip()
+        return subprocess.run(
+            ["git", *args], capture_output=True, text=True, check=True, timeout=scaled(3)
+        ).stdout.strip()
 
     git("init", "--quiet")
     git("config", "user.name", "Example Maintainer")
@@ -426,7 +430,7 @@ def test_recorder_binds_real_git_tree_and_exact_project_version(tmp_path, monkey
         )
         argv = shlex.split(line.replace('"$GITHUB_OUTPUT"', str(output)))
         assert argv[:2] == ["python3", "-I"]
-        subprocess.run(argv, cwd=tmp_path, env=env, check=True, capture_output=True, text=True, timeout=3)
+        subprocess.run(argv, cwd=tmp_path, env=env, check=True, capture_output=True, text=True, timeout=scaled(3))
     assert output.read_text() == "full_release=true\n"
     assert json.loads((tmp_path / "reports/release-candidate.json").read_text())["tree"] == tree
     assert not (cold / "uv").exists()

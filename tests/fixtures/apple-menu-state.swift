@@ -49,6 +49,23 @@ import Foundation
 
     @MainActor static func main() {
         aboutFallback()
+        precondition(!MacWorkspaceSwitchState.protectsEditor(link: "", focused: false),
+                     "empty startup must allow status-menu connections")
+        precondition(MacWorkspaceSwitchState.protectsEditor(link: "", focused: true),
+                     "a focused editor must not be displaced")
+        precondition(MacWorkspaceSwitchState.protectsEditor(link: "https://draft.example/#sign-in", focused: false),
+                     "a draft remains protected after focus leaves the field")
+        var active = MacWorkspaceSwitchState(choosingWorkspace: false, connectionPresented: false, hasEndpoint: true)
+        active.localStartFailed()
+        precondition(!active.choosingWorkspace && active.connectionPresented,
+                     "failed local startup keeps the active workspace and exposes the error")
+        var setup = MacWorkspaceSwitchState(choosingWorkspace: true, connectionPresented: false, hasEndpoint: true)
+        setup.localStartFailed()
+        precondition(setup.choosingWorkspace && !setup.connectionPresented,
+                     "an existing chooser keeps its inline startup error")
+        var empty = MacWorkspaceSwitchState(choosingWorkspace: false, connectionPresented: false, hasEndpoint: false)
+        empty.localStartFailed()
+        precondition(!empty.connectionPresented, "empty startup cannot present a sheet requiring an endpoint")
         var intent = MacConnectionIntent()
         let startup = intent.revision
         precondition(state(endpoint: false, starting: true).connectionRoute == .setup)

@@ -7,6 +7,10 @@
 set -euo pipefail
 module="$(dirname "$0")/../src/heinzel/bootstrap_pyyaml.py"
 [ -f "$module" ] || module="$(dirname "$0")/bootstrap_pyyaml.py"
+# A new plugin locks the reviewed source even when Core already uses an upstream wheel.
+if [ "${1:-}" = "--plugin-wheel-dir" ]; then
+  exec python3 -I -S "$module" build --wheel-dir "${2:?--plugin-wheel-dir needs a directory}" >/dev/null
+fi
 # `bootstrap-pyyaml.sh --wheel-dir DIR` only builds the wheel into DIR (for UV_FIND_LINKS); it installs nothing.
 if [ "${1:-}" = "--wheel-dir" ]; then
   exec python3 -I -S "$module" build --lock uv.lock --wheel-dir "${2:?--wheel-dir needs a directory}" >/dev/null

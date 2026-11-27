@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -137,7 +139,7 @@ def test_the_script_runs_isolated_with_the_standard_library_only(tmp_path):
         capture_output=True,
         text=True,
         check=False,
-        timeout=60,
+        timeout=scaled(60),
     )
     assert done.returncode == 1
     assert (

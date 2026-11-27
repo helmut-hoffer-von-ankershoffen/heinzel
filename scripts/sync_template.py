@@ -52,7 +52,11 @@ def _without_upgrade_lane(text: str) -> str:
     text = text.replace(" test-upgrade", "")
     text = re.sub(r"\nUPGRADE_RECEIPT :=[^\n]*\ntest-upgrade:.*?\n(?:\t.*\n)+", "\n", text)
     text = re.sub(r"\n  upgrade:\n.*?(?=\n  [a-z-]+:)", "", text, flags=re.DOTALL)
-    return re.sub(r"(?m)^[^\n]*# Core upgrade lane(?::[^\n]*)?\n", "", text)
+    text = re.sub(r"(?m)^[^\n]*# Core upgrade lane(?::[^\n]*)?\n", "", text)
+    text = text.replace(
+        " || github.event_name == 'pull_request' && needs.changes.outputs.upgrade != 'true' && '[]'", ""
+    )
+    return text.replace(" && needs.changes.outputs.upgrade != 'true'", "")
 
 
 def makefile() -> str:
@@ -238,9 +242,9 @@ def _without_release_candidate(text: str) -> str:
         text,
     )
     text = text.replace(
-        "    # Integration runs two sequential sessions, each still capped at 420 seconds; "
-        "allow setup and cleanup too.\n"
-        "    timeout-minutes: ${{ matrix.levels == 'integration' && 15 || 10 }}",
+        "    # Integration runs two 420-second sessions; macOS unit allows 600 seconds plus reporting and setup.\n"
+        "    timeout-minutes: ${{ (matrix.levels == 'integration' || "
+        "(contains(matrix.os, 'macos') && matrix.levels == 'unit')) && 15 || 10 }}",
         "    timeout-minutes: 10",
     )
     text = text.replace(" && needs.changes.outputs.full_ci != 'true'", "")
@@ -324,11 +328,21 @@ def _without_main_lanes(text: str) -> str:
     return text.replace(", focused-tests, macos-main]", ", focused-tests]")
 
 
+def _without_homepage_routing(text: str) -> str:
+    # Homepage routing belongs to Core. Remove its policy step as a complete YAML step;
+    # independent plugins keep their normal lint/types workload without path guards.
+    text = re.sub(r"\n      - name: Check homepage policy\n.*?(?=\n      - )", "", text, flags=re.DOTALL)
+    text = re.sub(r"(?m)^        if: needs\.changes\.outputs\.homepage_only != 'true'\n", "", text)
+    return text.replace(" && needs.changes.outputs.homepage_only != 'true'", "")
+
+
 def ci_workflow() -> str:
     """The CI workflow without the template job; the build check looks for the plugin package."""
     text = _without_focused_admission(
         _without_main_lanes(
-            _without_core_coverage_floor((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+            _without_core_coverage_floor(
+                _without_homepage_routing((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+            )
         )
     )
     # Batch admission is core queue coordination; plugins retain their complete workflow.

@@ -1,7 +1,7 @@
-// `hz org show`: your profile, and the command that completes or changes it.
+// `hz org show`: your profile, with links to its settings.
 import { Link, useNavigate } from "react-router";
 import { useProfile, useSetting } from "@/api/queries";
-import { CopyCommand, Loaded, Page } from "@/components/common";
+import { Loaded, Page } from "@/components/common";
 import { ErrorScreen } from "@/components/ErrorScreen";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -33,17 +33,16 @@ export function Profile() {
                   <div key={label} className="contents">
                     <dt className="text-muted-foreground">{t(label)}</dt>
                     <dd>
-                      {value ?? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="-ml-2.5 text-muted-foreground"
-                          onClick={() => navigate(`?settings=&q=${key}`)}
-                        >
-                          {t("settings.notSet")}
-                        </Button>
-                      )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className={value ? "-ml-2.5" : "-ml-2.5 text-muted-foreground"}
+                        aria-label={t("profile.editField", { field: t(label), value: value || t("settings.notSet") })}
+                        onClick={() => navigate(`?settings=${key === "team.name" ? "team" : "you"}&q=${key}`)}
+                      >
+                        {value || t("settings.notSet")}
+                      </Button>
                     </dd>
                   </div>
                 ))}
@@ -54,7 +53,9 @@ export function Profile() {
                 </output>
               )}
               <div className="mt-4">
-                <CopyCommand command={me.fix} />
+                <Button variant="outline" onClick={() => navigate("?settings=you")}>
+                  {t("profile.edit")}
+                </Button>
               </div>
             </Card>
           );

@@ -20,7 +20,7 @@ def test_system_audio_permission_description_exists():
 def test_background_capture_is_ios_app_only():
     with (ROOT / "apple/App/iOS-Info.plist").open("rb") as source:
         info = plistlib.load(source)
-    assert info["UIBackgroundModes"] == ["screen-capture"]
+    assert info["UIBackgroundModes"] == ["screen-capture", "audio"]
     assert info["NSScreenCaptureUsageDescription"].strip()
     for target in ("App/Info.plist", "Widgets/Info.plist", "Widgets/iOS-Info.plist"):
         with (ROOT / "apple" / target).open("rb") as source:

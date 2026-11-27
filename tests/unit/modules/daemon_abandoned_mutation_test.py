@@ -17,6 +17,7 @@ from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon import _abandoned_mutation as abandoned
 from heinzel.modules.system.daemon._abandoned_mutation import host_boot, marker_token_matches, parse_marker
 from heinzel.modules.system.daemon._runtime import lock
+from heinzel.testing import scaled
 from tests.fixtures.daemon_manager import RecordedManager as Runner
 from tests.fixtures.daemon_manager import record_tool
 
@@ -113,7 +114,7 @@ def _receipts(service: DaemonService) -> list[dict]:
 
 def _dead_pid() -> int:
     child = subprocess.Popen([sys.executable, "-c", "pass"])
-    child.wait(timeout=10)
+    child.wait(timeout=scaled(10))
     return child.pid
 
 
@@ -180,7 +181,7 @@ def test_active_handover_survives_owner_killed_before_scope_commit(service, tmp_
             str(settings_file),
         ],
         check=False,
-        timeout=20,
+        timeout=scaled(20),
     )
     assert child.returncode == -signal.SIGKILL
     request_path = service.state_dir / "handover-request.json"
@@ -229,7 +230,7 @@ def test_a_live_owner_in_the_same_boot_keeps_the_marker(service):
             service.restart()
     finally:
         child.kill()
-        child.wait(timeout=10)
+        child.wait(timeout=scaled(10))
     assert _marker(service).exists()
     assert not _receipts(service)
 

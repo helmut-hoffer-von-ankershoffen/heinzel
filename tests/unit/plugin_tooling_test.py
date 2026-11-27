@@ -59,7 +59,7 @@ def test_failed_hash_locked_install_never_executes_toolkit(monkeypatch):
             name, digest = original[1].split(" @ ")[0], original[1].rsplit("--hash=", 1)[1]
             assert installed[1] != original[1]
             assert installed[1].startswith(f"{name} @ file://")
-            assert installed[1].endswith("/heinzel_plugin_tools-0.4.1-py3-none-any.whl --hash=" + digest)
+            assert installed[1].endswith("/heinzel_plugin_tools-0.4.2-py3-none-any.whl --hash=" + digest)
             raise subprocess.CalledProcessError(1, command)
         assert command[1] == "venv", "only environment creation may precede verified installation"
         return SimpleNamespace(returncode=0)
@@ -159,11 +159,15 @@ def test_local_candidate_with_option_shaped_name_becomes_an_absolute_path(tmp_pa
     assert tooling.candidate_wheel(str(candidate), tmp_path) == candidate.resolve()
 
 
-def test_toolkit_runs_with_its_environment_first_on_path(monkeypatch):
+@pytest.mark.parametrize("wrapper", [None, "/reviewed-wrapper/uv"])
+def test_toolkit_runs_with_its_environment_first_on_path(monkeypatch, wrapper):
     """The toolkit finds `typos` and its interpreter in the disposable environment, as under `uv run`."""
     runs = []
     monkeypatch.setattr(tooling.shutil, "which", lambda _: "/fictional/uv")
     monkeypatch.setenv("PATH", "/usr/bin")
+    monkeypatch.delenv("PLUGIN_TEST_UV", raising=False)
+    if wrapper:
+        monkeypatch.setenv("PLUGIN_TEST_UV", wrapper)
     monkeypatch.setattr(
         tooling.subprocess,
         "run",
@@ -172,7 +176,8 @@ def test_toolkit_runs_with_its_environment_first_on_path(monkeypatch):
     assert tooling.run("hz-plugin", ["check"]) == 0
     command, kwargs = runs[-1]
     environment = Path(command[0]).parent.parent
-    assert kwargs["env"]["PATH"] == f"{environment / 'bin'}{tooling.os.pathsep}/usr/bin"
+    prefix = f"{Path(wrapper).parent}{tooling.os.pathsep}" if wrapper else ""
+    assert kwargs["env"]["PATH"] == f"{prefix}{environment / 'bin'}{tooling.os.pathsep}/usr/bin"
     assert kwargs["env"]["VIRTUAL_ENV"] == str(environment)
 
 
@@ -197,7 +202,7 @@ class FakeRelease:
 
         self.server = LoopbackThreadingHTTPServer(("127.0.0.1", 0), Handler)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
-        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/heinzel_plugin_tools-0.4.1-py3-none-any.whl"
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/heinzel_plugin_tools-0.4.2-py3-none-any.whl"
 
     def close(self):
         self.server.shutdown()
@@ -294,7 +299,7 @@ def test_authenticated_route_uses_gh_release_download_for_the_pinned_asset(monke
 
     def gh(command, **kwargs):
         commands.append(command)
-        (Path(command[command.index("-D") + 1]) / "heinzel_plugin_tools-0.4.1-py3-none-any.whl").write_bytes(WHEEL)
+        (Path(command[command.index("-D") + 1]) / "heinzel_plugin_tools-0.4.2-py3-none-any.whl").write_bytes(WHEEL)
         return SimpleNamespace(returncode=0, stdout="")
 
     monkeypatch.setattr(tooling.subprocess, "run", gh)
@@ -303,11 +308,11 @@ def test_authenticated_route_uses_gh_release_download_for_the_pinned_asset(monke
     assert commands[0][1:8] == [
         "release",
         "download",
-        "tools-v0.4.1",
+        "tools-v0.4.2",
         "-R",
         "helmut-hoffer-von-ankershoffen/heinzel-plugins",
         "-p",
-        "heinzel_plugin_tools-0.4.1-py3-none-any.whl",
+        "heinzel_plugin_tools-0.4.2-py3-none-any.whl",
     ]
 
 

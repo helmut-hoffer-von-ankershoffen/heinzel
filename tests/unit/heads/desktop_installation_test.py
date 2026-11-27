@@ -18,6 +18,7 @@ from rich.console import Console
 
 from heinzel.heads import _desktop_installation as desktop
 from heinzel.heads.cli import _app
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -269,7 +270,7 @@ def test_sigkill_leaves_recoverable_transaction(operation, boundary, local_insta
     process = subprocess.run(
         [sys.executable, "-c", _CRASH_SCRIPT, operation, boundary, str(executable), str(tmp_path)],
         check=False,
-        timeout=5,
+        timeout=scaled(5),
     )
     assert process.returncode == -signal.SIGKILL
     assert (config / desktop._JOURNAL).is_file()
@@ -299,7 +300,7 @@ def test_recovery_leaves_replaced_foreign_bundle_untouched(local_installation, t
     process = subprocess.run(
         [sys.executable, "-c", _CRASH_SCRIPT, "update", "1", str(executable), str(tmp_path)],
         check=False,
-        timeout=5,
+        timeout=scaled(5),
     )
     assert process.returncode == -signal.SIGKILL
     binding = (config / desktop._BINDING).stat().st_ino
@@ -336,7 +337,7 @@ def test_lockf_launch_lease_defers_update_and_uninstall(local_installation, tmp_
                 desktop.uninstall_desktop(home=tmp_path)
             assert (bundle / "release").read_text() == "1.0.0"
         finally:
-            launcher.communicate(timeout=5)
+            launcher.communicate(timeout=scaled(5))
     assert desktop.install_desktop("1.0.1", executable, update_only=True, home=tmp_path) == "updated"
 
 
@@ -345,7 +346,9 @@ def test_native_quarantine_and_process_detection(tmp_path):
     bundle = tmp_path / desktop.BUNDLE_NAME
     bundle.mkdir()
     desktop.mark_quarantined(bundle)
-    quarantine = subprocess.check_output(["/usr/bin/xattr", "-p", "com.apple.quarantine", str(bundle)], timeout=5)
+    quarantine = subprocess.check_output(
+        ["/usr/bin/xattr", "-p", "com.apple.quarantine", str(bundle)], timeout=scaled(5)
+    )
     assert quarantine.startswith(b"0081;")
     # A link, never a copy: macOS kills a copied platform binary (launch constraints) and shows a "damaged app"
     # dialog on the desktop. Through the link the system binary runs where it lives, and `ps` names the link's path.

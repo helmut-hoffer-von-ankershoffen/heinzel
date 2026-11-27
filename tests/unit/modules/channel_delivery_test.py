@@ -10,6 +10,7 @@ from heinzel.kernel._approval import ApprovalConfirmation
 from heinzel.modules.heinzel import _channel_delivery
 from heinzel.modules.heinzel._captured_write_host import CapturedWriteHost
 from heinzel.modules.heinzel._channel_delivery import ChannelDelivery
+from heinzel.testing import scaled
 from tests.unit.modules.captured_write_host_test import _setup
 
 pytestmark = pytest.mark.unit
@@ -324,7 +325,7 @@ def test_a_second_consumer_does_not_recover_an_active_claim(flow):
         assert flow.service._events(terms.session_id, "channel.closed", terms.request_id) == []
         thread.start()
         try:
-            assert finished.wait(1)
+            assert finished.wait(scaled(1))
             if errors:
                 raise errors[0]
             assert counts == [0]
@@ -332,7 +333,7 @@ def test_a_second_consumer_does_not_recover_an_active_claim(flow):
             assert flow.channel.settlements == []
         finally:
             flow.provider.release.set()
-            thread.join(1)
+            thread.join(scaled(1))
 
     flow.provider.before_write = while_claim_active
     with flow.current.local("daemon"):

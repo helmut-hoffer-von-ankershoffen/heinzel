@@ -32,6 +32,7 @@ from heinzel.kernel.ai._ai_models import (
     model_for_level,
 )
 from heinzel.kernel.ai._capabilities import declared_unsupported
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -218,7 +219,7 @@ class Flaky:
             msg = "proxy down"
             raise RuntimeError(msg)
         if self.mode == "stall":
-            self.release.wait(5)
+            self.release.wait(scaled(5))
         if self.mode == "junk":
             return "nope"  # type: ignore[return-value]
         if self.mode == "rows":
@@ -238,17 +239,17 @@ def test_listing_keeps_the_last_good_list_when_the_plugin_fails_or_stalls(monkey
     assert [o.id for o in offers] == ["one", "two"]
     assert note == "its model list failed (RuntimeError: proxy down); showing the last list"
     flaky.mode = "stall"
-    offers, note = list_offers(source, timeout=0.05)
+    offers, note = list_offers(source, timeout=0.05)  # unscaled: the product limit, named in the note
     assert [o.id for o in offers] == ["one", "two"]
     assert note.startswith("its model list took longer than 0.05s")
     calls = flaky.calls
-    offers, note = list_offers(source, timeout=0.05)
+    offers, note = list_offers(source, timeout=0.05)  # unscaled: the product limit
     assert flaky.calls == calls, "one call in flight per plugin: a second caller waits for it"
     hung = [t for t in threading.enumerate() if t.name == "ai-models-flaky-test"]
     assert len(hung) == 1
     assert hung[0].daemon, "a hung plugin never blocks exit"
     flaky.release.set()
-    hung[0].join(5)
+    hung[0].join(scaled(5))
     junk = Flaky()
     junk.mode = "junk"
     offers, note = list_offers(_source(junk, name="never-good"))

@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaSoundscapeView } from "@/api/client";
+import { registerSlot, resetDock, setDocked } from "./dock";
 import { guestRequest, StreamPlayer } from "./StreamPlayer";
 import { resetSound } from "./store";
 
@@ -35,9 +36,124 @@ afterEach(() => {
   Reflect.deleteProperty(window, "heinzelDesktop");
   vi.restoreAllMocks();
   resetSound();
+  resetDock();
 });
 
 describe("desktop player guest", () => {
+  it.each([false, true])(
+    "keeps the sub-200 floating provider and fallback keyboard reachable (guest=%s)",
+    async (native) => {
+      const player = vi.fn(async (_request: Record<string, unknown>) => ({
+        status: "ready",
+        ready: true,
+        state: 1,
+        error: false,
+      }));
+      if (native) desktop(player);
+      const width = window.innerWidth;
+      const slot = document.createElement("div");
+      document.body.append(slot);
+      act(() => registerSlot(slot));
+      const view = render(
+        <StreamPlayer soundscape={soundscape} stream={stream} level={{ gain: 0.5, seconds: 0, playing: true }} />,
+      );
+      const provider = native ? screen.getByRole("img", { name: "FM player" }) : screen.getByTitle("FM player");
+      vi.spyOn(provider, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 200, 200));
+      const card = provider.closest("section") as HTMLElement;
+      if (native) await waitFor(() => expect(player).toHaveBeenCalledWith({ action: "play" }));
+      try {
+        act(() => setDocked(false));
+        for (const available of [199, 160, 96]) {
+          Object.defineProperty(window, "innerWidth", { configurable: true, value: available });
+          fireEvent(window, new Event("resize"));
+          expect(card).toHaveStyle({ width: `${available}px`, overflow: "auto" });
+          expect(card.firstElementChild).toHaveStyle({ minWidth: "200px" });
+          expect(provider).toHaveClass("min-h-[200px]", "min-w-[200px]");
+          expect(card).toHaveAttribute("tabindex", "0");
+          card.focus();
+          expect(card).toHaveFocus();
+          fireEvent.keyDown(card, { key: "Home" });
+          fireEvent.keyDown(card, { key: "ArrowRight" });
+          expect(card.scrollLeft).toBe(16);
+          fireEvent.keyDown(card, { key: "ArrowLeft" });
+          expect(card.scrollLeft).toBe(0);
+          Object.defineProperty(card, "scrollWidth", { configurable: true, value: 200 });
+          fireEvent.keyDown(card, { key: "End" });
+          expect(card.scrollLeft).toBe(200);
+          const help = screen.getByRole("button", { name: "Playback or sign-in trouble?" });
+          act(() => help.focus());
+          fireEvent.keyDown(help, { key: "Tab" });
+          expect(
+            screen.getByRole("button", { name: native ? "Copy YouTube link" : "Use YouTube sign-in" }),
+          ).toHaveFocus();
+          fireEvent.keyDown(help, { key: "Escape" });
+          expect(provider.isConnected).toBe(true);
+        }
+        act(() => setDocked(true));
+        expect(card).toHaveAttribute("data-dock", "docked");
+        expect(card).not.toHaveAttribute("tabindex");
+        expect((card.firstElementChild as HTMLElement).style.length).toBe(0);
+        act(() => setDocked(false));
+        expect(card).toHaveAttribute("tabindex", "0");
+        if (native) {
+          // A native guest cannot be clipped like an iframe. The bridge hides it, leaving header recovery controls.
+          expect(player).toHaveBeenCalledWith({ action: "hide" });
+          expect(player.mock.calls.filter(([request]) => request.action === "open")).toHaveLength(1);
+          expect(player).not.toHaveBeenCalledWith({ action: "pause" });
+          expect(player).not.toHaveBeenCalledWith({ action: "close" });
+          expect(document.querySelectorAll("iframe")).toHaveLength(0);
+        } else expect(document.querySelectorAll("iframe")).toHaveLength(1);
+        Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+        fireEvent(window, new Event("resize"));
+        expect(card).not.toHaveAttribute("tabindex");
+        act(() => setDocked(true));
+        expect(provider.closest("section")).toBe(card);
+        expect((card.firstElementChild as HTMLElement).style.length).toBe(0);
+      } finally {
+        Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+        view.unmount();
+        act(() => registerSlot(null));
+        slot.remove();
+      }
+    },
+  );
+
+  it("retains the guest and its controls through expansion and return", async () => {
+    const player = vi.fn(async (_request: Record<string, unknown>) => ({
+      status: "ready",
+      ready: true,
+      state: 1,
+      error: false,
+    }));
+    desktop(player);
+    const slot = document.createElement("div");
+    document.body.append(slot);
+    act(() => registerSlot(slot));
+    const view = render(
+      <StreamPlayer soundscape={soundscape} stream={stream} level={{ gain: 0.5, seconds: 0, playing: true }} />,
+    );
+    const surface = screen.getByRole("img", { name: "FM player" });
+    const controls = screen.getByRole("button", { name: "Playback or sign-in trouble?" });
+    await waitFor(() => expect(player).toHaveBeenCalledWith({ action: "play" }));
+    act(() => setDocked(false));
+    const originalWidth = window.innerWidth;
+    for (const width of [200, 201, 217, 390]) {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+      fireEvent(window, new Event("resize"));
+      expect(screen.getByRole("img", { name: "FM player" })).toBe(surface);
+    }
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
+    act(() => setDocked(true));
+    expect(screen.getByRole("img", { name: "FM player" })).toBe(surface);
+    expect(screen.getByRole("button", { name: "Playback or sign-in trouble?" })).toBe(controls);
+    expect(player.mock.calls.filter(([request]) => request.action === "open")).toHaveLength(1);
+    expect(player).not.toHaveBeenCalledWith({ action: "close" });
+    expect(player).not.toHaveBeenCalledWith({ action: "pause" });
+    view.unmount();
+    act(() => registerSlot(null));
+    slot.remove();
+  });
+
   it("opens the video in the desktop guest instead of an iframe, starts silent, then fades and pauses by bridge", async () => {
     const player = vi.fn(async (_request: Record<string, unknown>) => ({
       status: "ready",

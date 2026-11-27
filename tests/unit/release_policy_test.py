@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -34,7 +36,7 @@ def test_committed_manifest_matches_its_regeneration_byte_for_byte(release_polic
 
 
 def _tracked() -> list[str]:
-    run = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, check=True, timeout=30)
+    run = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, check=True, timeout=scaled(30))
     return [path for path in run.stdout.decode().split("\0") if path]
 
 
@@ -45,7 +47,13 @@ def test_ci_checks_the_manifest_through_make_lint(release_policy):
     lint = makefile[makefile.index("LINT := ") : makefile.index("TYPES := ")]
     assert step in lint
     jobs = yaml.safe_load((ROOT / release_policy.WORKFLOW).read_text(encoding="utf-8"))["jobs"]
-    assert next(step for step in jobs["lint"]["steps"] if step.get("run") == "make lint").get("if") is None
+    steps = jobs["lint"]["steps"]
+    assert next(step for step in steps if step.get("run") == "make lint").get("if") == (
+        "needs.changes.outputs.homepage_only != 'true'"
+    )
+    homepage = next(step for step in steps if step.get("name") == "Check homepage policy")
+    assert homepage["if"] == "needs.changes.outputs.homepage_only == 'true'"
+    assert "uv run --no-build --script scripts/release_policy.py --check" in homepage["run"].splitlines()
     template = (ROOT / "template/Makefile").read_text(encoding="utf-8")
     assert "release_policy" not in template  # plugins have no Core release policy
 

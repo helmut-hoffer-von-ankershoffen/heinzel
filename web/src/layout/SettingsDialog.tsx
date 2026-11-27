@@ -118,7 +118,13 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
   // Deprecated settings are never shown: hz migrates them, and doctor names the fix when one is still set.
   const settings = report.settings.filter((setting) => {
     const schema = setting.json_schema as JsonSchema | null | undefined;
-    return !schema?.deprecated && !schema?.["x-hidden"] && (expert || !schema?.["x-expert"]);
+    // MCP has a dedicated switch and token management; its schema row would offer the same switch twice.
+    return (
+      !(setting.section === "hz" && setting.key === "mcp_http") &&
+      !schema?.deprecated &&
+      !schema?.["x-hidden"] &&
+      (expert || !schema?.["x-expert"])
+    );
   });
   const groups = [...new Set(settings.map((setting) => group(setting.section)))];
   const nav = settingsNav(groups, loadedPlugins(plugins), navigation.data ?? []);

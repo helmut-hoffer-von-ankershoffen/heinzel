@@ -50,11 +50,14 @@ The device user chooses what to share. Test on a physical device by starting ano
 intended content in the picker, checking that the visualizer reacts, and then stopping sharing. Apple's
 [iOS capture sample](https://developer.apple.com/documentation/screencapturekit/capturing-screen-content-on-ios)
 requires the `screen-capture` background mode to continue a full-display stream when its app is backgrounded; this
-app declares that mode only for its iOS app target. The native stream can continue while the app is backgrounded;
+app declares that mode only for its iOS app target, alongside `audio` for background playback.
+The native stream can continue while the app is backgrounded;
 the visualizer draws when visible. Background survival and signal recovery still require physical-device
-acceptance. This does not enable microphone capture or background audio playback. Before uploading an archive,
-verify the resolved app plist contains exactly `UIBackgroundModes = [screen-capture]` and the widget declares no
+acceptance. Microphone capture still requires its existing permission. Before uploading an archive,
+verify the resolved app plist contains exactly `UIBackgroundModes = [screen-capture, audio]` and the widget declares no
 background modes; preserve enrollment, signed groups and the exact build/source checks.
+Both Mac and iOS app/widget source plists map `HeinzelSourceRevision` to `$(HEINZEL_SOURCE_REVISION)`
+so paired artifacts can be checked against the same source commit.
 
 For a signed iPhone or iPad build, enable Associated Domains for the app ID and
 build with `HEINZEL_IOS_ENTITLEMENTS=App/UniversalLinks.entitlements HEINZEL_HTTPS_LINKS=YES`.

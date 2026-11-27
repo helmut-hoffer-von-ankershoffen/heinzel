@@ -2,6 +2,7 @@
 
 import pytest
 
+from heinzel.testing import scaled
 from tests.e2e.conftest import copy_managed_installation
 
 pytestmark = pytest.mark.unit
@@ -84,7 +85,7 @@ def system_runner(tmp_path, monkeypatch):
         assert options["check"]
         if action == "dir":
             if probe.barrier is not None:
-                probe.barrier.wait(timeout=2)
+                probe.barrier.wait(timeout=scaled(2))
             return CompletedProcess(args, 0, f"{absent}\n")
         assert env["HOME"] == str(seed / "home")
         assert env["UV_PYTHON_INSTALL_DIR"] == str(directory)
@@ -120,7 +121,7 @@ def test_system_runner_without_managed_directory_provisions_shared_exact_patch_o
             workers.submit(managed_source, "3.15.2", system_runner.runner, system_runner.shared, {"UV_PYTHON": "other"})
             for _ in range(2)
         ]
-        assert first.result(timeout=2) == second.result(timeout=2) == system_runner.interpreter
+        assert first.result(timeout=scaled(2)) == second.result(timeout=scaled(2)) == system_runner.interpreter
     assert len(system_runner.installs) == 1
     assert not system_runner.absent.exists()
 

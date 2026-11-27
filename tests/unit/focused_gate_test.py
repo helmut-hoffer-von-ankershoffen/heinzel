@@ -872,6 +872,7 @@ SELECTED = {
     "contracts": True,
     "electron": True,
     "plugins": False,
+    "upgrade": True,
     "release": False,
 }
 
@@ -882,17 +883,67 @@ def selector_log(selected):
 
 def test_selector_output_is_read_strictly(focused_gate):
     assert focused_gate.selector_output(selector_log(SELECTED).encode()) == SELECTED
+    legacy = {key: value for key, value in SELECTED.items() if key != "upgrade"}
+    assert focused_gate.selector_output(selector_log(legacy).encode()) == legacy
+    assert focused_gate.selected_pr_inventory(legacy) == focused_gate.selected_pr_inventory(SELECTED)
+    homepage = {**SELECTED, "homepage_only": True}
+    assert focused_gate.selector_output(selector_log(homepage).encode()) == homepage
     lines = selector_log(SELECTED).splitlines(keepends=True)
     for invalid in (
         b"",
         "".join(lines[1:]).encode(),  # a key is missing
         (selector_log(SELECTED) + lines[0]).encode(),  # a key is repeated
         selector_log({**SELECTED, "extra": True}).encode(),
-        selector_log({**SELECTED, "upgrade": False}).encode(),  # obsolete evidence could omit required jobs
+        selector_log({key: value for key, value in SELECTED.items() if key != "plugins"}).encode(),
         selector_log(SELECTED).replace("core=true", "core=maybe").encode(),
+        selector_log({**SELECTED, "homepage_only": False}).encode(),
+        selector_log(homepage).replace("homepage_only=true", "homepage_only=maybe").encode(),
     ):
         with pytest.raises(focused_gate.CandidateError, match="selector output"):
             focused_gate.selector_output(invalid)
+
+
+HOMEPAGE_SELECTED = {
+    **SELECTED,
+    "homepage_only": True,
+    "site_only": True,
+    "contracts": False,
+    "electron": False,
+    "upgrade": False,
+}
+
+
+@pytest.mark.parametrize("core", [False, True])
+def test_homepage_inventory_matches_only_the_structural_and_site_jobs(focused_gate, core):
+    inventory = focused_gate.selected_pr_inventory({**HOMEPAGE_SELECTED, "core": core})
+    assert {name for name, status in inventory.items() if status == "success"} == {
+        "Main batch admission",
+        "Changed paths",
+        "Conventional commits",
+        "Dependency review",
+        "Dependency audit",
+        "Lint, contracts and types",
+        "Secret scan",
+        "Site tests",
+        "Sonar ratings",
+        "CI OK",
+    }
+    assert all(
+        inventory[name] == "skipped"
+        for name in (
+            "Build",
+            "Coverage floor",
+            "Plugin SDK candidate",
+            *focused_gate.SKIPPED_TEMPLATES.values(),
+        )
+    )
+    assert not any("ubuntu-24.04" in name or "macos-latest" in name for name in inventory)
+
+
+@pytest.mark.parametrize("key", ["site_only", "contracts", "electron", "notifier", "plugins", "release"])
+def test_homepage_inventory_refuses_contradictory_selector_flags(focused_gate, key):
+    with pytest.raises(focused_gate.CandidateError, match="contradictory homepage"):
+        focused_gate.selected_pr_inventory({**HOMEPAGE_SELECTED, key: not HOMEPAGE_SELECTED[key]})
 
 
 def test_selected_inventory_matches_a_real_path_selected_run(focused_gate):
@@ -936,22 +987,24 @@ def test_selected_inventory_follows_each_selector(focused_gate):
             "macos_full": False,
             "contracts": False,
             "electron": False,
+            "upgrade": False,
         }
     )
     assert surface["Lint, contracts and types"] == surface["macOS-specific tests"] == "success"
     assert {surface[n] for n in ("Build", "Coverage", "Dependency audit")} == {"skipped"}
     assert surface["Plugin SDK candidate"] == "success"
-    assert surface["Upgrade in place (published to candidate, Linux)"] == "success"
-    ordinary = focused_gate.selected_pr_inventory(
-        {**SELECTED, "macos_full": False, "contracts": False, "electron": False}
-    )
+    assert surface["Upgrade in place (published to candidate, Linux)"] == "skipped"
+    quiet = focused_gate.selected_pr_inventory({**SELECTED, "upgrade": False})
+    assert quiet["Upgrade in place (published to candidate, Linux)"] == "skipped"
+    assert not [name for name in quiet if name.startswith("Test (macos")]
+    ordinary = focused_gate.selected_pr_inventory(SELECTED)
     assert ordinary["Upgrade in place (published to candidate, Linux)"] == "success"
     assert {name: result for name, result in ordinary.items() if name.startswith("Test (")} == {
         f"Test ({os}, Python 3.15, {level})": "success"
         for os in ("ubuntu-24.04", "macos-latest")
         for level in ("unit", "integration")
     }
-    release = focused_gate.selected_pr_inventory({**SELECTED, "release": True})
+    release = focused_gate.selected_pr_inventory({**SELECTED, "release": True, "upgrade": False})
     assert release == {**focused_gate.expected_jobs("pull_request"), "Release candidate source": "skipped"}
 
 
@@ -1050,7 +1103,9 @@ def test_full_pr_inventory_binds_existing_checkout_without_a_focused_plan(focuse
         with pytest.raises(focused_gate.CandidateError):
             focused_gate.full_pr_jobs(judge, source, base, lambda _path: log, authorization)
     else:
-        assert focused_gate.full_pr_jobs(judge, source, base, lambda _path: log, authorization) == jobs
+        workload = focused_gate.full_pr_jobs(judge, source, base, lambda _path: log, authorization)
+        assert workload.jobs == jobs
+        assert not workload.homepage_only
         assert set(checked) == {name for name, conclusion in inventory.items() if conclusion == "success"}
 
 
@@ -1069,7 +1124,7 @@ def test_full_pr_verdict_keeps_original_coverage_and_final_source_guards(
 
     def full_jobs(*args):
         received.append(args[-1])
-        return [lane]
+        return focused_gate.FullPrWorkload([lane], homepage_only=False)
 
     monkeypatch.setattr(focused_gate, "full_pr_jobs", full_jobs)
     authorization = {"kind": focused_gate.FULL_PR_KIND} if reviewed or defect == "duplicate" else None
@@ -1123,6 +1178,70 @@ def test_full_pr_verdict_keeps_original_coverage_and_final_source_guards(
         result = focused_gate.verify(gate, run, manifest, logs.__getitem__, slots=slots)
         assert result == "Whole-project coverage measured by full PR CI"
     assert received == ([] if defect in {"rerun", "unknown-kind", "duplicate"} else [authorization])
+
+
+@pytest.mark.parametrize(
+    ("path", "valid"),
+    [
+        ("docs/assets/website/album/Hero 2.webp", True),
+        ("docs/overrides/partials/Frohe Nächte.html", True),
+        ("docs/assets/website/bad\nname.webp", False),
+        ("src/heinzel/kernel/demo.py", False),
+    ],
+)
+def test_full_homepage_pr_binds_the_selector_to_the_authenticated_git_diff(focused_gate, monkeypatch, path, valid):
+    from types import SimpleNamespace
+
+    base, head, merge = (letter * 40 for letter in "abc")
+    source = SimpleNamespace(
+        run={"id": 123, "event": "pull_request", "pull_requests": [{"base": {"sha": base}}]},
+        source=SimpleNamespace(head=head),
+        commit=merge,
+    )
+    jobs = [
+        {"id": index, "name": name, "conclusion": conclusion}
+        for index, (name, conclusion) in enumerate(focused_gate.selected_pr_inventory(HOMEPAGE_SELECTED).items())
+    ]
+    log = (
+        f"2026-11-16T11:36:16Z [command]/usr/bin/git log -1 --format=%H\n2026-11-16T11:36:16Z {merge}\n"
+        + selector_log(HOMEPAGE_SELECTED)
+    ).encode()
+    monkeypatch.setattr(focused_gate, "full_pr_inputs", lambda *_: None)
+    monkeypatch.setattr(focused_gate, "jobs_for", lambda *_: jobs)
+    monkeypatch.setattr(focused_gate, "_check", lambda *_: None)
+    monkeypatch.setattr(
+        focused_gate,
+        "git",
+        lambda *args: (
+            f"{merge} {base} {head}".encode()
+            if args[0] == "rev-list"
+            else f"{path}\0".encode()
+            if args[0] == "diff"
+            else (
+                b"name: Run the complete CI workload without an external admission plan\n"
+                b"run: echo 'selected=true' >> \"$GITHUB_OUTPUT\""
+            )
+        ),
+    )
+    if valid:
+        assert focused_gate.full_pr_jobs(SimpleNamespace(), source, base, lambda _: log).homepage_only
+    else:
+        with pytest.raises(focused_gate.CandidateError, match="outside its presentation-only paths"):
+            focused_gate.full_pr_jobs(SimpleNamespace(), source, base, lambda _: log)
+
+
+def test_homepage_verdict_requires_site_and_policy_instead_of_a_coverage_artifact(
+    focused_gate, first_attempt, monkeypatch
+):
+    gate, run, _manifest, lane, rows, _logs, _git_rows = first_attempt
+    lane.update(name="Coverage", conclusion="skipped")
+    monkeypatch.setattr(
+        focused_gate, "full_pr_jobs", lambda *_: focused_gate.FullPrWorkload([lane], homepage_only=True)
+    )
+    monkeypatch.setattr(type(gate), "github", lambda _gate, path: rows[path])
+    assert focused_gate.verify(gate, run, "{}", lambda _: pytest.fail("homepage must not read coverage artifacts")) == (
+        "Homepage presentation scope passed site and policy checks"
+    )
 
 
 def test_full_pr_refuses_changes_to_each_protected_execution_input(focused_gate, monkeypatch):
@@ -1235,5 +1354,7 @@ def test_the_selector_prints_every_key_the_merge_gate_derives_its_inventory_from
     assert printed
     assert {*printed["keys"].split("|"), "release"} == keys
     assert 'echo "selector-output: release=${FULL_RELEASE:-false}"' in step["run"]
+    assert 'if [ "$upgrade" = false ]; then echo "selector-output: upgrade=false"; fi' in step["run"]
+    assert 'if [ "$homepage_only" = true ]; then echo "selector-output: homepage_only=true"; fi' in step["run"]
     for key in printed["keys"].split("|"):  # each is a real output of the same step
         assert f'echo "{key}=' in step["run"]

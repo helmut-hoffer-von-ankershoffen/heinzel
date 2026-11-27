@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from heinzel.testing import scaled
 from tests.e2e.daemon_legacy_recovery_test import handover_evidence
 
 pytestmark = pytest.mark.unit
@@ -195,7 +196,7 @@ else:
         [sys.executable, "-I", "-c", script, str(source), str(tmp_path)],
         capture_output=True,
         text=True,
-        timeout=5,
+        timeout=scaled(5),
         check=False,
     )
     assert result.returncode == 0, result.stderr

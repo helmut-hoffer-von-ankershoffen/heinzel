@@ -106,11 +106,14 @@ jobs:
       core: ${{ steps.paths.outputs.core }}
       plugins: ${{ steps.paths.outputs.plugins }}
       site_only: ${{ steps.paths.outputs.site_only }}
+      homepage_only: ${{ steps.paths.outputs.homepage_only }}
       surface_only: ${{ steps.paths.outputs.surface_only }}
+      upgrade: ${{ steps.paths.outputs.upgrade }} # Core upgrade lane
       macos_full: ${{ steps.paths.outputs.macos_full }}
       scheduled_maintenance: ${{ steps.maintenance.outputs.selected }}
       full_release: ${{ steps.release.outputs.full_release }}
-      full_ci: ${{ steps.full.outputs.selected }}
+      # Select the normal app workload once; site and policy jobs have their own gates.
+      full_ci: ${{ steps.full.outputs.selected == 'true' && steps.paths.outputs.homepage_only != 'true' }}
       # Keep the legacy skipped job names for existing candidate inventory readers.
       focused_mode: ""
       focused_matrix: '{"include":[]}'
@@ -169,7 +172,7 @@ jobs:
           RELEASE_FULL: ${{ steps.release.outputs.full_release }}
           HEAD_REF: ${{ github.head_ref }}
         run: |
-          changed="$(git diff --name-only "$BASE...HEAD")" || changed=""
+          changed="$(python3 -I scripts/ci_changed_paths.py "$EVENT" "$BASE")" || changed=""
           full_release="${FULL_RELEASE:-false}"
           # Any release/* branch gets the complete run, the canonical candidate or not.
           [[ "${HEAD_REF:-}" != release/* ]] || full_release=true
@@ -189,6 +192,17 @@ jobs:
             && ! grep -qE '^(CHANGELOG|README)\.md$|^docs/.*\.sh$' <<< "$changed"; then
             site_only=true
           fi
+          # Only presentation assets/templates qualify for the homepage lane on both events.
+          # A missing/failed/empty diff and candidate/manual/full lanes retain app coverage.
+          homepage_only=false
+          if { [ "$EVENT" = pull_request ] || [ "$EVENT" = push ]; } \
+            && [ "$full_release" != true ] && [ -z "${BATCH_BASE:-}" ] \
+            && [ -n "$changed" ] && [ "$(printf '%s\n' "$changed" | wc -l)" -lt 200 ] \
+            && ! grep -qvE '^(docs/README\.md|docs/assets/hero-(dark|light)\.svg|docs/assets/website/([^/]+\.(css|js|svg|png|jpg|webp)|album/([^/]+\.(svg|png|jpg|webp)|ARTWORK\.txt))|docs/overrides/(partials/)?[^/]+\.html)$' <<< "$changed"; then
+            homepage_only=true
+            site_only=true
+          fi
+          echo "homepage_only=$homepage_only" >> "$GITHUB_OUTPUT"
           echo "site_only=$site_only" >> "$GITHUB_OUTPUT"
           # Pull requests never run the macOS setup, e2e and Electron lanes (a release PR keeps them): those run on main, schedule
           # and dispatch.
@@ -200,6 +214,13 @@ jobs:
             && ! grep -qE '^(tests/(e2e/.*(install|daemon|update|ui_service)|.*(macos|notifier|supervision|tool_install|session_io|reveal|acceptance))|web/e2e/.*(install|daemon|update|native|electron|desktop|macos|notifier)|docs/.*\.sh$)' <<< "$changed"; then
             macos_full=false
           fi
+          # Core upgrade lane: the in-place upgrade (job upgrade) and the macOS unit and integration cells run on a pull
+          # Core upgrade lane: request only when it touches update, lifecycle or kernel or an upgrade path (contexts.toml
+          # Core upgrade lane: [select] upgrade). Every other run, a release PR and a selector that does not answer keep them.
+          selected="$(printf '%s\n' "$changed" | python3 -I scripts/contexts.py upgrade 2>/dev/null)" || selected="" # Core upgrade lane
+          upgrade=true # Core upgrade lane
+          [ "$EVENT" != pull_request ] || [ "${RELEASE_FULL:-false}" = true ] || [[ "${HEAD_REF:-}" == release/* ]] || [ "$selected" != upgrade=false ] || upgrade=false # Core upgrade lane
+          echo "upgrade=$upgrade" >> "$GITHUB_OUTPUT" # Core upgrade lane
           echo "macos_full=$macos_full" >> "$GITHUB_OUTPUT"
           if [ "$full_release" = true ] || [ -n "${BATCH_BASE:-}" ]; then
             prose_push=false
@@ -260,13 +281,16 @@ jobs:
           # The merge gate derives the jobs this run must have from this selection (focused_gate.py in scripts).
           sed 's/^/selector-output: /' "$GITHUB_OUTPUT" | grep -E '^selector-output: (core|site_only|surface_only|macos_full|notifier|contracts|electron|plugins)=(true|false)$'
           echo "selector-output: release=${FULL_RELEASE:-false}"
+          # Keep ordinary full-workload evidence compatible with the verifier on the current protected base.
+          if [ "$upgrade" = false ]; then echo "selector-output: upgrade=false"; fi
+          if [ "$homepage_only" = true ]; then echo "selector-output: homepage_only=true"; fi
 
   macos-main: # main lanes
     permissions:
       actions: write
     name: Dispatch the coalesced macOS main run
     needs: changes
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.lane == 'linux'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.lane == 'linux' && needs.changes.outputs.homepage_only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -316,7 +340,7 @@ jobs:
       contents: read
     name: Lint, contracts and types
     needs: changes
-    if: (needs.changes.outputs.core == 'true' || needs.changes.outputs.surface_only == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '') && needs.changes.outputs.lane != 'macos' # Core focused structural
+    if: (needs.changes.outputs.homepage_only == 'true' || needs.changes.outputs.core == 'true' || needs.changes.outputs.surface_only == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '') && needs.changes.outputs.lane != 'macos' # Core focused structural
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -334,15 +358,30 @@ jobs:
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
         run: uv run --no-project --frozen --no-build --python 3.15 python scripts/check_confidentiality.py --require --text ""
+      - name: Check homepage policy
+        if: needs.changes.outputs.homepage_only == 'true'
+        env:
+          CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
+        run: |
+          uv run --no-build --script scripts/check_confidentiality.py
+          uv run --no-build --script scripts/release_policy.py --check
+          uv run --no-build --script scripts/sync_template.py --check
+          uv tool run --no-build --from zizmor==1.32.0 zizmor --offline --quiet .github/workflows
+          uv run --no-build --script scripts/tools.py run actionlint
+          uv tool run --no-build --from typos==1.51.1 typos
+          uv run --no-build --script scripts/check_docs.py
       - run: make lint
+        if: needs.changes.outputs.homepage_only != 'true'
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
       - run: make managed-backend-setup # private Node process owner
+        if: needs.changes.outputs.homepage_only != 'true'
       - run: make managed-backend-static
-        if: needs.changes.outputs.full_ci != 'true'
+        if: needs.changes.outputs.full_ci != 'true' && needs.changes.outputs.homepage_only != 'true'
       - run: make managed-backend-check
         if: needs.changes.outputs.full_ci == 'true'
       - run: make typecheck
+        if: needs.changes.outputs.homepage_only != 'true'
       - if: needs.changes.outputs.full_ci == 'true'
         run: make test-web # full candidate component suite
 
@@ -404,7 +443,7 @@ jobs:
     permissions:
       contents: read
     needs: changes
-    if: (needs.changes.outputs.core == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '') && needs.changes.outputs.lane != 'macos' # Core focused structural
+    if: (needs.changes.outputs.homepage_only == 'true' || needs.changes.outputs.core == 'true' || needs.changes.outputs.scheduled_maintenance == 'true' || needs.changes.outputs.focused_mode != '') && needs.changes.outputs.lane != 'macos' # Core focused structural
     name: Dependency audit
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -426,8 +465,8 @@ jobs:
     if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
-    # Integration runs two sequential sessions, each still capped at 420 seconds; allow setup and cleanup too.
-    timeout-minutes: ${{ matrix.levels == 'integration' && 15 || 10 }}
+    # Integration runs two 420-second sessions; macOS unit allows 600 seconds plus reporting and setup.
+    timeout-minutes: ${{ (matrix.levels == 'integration' || (contains(matrix.os, 'macos') && matrix.levels == 'unit')) && 15 || 10 }}
     strategy:
       # Only the coalesced macOS main lane limits concurrent cells; other runs keep their full matrix. # main lanes
       max-parallel: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.lane == 'macos' && 1 || 256 }} # main lanes
@@ -440,10 +479,9 @@ jobs:
         # One shard per level on Linux too: the whole suite ran 4m42-6m50 against the 420 s cap on 4 vCPU and hit it
         # under runner contention with every test passing (#585). Each shard keeps that same cap.
         levels: [unit, integration]
-        # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
-        # under that same cap. Full PRs keep both macOS cells; main runs them in its coalesced macOS lane.
+        # macOS has 3 vCPU, so unit and integration run in separate cells.
         include:
-          ${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
+          ${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.upgrade != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
     env:
       HZ_TEST_TIMEOUT_SCALE: "${{ contains(matrix.os, 'macos') && '3' || '1' }}" # hosted macOS runners are slower; Linux stays at 1
       # Unit-bearing cells need locked Node; integration-only dependency groups stay unchanged.
@@ -563,7 +601,7 @@ jobs:
     permissions:
       contents: read
     needs: changes
-    if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.site_only == 'true') && needs.changes.outputs.lane != 'macos' # Core candidate-only
+    if: (needs.changes.outputs.full_ci == 'true' || needs.changes.outputs.homepage_only == 'true') && (needs.changes.outputs.site_only == 'true') && needs.changes.outputs.lane != 'macos' # Core candidate-only
     name: Site tests
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -577,6 +615,7 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: false
           python-version: "3.15"
+      - run: make docs-site # strict build of the exact checked-out homepage
       - run: make test-site # the tests that read documents and the site
 
   e2e:
@@ -861,8 +900,8 @@ jobs:
     needs: [changes, core-wheel]
     # Lane B (scripts/acceptance/scenario.py --candidate-wheel): the published release, installed
     # with user state in a private home, updates itself in place to this change's wheel with its own updater, then the
-    # updated app serves and answers a chat. Reuse the exact workflow run's SDK wheel on every full Linux-bearing run.
-    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.lane != 'macos' # Core candidate-only
+    # updated app serves and answers a chat. Reuse the exact workflow run's SDK wheel whenever the upgrade selector picks the run.
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.upgrade == 'true' && needs.changes.outputs.lane != 'macos' # Core candidate-only
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -1434,9 +1473,11 @@ jobs:
           FULL_RELEASE: ${{ needs.changes.outputs.full_release }}
           HEAD_REF: ${{ github.head_ref }}
           SITE_ONLY: ${{ needs.changes.outputs.site_only }}
+          HOMEPAGE_ONLY: ${{ needs.changes.outputs.homepage_only }}
           CORE: ${{ needs.changes.outputs.core }}
           NOTIFIER: ${{ needs.changes.outputs.notifier }}
           ELECTRON: ${{ needs.changes.outputs.electron }}
+          UPGRADE: ${{ needs.changes.outputs.upgrade }} # Core upgrade lane
           MACOS_FULL: ${{ needs.changes.outputs.macos_full }}
           CONTRACTS: ${{ needs.changes.outputs.contracts }}
           PLUGIN_PATHS: ${{ needs.changes.outputs.plugins }}
@@ -1476,10 +1517,14 @@ jobs:
             [ "${PLUGIN_PATHS:-true}" = true ] || [ "${CONTRACTS:-true}" = true ] || drop local-plugin-plan
           fi
           # Core upgrade lane: keep the run's wheel and upgrade proof after any ordinary inventory reset.
-          if [ "${LANE:-all}" != macos ]; then drop core-wheel; required+=(core-wheel upgrade); fi # Core upgrade lane
+          if [ "${LANE:-all}" != macos ]; then drop core-wheel; required+=(core-wheel); [ "${UPGRADE:-true}" = false ] || required+=(upgrade); fi # Core upgrade lane
           # The coverage floor: on every pull request, and on a dispatched run outside the macOS main lane.
           if [ "$EVENT" = pull_request ] || { [ "$EVENT" = workflow_dispatch ] && [ "${LANE:-all}" != macos ]; }; then required+=(coverage-floor); fi # Core coverage floor
           if [ "$EVENT" = pull_request ]; then required+=(sonar-ratings); fi # Core coverage floor
+          if [ "${HOMEPAGE_ONLY:-false}" = true ]; then
+            required=(admission changes lint secrets audit quarantine-registry site-tests)
+            if [ "$EVENT" = pull_request ]; then required+=(commits dependency-review sonar-ratings); fi
+          fi
           for job in "${required[@]}"; do
             jq -e --arg job "$job" '.[$job].result == "success"' <<< "$RESULTS" >/dev/null \
               || { echo "::error::Required full CI job did not pass: $job"; exit 1; }

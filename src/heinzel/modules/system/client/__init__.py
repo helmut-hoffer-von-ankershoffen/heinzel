@@ -14,6 +14,7 @@ from heinzel.modules.system.client._mcp_tokens import (
     require_reachable_only_as_asked,
     tokens_for_user,
 )
+from heinzel.modules.system.client._recent import RecentClient, RecentUse, recent_clients
 from heinzel.modules.system.client._state_directory import open_updater_file, private_directory
 from heinzel.modules.system.client._widget_fence import FenceConflictError
 from heinzel.modules.system.client._widget_fence import Request as FenceRequest
@@ -29,10 +30,13 @@ __all__ = [
     "FenceRequest",
     "McpToken",
     "McpTokens",
+    "RecentClient",
+    "RecentUse",
     "WorkspaceVersion",
     "observe_workspace_version",
     "open_updater_file",
     "private_directory",
+    "recent_clients",
     "require_reachable_only_as_asked",
     "tokens_for_user",
 ]

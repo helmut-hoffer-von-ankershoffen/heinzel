@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from heinzel.kernel import ReleaseCache, ReleaseSource
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -103,7 +104,7 @@ class Source(ReleaseSource):
 
 
 def test_refresh_remembers_what_the_source_says(cache):
-    cache.refresh(Source("v0.3.0"), timeout=1)
+    cache.refresh(Source("v0.3.0"), timeout=scaled(1))
     assert (cache.latest, cache.error) == ("0.3.0", None)
 
 
@@ -113,7 +114,7 @@ def test_refresh_remembers_what_the_source_says(cache):
 )
 def test_refresh_never_raises_and_stamps_the_failure(cache, answer, error):
     cache.remember("0.2.0", NOW)
-    cache.refresh(Source(answer), timeout=1)
+    cache.refresh(Source(answer), timeout=scaled(1))
     assert (cache.latest, cache.error) == ("0.2.0", error)
     assert cache.checked_at != NOW
 

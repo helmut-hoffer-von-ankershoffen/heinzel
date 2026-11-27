@@ -74,6 +74,14 @@ FULL_EXECUTION_INPUTS = (*PROTECTED_FILES, "Makefile", "pyproject.toml")
 FULL_PR_KIND = "full-pr-reviewed"
 UPLOAD_NAME = "Upload focused CI evidence"
 CANDIDATE_UPLOAD_NAME = "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+# Verify the producer's presentation-only claim on the authenticated Git diff.
+HOMEPAGE_PATH_LIMIT = 200
+HOMEPAGE_PATH = re.compile(
+    r"(?:docs/README[.]md|docs/assets/hero-(?:dark|light)[.]svg|"
+    r"docs/assets/website/(?:[^/]+[.](?:css|js|svg|png|jpg|webp)|album/(?:[^/]+[.](?:svg|png|jpg|webp)|ARTWORK[.]txt))|"
+    r"docs/overrides/(?:partials/)?[^/]+[.]html)"
+)
+
 STATIC_JOBS = {
     "Main batch admission",
     "Changed paths",
@@ -99,6 +107,14 @@ class GateSource:
     run: dict[str, Any]
     source: WorkloadSource
     commit: str
+
+
+@dataclass(frozen=True)
+class FullPrWorkload:
+    """Validated job inventory and any proven presentation-only exception."""
+
+    jobs: list[dict[str, Any]]
+    homepage_only: bool
 
 
 def _positive(value: object) -> bool:
@@ -599,10 +615,18 @@ def selector_output(log: bytes) -> dict[str, bool]:
         CandidateError: The log is oversized or a key is missing, repeated, unknown or not a boolean.
     """
     require(len(log) <= 1024 * 1024, "oversized selector log")
-    found = re.findall(rb"(?m)^\d{4}-[^ \r\n]+ selector-output: ([a-z_]+)=(true|false)\r?$", log)
-    keys = [key.decode() for key, _ in found]
-    require(len(keys) == len(set(keys)) and set(keys) == SELECTOR_KEYS, "missing or ambiguous selector output")
-    return {key.decode(): value == b"true" for key, value in found}
+    found = re.findall(rb"(?m)^\d{4}-[^ \r\n]+ selector-output: ([a-z_]+)=([^ \r\n]+)\r?$", log)
+    values = {key.decode(): value == b"true" for key, value in found}
+    keys = values.keys()
+    require(
+        len(found) == len(values)
+        and all(value in (b"true", b"false") for _, value in found)
+        and keys >= SELECTOR_KEYS
+        and keys <= SELECTOR_KEYS | {"homepage_only", "upgrade"}
+        and values.get("homepage_only", True),
+        "missing or ambiguous selector output",
+    )
+    return values
 
 
 def selected_pr_inventory(selected: dict[str, bool]) -> dict[str, str]:
@@ -614,10 +638,18 @@ def selected_pr_inventory(selected: dict[str, bool]) -> dict[str, str]:
     """
     inventory = expected_jobs("pull_request")
     inventory["Release candidate source"] = "skipped"  # ordinary full PRs are not release candidates
+    homepage = selected.get("homepage_only", False)
+    core, site, surface = selected["core"], selected["site_only"], selected["surface_only"]
+    require(
+        not homepage
+        or (site and not any(selected[key] for key in ("release", "notifier", "contracts", "electron", "plugins"))),
+        "contradictory homepage selector output",
+    )
     if selected["release"]:
         return inventory
-    core, site, surface = selected["core"], selected["site_only"], selected["surface_only"]
-    tested = core and not site
+    full = not homepage
+    tested = full and core and not site
+    upgrade = selected.get("upgrade", True)
     for name in [n for n in inventory if n.endswith("(macos-latest)") and n.startswith(MAIN_ONLY_MACOS)]:
         del inventory[name]  # a pull request that is not a release candidate runs these on Linux only
 
@@ -632,27 +664,46 @@ def selected_pr_inventory(selected: dict[str, bool]) -> dict[str, str]:
         else:
             inventory.update(dict.fromkeys(names, "skipped"))
 
-    rule("make setup", core, SKIPPED_TEMPLATES["setup"])
+    rule("make setup", full and core, SKIPPED_TEMPLATES["setup"])
     rule("Test (", tested, SKIPPED_TEMPLATES["test"])
+    if tested and not upgrade:
+        for name in [name for name in inventory if name.startswith("Test (macos")]:
+            del inventory[name]
     rule("End-to-end ", tested, SKIPPED_TEMPLATES["e2e"])
-    rule("Electron (", selected["electron"], SKIPPED_TEMPLATES["electron"])
-    rule("Consumer (heinzel-", selected["contracts"], SKIPPED_TEMPLATES["consumer"])
+    rule("Electron (", full and selected["electron"], SKIPPED_TEMPLATES["electron"])
+    rule("Consumer (heinzel-", full and selected["contracts"], SKIPPED_TEMPLATES["consumer"])
     for name, on in {
-        "Lint, contracts and types": core or surface,
-        "Dependency audit": core,
+        "Lint, contracts and types": homepage or core or surface,
+        "Dependency audit": homepage or core,
         "Coverage": tested,
+        "Coverage floor": full,
         "Performance tests": tested,
-        "Plugin template": not site,
-        "Heinzel Notifier (macOS app)": selected["notifier"],
-        "macOS-specific tests": (selected["macos_full"] or surface) and (core or surface) and not site,
-        "Build": core,
-        "Plugin SDK candidate": True,
-        "Optional source plugins": selected["plugins"] or selected["contracts"],
-        "Public contract consumers": selected["contracts"],
+        "Plugin template": full and not site,
+        "Heinzel Notifier (macOS app)": full and selected["notifier"],
+        "macOS-specific tests": full and (selected["macos_full"] or surface) and (core or surface) and not site,
+        "Build": full and core,
+        "Upgrade in place (published to candidate, Linux)": full and upgrade,
+        "Plugin SDK candidate": full,
+        "Optional source plugins": full and (selected["plugins"] or selected["contracts"]),
+        "Public contract consumers": full and selected["contracts"],
         "Site tests": site,
     }.items():
         inventory[name] = "success" if on else "skipped"
     return inventory
+
+
+def homepage_diff(base: str, commit: str) -> bool:
+    """Check the name-only paths of the same change the workflow classifies."""
+    raw = git("diff", "--name-only", "--no-renames", "-z", "--end-of-options", base, commit, "--")
+    try:
+        paths = raw.decode("utf-8").split("\0")
+    except UnicodeError:
+        return False
+    return (
+        paths[-1] == ""
+        and 0 < len(paths) - 1 < HOMEPAGE_PATH_LIMIT
+        and all("\n" not in path and "\r" not in path and HOMEPAGE_PATH.fullmatch(path) for path in paths[:-1])
+    )
 
 
 def full_pr_jobs(
@@ -661,7 +712,7 @@ def full_pr_jobs(
     base: str,
     read: Callable[[str], bytes],
     authorization: dict[str, Any] | None = None,
-) -> list[dict[str, Any]]:
+) -> FullPrWorkload:
     """Verify ordinary full CI without inventing a focused plan or release-candidate identity."""
     require(source.run["event"] == "pull_request", "full PR evidence requires the PR event")
     associated = source.run["pull_requests"]
@@ -682,7 +733,14 @@ def full_pr_jobs(
     changed_jobs = [job for job in jobs if job["name"] == "Changed paths"]
     require(len(changed_jobs) == 1 and changed_jobs[0]["conclusion"] == "success", "full PR selector job is missing")
     log = read(f"actions/jobs/{changed_jobs[0]['id']}/logs")
-    inventory = selected_pr_inventory(selector_output(log))
+    selected = selector_output(log)
+    homepage = selected.get("homepage_only", False)
+    if homepage:
+        require(
+            homepage_diff(base, source.commit),
+            "homepage selector includes changes outside its presentation-only paths",
+        )
+    inventory = selected_pr_inventory(selected)
     require(
         len(jobs) == len(inventory) and {job["name"] for job in jobs} == set(inventory), "full PR job inventory differs"
     )
@@ -691,7 +749,7 @@ def full_pr_jobs(
         if job["conclusion"] == "success":
             _check(gate, source, job)
     require(full_checkout(log) == source.commit, "full CI tested another merge commit")
-    return jobs
+    return FullPrWorkload(jobs, homepage)
 
 
 def verify(  # noqa: PLR0913 - one linear verdict; the notes only describe it
@@ -739,9 +797,13 @@ def verify(  # noqa: PLR0913 - one linear verdict; the notes only describe it
             source.source.payload["pull_request"],
             pr_base_limit=None if candidate else snapshot[2],
         )
-    if not isinstance(scope, Scope):
+    if full_jobs is not None and full_jobs.homepage_only:
+        verdict = "Homepage presentation scope passed site and policy checks"
+    elif not isinstance(scope, Scope):
         jobs = [
-            job for job in (full_jobs if full_jobs is not None else jobs_for(gate, source)) if job["name"] == "Coverage"
+            job
+            for job in (full_jobs.jobs if full_jobs is not None else jobs_for(gate, source))
+            if job["name"] == "Coverage"
         ]
         require(len(jobs) == 1, "canonical candidate requires the exact Coverage job")
         _check(gate, source, jobs[0])

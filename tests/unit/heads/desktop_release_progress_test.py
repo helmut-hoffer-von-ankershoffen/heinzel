@@ -20,6 +20,7 @@ from heinzel.heads import _desktop_installation as installer
 from heinzel.heads import _desktop_messages as copy
 from heinzel.heads import _desktop_release as release
 from heinzel.heads.cli._progress import StepReporter
+from heinzel.testing import scaled
 from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 
 pytestmark = pytest.mark.unit
@@ -56,7 +57,7 @@ def server(monkeypatch):
         def do_GET(self):
             answer = behaviour.get(self.path.split("?")[0], 404)
             if answer == "stall":
-                time.sleep(2)
+                time.sleep(scaled(2))
                 return
             if isinstance(answer, int):
                 self.send_response(answer)

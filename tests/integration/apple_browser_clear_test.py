@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
 from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -87,7 +88,7 @@ def test_guest_open_requires_workspace_authentication_without_preview_flag(brows
                     "https://127.0.0.1/",
                 ],
                 check=True,
-                timeout=10,
+                timeout=scaled(10),
             )
         finally:
             server.shutdown()

@@ -16,6 +16,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("pypi_release", ROOT / "scripts/pypi_release.py")
@@ -227,7 +229,7 @@ def test_uv_build_helper_is_removed_before_strict_artifact_verification(artifact
         cwd=ROOT,
         check=True,
         capture_output=True,
-        timeout=30,
+        timeout=scaled(30),
     )
     assert not (dist / ".gitignore").exists()
     manifest = release.verify_artifacts(dist, "v1.2.3", COMMIT)
@@ -595,7 +597,7 @@ def test_bind_release_assets_checks_swift_manifest_before_attestation(tmp_path, 
     result = subprocess.run(
         ["make", "--no-print-directory", "-f", str(ROOT / "Makefile"), "desktop-bind-release-assets"],
         cwd=tmp_path,
-        timeout=30,
+        timeout=scaled(30),
         env={**os.environ, "TAG": f"v{VERSION}", "SOURCE_COMMIT": COMMIT, "MAKELEVEL": makelevel},
         capture_output=True,
         check=False,

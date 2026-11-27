@@ -33,6 +33,7 @@ from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import QUESTION_ASKED, MessageRequest, SessionCosts, SessionMessage
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
 from heinzel.modules.heinzel._user_chat import MAX_TURN_SECONDS
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -71,7 +72,7 @@ class Inbox:
             while time.monotonic() < deadline and not self.release.is_set():
                 if cancel is not None and cancel.is_set() and not self.ignore_cancel:
                     return SelfAnswer(timed_out=True, thread="t-1")
-                time.sleep(0.01)
+                time.sleep(scaled(0.01))
             answer = self.answers.pop(0) if self.answers else SelfAnswer(timed_out=True, thread="t-1")
         if isinstance(answer, Exception):
             raise answer
@@ -143,7 +144,7 @@ def _relay(world, inbox: Inbox, chat: Chat, **settings: object) -> QuestionRelay
 def _run(relay: QuestionRelay, session: str, turn: str) -> None:
     relay.asked(session, turn)
     for worker in relay.threads:
-        worker.join(10)
+        worker.join(scaled(10))
         assert not worker.is_alive()
 
 
@@ -177,11 +178,11 @@ def test_an_answer_in_the_app_first_cancels_the_chat_ask_and_says_so(world):
         _ask(crud, session, "turn-1")
     relay = _relay(world, inbox, chat)
     relay.asked(session, "turn-1")
-    assert inbox.waiting.wait(5)
+    assert inbox.waiting.wait(scaled(5))
     with current.local("cli"):
         crud.accept(session, MessageRequest(request_id="typed", text="The work one"))
     for worker in relay.threads:
-        worker.join(10)
+        worker.join(scaled(10))
     assert chat.turns == []
     assert [a["origin"] for a in _accepted(crud, session)] == ["cli"]
     assert inbox.notes == [(ANSWERED_HERE, "t-1")]
@@ -194,13 +195,13 @@ def test_a_late_chat_answer_after_an_app_answer_is_dropped_by_the_compare_and_se
         _ask(crud, session, "turn-1")
     relay = _relay(world, inbox, chat)
     relay.asked(session, "turn-1")
-    assert inbox.waiting.wait(5)
+    assert inbox.waiting.wait(scaled(5))
     with current.local("cli"):
         crud.accept(session, MessageRequest(request_id="typed", text="Typed"))
-    time.sleep(0.1)
+    time.sleep(scaled(0.1))
     inbox.release.set()
     for worker in relay.threads:
-        worker.join(10)
+        worker.join(scaled(10))
     assert [a["origin"] for a in _accepted(crud, session)] == ["cli"], "the late chat answer never lands"
     assert chat.turns == []
     assert inbox.notes == [(ANSWERED_HERE, None)], "judged by the relay's own record, not the adapter"
@@ -269,7 +270,7 @@ def test_the_wait_for_a_hung_adapter_is_bounded_in_real_time_on_a_slow_runner(wo
     channel = SelfChat(adapter="acmechat", notifies=True, asks=True, build=lambda: inbox)
 
     def slow(*_args):  # a slow runner: reading the app's events takes far longer than one poll
-        time.sleep(0.15)
+        time.sleep(scaled(0.15))
         return False
 
     monkeypatch.setattr(relay, "answered_after", slow)
@@ -346,10 +347,10 @@ def test_a_superseded_ask_says_nothing(world):
         _ask(crud, session, "turn-1")
     relay = _relay(world, inbox, chat)
     relay.asked(session, "turn-1")
-    assert inbox.waiting.wait(5)
+    assert inbox.waiting.wait(scaled(5))
     relay._register(session, "newer", 99)
     for worker in relay.threads:
-        worker.join(10)
+        worker.join(scaled(10))
     assert inbox.notes == []
 
 
@@ -399,10 +400,10 @@ def test_asked_returns_at_once_and_never_blocks_the_caller(world):
     started = time.monotonic()
     relay.asked(session, "turn-1")
     assert time.monotonic() - started < 0.2
-    assert inbox.waiting.wait(5)
+    assert inbox.waiting.wait(scaled(5))
     inbox.release.set()
     for worker in relay.threads:
-        worker.join(10)
+        worker.join(scaled(10))
 
 
 def test_a_failing_self_chat_costs_nothing(world):
@@ -499,12 +500,12 @@ def test_a_live_ask_of_a_deleted_chat_is_cancelled_silently(world, monkeypatch):
         _ask(crud, other, "turn-2")
     relay = _relay(world, inbox, Chat())
     relay.asked(session, "turn-1")
-    assert inbox.waiting.wait(5)
+    assert inbox.waiting.wait(scaled(5))
     _delete(crud, monkeypatch, session)
     inbox.answers.append(SelfAnswer(timed_out=True))
     relay.asked(other, "turn-2")
     for worker in relay.threads:
-        worker.join(10)
+        worker.join(scaled(10))
         assert not worker.is_alive()
     assert [a["question"] for a in inbox.asked] == ["Which calendar?", "Which calendar?"]
     assert inbox.notes == [(STILL_OPEN, None)], "only the other chat's own note; nothing for the deleted chat"
@@ -542,7 +543,7 @@ class Launches:
 def _dead_pid() -> str:
     """A process id that just ended: started here, waited for."""
     child = subprocess.Popen([sys.executable, "-c", "pass"])
-    child.wait(10)
+    child.wait(scaled(10))
     return str(child.pid)
 
 
@@ -564,10 +565,10 @@ def test_in_a_short_lived_process_a_detached_helper_asks_and_the_caller_returns_
     assert inbox.asked == [], "the helper asks, not the tick"
     relay.asked(session, "turn-1")  # outside the tick (the web app): the worker thread as before
     assert launches.commands[1:] == []
-    assert inbox.waiting.wait(5)
+    assert inbox.waiting.wait(scaled(5))
     inbox.release.set()
     for worker in relay.threads:
-        worker.join(10)
+        worker.join(scaled(10))
 
 
 def test_the_daemon_job_marks_its_turns_short_lived(monkeypatch):
@@ -664,11 +665,11 @@ def test_an_ask_another_process_takes_over_is_superseded_silently(world):
         _ask(crud, session, "turn-1")
     relay = _relay(world, inbox, chat)
     relay.asked(session, "turn-1")
-    assert inbox.waiting.wait(5)
+    assert inbox.waiting.wait(scaled(5))
     with relay.ledger.locked() as state:
         state["live"][session] = "1"  # a helper asks a newer question of this chat
     for worker in relay.threads:
-        worker.join(10)
+        worker.join(scaled(10))
         assert not worker.is_alive()
     assert inbox.notes == [], "a superseded ask says nothing"
     assert chat.turns == []
@@ -681,7 +682,7 @@ def test_the_helper_process_starts_detached_with_its_output_in_the_log(tmp_path)
     code = "import os, sys; sys.stdout.write('out'); sys.stderr.write(f'{os.getsid(0)} {os.getpid()}')"
     child = relay_module._launch([sys.executable, "-c", code], log_dir, tmp_path)
     try:
-        assert child.wait(20) == 0
+        assert child.wait(scaled(20)) == 0
     finally:
         if child.poll() is None:
             child.kill()
@@ -758,15 +759,15 @@ def test_an_older_ask_ending_keeps_the_newer_asks_live_entry(world):
         _ask(crud, session, "turn-2", "Which room?")
     relay = _relay(world, inbox, Chat())
     relay.asked(session, "turn-1")
-    assert inbox.waiting.wait(5)
+    assert inbox.waiting.wait(scaled(5))
     inbox.waiting.clear()
     relay.asked(session, "turn-2")  # supersedes the first in this process
-    relay.threads[0].join(10)
+    relay.threads[0].join(scaled(10))
     assert not relay.threads[0].is_alive()
     with relay.ledger.locked() as state:
         assert state["live"] == {session: str(os.getpid())}, "the newer ask still counts as live"
     inbox.release.set()
-    relay.threads[1].join(10)
+    relay.threads[1].join(scaled(10))
     with relay.ledger.locked() as state:
         assert state["live"] == {}
 
@@ -778,11 +779,11 @@ def test_the_helper_never_imports_from_its_working_directory(tmp_path):
     (planted / "__init__.py").write_text(f"open({str(marker)!r}, 'w').write('x')\n")
     child = relay_module._launch([sys.executable, "-P", "-m", HELPER], None, tmp_path / "cwd")
     try:
-        child.wait(60)
+        child.wait(scaled(60))
     finally:
         if child.poll() is None:  # only the process this test started
             child.kill()
-            child.wait(10)
+            child.wait(scaled(10))
     assert not marker.exists(), "a heinzel package where the helper starts never runs"
 
 
@@ -792,7 +793,7 @@ def test_the_helpers_log_starts_afresh_once_it_is_too_big(tmp_path, monkeypatch)
     log.write_text("x" * 11)
     child = relay_module._launch([sys.executable, "-c", "import sys; sys.stderr.write('new')"], tmp_path, tmp_path)
     try:
-        assert child.wait(20) == 0
+        assert child.wait(scaled(20)) == 0
     finally:
         if child.poll() is None:
             child.kill()
@@ -830,7 +831,9 @@ def test_the_helper_takes_only_a_chat_id_and_a_turn_id(monkeypatch):
 def test_a_hung_helper_ends_at_its_lifetime(monkeypatch):
     released = threading.Event()
     monkeypatch.setattr(helper_module, "lifetime", lambda settings: 0.2)
-    ended = _helper_kernel(monkeypatch, lambda session, turn: released.wait(10))  # a hung adapter, boot or answer turn
+    ended = _helper_kernel(
+        monkeypatch, lambda session, turn: released.wait(scaled(10))
+    )  # a hung adapter, boot or answer turn
 
     def exit_(code: int) -> None:
         ended.append(code)
@@ -875,9 +878,9 @@ sys.exit(h.main([sys.argv[1], sys.argv[2]]))
 def test_a_helper_ends_although_a_thread_it_started_never_does(tmp_path):
     child = subprocess.Popen([sys.executable, "-c", STRAY_THREAD, SESSION_ID, TURN_ID], cwd=tmp_path)
     try:
-        code = child.wait(3.5)
+        code = child.wait(scaled(3.5))
     finally:
         if child.poll() is None:  # only the process this test started
             child.kill()
-            child.wait(10)
+            child.wait(scaled(10))
     assert code == 0
