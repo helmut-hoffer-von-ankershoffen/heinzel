@@ -1519,7 +1519,12 @@ def test_historical_reconciliation_refuses_unrelated_or_incomplete_changes(tmp_p
         "installed_distribution_names",
         lambda prefix: {"heinzel", "heinzel-example", "heinzel-resource", "dependency"},
     )
-    monkeypatch.setattr(harness, "unchanged_distribution_files", lambda *args: observation("files"))
+
+    def observed_files(*_args):
+        digest = harness.sha256(observation("files").encode())
+        return {"dependency": {"lib/dependency.py": digest}}
+
+    monkeypatch.setattr(harness, "unchanged_distribution_files", observed_files)
     monkeypatch.setattr(harness, "snapshot_files", lambda *args: observation("config"))
     monkeypatch.setattr(harness, "installed_interpreter", lambda *args: observation("python"))
     monkeypatch.setattr(
@@ -1565,6 +1570,62 @@ def test_historical_reconciliation_refuses_unrelated_or_incomplete_changes(tmp_p
         harness.reconcile_historical_plugin(
             case, {"version": "0.9.55"}, {"version": "0.5.3", "sha256": "a" * 64, "wheel": str(tmp_path / "target.whl")}
         )
+
+    if defect == "files":
+        assert case.notes["reconciliation_file_differences"] == {
+            "counts": {"added": 0, "removed": 0, "changed": 1},
+            "sample": [
+                {
+                    "distribution": "dependency",
+                    "path": "lib/dependency.py",
+                    "change": "changed",
+                    "before_sha256": harness.sha256(b"same"),
+                    "after_sha256": harness.sha256(b"changed"),
+                }
+            ],
+        }
+    else:
+        assert "reconciliation_file_differences" not in case.notes
+
+
+def test_reconciliation_file_difference_sample_is_bounded_and_stable():
+    digest = harness.sha256(b"fixture")
+    before = {"lib-a": {"lib/old.py": digest}}
+    new_files = {f"lib/new-{i:02}.py": digest for i in reversed(range(14))}
+    after = {"lib-b": new_files}
+    report = harness.distribution_file_differences(before, after)
+    assert report["counts"] == {"added": 14, "changed": 0, "removed": 1}
+    assert len(report["sample"]) == 12
+    assert report["sample"][0] == {
+        "distribution": "lib-a",
+        "path": "lib/old.py",
+        "change": "removed",
+        "before_sha256": digest,
+        "after_sha256": None,
+    }
+    assert report["sample"][-1] == {
+        "distribution": "lib-b",
+        "path": "lib/new-10.py",
+        "change": "added",
+        "before_sha256": None,
+        "after_sha256": digest,
+    }
+    assert harness.distribution_file_differences(before, before) == {
+        "counts": {"added": 0, "removed": 0, "changed": 0},
+        "sample": [],
+    }
+
+
+@pytest.mark.parametrize(
+    "path", ["/absolute/path", "../parent.py", "lib/" + "x" * 180, "lib/tab\tname", "lib/ghp_" + "x" * 15]
+)
+def test_reconciliation_file_difference_hides_unsafe_labels(path):
+    digest = harness.sha256(b"content")
+    report = harness.distribution_file_differences({}, {"unsafe/owner": {path: digest}})
+    entry = report["sample"][0]
+    assert entry["distribution"] == "sha256:" + harness.sha256(b"unsafe/owner")
+    assert entry["path"] == "sha256:" + harness.sha256(path.encode())
+    assert entry["after_sha256"] == digest
 
 
 def test_distribution_fingerprints_detect_changed_bytes_and_refuse_escape(tmp_path):
