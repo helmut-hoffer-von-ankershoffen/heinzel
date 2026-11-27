@@ -136,6 +136,7 @@ from heinzel.modules.system.daemon._runtime import (
     within,
     write_private,
 )
+from heinzel.modules.system.daemon._uninstall_history import UninstallHistory
 from heinzel.modules.system.daemon._units import (
     LABEL,
     LOGIN_ITEM_HINT,
@@ -866,6 +867,7 @@ class DaemonService(_Quiescence, _HandoverRequest, _Removal):
         if previous.pid is not None:
             msg = "A daemon tick is still running; no service or files were removed."
             raise HeinzelError(msg)
+        history = self._capture_uninstall_history(before)
         phases = Phases(
             self._kernel.resolve(Progress),
             [("unload", "Stopping the owned service"), ("remove", "Removing the owned service definition")],
@@ -892,6 +894,7 @@ class DaemonService(_Quiescence, _HandoverRequest, _Removal):
                 raise HeinzelError(msg)
         removed: list[Path] = []
         with phases.step("remove", "Removing the owned service definition"):
+            self._archive_uninstall_history(history, token)
             removed = self._remove_install_files(before)
             if self._platform == "linux":
                 command = ["/usr/bin/systemctl", "--user", "daemon-reload"]
@@ -908,6 +911,25 @@ class DaemonService(_Quiescence, _HandoverRequest, _Removal):
         pending.unlink()
         fsync_dir(pending.parent)
         return Uninstalled(removed=removed, commands=commands)
+
+    def _capture_uninstall_history(self, before: dict[Path, bytes | None]) -> UninstallHistory | None:
+        history = None
+        if not _safely_absent(self.state_dir / "handover-request.json"):
+            history = UninstallHistory.capture(self.state_dir, before)
+        if not self._handover_marker_valid(self._read_state("install.json")):
+            msg = "The previous handover cannot be verified; its files were retained before uninstalling."
+            raise HeinzelError(msg)
+        return history
+
+    def _archive_uninstall_history(self, history: UninstallHistory | None, token: str) -> None:
+        if not self._mutation_token_matches(token, "handover-pending.json"):
+            msg = "The daemon removal writer changed; its files and pending gate were retained."
+            raise HeinzelError(msg)
+        if history is not None:
+            history.archive(self.state_dir / f"uninstall-{token}")
+        elif not _safely_absent(self.state_dir / "handover-request.json"):
+            msg = "A handover appeared during uninstall; its files and pending gate were retained."
+            raise HeinzelError(msg)
 
     def _remove_install_files(self, before: dict[Path, bytes | None]) -> list[Path]:
         removed: list[Path] = []
