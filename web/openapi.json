@@ -11489,6 +11489,30 @@
             "title": "Popup",
             "type": "boolean"
           },
+          "producer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The registered distribution and module for a replacement group, assigned by the kernel.",
+            "title": "Producer"
+          },
+          "replaces": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The replacement group within the registered producer, notice kind, route and command.",
+            "title": "Replaces"
+          },
           "resolve_when": {
             "anyOf": [
               {

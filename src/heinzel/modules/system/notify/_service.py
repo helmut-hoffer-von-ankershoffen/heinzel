@@ -230,6 +230,7 @@ class NotifyService(Notifications):
         urgent: bool = False,
         helper: NoticeHelper | None = None,
         resolve_when: ResolveWhen | None = None,
+        replaces: str | None = None,
     ) -> Notice | None:
         """Record a notice under the policy; the earlier one when it repeats; None if its kind is off or it failed.
 
@@ -241,9 +242,23 @@ class NotifyService(Notifications):
             return None
         now = self._clock()
         window = timedelta(hours=self.settings.repeat_hours)
+        notice_route = route if ROUTE.fullmatch(route) else "/"
+        producer = self._current_producer() if replaces else None
+        replacement = replaces if producer else None
 
         def record(notices: list[Notice]) -> Notice:
-            if (earlier := policy.repeated(notices, key, now, window)) is not None:
+            stream = {
+                index: older
+                for index, older in enumerate(notices)
+                if producer is not None
+                and older.producer == producer
+                and older.replaces == replacement
+                and (older.kind, older.route, older.command) == (kind, notice_route, command)
+            }
+            repeats = list(stream.values()) if producer else [older for older in notices if older.producer is None]
+            if (
+                earlier := policy.repeated(repeats, key, now, window, include_resolved=replacement is not None)
+            ) is not None:
                 return earlier
             decision = policy.decide(self.settings, self.hours, now, urgent=urgent, recent=notices)
             notice = Notice(
@@ -251,9 +266,11 @@ class NotifyService(Notifications):
                 kind=kind,
                 title=title,
                 body=body,
-                route=route if ROUTE.fullmatch(route) else "/",
+                route=notice_route,
                 command=command,
                 key=key,
+                replaces=replacement,
+                producer=producer,
                 urgent=urgent,
                 at=now,
                 due=decision.due,
@@ -262,6 +279,11 @@ class NotifyService(Notifications):
                 helper=helper,
                 resolve_when=resolve_when,
             )
+            for index, older in stream.items():
+                if older.resolved_at is None:
+                    notices[index] = older.model_copy(
+                        update={"resolved_at": now, "resolved": "Replaced by a newer notice."}
+                    )
             notices.append(notice)
             return notice
 

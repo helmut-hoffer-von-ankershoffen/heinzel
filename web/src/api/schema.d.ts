@@ -11384,6 +11384,16 @@ export interface components {
              * @description Whether it is shown as a desktop notification at all; false: in the list only.
              */
             popup: boolean;
+            /**
+             * Producer
+             * @description The registered distribution and module for a replacement group, assigned by the kernel.
+             */
+            producer?: string | null;
+            /**
+             * Replaces
+             * @description The replacement group within the registered producer, notice kind, route and command.
+             */
+            replaces?: string | null;
             /** @description When it resolves by itself and disappears; none: it stays until it ages out. */
             resolve_when?: components["schemas"]["ResolveWhen"] | null;
             /**

@@ -42,6 +42,7 @@ from heinzel.kernel._lets import (
 from heinzel.kernel._local_web import LocalWebRuntime
 from heinzel.kernel._logging import log_event
 from heinzel.kernel._module import Module
+from heinzel.kernel._notifications import notice_producer_scope
 from heinzel.kernel._org import OrgContext
 from heinzel.kernel._prerequisites import PrerequisiteLet
 from heinzel.kernel._progress import Progress
@@ -187,6 +188,13 @@ class Kernel:
             factory = partial(self.config.settings, declared.model, record.qualname, renamed_from=renamed)
             self._provide(declared.model, factory, record)
         self._records = dict(sorted(self._records.items(), key=lambda item: item[1].path))
+        callback_owners: dict[int, set[str]] = {}
+        callbacks: list[tuple[ModuleRecord, OperationLet | JobLet]] = [*self.lets(OperationLet), *self.lets(JobLet)]
+        for record, let in callbacks:
+            callback_owners.setdefault(id(let.func), set()).add(f"{record.origin.distribution}:{record.qualname}")
+        self._callback_owners = {
+            callback: next(iter(owners)) for callback, owners in callback_owners.items() if len(owners) == 1
+        }
         self.capability_settings = self.config.settings(CapabilitySettings, CAPABILITIES_SECTION)
         requesters, owners = self._requesters()
         unknown = [
@@ -601,7 +609,9 @@ class Kernel:
 
     def call[R](self, func: Callable[..., R], /, **kwargs: Any) -> R:  # noqa: ANN401 - forwards arbitrary arguments
         """Call `func`, injecting every parameter the kernel provides that the caller didn't pass."""
-        return func(**self._inject(func, kwargs))
+        arguments = self._inject(func, kwargs)
+        with notice_producer_scope(self._callback_owners.get(id(func))):
+            return func(**arguments)
 
     def invoke(self, operation: OperationLet, /, **kwargs: Any) -> Any:  # noqa: ANN401 - operations return anything
         """Run an operation for a head: inject dependencies and validate the arguments against their annotations.
@@ -642,7 +652,7 @@ class Kernel:
             problems = "; ".join(f"{'.'.join(map(str, e['loc'])) or 'input'}: {e['msg']}" for e in exc.errors())
             msg = f"Invalid arguments for {operation.name}: {problems}"
             raise HeinzelError(msg) from exc
-        return func(**self._inject(func, arguments))
+        return self.call(func, **arguments)
 
     def _inject(self, func: Callable[..., Any], kwargs: dict[str, Any]) -> dict[str, Any]:
         self.refresh_live_bindings()
