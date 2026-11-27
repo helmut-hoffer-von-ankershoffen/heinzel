@@ -8,6 +8,7 @@ import { useCapabilities, useConnectorReport } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { PluginsPending } from "./PluginsPending";
+import { ConnectorSignIn } from "./ConnectorSignIn";
 import { BINDINGS, group, type SettingsNav } from "./settingsSections";
 
 type Connector = SettingsNav["connectors"][number];
@@ -82,7 +83,7 @@ export function ConnectorsSection({ connectors, loading = false, open, settings,
             </p>
           ) : (
             <ul className="space-y-2">
-              {providers.map(({ name, title, login }) => (
+              {providers.map(({ name, title, login, sign_in }) => (
                 <li key={name}>
                   {providers.length > 1 && <p className="font-medium">{title}</p>}
                   <p>
@@ -95,6 +96,7 @@ export function ConnectorsSection({ connectors, loading = false, open, settings,
                     )}
                   </p>
                   {login?.account && <p className="text-muted-foreground">{login.account}</p>}
+                  {sign_in && <ConnectorSignIn name={name} title={title} />}
                 </li>
               ))}
             </ul>

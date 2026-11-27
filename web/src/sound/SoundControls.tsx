@@ -14,15 +14,29 @@ import { useOverlayTarget } from "@/lib/overlayTarget";
 import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { viewportBounds, watchViewport } from "@/lib/viewport";
+import { ALBUM_TITLE, albumAction, nativeAlbum, useAlbum } from "./album";
 import { setDocked, useDockPref } from "./dock";
-import { effective, pendingResume, useSetSound, useSoundSetting, useSoundscapes } from "./queries";
-import { play, toggle, useSound } from "./store";
+import { effective, isProgramme, pendingResume, useSetSound, useSoundSetting, useSoundscapes } from "./queries";
+import { play, selectAlbum, toggle, useSound } from "./store";
 
 const LONG_PRESS_MS = 500;
 const VOLUME_DEBOUNCE_MS = 400;
 
 /** What a soundscape is, under its title: where a stream plays from, a layer's attribution. */
 function detail(soundscape: SchemaSoundscapeView): string | null {
+  const [first] = soundscape.tracks ?? [];
+  if (first) {
+    const tracks = soundscape.tracks ?? [];
+    return [
+      t("sound.playsFrom", { host: new URL(first.url).hostname }),
+      tracks.length === 1
+        ? t("sound.oneTrack")
+        : t("sound.trackCount", {
+            count: tracks.length,
+            minutes: Math.max(1, Math.round(tracks.reduce((total, track) => total + track.duration_seconds, 0) / 60)),
+          }),
+    ].join(" · ");
+  }
   if (soundscape.stream)
     return t("sound.playsFrom", {
       host: soundscape.stream.provider === "youtube" ? "YouTube" : soundscape.stream.provider,
@@ -37,9 +51,9 @@ function detail(soundscape: SchemaSoundscapeView): string | null {
 
 /**
  * Claude FM and the plugins' soundscapes, the configured one checked, as a group of radios. Picking one plays it at
- * once (switching from what plays) and leaves the picker where it is.
+ * once (switching from what plays). The native album hands over to the player when picked.
  */
-export function SoundChoices({ list }: Readonly<{ list: SchemaSoundList }>) {
+export function SoundChoices({ list, onAlbumPlay }: Readonly<{ list: SchemaSoundList; onAlbumPlay?: () => void }>) {
   const choose = useSetSound();
   const sound = useSound();
   const themes = useThemes().data?.themes ?? [];
@@ -48,7 +62,7 @@ export function SoundChoices({ list }: Readonly<{ list: SchemaSoundList }>) {
       {list.soundscapes
         .filter((soundscape) => soundscape.kind !== "off")
         .map((soundscape) => {
-          const checked = soundscape.name === list.effective;
+          const checked = !sound.albumSelected && soundscape.name === list.effective;
           const themeTitles = themes
             .filter(
               (theme) =>
@@ -79,7 +93,8 @@ export function SoundChoices({ list }: Readonly<{ list: SchemaSoundList }>) {
               onClick={() => {
                 // Not disabled while saving: a disabled button would take the keyboard focus out of the picker.
                 if (choose.isPending) return;
-                if (!checked || list.follow_theme) choose.pick(soundscape.name);
+                if (sound.albumSelected && soundscape.name === list.effective) play(soundscape.name);
+                else if (!checked || list.follow_theme) choose.pick(soundscape.name);
                 else if (!sound.playing) play(soundscape.name);
               }}
               className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui hover:bg-accent aria-busy:opacity-50"
@@ -92,6 +107,27 @@ export function SoundChoices({ list }: Readonly<{ list: SchemaSoundList }>) {
             </button>
           );
         })}
+      {nativeAlbum() && (
+        // biome-ignore lint/a11y/useSemanticElements: matches the existing soundscape radio list
+        <button
+          type="button"
+          role="radio"
+          aria-checked={sound.albumSelected}
+          onClick={() => {
+            setDocked(true);
+            selectAlbum();
+            void albumAction("play");
+            onAlbumPlay?.();
+          }}
+          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui hover:bg-accent"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block truncate">{ALBUM_TITLE}</span>
+            <span className="block text-xs text-muted-foreground">Latent Heinzels</span>
+          </span>
+          <Check aria-hidden className={cn("size-4 shrink-0", !sound.albumSelected && "invisible")} />
+        </button>
+      )}
     </div>
   );
 }
@@ -104,8 +140,10 @@ function VolumeSlider({ list }: { list: SchemaSoundList }) {
   useEffect(() => setValue(list.volume), [list.volume]);
   useEffect(() => () => clearTimeout(timer.current), []);
   const id = useId();
-  if (isIOS() && effective(list)?.stream) {
-    return <p className="px-2.5 py-1.5 text-ui-sm text-muted-foreground">{t("sound.deviceVolume")}</p>;
+  const current = effective(list);
+  if (isIOS() && isProgramme(current)) {
+    const words = current?.tracks?.length ? "sound.deviceVolumeTracks" : "sound.deviceVolume";
+    return <p className="px-2.5 py-1.5 text-ui-sm text-muted-foreground">{t(words)}</p>;
   }
   return (
     <div className="flex items-center gap-3 px-2.5 py-1.5">
@@ -144,7 +182,7 @@ function Toggle({
   const setting = useSoundSetting();
   const id = useId();
   const on = list[field];
-  if (field === "duck_while_typing" && isIOS() && effective(list)?.stream) return null;
+  if (field === "duck_while_typing" && isIOS() && isProgramme(effective(list))) return null;
   return (
     <div className="flex items-center gap-3 px-2.5 py-1.5">
       <label htmlFor={id} className="flex-1 text-ui">
@@ -203,6 +241,8 @@ export function SoundButton({ compact = false, onPopOut }: { compact?: boolean; 
   const { docked } = useDockPref();
   const list = useSoundscapes();
   const sound = useSound();
+  const album = useAlbum();
+  const playing = sound.albumSelected ? Boolean(album?.playing) : sound.playing;
   // After a pick that reloaded the page the picker is open again, with the pick playing.
   const [open, setOpen] = useState(() => pendingResume() !== null);
   const ref = useRef<HTMLDivElement>(null);
@@ -237,7 +277,7 @@ export function SoundButton({ compact = false, onPopOut }: { compact?: boolean; 
       {open && list.data && (
         <Popover anchor={ref} side={compact ? "right" : "above"} dialog={dialog}>
           <PaneTitle>{t("sound.title")}</PaneTitle>
-          <SoundChoices list={list.data} />
+          <SoundChoices list={list.data} onAlbumPlay={() => setOpen(false)} />
           <Notes list={list.data} />
           <hr className="mx-2 my-1 border-border" />
           <VolumeSlider list={list.data} />
@@ -246,19 +286,21 @@ export function SoundButton({ compact = false, onPopOut }: { compact?: boolean; 
           <Toggle list={list.data} field="mute_in_meetings" label={t("sound.muteInMeetings")} />
           {sound.problem && <p className="px-2.5 py-1 text-ui-sm text-bad">{sound.problem}</p>}
           <PaneActions>
-            <PaneAction
-              key="play"
-              icon={sound.playing ? Pause : Play}
-              disabled={!current}
-              onClick={() => toggle(current?.name)}
-            >
-              {current
-                ? sound.playing
-                  ? t("sound.pause", { title: current.title })
-                  : t("sound.play", { title: current.title })
-                : t("sound.choose")}
-            </PaneAction>
-            {onPopOut && docked && current?.stream && sound.started && (
+            {!sound.albumSelected && (
+              <PaneAction
+                key="play"
+                icon={sound.playing ? Pause : Play}
+                disabled={!current}
+                onClick={() => toggle(current?.name)}
+              >
+                {current
+                  ? sound.playing
+                    ? t("sound.pause", { title: current.title })
+                    : t("sound.play", { title: current.title })
+                  : t("sound.choose")}
+              </PaneAction>
+            )}
+            {onPopOut && docked && isProgramme(current) && sound.started && (
               <PaneAction
                 key="pop-out"
                 icon={PanelLeftOpen}
@@ -276,14 +318,19 @@ export function SoundButton({ compact = false, onPopOut }: { compact?: boolean; 
           </PaneActions>
         </Popover>
       )}
-      {compact && current && (
+      {compact && (sound.albumSelected || current) && (
         <PaneAction
           ghost
-          icon={sound.playing ? Pause : Play}
+          icon={playing ? Pause : Play}
           className="text-icon"
-          onClick={() => toggle(current.name)}
+          onClick={() => {
+            if (sound.albumSelected) void albumAction("toggle");
+            else toggle(current?.name);
+          }}
         >
-          {sound.playing ? t("sound.pause", { title: current.title }) : t("sound.play", { title: current.title })}
+          {t(playing ? "sound.pause" : "sound.play", {
+            title: sound.albumSelected ? ALBUM_TITLE : (current?.title ?? ""),
+          })}
         </PaneAction>
       )}
       <button

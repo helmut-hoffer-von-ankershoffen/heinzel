@@ -111,7 +111,7 @@ it("shows measured timings, context and the offered tools of each server", () =>
   fireEvent.click(screen.getByRole("button", { name: /Internal/ }));
   expect(screen.getByText("system_doctor")).toBeInTheDocument();
   expect(screen.getByText("Check health")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to chat diagnostics" }));
   fireEvent.click(screen.getByRole("button", { name: /weather/ }));
   expect(screen.getByText("forecast")).toBeInTheDocument();
 });

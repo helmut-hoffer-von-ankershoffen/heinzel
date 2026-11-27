@@ -4,15 +4,19 @@ import Foundation
 struct WidgetSnapshotEnvelope: Decodable {
     let version: Int
     let workspaceID: String
-    let generatedAt: String
+    var generatedAt: String
     let freshForSeconds: Int
     let awake: Int
     let waiting: Int
     let roster: [WidgetHeinzel]
+    let rosterCount: Int?
+    let openAsks: Int?
+    let workspaceDisplayName: String?
 
     enum CodingKeys: String, CodingKey {
         case version, workspaceID = "workspace_id", generatedAt = "generated_at"
         case freshForSeconds = "fresh_for_seconds", awake, waiting, roster
+        case rosterCount = "roster_count", openAsks = "open_asks", workspaceDisplayName = "workspace_display_name"
     }
 
     var timestamp: Date? {
@@ -25,7 +29,16 @@ struct WidgetSnapshotEnvelope: Decodable {
     }
 
     func valid(now: Date) -> Bool {
-        guard version == 1, freshForSeconds == 300, let timestamp,
+        switch version {
+        case 1: break
+        case 2:
+            guard let rosterCount, rosterCount >= roster.count, rosterCount <= 9999,
+                  let openAsks, (0...9999).contains(openAsks), openAsks >= waiting,
+                  (workspaceDisplayName?.count ?? 0) <= 128,
+                  workspaceDisplayName?.rangeOfCharacter(from: .controlCharacters) == nil else { return false }
+        default: return false
+        }
+        guard freshForSeconds == 300, let timestamp,
               timestamp <= now.addingTimeInterval(30), timestamp.addingTimeInterval(300) > now,
               workspaceID.wholeMatch(of: /[a-f0-9]{64}/) != nil,
               (0...9999).contains(awake), (0...9999).contains(waiting), roster.count <= 40,
@@ -54,6 +67,14 @@ enum WidgetSnapshotOutcome {
 }
 
 @MainActor struct WidgetSnapshotClient {
+    private struct Verified {
+        let activation: ActivityCatalog.Activation
+        let tag: String
+        let snapshot: WidgetSnapshotEnvelope
+    }
+
+    // One credential generation in the extension process. A cold start fetches the complete projection.
+    private static var previous: Verified?
     let store: WidgetCredentialStore
     // Tests may inject an in-process protocol; production uses the system transport.
     var protocolClasses: [AnyClass]? = nil
@@ -83,16 +104,30 @@ enum WidgetSnapshotOutcome {
         configuration.timeoutIntervalForResource = 8
         let session = URLSession(configuration: configuration, delegate: WidgetRejectRedirect(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
-        var request = URLRequest(url: origin.appending(path: "api/_web/widget-snapshot"),
+        let url = origin.appending(path: "api/_web/widget-snapshot").appending(queryItems: [URLQueryItem(name: "version", value: "2")])
+        var request = URLRequest(url: url,
                                  cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5)
         request.setValue("Bearer \(capture.credential.token)", forHTTPHeaderField: "Authorization")
         request.setValue(capture.credential.workspaceID, forHTTPHeaderField: "X-Hz-Workspace-Id")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if Self.previous?.activation != capture.activation { Self.previous = nil }
+        let prior = Self.previous
+        if let prior { request.setValue(prior.tag, forHTTPHeaderField: "If-None-Match") }
         do {
             let (bytes, response) = try await session.bytes(for: request)
             guard let response = response as? HTTPURLResponse else { return .unavailable }
             if response.statusCode == 401 || response.statusCode == 403 {
+                if Self.previous?.activation == capture.activation { Self.previous = nil }
                 return .rejected(capture, store.invalidate(capture.activation))
+            }
+            if response.statusCode == 304 {
+                guard let prior, response.value(forHTTPHeaderField: "ETag") == prior.tag,
+                      let observed = response.value(forHTTPHeaderField: "X-Hz-Widget-Observed-At") else { return .unavailable }
+                var snapshot = prior.snapshot
+                snapshot.generatedAt = observed
+                guard snapshot.valid(now: .now), let newTime = snapshot.timestamp,
+                      let previousTime = prior.snapshot.timestamp, newTime >= previousTime else { return .unavailable }
+                return .received(snapshot, capture)
             }
             guard response.statusCode == 200, response.mimeType == "application/json" else { return .unavailable }
             var data = Data()
@@ -102,9 +137,15 @@ enum WidgetSnapshotOutcome {
             }
             guard let snapshot = try? JSONDecoder().decode(WidgetSnapshotEnvelope.self, from: data) else { return .unavailable }
             guard snapshot.workspaceID == capture.credential.workspaceID else {
+                if Self.previous?.activation == capture.activation { Self.previous = nil }
                 return .rejected(capture, store.invalidate(capture.activation))
             }
             guard snapshot.valid(now: .now) else { return .unavailable }
+            if snapshot.version == 2, let tag = response.value(forHTTPHeaderField: "ETag"),
+               tag.wholeMatch(of: /W\/"[a-f0-9]{64}"/) != nil,
+               ActivityCatalog.activation(url: store.catalogURL) == capture.activation {
+                Self.previous = Verified(activation: capture.activation, tag: tag, snapshot: snapshot)
+            }
             return .received(snapshot, capture)
         } catch { return .unavailable }
     }
@@ -123,7 +164,7 @@ extension ActivityWidgetData {
         let generation = UUID().uuidString
         let snapshot = Self(awake: source.awake, waiting: source.waiting, updatedAt: timestamp,
                             heinzels: source.roster, workspaceScope: scope, generation: generation,
-                            catalogUpdatedAt: old.catalogUpdatedAt ?? old.updatedAt)
+                            catalogUpdatedAt: old.catalogUpdatedAt ?? old.updatedAt, rosterCount: source.rosterCount)
         guard let data = try? JSONEncoder().encode(snapshot) else { return false }
         let entries = source.roster.map { CatalogHeinzel(id: $0.id, name: $0.name, state: $0.state,
                                                           activity: $0.activity, asks: $0.asks) }
@@ -196,7 +237,7 @@ final class WidgetTimelineRefresh {
     /// Permits are deliberately process-local: after a restart, offline or
     /// inaccessible storage cannot reveal a snapshot whose revocation failed.
     func refreshIfConfigured() async -> WidgetTimelineAccess {
-        guard Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetEnrollmentEnabled") as? Bool == true else { return .localOnly }
+        guard WidgetCredentialStore.enrollmentEnabled else { return .localOnly }
         guard let store = WidgetCredentialStore.configured() else { return .hidden }
         return await refresh(store: store, fetch: { capture in
             await WidgetSnapshotClient(store: store).fetch(captured: capture)

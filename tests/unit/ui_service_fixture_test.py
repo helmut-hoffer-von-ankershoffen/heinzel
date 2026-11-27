@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import psutil
 import pytest
 
+from heinzel.testing import scaled
 from tests.e2e import _ui_service
 from tests.e2e._ui_service import RunningService
 
@@ -154,7 +155,7 @@ def test_fixture_enables_fatal_traces_in_both_sdk_stages(tmp_path, system_custom
         [sys.executable, "-I", "-m", "venv", "--without-pip", str(prefix)],
         env=env,
         check=True,
-        timeout=10,
+        timeout=scaled(10),
     )
     probe = "import faulthandler; print(faulthandler.is_enabled())"
     if system_customizer:
@@ -166,9 +167,9 @@ def test_fixture_enables_fatal_traces_in_both_sdk_stages(tmp_path, system_custom
         (packages / "00-system-library.pth").write_text(f"import sys; sys.path.insert(0, {str(system_library)!r})\n")
         probe += "; import sys; assert sys._fixture_system_customizer"
     command = [str(prefix / "bin/python"), *(["-I"] if isolated else []), "-c", probe]
-    assert subprocess.check_output(command, env=env, timeout=5) == b"False\n"
+    assert subprocess.check_output(command, env=env, timeout=scaled(5)) == b"False\n"
     _ui_service.startup_diagnostics(prefix, tmp_path)
-    assert subprocess.check_output(command, env=env, timeout=5) == b"True\n"
+    assert subprocess.check_output(command, env=env, timeout=scaled(5)) == b"True\n"
     lines = (tmp_path / "startup-phases.txt").read_text().splitlines()
     assert lines
     assert all(line.split()[-1] == ("isolated" if isolated else "initial") for line in lines)
@@ -492,3 +493,37 @@ def test_signal_exit_reports_only_the_owned_process_phase(tmp_path, phase):
     assert not any(value in message for value in ("12345", "67890", "private", "secret"))
     (tmp_path / "startup-phases.txt").write_text("67890 isolated\n12345 unrecognized\n")
     assert fixture.startup_phase() == "unobserved"
+
+
+def test_a_signal_exit_reads_the_trace_the_isolated_interpreter_wrote_to_its_private_file(tmp_path):
+    child = SimpleNamespace(pid=1, poll=lambda: -11, communicate=lambda timeout: (b"", b"stderr was replaced"))
+    fixture = running(child)
+    fixture.service.directory = tmp_path
+    fixture.service.status = lambda: SimpleNamespace(ready=False)
+    trace = tmp_path / "startup-crash-1.txt"
+    trace.write_bytes(
+        b"Fatal Python error: Segmentation fault\n\nThread 0x1 (most recent call first):\n"
+        b'  File "/x/site-packages/uvicorn/server.py", line 70 in serve\n'
+    )
+    with pytest.raises(pytest.fail.Exception) as failure:
+        fixture.ready()
+    assert "crash trace={'error': 'Segmentation fault', 'frames': [('uvicorn/server.py', 70)]}" in str(failure.value)
+    child.pid = 2
+    assert fixture.crash_file() == b""
+    (tmp_path / "startup-crash-2.txt").symlink_to(trace)
+    assert fixture.crash_file() == b""
+    fixture.service.directory = tmp_path / "missing"
+    assert fixture.crash_file() == b""
+
+
+def test_startup_diagnostics_send_a_real_fatal_signal_to_the_private_file(tmp_path):
+    prefix = tmp_path / "prefix"
+    site = prefix / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+    site.mkdir(parents=True)
+    _ui_service.startup_diagnostics(prefix, tmp_path)
+    code = f"import site, faulthandler; site.addsitedir({str(site)!r}); faulthandler._sigsegv()"
+    crash = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, timeout=scaled(20), check=False)
+    assert crash.returncode in {-11, 139}
+    (trace,) = tmp_path.glob("startup-crash-*.txt")
+    assert trace.stat().st_mode & 0o777 == 0o600
+    assert b"Fatal Python error: Segmentation fault" in trace.read_bytes()

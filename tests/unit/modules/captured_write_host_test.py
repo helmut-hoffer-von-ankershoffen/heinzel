@@ -18,6 +18,7 @@ from heinzel.modules.heinzel._captured_write_host import CapturedWriteHost, revi
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionCosts
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -62,7 +63,7 @@ class FakeProvider(CapturedWriteService):
                 provider.before_write()
                 provider.entered.set()
                 if provider.block:
-                    assert provider.release.wait(5)
+                    assert provider.release.wait(scaled(5))
                 if provider.cas_race:
                     provider.revision = "changed-at-commit"
                 if provider.revision != draft.base_revision:
@@ -274,11 +275,11 @@ def test_main_writer_remains_held_until_fake_write_returns(tmp_path):
 
         worker = threading.Thread(target=write)
         worker.start()
-        assert provider.entered.wait(5)
+        assert provider.entered.wait(scaled(5))
         with pytest.raises(HeinzelError), crud.repository.main_writer(draft.session):
             pytest.fail("A second writer entered during the provider call")
         provider.release.set()
-        worker.join(5)
+        worker.join(scaled(5))
         assert not worker.is_alive()
         assert results == ["acknowledged"]
         with crud.repository.main_writer(draft.session):
@@ -286,7 +287,7 @@ def test_main_writer_remains_held_until_fake_write_returns(tmp_path):
     finally:
         provider.release.set()
         if worker:
-            worker.join(5)
+            worker.join(scaled(5))
         context.__exit__(None, None, None)
 
 

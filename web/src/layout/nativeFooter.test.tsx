@@ -38,8 +38,31 @@ it("reports the actual slot and re-reports it when the native document handshake
   render(<NativeFooterSlot metrics={metrics} />);
   await waitFor(() => expect(reportSlot).toHaveBeenCalledTimes(1));
   expect(reportSlot).toHaveBeenLastCalledWith(expect.objectContaining({ x: 0, y: 500, width: 100, height: 48 }));
+  expect(reportSlot.mock.calls[0]?.[0]).not.toHaveProperty("generation");
   act(() => window.dispatchEvent(new Event("heinzel-native-footer-metrics")));
   await waitFor(() => expect(reportSlot).toHaveBeenCalledTimes(2));
+});
+
+it("reports the current layout stamp even when the rectangle and the inset have not changed", async () => {
+  const reportSlot = vi.fn().mockResolvedValue(true);
+  const bridge = { metrics: () => ({ width: 100, bottom: 34, revision: 9, generation: 3 }), reportSlot };
+  vi.stubGlobal("heinzelDesktop", { nativeFooter: bridge });
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 762, 100, 48));
+  const initial = nativeFooter();
+  if (!initial) throw new Error("missing fixture bridge");
+  const { container, rerender } = render(<NativeFooterSlot metrics={initial} />);
+  expect(container.querySelector("[data-native-footer-slot]")).toHaveAttribute("data-native-footer-version", "2");
+  await waitFor(() =>
+    expect(reportSlot).toHaveBeenLastCalledWith(expect.objectContaining({ revision: 9, generation: 3 })),
+  );
+
+  bridge.metrics = () => ({ width: 100, bottom: 34, revision: 9, generation: 4 });
+  const updated = nativeFooter();
+  if (!updated) throw new Error("missing fixture bridge");
+  rerender(<NativeFooterSlot metrics={updated} />);
+  await waitFor(() =>
+    expect(reportSlot).toHaveBeenLastCalledWith(expect.objectContaining({ revision: 9, generation: 4 })),
+  );
 });
 
 it("reports the full visual viewport, with native insets handled separately", async () => {

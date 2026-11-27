@@ -2,6 +2,7 @@
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import uuid
@@ -10,11 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from heinzel import HeinzelError
+from heinzel import HeinzelError, Progress, Settings
+from heinzel.kernel import Installation, Kernel
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon import _abandoned_mutation as abandoned
 from heinzel.modules.system.daemon._abandoned_mutation import host_boot, marker_token_matches, parse_marker
 from heinzel.modules.system.daemon._runtime import lock
+from heinzel.testing import scaled
 from tests.fixtures.daemon_manager import RecordedManager as Runner
 from tests.fixtures.daemon_manager import record_tool
 
@@ -47,12 +50,17 @@ def host() -> Host:
 
 @pytest.fixture
 def service(make_kernel, settings, tmp_path, host) -> DaemonService:
+    return _service(make_kernel(), settings, tmp_path, host, create=True)
+
+
+def _service(kernel, settings, tmp_path, host, *, create: bool) -> DaemonService:
     binary = tmp_path / "bin"
-    binary.mkdir()
-    installation = record_tool(tmp_path / "tool-store/heinzel", binary)
+    binary.mkdir(exist_ok=True)
+    prefix = tmp_path / "tool-store/heinzel"
+    installation = record_tool(prefix, binary) if create else Installation(Progress(), prefix=prefix, uv="uv")
     runner = Runner(binary)
     built = DaemonService(
-        make_kernel(),
+        kernel,
         settings,
         DaemonSettings(unit_dir=tmp_path / "units"),
         runner=runner,
@@ -73,6 +81,22 @@ def service(make_kernel, settings, tmp_path, host) -> DaemonService:
     return built
 
 
+def _kill_after_active_scope_request(folder: Path, settings_file: Path) -> None:
+    settings = Settings.model_validate_json(settings_file.read_bytes())
+    service = _service(Kernel(settings), settings, folder, Host(), create=False)
+    tool = service._quiescence_installation
+    assert tool is not None
+    with service.mutation_guard(tool.repaired_startup_state_matches, tool.rollback_identity) as scope:
+        plan = scope.capture()
+        assert plan.active
+        (tool.prefix / "bin/hz").write_text("the verified installed generation")
+        generation = tool.startup_fingerprint()
+        tool.record_startup_state(expected=generation)
+        scope.verified_complete(generation)
+        assert scope.request(plan).requested
+        os.kill(os.getpid(), signal.SIGKILL)
+
+
 def _marker(service: DaemonService) -> Path:
     return service.state_dir / "mutation-pending.json"
 
@@ -90,7 +114,7 @@ def _receipts(service: DaemonService) -> list[dict]:
 
 def _dead_pid() -> int:
     child = subprocess.Popen([sys.executable, "-c", "pass"])
-    child.wait(timeout=10)
+    child.wait(timeout=scaled(10))
     return child.pid
 
 
@@ -139,6 +163,64 @@ def test_restart_recovers_a_same_boot_marker_whose_process_exited(service):
     assert [receipt["evidence"] for receipt in _receipts(service)] == ["owner-exited"]
 
 
+@pytest.mark.parametrize("changed", [None, "request", "generation", "token", "legacy"])
+def test_active_handover_survives_owner_killed_before_scope_commit(service, tmp_path, host, changed):
+    service.install(timedelta(minutes=5), notifier=False)
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text(service._kernel.settings.model_dump_json())
+    child = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import runpy, sys; from pathlib import Path; "
+                "runpy.run_path(sys.argv[1])['_kill_after_active_scope_request'](Path(sys.argv[2]), Path(sys.argv[3]))"
+            ),
+            __file__,
+            str(tmp_path),
+            str(settings_file),
+        ],
+        check=False,
+        timeout=scaled(20),
+    )
+    assert child.returncode == -signal.SIGKILL
+    request_path = service.state_dir / "handover-request.json"
+    request = service._read_state(request_path.name)
+    assert "mutation_binding" in request
+    marker = _marker(service)
+    original_marker = marker.read_bytes()
+    if changed == "request":
+        service._write_state(request_path.name, request | {"request_id": "c" * 64})
+    elif changed == "generation":
+        tool = service._quiescence_installation
+        (tool.prefix / "bin/hz").write_text("another verified generation")
+        tool.record_startup_state(expected=tool.startup_fingerprint())
+    elif changed in {"token", "legacy"}:
+        stamp = marker.stat().st_mtime_ns
+        data = json.loads(original_marker)
+        replacement = data | {"token": "c" * 64} if changed == "token" else {"token": data["token"]}
+        service._write_state(marker.name, replacement)
+        os.utime(marker, ns=(stamp, stamp))
+        if changed == "legacy":
+            host.reboot(marker)
+    request_bytes = request_path.read_bytes()
+
+    receipt = service._recover_abandoned_mutation()
+
+    assert request_path.read_bytes() == request_bytes
+    if changed is not None:
+        assert receipt is None
+        assert marker.exists()
+    else:
+        assert receipt is not None
+        evidence = json.loads(receipt.read_text())
+        assert evidence["status"] == "archived"
+        assert evidence["bound_handover_request"]["path"] == str(request_path)
+        assert Path(evidence["archive"]).read_bytes() == original_marker
+        assert not marker.exists()
+        assert service.handover_observation(str(request["request_id"])) is None
+
+
 def test_a_live_owner_in_the_same_boot_keeps_the_marker(service):
     child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
     try:
@@ -148,7 +230,7 @@ def test_a_live_owner_in_the_same_boot_keeps_the_marker(service):
             service.restart()
     finally:
         child.kill()
-        child.wait(timeout=10)
+        child.wait(timeout=scaled(10))
     assert _marker(service).exists()
     assert not _receipts(service)
 

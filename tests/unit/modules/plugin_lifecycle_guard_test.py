@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -12,9 +13,11 @@ from heinzel import HeinzelError, Progress
 from heinzel.kernel import Installation
 from heinzel.modules.system.daemon import _installation_lifecycle
 from heinzel.modules.system.daemon._models import DaemonSettings
+from heinzel.modules.system.daemon._runtime import lock
 from heinzel.modules.system.daemon._service import DaemonService
 from heinzel.modules.system.plugin._models import PluginCandidate, PluginChange, PluginSettings
 from heinzel.modules.system.plugin._service import PluginService
+from heinzel.testing import scaled
 
 pytestmark = [pytest.mark.unit, pytest.mark.timeout(30)]  # subprocess-heavy: past 5 s in a loaded hook
 
@@ -116,6 +119,59 @@ entrypoints = [{{name="hz", install-path={str(binary / "hz")!r}}}]
 
     monkeypatch.setattr(service, "_changed", changed)
     return service, installation, daemon, events, wrong
+
+
+def test_plugin_receipt_can_observe_a_busy_tick_before_claiming(guarded):
+    service, _installation, daemon, events, _wrong = guarded
+    preview = service.add("heinzel-demo")
+    operation_id = preview.operation_id
+    assert operation_id is not None
+    with lock(daemon.state_dir / "lifecycle.lock") as lifecycle, lock(daemon.state_dir / "tick.lock") as tick:
+        assert lifecycle
+        assert tick
+        receipt = service.operation(operation_id)
+        assert receipt.lifecycle_busy
+        assert receipt.status == "previewed"
+        assert not events
+    assert not service.operation(operation_id).lifecycle_busy
+    assert service.add("heinzel-demo", confirm=True, operation_id=operation_id).done
+    assert service.add("heinzel-demo", confirm=True, operation_id=operation_id).done
+    assert events == ["uv", "target-probe"]
+
+
+def test_waiting_for_a_real_busy_tick_then_confirms_only_once(guarded):
+    service, _installation, daemon, events, _wrong = guarded
+    operation_id = service.add("heinzel-demo").operation_id
+    assert operation_id is not None
+    observed = threading.Event()
+    done = threading.Event()
+
+    def installer():
+        try:
+            while service.operation(operation_id).lifecycle_busy:
+                observed.set()
+                if done.wait(scaled(0.01)):
+                    return
+            assert service.add("heinzel-demo", confirm=True, operation_id=operation_id).done
+            assert service.add("heinzel-demo", confirm=True, operation_id=operation_id).done
+        finally:
+            done.set()
+
+    worker = threading.Thread(target=installer)
+    try:
+        with lock(daemon.state_dir / "lifecycle.lock") as lifecycle, lock(daemon.state_dir / "tick.lock") as tick:
+            assert lifecycle
+            assert tick
+            worker.start()
+            assert observed.wait(scaled(5)), "installer did not observe the held lifecycle lock"
+            assert not events
+        assert done.wait(scaled(10)), "installer did not resume after the lock was released"
+    finally:
+        done.set()
+        if worker.ident is not None:
+            worker.join(timeout=scaled(1))
+    assert not worker.is_alive()
+    assert events == ["uv", "target-probe"]
 
 
 @pytest.mark.parametrize("checkpoint", [False, True])

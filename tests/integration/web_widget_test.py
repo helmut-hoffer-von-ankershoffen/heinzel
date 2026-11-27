@@ -159,6 +159,58 @@ def test_persisted_check_in_proposal_counts_as_attention(make_kernel, tmp_path):
     assert snapshot["roster"][0]["asks"] == 1
 
 
+def test_version_two_conditional_snapshot_is_bound_to_the_authorized_projection(make_kernel, tmp_path, monkeypatch):
+    monkeypatch.setattr("heinzel.heads.web._widget.gethostname", lambda: "Example Workspace")
+    client = TestClient(
+        web.build(
+            make_kernel(builtins=True), port=8000, token=TOKEN, devices=Devices(tmp_path / "devices"), static=None
+        ),
+        base_url="http://127.0.0.1:8000",
+    )
+    session = {"Authorization": f"Bearer {TOKEN}"}
+    paired = client.post("/api/_web/device", headers=session, json={"name": "phone"}).json()
+    device = {"Authorization": f"Bearer {paired['token']}"}
+    issued = client.post("/api/_web/widget-credential", headers=device).json()
+    widget = {"Authorization": "Bearer " + issued["token"], "X-Hz-Workspace-Id": issued["workspace_id"]}
+    path = "/api/_web/widget-snapshot?version=2"
+    empty = client.get(path, headers=widget)
+    assert empty.status_code == 200
+    assert empty.json()["roster_count"] == 0
+    check = {**widget, "If-None-Match": empty.headers["etag"]}
+    unchanged = client.get(path, headers=check)
+    assert unchanged.status_code == 304
+    assert unchanged.content == b""
+    assert unchanged.headers["cache-control"] == "no-store"
+    assert datetime.fromisoformat(unchanged.headers["x-hz-widget-observed-at"]).tzinfo
+    other_device = client.post("/api/_web/device", headers=session, json={"name": "other"}).json()
+    other = client.post(
+        "/api/_web/widget-credential", headers={"Authorization": "Bearer " + other_device["token"]}
+    ).json()
+    independent = client.get(path, headers={**check, "Authorization": "Bearer " + other["token"]})
+    assert independent.status_code == 200
+    assert independent.headers["etag"] != empty.headers["etag"]
+    assert client.get(path, headers={**check, "X-Hz-Workspace-Id": "wrong"}).status_code == 401
+    created = client.post("/api/heinzel/new-chat", headers=device, json={"request_id": "widget-v2-fixture"})
+    assert created.status_code == 200
+    updated = client.get(path, headers=check)
+    assert updated.status_code == 200
+    assert updated.headers["etag"] != empty.headers["etag"]
+    result = updated.json()
+    assert result["workspace_display_name"] == "Example Workspace"
+    assert result["workspace_id"] == issued["workspace_id"]
+    assert (result["version"], result["roster_count"], result["open_asks"]) == (2, 1, 0)
+    row = result["roster"][0]
+    assert row["id"] == created.json()["session_id"]
+    assert datetime.fromisoformat(row["updated_at"]).tzinfo
+    assert row["artwork"]["age"]
+    assert row["last_approved_at"] is None
+    assert row["next_wake_at"] is None
+    assert client.get("/api/_web/widget-snapshot", headers=check).json()["version"] == 1
+    assert client.get("/api/_web/widget-snapshot?version=3", headers=widget).status_code == 400
+    assert client.delete("/api/_web/widget-credential", headers=device).status_code == 200
+    assert client.get(path, headers={**widget, "If-None-Match": "*"}).status_code == 401
+
+
 def test_widget_bearer_is_rejected_by_other_transports(make_kernel, tmp_path, monkeypatch):
     config_home = tmp_path / "config"
     config_home.mkdir()

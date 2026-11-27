@@ -2,11 +2,13 @@
 // whole app, so the sidebar's button, the settings and the engine that plays agree without a provider.
 // Play needs a gesture: browsers allow audio only after one, and the person decides when a stream's host is contacted.
 import { useSyncExternalStore } from "react";
+import { albumAction, albumState, leaveAlbum, nativeAlbum } from "./album";
 import { Ducker } from "./machine";
 
 export type SoundState = {
   /** Pressed Play and not Pause since; never true without a gesture. */
   playing: boolean;
+  albumSelected: boolean;
   /** Ever pressed Play in this tab for the soundscape in effect: a stream's player exists only from then on. */
   started: boolean;
   /** The soundscape Play was pressed for; null when it was pressed for "whatever is in effect". */
@@ -18,6 +20,7 @@ export type SoundState = {
 };
 
 const initial: SoundState = {
+  albumSelected: false,
   playing: false,
   started: false,
   soundscape: null,
@@ -26,6 +29,7 @@ const initial: SoundState = {
   problem: null,
 };
 let state = initial;
+let playbackRequest = 0;
 const listeners = new Set<() => void>();
 
 function set(change: Partial<SoundState>): void {
@@ -59,7 +63,16 @@ function gesture(): boolean {
  */
 export function play(soundscape?: string): boolean {
   if (!gesture()) return false;
-  set({ playing: true, started: true, soundscape: soundscape ?? null, problem: null });
+  if (nativeAlbum() && (state.albumSelected || albumState()?.playing)) {
+    const request = ++playbackRequest;
+    void albumAction("pausePlayback").then((answer) => {
+      if (request === playbackRequest && answer && !answer.playing) {
+        set({ albumSelected: false, playing: true, started: true, soundscape: soundscape ?? null, problem: null });
+      }
+    });
+    return true;
+  }
+  set({ albumSelected: false, playing: true, started: true, soundscape: soundscape ?? null, problem: null });
   return true;
 }
 
@@ -68,6 +81,8 @@ export function play(soundscape?: string): boolean {
  * before the reload, which `takeResume` vouches for. The browser's own autoplay rules still apply to what plays.
  */
 export function resume(soundscape: string): void {
+  // Media callbacks and reload receipts have no fresh native activation grant.
+  if (state.albumSelected || albumState()?.playing) return;
   set({ playing: true, started: true, soundscape, problem: null });
 }
 
@@ -77,6 +92,7 @@ export function pause(): void {
 
 /** Stop and forget the player: a stream's frame is removed, layered audio released. */
 export function stop(): void {
+  ++playbackRequest;
   ducker.stop();
   set({ playing: false, started: false, soundscape: null });
 }
@@ -109,7 +125,25 @@ export function duck(source: "voice", on: boolean): void {
 
 /** For tests: start from nothing. */
 export function resetSound(): void {
+  ++playbackRequest;
+  leaveAlbum();
   ducker.stop();
   state = initial;
   for (const listener of listeners) listener();
+}
+
+/** Select the native album without changing the saved ordinary soundscape. */
+export function selectAlbum(): void {
+  stop();
+  set({ albumSelected: true });
+}
+
+/** Close the native player after playback stops; saving continues independently. */
+export async function closeAlbum(): Promise<void> {
+  const request = ++playbackRequest;
+  const answer = await albumAction("pausePlayback");
+  if (request === playbackRequest && answer && !answer.playing) {
+    stop();
+    set({ albumSelected: false });
+  }
 }

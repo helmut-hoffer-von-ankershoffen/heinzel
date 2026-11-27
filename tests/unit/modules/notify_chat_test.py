@@ -13,6 +13,7 @@ from heinzel.kernel.session._self_chat import SelfChat
 from heinzel.modules.system.notify import NotifyService, NotifySettings
 from heinzel.modules.system.notify._chat import WINDOW, chat_context, chat_text, forget_chats, notice_ledger
 from heinzel.modules.system.notify._native import Native
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -90,7 +91,7 @@ def _wait_for(predicate, seconds: float = 5.0) -> None:
         if time.monotonic() > deadline:
             msg = "timed out"
             raise AssertionError(msg)
-        time.sleep(0.01)
+        time.sleep(scaled(0.01))
 
 
 def test_off_by_default_nothing_goes_to_chat(make):
@@ -250,7 +251,7 @@ class Hung(Inbox):
         self.release = threading.Event()
 
     def notify_self(self, text: str, *, thread: str | None = None, context: str | None = None) -> SelfMessage:
-        self.release.wait(30)
+        self.release.wait(scaled(30))
         return super().notify_self(text, thread=thread, context=context)
 
 

@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 
@@ -65,7 +67,7 @@ def test_real_launcher_child_preserves_only_explicit_no_bytecode_mode(tmp_path, 
         capture_output=True,
         text=True,
         check=True,
-        timeout=10,
+        timeout=scaled(10),
     )
     assert json.loads(result.stdout) == {
         "isolated": True,

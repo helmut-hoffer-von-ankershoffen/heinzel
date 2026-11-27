@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.e2e
+pytestmark = [pytest.mark.e2e, pytest.mark.real_system]
 
 REPO = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("web_build", REPO / "scripts" / "web_build.py")

@@ -5,18 +5,26 @@ folder, and continuity is the real fingerprint of that folder (ADR 0108).
 """
 
 import errno
+import fcntl
 import json
 import os
+import stat
+import sys
 from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from heinzel import HeinzelError, Progress
+from heinzel import HeinzelError, Progress, Settings
+from heinzel.heads.web._auto_update import AutoUpdater
 from heinzel.kernel import DaemonHandoverPlan, DaemonHandoverRequest, Installation
 from heinzel.kernel.install._installation import _core_by_tag
+from heinzel.kernel.install._installation_mutations import installation_mutation_pending
+from heinzel.modules.system import recover_announced
 from heinzel.modules.system.updater import _announced as announced
+from heinzel.modules.system.updater._adapter_state import FileInstallationState
 from heinzel.modules.system.updater._announced import Announcement, ToolSnapshot, environment_versions
 from heinzel.modules.system.updater._update import UpdateService
 
@@ -274,6 +282,174 @@ def service(tmp_path, monkeypatch, *, moves=None, crm=None, **folder):
 
 def news(core="9.9.9", plugins=None, commit=None):
     return Announcement(core, plugins or {}, commit, exclude_newer=CUTOFF, exclude_newer_core=CORE_CUTOFF)
+
+
+class UpdateInterrupted(BaseException):
+    """Stop before the update process handles a rollback."""
+
+
+def replace_tool_prefix(tool):
+    """Model uv replacing the tool directory when switching interpreters."""
+    prefix = tool.prefix
+    original = prefix.rename(prefix.with_name("original"))
+    (prefix / "bin").mkdir(parents=True)
+    (prefix / "bin/hz").write_text("new entrypoint")
+    (prefix / "uv-receipt.toml").write_bytes((original / "uv-receipt.toml").read_bytes())
+    install(prefix, {"heinzel": "9.9.9", "heinzel-clock": "1.0.0", "urllib3": "2.0.0"})
+    (prefix / ".heinzel-startup-pending").touch(mode=0o600)
+
+
+def interrupt_after_prefix_replacement(update, tool, state, monkeypatch):
+    def replace_prefix(*args, **kwargs):
+        replace_tool_prefix(tool)
+        raise UpdateInterrupted
+
+    monkeypatch.setattr(tool, "run", replace_prefix)
+    with pytest.raises(UpdateInterrupted):
+        update.apply_announced(news(), current="1.0.0", folder=state / "auto-update", trial=lambda _: True)
+
+
+def test_snapshot_file_sync_failure_never_exposes_a_rollback_copy_or_runs_uv(tmp_path, monkeypatch):
+    update, tool, _, runs = service(tmp_path, monkeypatch)
+    folder = tmp_path / "state/auto-update"
+    fsync = os.fsync
+
+    def refuse_file(descriptor):
+        if stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OSError(errno.EIO, "could not sync staged file")
+        fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", refuse_file)
+    with pytest.raises(OSError, match="could not sync staged file"):
+        update.apply_announced(news(), current="1.0.0", folder=folder, trial=lambda _: True)
+
+    assert runs == []
+    assert (folder / "before-update.partial").is_dir()
+    assert not (folder / "before-update").exists()
+    assert tool.startup_state_matches()
+
+
+@pytest.mark.parametrize("phase", ["before phase marker", "phase marker", "after restoring"])
+def test_restore_sync_failure_keeps_the_gate_and_resumes_verification(tmp_path, monkeypatch, phase):
+    update, tool, _, _ = service(tmp_path, monkeypatch)
+    state = tmp_path / "state"
+    folder = state / "auto-update"
+    expected = tool.content_fingerprint()
+    interrupt_after_prefix_replacement(update, tool, state, monkeypatch)
+    snapshot = folder / "before-update"
+    marker = folder / "after-update" / announced.MOVED_ASIDE
+    method, fail_at = {
+        "before phase marker": ("sync_directory", tool.prefix),
+        "phase marker": ("_sync_file", marker),
+        "after restoring": ("sync_directory", snapshot),
+    }[phase]
+    sync = getattr(announced, method)
+
+    def refuse_barrier(path):
+        if path == fail_at:
+            raise OSError(errno.EIO, "could not sync restore phase")
+        sync(path)
+
+    with monkeypatch.context() as fault:
+        fault.setattr(announced, method, refuse_barrier)
+        with pytest.raises(OSError, match="could not sync restore phase"):
+            update.recover_announced(folder)
+
+    assert marker.exists() == (phase != "before phase marker")
+    assert installation_mutation_pending(tool.prefix, state)
+    assert not tool.startup_state_matches()
+    synced = []
+
+    def observe_sync(path):
+        sync(path)
+        synced.append(path)
+
+    with monkeypatch.context() as retry:
+        retry.setattr(announced, method, observe_sync)
+        assert update.recover_announced(folder)
+
+    assert fail_at in synced
+    assert tool.content_fingerprint() == expected
+    assert tool.startup_state_matches()
+    assert not installation_mutation_pending(tool.prefix, state)
+
+
+def test_interrupted_update_can_be_recovered_through_a_symlinked_parent(tmp_path, monkeypatch):
+    physical = tmp_path / "physical"
+    physical.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(physical, target_is_directory=True)
+    update, tool, _, _ = service(physical, monkeypatch)
+    before = tool.content_fingerprint()
+    interrupt_after_prefix_replacement(update, tool, alias / "state", monkeypatch)
+
+    with monkeypatch.context() as running:
+        running.setattr(sys, "prefix", str(alias / "tools/heinzel"))
+        assert Installation(Progress(), uv="unused").prefix == tool.prefix
+    fresh = Installation(Progress(), prefix=alias / "tools/heinzel", uv="unused")
+    assert fresh.prefix == alias / "tools/heinzel"
+    assert UpdateService(fresh, Releases()).recover_announced(alias / "state/auto-update")
+    assert tool.content_fingerprint() == before
+    assert tool.startup_state_matches()
+
+
+def test_interrupted_update_refuses_a_symlinked_tool_directory(tmp_path, monkeypatch):
+    update, tool, _, _ = service(tmp_path, monkeypatch)
+    state = tmp_path / "state"
+    interrupt_after_prefix_replacement(update, tool, state, monkeypatch)
+    target = tool.prefix.rename(tool.prefix.with_name("recreated"))
+    tool.prefix.symlink_to(target, target_is_directory=True)
+    with pytest.raises(HeinzelError, match="snapshot is unsafe"):
+        update.recover_announced(state / "auto-update")
+    assert (state / "auto-update/before-update").is_dir()
+    assert (target / "bin/hz").read_text() == "new entrypoint"
+
+
+def test_server_recovery_holds_the_apply_lock_and_the_installation_lock(tmp_path, monkeypatch, make_kernel):
+    update, tool, _, _ = service(tmp_path, monkeypatch)
+    state = tmp_path / "state"
+    state_port = FileInstallationState(state)
+    interrupt_after_prefix_replacement(update, tool, state, monkeypatch)
+    kernel = make_kernel(builtins=True, settings_=Settings(state_dir=state))
+    kernel.bind(Installation, tool)
+    restore = ToolSnapshot.restore
+    observed = []
+
+    def verify_locks(snapshot, **kwargs):
+        for lock in (state / "web/auto-update-apply.lock", state / "update.lock"):
+            with lock.open("r+") as held, pytest.raises(BlockingIOError):
+                fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert state_port.update_owner() == f"automatic update (PID {os.getpid()})"
+        observed.append(snapshot)
+        restore(snapshot, **kwargs)
+
+    monkeypatch.setattr(ToolSnapshot, "restore", verify_locks)
+    AutoUpdater(kernel, restart=None, development=None)
+
+    assert len(observed) == 1
+    assert state_port.update_owner() is None
+    assert tool.startup_state_matches()
+    assert not installation_mutation_pending(tool.prefix, state)
+
+
+@pytest.mark.parametrize("unverified", ["legacy", "modified before update", "modified copy"])
+def test_interrupted_update_does_not_record_unverified_continuity(tmp_path, monkeypatch, unverified):
+    update, tool, _, _ = service(tmp_path, monkeypatch)
+    state = tmp_path / "state"
+    kernel = SimpleNamespace(settings=SimpleNamespace(state_dir=state))
+    snapshot = state / "auto-update/before-update"
+    if unverified == "modified before update":
+        (tool.prefix / "bin/hz").write_text("changed outside the updater")
+    interrupt_after_prefix_replacement(update, tool, state, monkeypatch)
+    if unverified == "legacy":
+        (state / "auto-update/.rollback/continuity").unlink()
+    if unverified == "modified copy":
+        (snapshot / "bin/hz").write_text("changed after the copy")
+
+    with pytest.raises(HeinzelError, match="explicit recovery is required"):
+        recover_announced(update, kernel)
+    assert not tool.startup_state_matches()
+    assert snapshot.is_dir()
 
 
 def test_everything_is_held_but_the_announced_versions_and_nothing_installed_runs(tmp_path, monkeypatch):

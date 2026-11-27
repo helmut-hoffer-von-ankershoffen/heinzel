@@ -20,6 +20,7 @@ import {
   type UpdateAnswers,
   updateDesktopApp,
 } from "@/features/runtime/updates/controller";
+import { PluginUnpin } from "@/features/runtime/updates/PluginUnpin";
 import { UpdatePlanDetails } from "@/features/runtime/updates/UpdatePlanDetails";
 import { describe, partSegments } from "@/features/runtime/updates/updateState";
 import { reloadHeld, workOnScreen } from "@/features/runtime/updates/work";
@@ -314,6 +315,7 @@ export function UpdateStatus() {
             <PaneAction
               icon={RefreshCw}
               spinning={check.isPending}
+              refreshFailed={check.isError}
               disabled={check.isPending}
               onClick={() => runCheck()}
             >
@@ -342,6 +344,7 @@ export function UpdateStatus() {
                 {row.text}
               </p>
               {row.detail && <p className="text-xs text-muted-foreground">{row.detail}</p>}
+              {row.unpin && <PluginUnpin name={row.unpin} />}
             </div>
           </div>
         ))}

@@ -7,6 +7,7 @@
 contexts.py check      every file has exactly one owner and pyproject.toml holds the generated contracts
 contexts.py write      regenerate the contracts block in pyproject.toml
 contexts.py owner FILE the context that owns FILE
+contexts.py select     changed paths on stdin: python=true|false (level L0)
 """
 
 from __future__ import annotations
@@ -89,6 +90,26 @@ def python_needed(config: dict[str, Any], changed: list[str]) -> tuple[bool, str
     return False, "only " + ", ".join(sorted({n for names in owned.values() for n in names} | {"docs"}))
 
 
+def upgrade_needed(config: dict[str, Any], changed: list[str]) -> tuple[bool, str]:
+    """Whether a change runs the in-place upgrade lane and the macOS cells on its pull request, and why.
+
+    A path owned by, or a test of, a context in `[select] upgrade`, and every path of `[select] upgrade_paths` select
+    them; an empty change selects them too (fail closed).
+    """
+    select = config["select"]
+    if not changed:
+        return True, "no changed paths: the upgrade lane runs"
+    names = select["upgrade"]
+    contexts = [config["context"][name] for name in names]
+    for path in changed:
+        if matches(path, select["upgrade_paths"]):
+            return True, f"{path}: an upgrade path"
+        owned = owners(config, [path])[path]
+        if any(name in names for name in owned) or any(matches(path, c.get("tests", [])) for c in contexts):
+            return True, f"{path}: in an upgrade context ({', '.join(names)})"
+    return False, f"no path in {', '.join(names)} or the upgrade paths"
+
+
 def _ignores(entries: list[str]) -> str:
     if not entries:
         return ""
@@ -160,7 +181,7 @@ def write(root: Path = ROOT) -> None:
 def main() -> int:
     """Entry point."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("action", choices=["check", "write", "owner", "select"])
+    parser.add_argument("action", choices=["check", "write", "owner", "select", "upgrade"])
     parser.add_argument("file", nargs="?")
     args = parser.parse_args()
     if args.action == "write":
@@ -168,6 +189,10 @@ def main() -> int:
     elif args.action == "select":
         needed, why = python_needed(load(), [line.strip() for line in sys.stdin if line.strip()])
         sys.stdout.write(f"python={'true' if needed else 'false'}\n")
+        sys.stderr.write(f"{why}\n")
+    elif args.action == "upgrade":
+        needed, why = upgrade_needed(load(), [line.strip() for line in sys.stdin if line.strip()])
+        sys.stdout.write(f"upgrade={'true' if needed else 'false'}\n")
         sys.stderr.write(f"{why}\n")
     elif args.action == "owner":
         sys.stdout.write(" ".join(owners(load(), [args.file])[args.file]) + "\n")

@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 
@@ -49,7 +51,7 @@ def test_wrapper_does_not_export_resolver_policy_to_descendants(starter, tmp_pat
         [str(wrapper), *arguments],
         env={**os.environ, "UV_FIND_LINKS": "must-not-propagate"},
         check=True,
-        timeout=15,
+        timeout=scaled(15),
     )
     actual, inherited = json.loads(observed.read_text())
     assert inherited is None
@@ -77,7 +79,7 @@ def test_nested_uv_run_keeps_policy_out_of_child_and_retains_explicit_wrapper(st
         [wrapper, "run", "--offline", "--no-project", "--python", sys.executable, "python", "-c", probe],
         env=environment,
         check=True,
-        timeout=15,
+        timeout=scaled(15),
     )
 
 
@@ -133,7 +135,7 @@ def test_interrupted_starter_command_terminates_its_process_group(starter, tmp_p
     try:
         deadline = time.monotonic() + 5
         while not child_ready.exists() and time.monotonic() < deadline:
-            time.sleep(0.01)
+            time.sleep(scaled(0.01))
         assert parent_ready.exists()
         assert child_ready.exists()
         process.send_signal(signal.SIGTERM)
@@ -147,7 +149,7 @@ def test_interrupted_starter_command_terminates_its_process_group(starter, tmp_p
     finally:
         if process.poll() is None:
             process.kill()
-            process.wait(timeout=5)
+            process.wait(timeout=scaled(5))
         if parent_ready.exists():
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(int(parent_ready.read_text()), signal.SIGKILL)
@@ -188,12 +190,12 @@ def test_completed_starter_command_reaps_background_descendants(starter, tmp_pat
     )
     process = subprocess.Popen([sys.executable, str(runner)], start_new_session=True, stdout=subprocess.DEVNULL)
     try:
-        assert process.wait(timeout=8) == returncode
+        assert process.wait(timeout=scaled(8)) == returncode
         assert child_stopped.read_text() == "stopped"
     finally:
         if process.poll() is None:
             process.kill()
-            process.wait(timeout=5)
+            process.wait(timeout=scaled(5))
         if child_ready.exists():
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(int(child_ready.read_text()), signal.SIGKILL)

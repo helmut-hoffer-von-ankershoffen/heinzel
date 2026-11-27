@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it } from "vitest";
-import { shell } from "@/test/fixtures";
+import { config, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi } from "@/test/render";
 import { renderAt } from "@/test/renderApp";
 
@@ -13,6 +13,38 @@ const token = {
   expires: "2027-02-12T10:00:00Z",
   last_used: null,
 };
+
+it("shows one MCP switch even when the configuration schema includes it", async () => {
+  mockApi({
+    ...shell,
+    "/api/system/config/show": {
+      ...config,
+      settings: [
+        ...config.settings,
+        {
+          section: "hz",
+          key: "mcp_http",
+          value: false,
+          default: false,
+          source: "default",
+          env: "HZ_MCP_HTTP",
+          description: "Serve MCP to other agents.",
+          json_schema: { type: "boolean", title: "MCP for other agents" },
+        },
+      ],
+    },
+    "/api/_web/mcp": { enabled: false, tokens: [] },
+  });
+  const user = userEvent.setup();
+  renderAt("/doctor?settings=mcp");
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  expect(await within(dialog).findAllByRole("switch")).toHaveLength(1);
+  expect(within(dialog).getByRole("switch", { name: "Serve MCP to other agents" })).toBeInTheDocument();
+  await user.type(within(dialog).getByRole("searchbox"), "mcp");
+  expect(within(dialog).queryByRole("switch")).not.toBeInTheDocument();
+  await user.click(within(dialog).getAllByRole("button", { name: "MCP" })[1] as HTMLElement);
+  expect(await within(dialog).findAllByRole("switch")).toHaveLength(1);
+});
 
 it("switches MCP on, makes a token shown once with copy buttons, and revokes it", async () => {
   let state = { enabled: false, tokens: [] as (typeof token)[] };

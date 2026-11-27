@@ -14,6 +14,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
 STEP = next(s for s in WORKFLOW["jobs"]["changes"]["steps"] if s.get("id") == "paths")
@@ -44,7 +46,9 @@ def decide(tmp_path, changed, **options):
         "BATCH_BASE": batch,
         "HEAD_REF": head_ref,
     }
-    subprocess.run(["bash", "-e", "-c", STEP["run"]], cwd=ROOT, env=env, check=True, capture_output=True, timeout=60)
+    subprocess.run(
+        ["bash", "-e", "-c", STEP["run"]], cwd=ROOT, env=env, check=True, capture_output=True, timeout=scaled(60)
+    )
     return dict(line.split("=", 1) for line in out.read_text(encoding="utf-8").splitlines() if "=" in line)
 
 

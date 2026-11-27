@@ -64,6 +64,9 @@ struct WorkspaceView: WebRepresentable {
             context.coordinator, contentWorld: .page, name: "heinzelFooter"
         )
         #endif
+        configuration.userContentController.addScriptMessageHandler(
+            context.coordinator, contentWorld: .page, name: "heinzelAlbum"
+        )
         var audioMember = ""
         #if os(macOS) || canImport(ScreenCaptureKit)
         if #available(iOS 27, *), offersSystemAudio {
@@ -126,10 +129,11 @@ struct WorkspaceView: WebRepresentable {
                     if (action === "start" && !navigator.userActivation?.isActive) return Promise.resolve(false);
                     return window.webkit.messageHandlers.heinzelAudio.postMessage(action);
                 };
+                const album = (action, geometry) => window.webkit.messageHandlers.heinzelAlbum.postMessage(
+                    geometry ? { action, geometry } : action);
                 const browser = request => window.webkit.messageHandlers.heinzelBrowser.postMessage(request);
                 const notices = request => window.webkit.messageHandlers.heinzelNotices.postMessage(request);
-                let footerMetrics = { width: 88, bottom: 0 };
-                let footerRevision = -1;
+                let footerMetrics = { width: 88, bottom: 0, revision: -1, generation: -1 };
                 let pageHandlesFooter = false;
                 let legacyStyle = null;
                 let legacyFooter = null;
@@ -144,7 +148,7 @@ struct WorkspaceView: WebRepresentable {
                 };
                 const updateLegacy = () => {
                     legacyFrame = 0;
-                    if (pageHandlesFooter || document.querySelector('[data-native-footer-slot]')) {
+                    if (pageHandlesFooter || document.querySelector('[data-native-footer-slot][data-native-footer-version="2"]')) {
                         legacySequence += 1;
                         pageHandlesFooter = true; legacyMutations.disconnect();
                         legacyStyle?.remove(); legacyStyle = null; legacySizes.disconnect(); legacyFooter = null;
@@ -152,14 +156,15 @@ struct WorkspaceView: WebRepresentable {
                     }
                     const shell = document.querySelector('[data-testid="app-shell"]');
                     const bar = shell?.querySelector('footer[data-footer-width]');
-                    if (!shell || !bar || !document.head || footerRevision < 0) return;
+                    if (!shell || !bar || !document.head || footerMetrics.revision < 0) return;
                     if (!legacyStyle) { legacyStyle = document.createElement('style'); document.head.appendChild(legacyStyle); }
                     const css = `[data-testid="app-shell"]{padding-bottom:0!important} footer[data-footer-width]{height:${48 + footerMetrics.bottom}px!important;padding-bottom:${footerMetrics.bottom}px!important;padding-left:${footerMetrics.width}px!important;justify-content:flex-end} footer[data-footer-width] [data-footer-part="@version"]{display:none!important}`;
                     if (legacyStyle.textContent !== css) { legacyStyle.textContent = css; window.dispatchEvent(new Event('resize')); }
                     if (legacyFooter !== bar) { legacySizes.disconnect(); legacySizes.observe(bar); legacyFooter = bar; }
                     const rect = bar.getBoundingClientRect();
-                    const slot = {x:rect.x, y:rect.y, width:footerMetrics.width, height:48,
-                                  viewportWidth:innerWidth, viewportHeight:innerHeight, revision:footerRevision};
+                    const { width, revision, generation } = footerMetrics;
+                    const slot = {x:rect.x, y:rect.y, width, height:48,
+                                  viewportWidth:innerWidth, viewportHeight:innerHeight, revision, generation};
                     const value = JSON.stringify(slot);
                     if (value !== legacyCandidate) { legacyCandidate = value; legacyLast = ''; legacyAttempts = 0; }
                     if (value !== legacyLast && legacyAttempts < 10) {
@@ -176,17 +181,22 @@ struct WorkspaceView: WebRepresentable {
                     }
                 };
                 const legacyMutations = new MutationObserver(scheduleLegacy);
-                legacyMutations.observe(document, { childList:true, subtree:true });
+                legacyMutations.observe(document, { childList:true, subtree:true, attributes:true,
+                    attributeFilter:['data-native-footer-version'] });
                 window.addEventListener('resize', scheduleLegacy);
                 window.addEventListener('scroll', scheduleLegacy, true);
                 window.addEventListener('hz:footer-relocated', scheduleLegacy);
                 const footer = Object.freeze({
                     metrics: () => ({ ...footerMetrics }),
-                    reportSlot: slot => { pageHandlesFooter = true; scheduleLegacy(); return window.webkit.messageHandlers.heinzelFooter.postMessage({ ...slot, revision: footerRevision }); },
+                    reportSlot: slot => {
+                        // Older pages report without a stamp. The compatibility reporter measures their footer itself.
+                        if (slot.revision !== footerMetrics.revision || slot.generation !== footerMetrics.generation ||
+                            slot.revision < 0 || slot.generation < 0) return Promise.resolve(false);
+                        return window.webkit.messageHandlers.heinzelFooter.postMessage(slot);
+                    },
                 });
-                Object.defineProperty(window, "__heinzelUpdateFooter", { value: (width, bottom, revision) => {
-                    footerMetrics = { width, bottom };
-                    footerRevision = revision;
+                Object.defineProperty(window, "__heinzelUpdateFooter", { value: (width, bottom, revision, generation) => {
+                    footerMetrics = { width, bottom, revision, generation };
                     legacyLast = '';
                     legacyCandidate = '';
                     legacyAttempts = 0;
@@ -195,7 +205,7 @@ struct WorkspaceView: WebRepresentable {
                     window.dispatchEvent(new Event("heinzel-native-footer-metrics"));
                 }});
                 Object.defineProperty(window, "heinzelDesktop", {
-                    value: Object.freeze({ \(chrome) \(connection) browser, notices, workspaceAudio: false, \(audioMember) })
+                    value: Object.freeze({ clientFlavor: "native", \(chrome) \(connection) browser, notices, album, workspaceAudio: false, \(audioMember) })
                 });
             })();
             """,

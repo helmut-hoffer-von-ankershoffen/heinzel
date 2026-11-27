@@ -16,6 +16,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 HARNESS = Path(__file__).resolve().parents[2] / "scripts" / "acceptance"
@@ -33,6 +35,36 @@ def load(name: str):
 harness = load("run_acceptance")
 summary = load("summary")
 UNKNOWN_FOREGROUND_VERSION = f"{max(int(version.split('.')[0]) for version in harness.FOREGROUND_UI) + 1}.0.0"
+
+
+@pytest.mark.parametrize(
+    ("selected", "effective", "active", "keep_off", "passes"),
+    [
+        ("off", "off", "off", False, True),  # .55 default
+        ("singularity", "singularity", "singularity", False, True),  # .56 default with the theme installed
+        ("off", "off", "off", True, True),  # an explicit preference retained by the update
+        ("singularity", "singularity", "singularity", True, False),  # lost explicit Off
+        ("off", "singularity", "singularity", False, False),
+        ("off", "off", "singularity", False, False),
+        ("other", "other", "other", False, False),
+    ],
+)
+def test_sound_choice_validation_distinguishes_defaults_from_explicit_off(
+    selected, effective, active, keep_off, passes
+):
+    sound = {
+        "selected": selected,
+        "effective": effective,
+        "soundscapes": [
+            {"name": name, "selected": name == active, "effective": name == active}
+            for name in ("off", "singularity", "other")
+        ],
+    }
+    if passes:
+        assert harness.verify_sound_choice(sound, keep_sound_off=keep_off) == selected
+    else:
+        with pytest.raises(harness.StepFailed, match=r"[Ss]oundscape"):
+            harness.verify_sound_choice(sound, keep_sound_off=keep_off)
 
 
 def run(**overrides):
@@ -451,7 +483,7 @@ def test_a_row_check_reads_only_the_installed_version_in_its_own_header():
         "console.log(JSON.stringify(cases.map(({case: id, source}) => "
         "({case: id, shown: vm.runInNewContext(source, {}, {timeout: 5000})}))));"
     )
-    out = subprocess.run([node, "-e", script], capture_output=True, text=True, check=True, timeout=5)
+    out = subprocess.run([node, "-e", script], capture_output=True, text=True, check=True, timeout=scaled(5))
     for result, (case, *_inputs, shown) in zip(json.loads(out.stdout), cases, strict=True):
         assert result["case"] == case
         assert result["shown"] is shown, case

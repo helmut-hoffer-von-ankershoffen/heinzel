@@ -6,6 +6,8 @@ import sys
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 
@@ -64,6 +66,6 @@ else:
         capture_output=True,
         text=True,
         check=False,
-        timeout=30,
+        timeout=scaled(30),
     )
     assert checked.returncode == 0, checked.stderr

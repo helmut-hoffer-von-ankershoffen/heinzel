@@ -37,6 +37,7 @@ from heinzel.conformance import (
     versions,
 )
 from heinzel.kernel import Window
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -194,11 +195,18 @@ def test_a_read_call_that_hangs_fails_after_the_timeout():
 
     class Slow(GoodChat):
         def messages(self, channel: str, window: Window) -> list[Message]:
-            release.wait(2)
+            release.wait(scaled(2))
             return []
 
     try:
-        (finding,) = failures(check_adapter(Slow(), "chat", samples=SAMPLES, timeout=0.05))
+        (finding,) = failures(
+            check_adapter(
+                Slow(),
+                "chat",
+                samples=SAMPLES,
+                timeout=0.05,
+            )
+        )  # unscaled: the adapter's own limit, named in the finding
     finally:
         release.set()
     assert finding == "Slow (chat) call: messages didn't answer within 0.05s"
@@ -240,7 +248,7 @@ def test_models_that_hang_fail_quoting_the_contract(monkeypatch: pytest.MonkeyPa
 
     class Slow(Models):
         def models(self) -> list[ModelOffer]:
-            release.wait(2)
+            release.wait(scaled(2))
             return []
 
     monkeypatch.setattr("heinzel.kernel.ai._ai_models.LIST_TIMEOUT", 0.05)
@@ -509,7 +517,7 @@ def test_a_sign_in_status_that_goes_online_fails_even_when_it_swallows_the_error
     class Online(SignIn):
         def status(self, *, live: bool) -> SignInStatus:
             with contextlib.suppress(OSError):
-                socket.create_connection(("login.acme.example", 443), timeout=1)
+                socket.create_connection(("login.acme.example", 443), timeout=scaled(1))
             return super().status(live=live)
 
     (message,) = sign_in_messages(Online)
@@ -526,7 +534,7 @@ def test_a_sign_in_status_that_fails_hangs_or_returns_something_else_is_reported
 
     class Hanging(SignIn):
         def status(self, *, live: bool) -> SignInStatus:
-            release.wait(2)
+            release.wait(scaled(2))
             return super().status(live=live)
 
     class Plain(SignIn):

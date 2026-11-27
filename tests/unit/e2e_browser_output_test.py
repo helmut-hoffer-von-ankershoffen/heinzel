@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 
@@ -45,7 +47,7 @@ def test_browser_failure_console_does_not_render_token(tmp_path, scenario):
         env=env,
         capture_output=True,
         text=True,
-        timeout=15,
+        timeout=scaled(15),
         check=False,
     )
     assert result.returncode != 0

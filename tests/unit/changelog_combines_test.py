@@ -7,6 +7,8 @@ from types import ModuleType
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
@@ -124,7 +126,7 @@ def test_the_script_reads_commit_bodies_from_the_repository(tmp_path, monkeypatc
 
     def git(*args: str) -> str:
         done = subprocess.run(
-            ["git", "-C", str(tmp_path), *args], check=True, capture_output=True, text=True, timeout=30
+            ["git", "-C", str(tmp_path), *args], check=True, capture_output=True, text=True, timeout=scaled(30)
         )
         return done.stdout.strip()
 

@@ -219,6 +219,7 @@ Your profile, and the team, org and company you work with.
 | Run the supervised calendar reminder worker until its periodic restart. | `hz org calendar-reminder-worker` | — | — | — | yes | expert |
 | Show a week from your connected calendar. | `hz org calendar` | `org_calendar` | — | `GET /api/org/calendar` |  | expert |
 | Show what your team recommends beside what you have; apply only what you accept, to your user file. | `hz org sync` | `org_sync` | — | — | yes |  |
+| Read a calendar week with the browser's current calendar exclusions. | — | — | — | `POST /api/org/calendar-selection` |  | expert |
 
 Settings: [`[org]`](CONFIGURATION.md#org).
 
@@ -448,7 +449,7 @@ Find, add, remove, enable, disable, list and scaffold plugins.
 | Show what a plugin would install, then add it with `--confirm`; adding it again replaces it. | `hz system plugin add` | `system_plugin_add` | — | `POST /api/system/plugin/add` | yes | expert |
 | Add an optional client of hz itself, such as OpenAI's for the ChatGPT plan; a restart loads it. | `hz system plugin add-extra` | `system_plugin_add_extra` | — | `POST /api/system/plugin/add-extra` | yes | expert |
 | Install every plugin an installed plugin requires that is missing or too old, from the same catalog. | `hz system plugin repair` | `system_plugin_repair` | — | `POST /api/system/plugin/repair` | yes | expert |
-| Remove an exact index version pin while keeping the installed plugin. | `hz system plugin unpin` | — | — | — | yes | expert |
+| Remove an exact index version pin while keeping the installed plugin. | `hz system plugin unpin` | — | — | `POST /api/system/plugin/unpin` | yes | expert |
 | List plugins changed on this machine since this server started: what a restart would load. | `hz system plugin pending` | `system_plugin_pending` | — | `GET /api/system/plugin/pending` |  | expert |
 | Read the status and result of a plugin add without repeating it. | `hz system plugin operation` | `system_plugin_operation` | — | `GET /api/system/plugin/operation` |  | expert |
 | Add the plugin in a directory on this machine, to try a plugin you are writing. | `hz system plugin develop` | — | — | — | yes | expert |

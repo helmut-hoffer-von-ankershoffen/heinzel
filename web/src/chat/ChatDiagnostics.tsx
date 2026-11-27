@@ -1,4 +1,6 @@
+import { ArrowLeft, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { PaneAction } from "@/components/PaneActions";
 import { Button } from "@/components/ui/button";
 
 type Tool = { name: string; description: string };
@@ -138,9 +140,9 @@ export function ChatDiagnostics({
     >
       <div className="flex items-center justify-between border-b border-border p-3">
         <h3 className="font-medium">{server ? server.name : "Chat diagnostics"}</h3>
-        <Button type="button" variant="ghost" size="sm" onClick={server ? () => setSelected(null) : onClose}>
-          {server ? "Back" : "Close"}
-        </Button>
+        <PaneAction ghost icon={server ? ArrowLeft : X} onClick={server ? () => setSelected(null) : onClose}>
+          {server ? "Back to chat diagnostics" : "Close chat diagnostics"}
+        </PaneAction>
       </div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 text-sm">
         {turns.length > 0 && (

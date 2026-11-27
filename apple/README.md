@@ -20,7 +20,7 @@ back to Electron before downgrading again.
 
 The app lists recently used workspaces by name when one is known. A cloud icon identifies entries from iCloud. Use the trash icon to forget an entry on this device. A fresh synced sign-in or a new pasted sign-in can add it again.
 
-On a Mac signed for the same Apple Developer team as the iPhone app, open the local workspace’s Connection pane and enable **Sync Sign-in with iCloud**. The Mac publishes its current sign-in through iCloud Keychain when private Tailscale sharing is ready. Select the workspace on your other devices to use its synced sign-in. If an already selected workspace is waiting for sign-in, Heinzel tries once when its iCloud credential arrives. This requires the same Apple Account and iCloud Keychain on those devices. Build the Mac app with an eligible team provisioning profile and `HEINZEL_MAC_ENTITLEMENTS=App/MacCloudSignIn.entitlements HEINZEL_ICLOUD_SIGN_IN=YES` to enable this option.
+On a Mac signed for the same Apple Developer team as the iPhone app, **Sync Sign-in with iCloud** is on by default in the local workspace’s Connection pane. The Mac publishes its current sign-in through iCloud Keychain when private Tailscale sharing is ready. Select the workspace on your other devices to use its synced sign-in. If an already selected workspace is waiting for sign-in, Heinzel tries once when its iCloud credential arrives. This requires the same Apple Account and iCloud Keychain on those devices.
 
 Use the **Share** icon in Workspace Connection to share the workspace address. Builds with `HEINZEL_HTTPS_LINKS=YES` share a `https://heinzel.team/open/#server=…` Universal Link. Other builds share a `heinzel://connect?server=…` link. A new device signs in separately using the host's session link.
 
@@ -30,7 +30,10 @@ The Swift shell uses the same title-bar layout and Browser panel as Electron. Th
 
 Add **Workspace**, **Active Heinzels**, **Heinzel Status**, **Heinzel Picker**, or **Heinzel Roster** from the **Heinzelmännchen** entry in the widget gallery. Edit the Status widget to pin a Heinzel. Its status always includes the snapshot age; open asks and future scheduled wakes appear only while the snapshot is fresh. Launcher widgets name the action rather than repeating app branding. Tap a roster entry to open its chat. Activity and roster widgets put Heinzels needing attention first, show the snapshot age, and label expired statuses as last known. Tap a row to open its chat and refresh through the app. On the iPhone and iPad Lock Screen, add **Workspace** or **Connection Help**. In Shortcuts, use **Open Workspace** or **Open Connection Help**, including with the Action Button on supported iPhones.
 
-On Mac, the app starts and signs in to its local workspace automatically. To open a remote workspace, choose **Heinzel → Connection → Switch Workspace**. The activity widgets show the local workspace while the app is running. Shared widget data requires an app and extension signed by the same Apple Developer team. For a signed local package, run `HEINZEL_MAC_SIGNING_TEAM=TEAM_ID apple/scripts/package-macos VERSION`. The teamless package supports the workspace and help launchers. For an iCloud-enabled Mac build with activity widgets, use `HEINZEL_MAC_ENTITLEMENTS=App/MacCloudSignIn.entitlements HEINZEL_MAC_WIDGET_ENTITLEMENTS=Widgets/MacWidgetGroup.entitlements HEINZEL_ICLOUD_SIGN_IN=YES` and your team ID.
+On Mac, the app starts and signs in to its local workspace automatically. To open a remote workspace, choose **Heinzel → Connection → Switch Workspace**. The activity widgets show the local workspace while the app is running. Shared widget data requires an app and extension signed by the same Apple Developer team. For a signed local package, run `HEINZEL_MAC_SIGNING_TEAM=TEAM_ID apple/scripts/package-macos VERSION`. The teamless package supports the workspace and help launchers.
+
+For an iCloud-enabled Mac development package, also set `HEINZEL_ICLOUD_SIGN_IN=YES`, `HEINZEL_MAC_PROFILE` to the installed app profile specifier, and `HEINZEL_MAC_WIDGET_PROFILE` to the separate installed widget profile specifier. The build uses an Apple Development signing identity and requires profiles for the target Mac and corresponding bundle identifiers. Before promoting the package, the script checks both extracted products against
+their signing team, profile, certificate, bundle identifier and required entitlements.
 
 In notification settings, choose **Notify me on this device**. Heinzel confirms the workspace and asks for system permission. Notifications come from the connected workspace while the app is open. Tapping an alert opens the notice when its workspace is connected. On iPhone and iPad, keep Heinzel active to receive new notices.
 
@@ -47,11 +50,14 @@ The device user chooses what to share. Test on a physical device by starting ano
 intended content in the picker, checking that the visualizer reacts, and then stopping sharing. Apple's
 [iOS capture sample](https://developer.apple.com/documentation/screencapturekit/capturing-screen-content-on-ios)
 requires the `screen-capture` background mode to continue a full-display stream when its app is backgrounded; this
-app declares that mode only for its iOS app target. The native stream can continue while the app is backgrounded;
+app declares that mode only for its iOS app target, alongside `audio` for background playback.
+The native stream can continue while the app is backgrounded;
 the visualizer draws when visible. Background survival and signal recovery still require physical-device
-acceptance. This does not enable microphone capture or background audio playback. Before uploading an archive,
-verify the resolved app plist contains exactly `UIBackgroundModes = [screen-capture]` and the widget declares no
+acceptance. Microphone capture still requires its existing permission. Before uploading an archive,
+verify the resolved app plist contains exactly `UIBackgroundModes = [screen-capture, audio]` and the widget declares no
 background modes; preserve enrollment, signed groups and the exact build/source checks.
+Both Mac and iOS app/widget source plists map `HeinzelSourceRevision` to `$(HEINZEL_SOURCE_REVISION)`
+so paired artifacts can be checked against the same source commit.
 
 For a signed iPhone or iPad build, enable Associated Domains for the app ID and
 build with `HEINZEL_IOS_ENTITLEMENTS=App/UniversalLinks.entitlements HEINZEL_HTTPS_LINKS=YES`.

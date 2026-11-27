@@ -2,7 +2,9 @@
 
 import importlib.util
 import re
+import subprocess
 import sys
+import tomllib
 from pathlib import Path, PurePosixPath
 
 import pytest
@@ -23,8 +25,8 @@ OWNERS = contexts.owners(CONFIG, FILES)
 WORLD = re.compile(
     r"\bsubprocess\.(?:run|Popen|check_output|check_call|call)\b|\btime\.(?:sleep|monotonic)\b|\blaunchctl\b|\bdatetime\.now\("
 )
-MAX_CONTEXT_EDGES = 8
-MAX_HEAD_EDGES = 12
+MAX_CONTEXT_EDGES = 3
+MAX_HEAD_EDGES = 5
 
 
 def test_every_mapped_file_has_exactly_one_owner():
@@ -63,6 +65,18 @@ def test_the_contract_allowlists_only_shrink():
         "a context may not gain an import of another; lower the cap when one goes"
     )
     assert len(allow["heads"]) <= MAX_HEAD_EDGES, "a head may not gain an import of another head"
+
+
+def test_head_import_exceptions_name_exact_edges():
+    """An exception permits the existing import, not future imports hidden by a wildcard."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    head_contract = next(
+        contract
+        for contract in project["tool"]["importlinter"]["contracts"]
+        if contract["name"] == "Heads only know what the kernel discovered"
+    )
+    entries = [*CONFIG["allow"]["heads"], *head_contract["ignore_imports"]]
+    assert [entry for entry in entries if "*" in entry or "?" in entry] == []
 
 
 def _world_touches(path: str) -> int:
@@ -122,3 +136,91 @@ def test_ci_asks_the_selector_for_pull_requests_only():
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "python3 -I scripts/contexts.py select" in workflow
     assert '[ "$EVENT" = pull_request ] && [ "${RELEASE_FULL:-false}" != true ] && [ -z "${BATCH_BASE:-}" ]' in workflow
+
+
+def _upgrade(*changed):
+    return contexts.upgrade_needed(CONFIG, list(changed))[0]
+
+
+def test_update_lifecycle_and_kernel_changes_select_the_upgrade_lane_and_macos():
+    assert _upgrade("src/heinzel/modules/system/updater/_schedule.py")
+    assert _upgrade("src/heinzel/heads/web/_updates.py")
+    assert _upgrade("src/heinzel/modules/system/lifecycle/_handover.py")
+    assert _upgrade("src/heinzel/_lifecycle_control.py")
+    assert _upgrade("src/heinzel/kernel/_kernel.py")
+    for path in (
+        "src/heinzel/modules/system/daemon/_package_handover_recovery.py",
+        "src/heinzel/modules/system/daemon/_handover_files.py",
+        "src/heinzel/modules/system/daemon/_handover_request.py",
+        "src/heinzel/modules/system/daemon/_legacy_retirement.py",
+        "src/heinzel/heads/cli/_update.py",
+        "src/heinzel/heads/web/_auto_update.py",
+        "src/heinzel/heads/web/_lifecycle.py",
+        "src/heinzel/heads/web/_supervision.py",
+        "src/heinzel/heads/daemon_recovery.py",
+        "src/heinzel/kernel/_daemon_recovery.py",
+    ):
+        assert _upgrade(path), path
+    assert _upgrade("src/heinzel/ports.py"), "the spec context owns the public heinzel names"
+    assert _upgrade("tests/unit/runtime/updater/plan_test.py"), "a test of an upgrade context"
+    assert _upgrade("tests/unit/kernel/lets_test.py")
+    for path in ("uv.lock", "pyproject.toml", ".github/workflows/ci.yml", "scripts/acceptance/scenario.py"):
+        assert _upgrade("docs/guide/start.md", path), path
+    assert _upgrade(), "an empty change fails closed"
+
+
+def test_no_update_lifecycle_handover_or_daemon_source_is_left_out_of_the_upgrade_lane():
+    sources = subprocess.run(
+        ["git", "ls-files", "src"], cwd=ROOT, capture_output=True, text=True, check=True, timeout=30
+    ).stdout.split()
+    named = [p for p in sources if re.search(r"update|lifecycle|handover|daemon", p) and p.endswith(".py")]
+    assert named
+    assert [p for p in named if not _upgrade(p)] == []
+
+
+def test_owning_upgrade_test_and_fixture_inventory_is_selected():
+    # Independent inventory probe: do not derive expectations from the selector globs.
+    paths = subprocess.run(
+        ["git", "ls-files", "tests"], cwd=ROOT, capture_output=True, text=True, check=True, timeout=30
+    ).stdout.splitlines()
+    owning = [
+        p
+        for p in paths
+        if re.search(
+            r"^tests/(?:integration/(?:.*update|(?:web_)?lifecycle|(?:durable_)?daemon)"
+            r"|unit/(?:runtime/(?:updater|lifecycle)/|heads/(?:daemon|.*update|launcher|web_supervision|standard_install_lifecycle)"
+            r"|modules/(?:daemon|lifecycle|system/daemon/)|legacy_handover)|e2e/(?:auto_update|daemon)"
+            r"|fixtures/(?:auto_update/|state_folder_0_9_53/|daemon|legacy_recovery|web-launcher-history/))",
+            p,
+        )
+    ]
+    # These names do not advertise the owning update/lifecycle behavior.
+    owning += [
+        "tests/integration/system_announced_trial_test.py",
+        "tests/integration/ui_service_test.py",
+        "tests/integration/ui_attach_test.py",
+        "tests/integration/web_state_directory_test.py",
+        "tests/integration/standard_install_policy_test.py",
+        "tests/unit/modules/ui_control_startup_test.py",
+        "tests/unit/modules/ui_one_backend_test.py",
+        "tests/unit/modules/web_overview_test.py",
+        "tests/unit/modules/plugin_lifecycle_guard_test.py",
+        "tests/unit/heads/desktop_switch_and_refresh_test.py",
+    ]
+    assert owning
+    assert [p for p in owning if not _upgrade(p)] == []
+
+
+def test_other_contexts_skip_the_upgrade_lane_and_macos_on_a_pull_request():
+    assert not _upgrade("src/heinzel/modules/ui/browser/_page.py")
+    assert not _upgrade("web/src/App.tsx", "docs/guide/start.md")
+    assert not _upgrade("apple/App/HeinzelApp.swift")
+    assert not _upgrade("tests/integration/chat_test.py")
+    assert not _upgrade("tests/unit/modules/calendar_owned_lifecycle_test.py")
+    assert not _upgrade("tests/fixtures/graph/team/workflows/tracker-update.prose.md")
+
+
+def test_ci_asks_the_upgrade_selector_and_fails_closed():
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "python3 -I scripts/contexts.py upgrade" in workflow
+    assert "upgrade=true" in workflow  # no answer from the selector keeps the lane

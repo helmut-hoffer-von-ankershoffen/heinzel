@@ -16,6 +16,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("release_candidate", ROOT / "scripts/release_candidate.py")
@@ -123,7 +125,7 @@ def test_complete_genuine_full_candidate_preserves_event_source_and_wall_clock(e
     assert result["workflow_wall_seconds"] == 900
     assert result["event"] == event
     assert value == original
-    assert len(value["jobs"]) == 64
+    assert len(value["jobs"]) == 65
     assert next(job for job in value["jobs"] if job["name"].startswith("Focused tests ("))["conclusion"] == "skipped"
     assert len([j for j in value["jobs"] if j["name"].startswith("Test (")]) == 4
     assert len([j for j in value["jobs"] if j["name"].startswith("End-to-end ")]) == 10
@@ -326,7 +328,7 @@ def test_verification_uses_unique_same_run_artifact_reviewed_sources_and_termina
             candidate.verify(get, lambda _: archive.getvalue(), candidate.ExpectedCandidate(RUN, PR, HEAD, TREE), pins)
         return
     result = candidate.verify(get, lambda _: archive.getvalue(), candidate.ExpectedCandidate(RUN, PR, HEAD, TREE), pins)
-    assert result["job_count"] == 64
+    assert result["job_count"] == 65
     assert calls.count(f"actions/runs/{RUN}") == 2
 
 
@@ -368,7 +370,9 @@ def test_recorder_binds_real_git_tree_and_exact_project_version(tmp_path, monkey
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
 
     def git(*args):
-        return subprocess.run(["git", *args], capture_output=True, text=True, check=True, timeout=3).stdout.strip()
+        return subprocess.run(
+            ["git", *args], capture_output=True, text=True, check=True, timeout=scaled(3)
+        ).stdout.strip()
 
     git("init", "--quiet")
     git("config", "user.name", "Example Maintainer")
@@ -426,7 +430,7 @@ def test_recorder_binds_real_git_tree_and_exact_project_version(tmp_path, monkey
         )
         argv = shlex.split(line.replace('"$GITHUB_OUTPUT"', str(output)))
         assert argv[:2] == ["python3", "-I"]
-        subprocess.run(argv, cwd=tmp_path, env=env, check=True, capture_output=True, text=True, timeout=3)
+        subprocess.run(argv, cwd=tmp_path, env=env, check=True, capture_output=True, text=True, timeout=scaled(3))
     assert output.read_text() == "full_release=true\n"
     assert json.loads((tmp_path / "reports/release-candidate.json").read_text())["tree"] == tree
     assert not (cold / "uv").exists()

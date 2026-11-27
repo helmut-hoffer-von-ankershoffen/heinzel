@@ -19,7 +19,16 @@ tests = ["tests/unit/kernel/**"]
 [context.runtime-update]
 summary = "update plan, apply, schedule and retry; the web head's auto update keeps only its routes"
 src = ["src/heinzel/modules/system/updater/**", "src/heinzel/heads/web/_updates.py"]
-tests = ["tests/unit/runtime/updater/**"]
+tests = [
+    "tests/unit/runtime/updater/**",
+    "tests/integration/*update*_test.py",
+    "tests/integration/system_announced_trial_test.py",
+    "tests/unit/heads/*update*_test.py",
+    "tests/unit/heads/golden/app_install/update.txt",
+    "tests/e2e/auto_update_test.py",
+    "tests/fixtures/auto_update/**",
+    "tests/fixtures/state_folder_0_9_53/**",
+]
 package = "heinzel.modules.system.updater"
 adapters_only = true
 
@@ -31,7 +40,26 @@ src = [
     "src/heinzel/modules/ui/__init__.py",
     "src/heinzel/modules/ui/_overview.py",
 ]
-tests = ["tests/unit/runtime/lifecycle/**"]
+tests = [
+    "tests/unit/runtime/lifecycle/**",
+    "tests/integration/lifecycle*_test.py",
+    "tests/integration/web_lifecycle_test.py",
+    "tests/integration/ui_service_test.py",
+    "tests/integration/ui_attach_test.py",
+    "tests/integration/web_state_directory_test.py",
+    "tests/integration/standard_install_policy_test.py",
+    "tests/unit/modules/ui_control_startup_test.py",
+    "tests/unit/modules/ui_one_backend_test.py",
+    "tests/unit/modules/web_overview_test.py",
+    "tests/unit/heads/desktop_switch_and_refresh_test.py",
+    "tests/unit/modules/lifecycle*_test.py",
+    "tests/unit/modules/plugin_lifecycle_guard_test.py",
+    "tests/unit/heads/standard_install_lifecycle_test.py",
+    "tests/unit/heads/launcher_test.py",
+    "tests/unit/heads/web_supervision_test.py",
+    "tests/unit/legacy_handover_evidence_test.py",
+    "tests/fixtures/web-launcher-history/**",
+]
 package = "heinzel.modules.system.lifecycle"
 adapters_only = true
 
@@ -44,6 +72,19 @@ package = "heinzel.modules.system.client"
 [context.daemon]
 summary = "the daemon, its schedule and the runner"
 src = ["src/heinzel/modules/system/daemon/**", "src/heinzel/modules/system/runner/**", "src/heinzel/heads/daemon/**", "src/heinzel/heads/daemon_recovery.py"]
+tests = [
+    "tests/unit/heads/daemon*_test.py",
+    "tests/unit/modules/daemon*_test.py",
+    "tests/unit/modules/system/daemon/**",
+    "tests/integration/daemon*_test.py",
+    "tests/integration/durable_daemon_test.py",
+    "tests/e2e/daemon*_test.py",
+    "tests/unit/e2e_daemon_publication_test.py",
+    "tests/fixtures/daemon/**",
+    "tests/fixtures/daemon_manager.py",
+    "tests/fixtures/daemon_legacy_launchctl.txt",
+    "tests/fixtures/legacy_recovery_manager.py",
+]
 package = "heinzel.modules.system.daemon"
 
 [context.plugins]
@@ -104,7 +145,7 @@ src = ["src/heinzel/modules/__init__.py", "src/heinzel/modules/system/*.py"]
 
 [context.head-kit]
 summary = "what every head shares"
-src = ["src/heinzel/heads/*.py"]
+src = ["src/heinzel/heads/*.py", "src/heinzel/heads/_kit/**"]
 exclude = ["src/heinzel/modules/system/client/_mcp_tokens.py", "src/heinzel/heads/daemon_recovery.py", "src/heinzel/heads/_mcp_tokens.py"]
 
 [context.head-cli]
@@ -164,31 +205,50 @@ docs = ["docs/**", "*.md", "mkdocs.yml"]
 # The CHANGELOG and README are read by the release and the end-to-end suite, so they are never skipped:
 keep = ["CHANGELOG.md", "README.md", "docs/**/*.sh"]
 
+# The in-place upgrade (CI job `upgrade`, lane B: the published release updates itself to the pull request's wheel) and
+# the macOS unit and integration cells run on a pull request that touches these contexts (their source or their
+# tests) or one of the upgrade paths: what decides how an installed Core replaces itself (#919).
+upgrade = ["runtime-update", "runtime-lifecycle", "daemon", "spec"]
+upgrade_paths = [
+    "src/heinzel/_lifecycle_control.py",
+    "src/heinzel/heads/cli/_update.py",
+    "src/heinzel/heads/daemon/**",
+    "src/heinzel/heads/daemon_recovery.py",
+    "src/heinzel/heads/web/_auto_update.py",
+    "src/heinzel/heads/web/_lifecycle.py",
+    "src/heinzel/heads/web/_supervision.py",
+    "src/heinzel/heads/web/_updates.py",
+    "src/heinzel/kernel/_daemon_*.py",
+    "pyproject.toml",
+    "uv.lock",
+    "hatch_build.py",
+    "scripts/build.py",
+    "scripts/contexts.py",
+    "contexts.toml",
+    "scripts/acceptance/scenario.py",
+    "scripts/acceptance/run_acceptance.py",
+    ".github/workflows/ci.yml",
+    "tests/unit/cross_version_imports_test.py",
+    "tests/fixtures/published_resident/**",
+    "tests/e2e/_candidate_wheel.py",
+    "tests/e2e/daemon_legacy_recovery_test.py",
+]
+
 # Today's violations of the generated contracts. Each list may only shrink: a new entry fails review.
 [allow]
 contexts = [
-    "heinzel.modules.system.daemon._service -> heinzel.modules.system.updater._phases",
-    "heinzel.modules.system.plugin._service -> heinzel.modules.system.updater._phases",
-    "heinzel.modules.system.plugin._setup -> heinzel.modules.system.updater._phases",
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._models",
     "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._sources",
     "heinzel.modules.system.updater._update_install -> heinzel.modules.system.plugin._sources",
 ]
 heads = [
     "heinzel.heads._served_tools -> heinzel.heads.mcp",
-    "heinzel.heads.cli._serve -> heinzel.heads.api",
-    "heinzel.heads.cli._serve -> heinzel.heads.mcp",
-    "heinzel.heads.cli._serve -> heinzel.heads.mcp._http_check",
-    "heinzel.heads.cli._serve -> heinzel.heads.mcp._standard_project",
-    "heinzel.heads.cli._serve -> heinzel.heads.web",
-    "heinzel.heads.cli._serve -> heinzel.heads.web._supervision",
+    "heinzel.heads.cli -> heinzel.heads._compose",
+    "heinzel.heads.cli._serve -> heinzel.heads._compose",
     "heinzel.heads.web -> heinzel.heads.api",
-    "heinzel.heads.web._browser_bridge -> heinzel.heads.api",
     "heinzel.heads.web._mcp -> heinzel.heads.mcp",
-    "heinzel.heads.web._terminal -> heinzel.heads.api",
 ]
 
 # Files of an `adapters_only` context that still touch the world directly, with how many places: subprocess, time.sleep,
 # time.monotonic, datetime.now, launchctl. Moving a call behind a port lowers the number; it never rises.
 [allow.adapters]
-"src/heinzel/modules/system/lifecycle/_service.py" = 5

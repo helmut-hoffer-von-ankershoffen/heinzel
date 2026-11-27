@@ -201,6 +201,7 @@ class Module:
         audience: Audience = "expert",
         aliases: Iterable[str] = (),
         agents: AgentWrites | ByArguments | None = None,
+        request_body_limit: int | None = None,
     ) -> Callable[[F], F]: ...
 
     def operation[F: Callable[..., Any]](  # noqa: PLR0913 - keyword-only options of a decorator
@@ -220,14 +221,15 @@ class Module:
         audience: Audience = "expert",
         aliases: Iterable[str] = (),
         agents: AgentWrites | ByArguments | None = None,
+        request_body_limit: int | None = None,
     ) -> F | Callable[[F], F]:
         """Advertise a function as an operation. Its docstring is required: it becomes the help text.
 
         Args:
             func: The function, when used as a bare decorator.
             name: Operation name; defaults to the function name with underscores as dashes.
-            read_only: False if the operation changes state; heads use this for confirmations and HTTP verbs.
-            private: Require authenticated call identity; never expose on unauthenticated network heads.
+            read_only: False if the operation changes state; heads use this for confirmations and default HTTP verbs.
+            private: Require authenticated identity; hide from unauthenticated network heads.
             render: How human-facing heads present the result; the JSON form is the default.
             exit_code: Maps the result to an exit code for heads that have one; 0 when not given.
             heads: Restrict the operation to these heads, e.g. `{"cli"}` for interactive ones; all heads by default.
@@ -240,15 +242,12 @@ class Module:
                 Runtime validation and injection remain mandatory; this does not make execution optional.
             audience: `everyday` to list it in help, completion and the web app's navigation for everyone; `expert`
                 (the default) lists it in expert mode only. It runs either way (ADR 0041).
-            aliases: Old command paths that still run it for one minor release, e.g. `["workflow run"]`: the CLI
-                hides them and names the new command on stderr, MCP keeps the old tool name marked deprecated
-                (ADR 0051).
-
-            agents: For an operation that changes things (`read_only=False`): what an agent's call does (ADR 0162).
-                `"direct"` runs it, `"approve"` waits for the person (sending to other people, deleting, paying,
-                publishing, credentials, installing code), `"never"` is the person's own (confirming, approving),
-                `"propose"` or nothing keeps the behaviour before the policy. `ByArguments` makes some calls
-                stricter. Mark it as strict as everything the operation can trigger.
+            aliases: Deprecated old CLI/MCP paths retained for one minor release, e.g. `["workflow run"]` (ADR 0051).
+            request_body_limit: Maximum JSON POST body size, including reads.
+            agents: Governs agent calls for writes (ADR 0162): `direct` runs; `approve` waits for the person
+                (sending, deleting, paying, publishing, credentials, installing code); `never` is theirs (confirm,
+                approve); `propose` or nothing keeps prior behaviour. `ByArguments` makes calls stricter; match
+                the strictest effect.
 
         Raises:
             ValueError: If the docstring is missing, the audience unknown, a requirement is malformed or writes from
@@ -281,6 +280,7 @@ class Module:
                     audience=audience,
                     aliases=tuple(" ".join(a.split()) for a in old_paths),
                     agents=agents,
+                    request_body_limit=request_body_limit,
                 )
             )
             return target
@@ -733,9 +733,9 @@ class Module:
         """Offer soundscapes for the web app (ADR 0058): a `Soundscape`, a `*.toml` file of one, or a directory of them.
 
         Data only, read and checked now, at import: `hz system sound list` lists them and `hz system sound use <name>`
-        picks one. A layered soundscape's audio files are relative to its file's directory and checked now (path,
-        size, licence, signature); a stream names a provider of `STREAM_PROVIDERS` and a video, never a URL. Two
-        modules offering one name: the more specific layer wins, as with themes (ADR 0044).
+        picks one. Audio files are source-relative and checked (path, size, licence, signature); streams name
+        a `STREAM_PROVIDERS` host and video id, never a URL; tracks use https hosts in `MEDIA_ORIGINS` (ADR 0166).
+        For duplicate names, more specific layers win, as for themes (ADR 0044).
 
         Example:
             ```python

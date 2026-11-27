@@ -19,6 +19,7 @@ private final class TransportKeychain: WidgetCredentialKeychain, @unchecked Send
 }
 
 private final class WidgetStubProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var responseHeaders: [String: String] = [:]
     nonisolated(unsafe) static var handle: ((URLRequest) -> (Int, String, Data))!
     override class func canInit(with _: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -36,7 +37,7 @@ private final class WidgetStubProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil,
-                                       headerFields: ["Content-Type": mime])!
+                                       headerFields: Self.responseHeaders.merging(["Content-Type": mime]) { _, type in type })!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: body)
         client?.urlProtocolDidFinishLoading(self)
@@ -69,7 +70,7 @@ private final class WidgetStubProtocol: URLProtocol, @unchecked Sendable {
             expiresAt: .now.addingTimeInterval(3600))
         let bound = seed(credential, expected: pending)!
         let client = WidgetSnapshotClient(store: store, protocolClasses: [WidgetStubProtocol.self])
-        let generated = ISO8601DateFormatter().string(from: .now)
+        let generated = ISO8601DateFormatter().string(from: .now.addingTimeInterval(-5))
         let payload = Data("""
         {"version":1,"workspace_id":"\(workspace)","generated_at":"\(generated)","fresh_for_seconds":300,"awake":0,"waiting":0,"roster":[]}
         """.utf8)
@@ -81,6 +82,34 @@ private final class WidgetStubProtocol: URLProtocol, @unchecked Sendable {
         }
         let success = await client.fetch()
         precondition(success != nil)
+        let v2 = Data("""
+        {"version":2,"workspace_id":"\(workspace)","generated_at":"\(generated)","fresh_for_seconds":300,
+         "awake":0,"waiting":0,"roster":[],"roster_count":0,"open_asks":0,"workspace_display_name":"Example"}
+        """.utf8)
+        let tag = "W/\"" + String(repeating: "a", count: 64) + "\""
+        WidgetStubProtocol.responseHeaders = ["ETag": tag]
+        WidgetStubProtocol.handle = { request in
+            precondition(request.url?.query == "version=2")
+            precondition(request.value(forHTTPHeaderField: "If-None-Match") == nil)
+            return (200, "application/json", v2)
+        }
+        let initial = await client.fetch()
+        precondition(initial?.0.workspaceDisplayName == "Example")
+        let observation = ISO8601DateFormatter().string(from: .now.addingTimeInterval(-1))
+        WidgetStubProtocol.responseHeaders["X-Hz-Widget-Observed-At"] = observation
+        WidgetStubProtocol.handle = { request in
+            precondition(request.value(forHTTPHeaderField: "If-None-Match") == tag)
+            return (304, "", Data())
+        }
+        let unchanged = await client.fetch()
+        precondition(unchanged?.0.generatedAt == observation && unchanged?.0.rosterCount == 0)
+        WidgetStubProtocol.responseHeaders["X-Hz-Widget-Observed-At"] = ISO8601DateFormatter().string(from: .now.addingTimeInterval(-15))
+        let regressed = await client.fetch()
+        precondition(regressed == nil)
+        WidgetStubProtocol.responseHeaders = ["ETag": tag]
+        let missingObservation = await client.fetch()
+        precondition(missingObservation == nil)
+        WidgetStubProtocol.responseHeaders = [:]
         WidgetStubProtocol.handle = { _ in (200, "text/plain", payload) }
         let wrongMIME = await client.fetch()
         precondition(wrongMIME == nil && ActivityCatalog.activation(url: url) == bound)

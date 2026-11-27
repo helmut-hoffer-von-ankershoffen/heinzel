@@ -78,6 +78,45 @@ function Probe({ fetcher }: { fetcher: () => Promise<string> }) {
 }
 
 describe("TopBar reload", () => {
+  it("marks a failed refetch and clears the error as the next read starts", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let fail = false;
+    let resolve!: (value: string) => void;
+    const fetcher = () =>
+      fail
+        ? Promise.reject(new Error("offline"))
+        : new Promise<string>((done) => {
+            resolve = done;
+          });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <Probe fetcher={fetcher} />
+          <TopBar
+            chatOpen={false}
+            onToggleChat={() => {}}
+            terminalOpen={false}
+            onToggleTerminal={() => {}}
+            calendarOpen={false}
+            onOpenCalendar={() => {}}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    act(() => resolve("first"));
+    await screen.findByText("first");
+    fail = true;
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    const failed = await screen.findByRole("button", { name: "Refresh — Refresh failed" });
+    expect(failed.querySelector("svg")).toHaveClass("text-bad");
+    fail = false;
+    fireEvent.click(failed);
+    const refresh = await screen.findByRole("button", { name: "Refresh" });
+    await waitFor(() => expect(refresh).toHaveAttribute("aria-busy", "true"));
+    expect(refresh.querySelector("svg")).toHaveClass("motion-safe:animate-spin");
+    act(() => resolve("again"));
+    await screen.findByText("again");
+  });
   it("refetches even fresh queries on screen and shows the refetch while it runs", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const pending: ((value: string) => void)[] = [];

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from heinzel import bootstrap_pyyaml as bootstrap
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -66,7 +67,11 @@ def test_it_runs_as_a_file_with_only_the_standard_library():
     }
     assert imported <= set(sys.stdlib_module_names)
     result = subprocess.run(
-        [sys.executable, "-I", "-S", str(MODULE), "pins"], capture_output=True, text=True, check=True, timeout=30
+        [sys.executable, "-I", "-S", str(MODULE), "pins"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=scaled(30),
     )
     assert json.loads(result.stdout) == bootstrap.pins()
 

@@ -7,7 +7,7 @@ import { shell } from "@/test/fixtures";
 import { expectAccessible, mockApi } from "@/test/render";
 import { renderAt } from "@/test/renderApp";
 import { nearSlot, resetDock } from "./dock";
-import { resetPageFrame } from "./queries";
+import { resetPagePolicy } from "./queries";
 import { resetSound, soundState } from "./store";
 
 const ORIGIN = "https://www.youtube-nocookie.com";
@@ -65,7 +65,7 @@ async function play() {
 beforeEach(() => resetDock());
 afterEach(() => {
   resetSound();
-  resetPageFrame();
+  resetPagePolicy();
   resetDock();
   vi.restoreAllMocks();
 });
@@ -110,6 +110,8 @@ describe("the mini-player docked in the sidebar", () => {
     const floating = await player();
     expect(floating).toHaveAttribute("data-dock", "floating");
     expect(floating.className).toContain("fixed");
+    expect(floating.className).toContain("w-[482px]");
+    expect(floating.className).toContain("max-w-[calc(var(--hz-viewport-width,100vw)-1rem)]");
     expect(floating.parentElement).toBe(document.body);
     expect(JSON.parse(localStorage.getItem("hz.sound.player") ?? "{}").docked).toBe(false);
     await user.click(within(floating).getByRole("button", { name: "Dock the player in the sidebar" }));

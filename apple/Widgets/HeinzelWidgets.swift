@@ -10,6 +10,7 @@ import WidgetKit
 @main
 struct HeinzelWidgets: WidgetBundle {
     var body: some Widget {
+        SoundscapeWidget()
         WorkspaceWidget()
         #if os(iOS)
         ConnectionHelpWidget()
@@ -212,7 +213,7 @@ private struct ActivityProvider: TimelineProvider, Sendable {
         if context.isPreview {
             let example = ActivityWidgetData(awake: 2, waiting: 1, updatedAt: date, heinzels: previewHeinzels(at: date))
             completion(ActivityEntry(date: date, activity: example))
-        } else if Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetEnrollmentEnabled") as? Bool == true {
+        } else if WidgetCredentialStore.enrollmentEnabled {
             completion(ActivityEntry(date: date, activity: nil, fresh: false))
         } else {
             completion(current(at: date))
@@ -380,7 +381,7 @@ private struct PinnedHeinzelProvider: AppIntentTimelineProvider, Sendable {
             return PinnedHeinzelEntry(date: date, heinzel: previewHeinzels(at: date).first, fresh: true,
                                       workspaceScope: nil, updatedAt: date, configured: true)
         }
-        let snapshot = Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetEnrollmentEnabled") as? Bool == true ? nil : ActivityWidgetData.read()
+        let snapshot = WidgetCredentialStore.enrollmentEnabled ? nil : ActivityWidgetData.read()
         return entry(for: configuration, from: snapshot, at: date)
     }
 
@@ -569,6 +570,15 @@ private struct HeinzelChooserWidget: Widget {
 }
 
 private struct HeinzelRosterWidget: Widget {
+    private var families: [WidgetFamily] {
+        #if os(macOS)
+        // systemExtraLarge is supported from macOS 14; this extension targets macOS 15.
+        return [.systemMedium, .systemLarge, .systemExtraLarge]
+        #else
+        return [.systemMedium, .systemLarge]
+        #endif
+    }
+
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: ActivityWidgetData.rosterKind, provider: ActivityProvider()) { entry in
             HeinzelRosterView(entry: entry)
@@ -577,7 +587,7 @@ private struct HeinzelRosterWidget: Widget {
         }
         .configurationDisplayName("Heinzel Roster")
         .description("See your Heinzels’ last reported statuses and snapshot age. Tap a name to open that chat.")
-        .supportedFamilies([.systemMedium, .systemLarge])
+        .supportedFamilies(families)
     }
 }
 
@@ -608,11 +618,19 @@ private struct HeinzelRosterView: View {
                     .font(.headline)
                     .unredacted()
             } else {
-                ViewThatFits(in: .vertical) {
-                    roster(limit: preferredLimit)
-                    roster(limit: family == .systemLarge ? 4 : 2)
-                    roster(limit: 1)
+                #if os(macOS)
+                if family == .systemExtraLarge {
+                    ViewThatFits(in: .vertical) {
+                        wideRoster(rowsPerColumn: 6)
+                        wideRoster(rowsPerColumn: 4)
+                        roster(limit: 1)
+                    }
+                } else {
+                    regularRoster
                 }
+                #else
+                regularRoster
+                #endif
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -620,23 +638,72 @@ private struct HeinzelRosterView: View {
         .accessibilityLabel("Heinzels")
     }
 
+    private var regularRoster: some View {
+        ViewThatFits(in: .vertical) {
+            roster(limit: preferredLimit)
+            roster(limit: family == .systemLarge ? 4 : 2)
+            roster(limit: 1)
+        }
+    }
+
+    #if os(macOS)
+    private func wideRoster(rowsPerColumn: Int) -> some View {
+        Group {
+            if let snapshot = entry.activity, !items.isEmpty {
+                let display = WidgetRosterColumns(items: items, totalCount: snapshot.rosterCount,
+                                                  rowsPerColumn: rowsPerColumn)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top, spacing: 16) {
+                        ForEach(display.columns.indices, id: \.self) { column in
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(display.columns[column]) { item in
+                                    row(item, scope: snapshot.workspaceScope)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    HStack(alignment: .bottom, spacing: 8) {
+                        if display.remaining > 0 {
+                            Link(destination: NativeRoute.chooseHeinzel.url) {
+                                Text("+\(display.remaining)").font(.caption.weight(.semibold))
+                            }
+                            .accessibilityLabel("View all \(max(items.count, snapshot.rosterCount ?? 0)) Heinzels")
+                        }
+                        SnapshotTime(updatedAt: snapshot.updatedAt, fresh: entry.fresh)
+                    }
+                }
+                .privacySensitive()
+            } else {
+                roster(limit: 1)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+    #endif
+
     private func roster(limit: Int) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if let snapshot = entry.activity, !items.isEmpty {
+                let visible = Array(items.prefix(limit))
+                let overflow = WidgetRosterOverflow(deliveredCount: items.count, totalCount: snapshot.rosterCount,
+                                                     visibleCount: visible.count)
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(items.prefix(limit)) { item in
+                    ForEach(visible) { item in
                         row(item, scope: snapshot.workspaceScope)
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 HStack(alignment: .bottom, spacing: 8) {
-                    if items.count > limit {
+                    if overflow.remaining > 0 {
                         Link(destination: NativeRoute.chooseHeinzel.url) {
-                            Text("+\(items.count - limit)")
+                            Text("+\(overflow.remaining)")
                                 .font(.caption.weight(.semibold))
                         }
-                        .accessibilityLabel("View all \(items.count) Heinzels")
+                        .accessibilityLabel("View all \(overflow.total) Heinzels")
                     }
                     Spacer(minLength: 0)
                     SnapshotTime(updatedAt: snapshot.updatedAt, fresh: entry.fresh)
@@ -783,4 +850,430 @@ private func previewHeinzels(at date: Date) -> [WidgetHeinzel] {
         WidgetHeinzel(id: "sam", name: "Sam", state: "active", activity: "proud", asks: 0,
                       lastApproved: nil, nextWake: nil, portrait: nil),
     ]
+}
+
+private struct SoundscapeEntry: TimelineEntry {
+    let date: Date
+    let state: SoundscapeWidgetState?
+    var showingInfo = false
+}
+
+private struct SoundscapeProvider: TimelineProvider {
+    func placeholder(in _: Context) -> SoundscapeEntry {
+        SoundscapeEntry(date: .now, state: nil)
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (SoundscapeEntry) -> Void) {
+        completion(current(medium: context.family == .systemMedium))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<SoundscapeEntry>) -> Void) {
+        let entry = current(medium: context.family == .systemMedium)
+        completion(Timeline(entries: [entry], policy: .after(entry.date.addingTimeInterval(60))))
+    }
+
+    private func current(medium: Bool) -> SoundscapeEntry {
+        // Capture the face once per fresh entry, rather than reading defaults during rendering.
+        SoundscapeEntry(date: .now, state: SoundscapeWidgetState.read(),
+                        showingInfo: SoundscapeWidgetFace.isShowingInfo(medium: medium))
+    }
+}
+
+private struct SoundscapeWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "HeinzelSoundscape", provider: SoundscapeProvider()) { entry in
+            SoundscapeWidgetContainer(entry: entry).paperWidget()
+        }
+        .contentMarginsDisabled()
+        .configurationDisplayName("Soundscape")
+        .description("Control Soundscape, choose tracks, watch video and see saved track availability.")
+        .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+private struct SoundscapeWidgetContainer: View {
+    let entry: SoundscapeEntry
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        SoundscapeWidgetView(state: entry.state, family: family, showingInfo: entry.showingInfo)
+    }
+}
+
+private struct SoundscapeWidgetView: View {
+    let state: SoundscapeWidgetState?
+    let family: WidgetFamily
+    let showingInfo: Bool
+
+    private var medium: Bool { family == .systemMedium }
+    private var repeatMode: String {
+        guard let mode = state?.repeatMode, ["Off", "Album", "Track"].contains(mode) else { return "—" }
+        return mode
+    }
+
+    private var title: String {
+        state.flatMap { $0.title.isEmpty ? nil : $0.title } ?? "Soundscape"
+    }
+
+    var body: some View {
+        Group {
+            if showingInfo { information } else { player }
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    private var player: some View {
+        HStack(spacing: medium ? 8 : 0) {
+            if medium { watchControl.frame(width: 88, height: 120) }
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 4) {
+                    if !medium { watchControl.frame(width: 44, height: 44) }
+                    Button(intent: PickSoundscapeIntent()) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 3) {
+                                Text(title).font(.caption.weight(.semibold)).lineLimit(1)
+                                Image(systemName: "chevron.down").font(.system(size: 9))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Choose track: \(title), Latent Heinzels")
+                }
+                .padding(.horizontal, medium ? 0 : 6)
+                credit
+                    .padding(.horizontal, medium ? 0 : 6)
+                availability
+                    .padding(.horizontal, medium ? 0 : 6)
+                transport
+            }
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, medium ? 6 : 0)
+        .padding(.vertical, medium ? 2 : 5)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) { downloadLine }
+    }
+
+    private var credit: some View {
+        HStack(spacing: 3) {
+            Text("Latent Heinzels")
+                .font(.system(size: 9))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+            Spacer(minLength: 0)
+            if fullySaved {
+                Label("Offline", systemImage: "checkmark.circle")
+                    .font(.system(size: 8))
+                    .fixedSize()
+                    .accessibilityLabel("Album fully saved offline")
+            } else {
+                faceControl(showInfo: true)
+            }
+        }
+        .frame(height: medium ? 44 : 28)
+    }
+
+    private func faceControl(showInfo: Bool) -> some View {
+        Button(intent: SetSoundscapeFaceIntent(medium: medium, showInfo: showInfo)) {
+            Image(systemName: showInfo ? "info.circle" : "xmark")
+                .font(.system(size: 14))
+                .frame(width: 44, height: showInfo && !medium ? 28 : 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(showInfo ? "Track information" : "Back to player")
+    }
+
+    private var durationLabel: String {
+        guard let duration = state?.duration, duration.isFinite, duration > 0 else {
+            return "Duration unknown"
+        }
+        return time(duration)
+    }
+
+    private var transferActive: Bool {
+        validCount && !fullySaved && (state?.phase == "downloading" || state?.phase == "paused")
+    }
+
+    private var information: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .top, spacing: 0) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Link(destination: SoundscapeLink.artist) {
+                        Text("Latent Heinzels").underline()
+                            .font(.system(size: 10))
+                            .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Latent Heinzels band page")
+                    Text(title).font(.caption.weight(.semibold)).lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                faceControl(showInfo: false)
+            }
+            Text("Dreaming of Electric Snow").font(.system(size: 10)).lineLimit(2)
+            Text(durationLabel).font(.system(size: 10)).monospacedDigit()
+            Spacer(minLength: 0)
+            HStack(spacing: 0) {
+                downloadSummary
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if transferActive {
+                    if state?.phase == "paused" {
+                        Button(intent: SoundscapeTransferIntent(action: .resume)) {
+                            transferIcon("play.fill")
+                        }
+                        .accessibilityLabel("Resume download")
+                    } else {
+                        Button(intent: SoundscapeTransferIntent(action: .pause)) {
+                            transferIcon("pause.fill")
+                        }
+                        .accessibilityLabel("Pause download")
+                    }
+                    Button(intent: SoundscapeTransferIntent(action: .cancel)) {
+                        transferIcon("stop.fill")
+                    }
+                    .accessibilityLabel("Cancel download")
+                }
+            }
+            .frame(minHeight: 44)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) { downloadLine }
+    }
+
+    private func transferIcon(_ symbol: String) -> some View {
+        Image(systemName: symbol).font(.system(size: 14))
+            .frame(width: medium ? 44 : 32, height: 44)
+            .contentShape(Rectangle())
+    }
+
+    @ViewBuilder private var downloadSummary: some View {
+        if fullySaved {
+            Label("Offline", systemImage: "checkmark.circle")
+                .font(.system(size: 10))
+                .accessibilityLabel("Album fully saved offline")
+        } else if validCount, let state {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(downloadStatus)
+                Text("\(state.verified)/\(state.total)").monospacedDigit()
+                if state.phase == "cancelled" {
+                    Text("Saved files kept")
+                }
+            }
+                .font(.system(size: 10))
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Offline download: \(state.verified) of \(state.total) files verified, \(downloadStatus)\(state.phase == "cancelled" ? ", saved files kept" : "")")
+        } else if state?.phase == "cancelled" {
+            Text("Cancelled · Saved files kept. File count unknown.")
+                .font(.system(size: 10))
+        } else {
+            Text("Download status unknown").font(.system(size: 10))
+        }
+    }
+
+    @ViewBuilder private var artwork: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 4).fill(.primary.opacity(0.08))
+            Image(systemName: "music.note").accessibilityHidden(true)
+            if let url = state?.artworkURL {
+                #if os(macOS)
+                if let image = NSImage(contentsOf: url) {
+                    Image(nsImage: image).resizable().scaledToFit()
+                }
+                #else
+                if let image = UIImage(contentsOfFile: url.path) {
+                    Image(uiImage: image).resizable().scaledToFit()
+                }
+                #endif
+            }
+        }
+        .clipped()
+        .accessibilityLabel("Selected track poster: \(title)")
+    }
+
+    private var watchControl: some View {
+        Button(intent: WatchSoundscapeIntent(trackID: state?.selectedID ?? "")) {
+            artwork
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .bottomTrailing) {
+                    if state?.canWatch == true {
+                        Image(systemName: "video.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(5)
+                            .background(.black.opacity(0.8), in: Circle())
+                            .padding(3)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .disabled(state?.canWatch != true || state?.selectedID == nil)
+        .accessibilityLabel("Watch video: \(title)")
+        .accessibilityHint("Opens native Watch for precise playback seeking")
+    }
+
+    private var validCount: Bool {
+        guard let state else { return false }
+        return state.phase != "unavailable" && state.total > 0 && state.verified >= 0 && state.verified <= state.total
+    }
+
+    private var fullySaved: Bool {
+        validCount && state?.verified == state?.total && state?.phase == "ready"
+    }
+
+    @ViewBuilder private var downloadLine: some View {
+        if validCount, !fullySaved, state?.phase != "cancelled", let state {
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(.primary.opacity(0.12))
+                    Rectangle().fill(Color.accentColor)
+                        .frame(width: geometry.size.width * Double(state.verified) / Double(state.total))
+                }
+            }
+            .frame(height: 2)
+            .accessibilityHidden(true)
+            .allowsHitTesting(false)
+        }
+    }
+
+    private var phase: String {
+        guard let state, state.phase != "unavailable" else { return "State unavailable" }
+        return state.playing ? "Playing" : "Paused"
+    }
+
+    @ViewBuilder private var elapsed: some View {
+        if let state, let position = state.position, position.isFinite, position >= 0 {
+            HStack(spacing: 2) {
+                if state.advancing, let origin = state.playbackOrigin {
+                    if let duration = state.duration, duration.isFinite, duration > 0 {
+                        Text(timerInterval: origin...origin.addingTimeInterval(duration), countsDown: false)
+                            .frame(width: 48, alignment: .trailing)
+                    } else {
+                        Text(origin, style: .timer)
+                            .frame(width: 48, alignment: .trailing)
+                    }
+                } else {
+                    Text(time(position))
+                }
+                if let duration = state.duration, duration.isFinite, duration > 0 {
+                    Text("/ \(time(duration))")
+                }
+            }
+            .monospacedDigit()
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityLabel("Elapsed playback time")
+        }
+    }
+
+    private func time(_ seconds: Double) -> String {
+        let bounded = Int(min(max(seconds, 0), 2_678_400))
+        return "\(bounded / 60):\(String(format: "%02d", bounded % 60))"
+    }
+
+    private func positionBar(seconds: Double, duration: Double) -> some View {
+        let fraction = min(max(seconds / duration, 0), 1)
+        return GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.primary.opacity(0.12))
+                Capsule().fill(.primary.opacity(0.65)).frame(width: geometry.size.width * fraction)
+            }
+        }
+        .accessibilityLabel("Track playback progress")
+        .accessibilityValue(Text(fraction, format: .percent.precision(.fractionLength(0))))
+    }
+
+    @ViewBuilder private var playbackProgress: some View {
+        if let state, let position = state.position, let duration = state.duration, duration > 0 {
+            Group {
+                if state.advancing, let origin = state.playbackOrigin {
+                    TimelineView(.periodic(from: origin, by: 5)) { context in
+                        positionBar(seconds: context.date.timeIntervalSince(origin), duration: duration)
+                    }
+                } else {
+                    positionBar(seconds: position, duration: duration)
+                }
+            }
+            .frame(height: 2)
+        }
+    }
+
+    private var availability: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 3) {
+                Text(phase).lineLimit(1)
+                Spacer(minLength: 0)
+                elapsed
+            }
+            // Overlay within the existing status area: no extra row or control height.
+            .font(.system(size: 8))
+            .frame(height: 12, alignment: .top)
+            .overlay(alignment: .bottom) { playbackProgress }
+        }
+        .font(.system(size: 9))
+        .frame(height: 14, alignment: .topLeading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var downloadStatus: String {
+        switch state?.phase {
+        case "downloading": "Downloading"
+        case "paused": "Paused"
+        case "cancelled": "Cancelled"
+        case "failed": "Failed"
+        case "ready": "Incomplete"
+        default: "Download status unknown"
+        }
+    }
+
+    private var transport: some View {
+        HStack(spacing: 0) {
+            Button(intent: PreviousSoundscapeIntent()) {
+                Image(systemName: "backward.end.fill").font(.system(size: 14))
+                    .frame(minWidth: 0, maxWidth: .infinity)
+                    .frame(height: medium ? 44 : 50)
+                    .contentShape(Rectangle())
+            }
+            .disabled(state?.canPrevious != true)
+            .accessibilityLabel("Previous track")
+            Button(intent: ToggleSoundscapeIntent()) {
+                Image(systemName: state?.playing == true ? "pause.fill" : "play.fill")
+                    .font(.system(size: 23, weight: .semibold))
+                    .frame(height: 44)
+                    .frame(minWidth: 0, maxWidth: .infinity)
+                    .background(.primary.opacity(0.08), in: Capsule())
+                    .frame(height: medium ? 44 : 50)
+                    .contentShape(Rectangle())
+            }
+            .disabled(state?.playing != true && state?.canPlaySaved != true)
+            .accessibilityLabel(state?.playing == true ? "Pause Soundscape" : "Play Soundscape")
+            Button(intent: NextSoundscapeIntent()) {
+                Image(systemName: "forward.end.fill").font(.system(size: 14))
+                    .frame(minWidth: 0, maxWidth: .infinity)
+                    .frame(height: medium ? 44 : 50)
+                    .contentShape(Rectangle())
+            }
+            .disabled(state?.canNext != true)
+            .accessibilityLabel("Next track")
+            repeatControl
+        }
+        .disabled(state == nil)
+    }
+
+    private var repeatControl: some View {
+        Button(intent: RepeatSoundscapeIntent()) {
+            Image(systemName: repeatMode == "Track" ? "repeat.1" : "repeat")
+                .foregroundStyle(repeatMode == "Album" || repeatMode == "Track" ? Color.accentColor : Color.primary)
+                .font(.system(size: 14))
+                .frame(minWidth: 0, maxWidth: .infinity)
+                .frame(height: medium ? 44 : 50)
+                .contentShape(Rectangle())
+        }
+        .disabled(state?.canPlaySaved != true && state?.playing != true)
+        .accessibilityLabel("Repeat")
+        .accessibilityValue(repeatMode == "—" ? "Unavailable" : repeatMode)
+        .accessibilityHint("Cycles Off, Album, Track")
+    }
 }

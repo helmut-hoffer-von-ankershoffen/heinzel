@@ -19,26 +19,60 @@ if [[ "$https_links" == YES ]]; then
     exit 2
 fi
 signing=()
+widget_refresh=${HEINZEL_MAC_WIDGET_REFRESH:-NO}
+case "$widget_refresh" in
+    YES|NO) ;;
+    *) printf '%s\n' 'HEINZEL_MAC_WIDGET_REFRESH must be YES or NO.' >&2; exit 2 ;;
+esac
+cloud_sign_in=${HEINZEL_ICLOUD_SIGN_IN:-NO}
+case "$cloud_sign_in" in
+    YES|NO) ;;
+    *) printf '%s\n' 'HEINZEL_ICLOUD_SIGN_IN must be YES or NO.' >&2; exit 2 ;;
+esac
 if [[ -n "${HEINZEL_MAC_SIGNING_TEAM:-}" ]]; then
     [[ "$HEINZEL_MAC_SIGNING_TEAM" =~ ^[A-Z0-9]{10}$ ]]
     signing+=("DEVELOPMENT_TEAM=$HEINZEL_MAC_SIGNING_TEAM"
-        "HEINZEL_MAC_ENTITLEMENTS=App/MacWidgetApp.entitlements"
         "HEINZEL_MAC_WIDGET_ENTITLEMENTS=Widgets/MacWidgetGroup.entitlements")
+    if [[ "$cloud_sign_in" == NO ]]; then
+        signing+=("HEINZEL_MAC_ENTITLEMENTS=App/MacWidgetApp.entitlements")
+    fi
+fi
+if [[ "$cloud_sign_in" == YES || "$widget_refresh" == YES ]]; then
+    if [[ -z "${HEINZEL_MAC_SIGNING_TEAM:-}" || -z "${HEINZEL_MAC_PROFILE:-}" || -z "${HEINZEL_MAC_WIDGET_PROFILE:-}" ]]; then
+        printf '%s\n' 'iCloud sign-in requires HEINZEL_MAC_SIGNING_TEAM, HEINZEL_MAC_PROFILE and HEINZEL_MAC_WIDGET_PROFILE.' >&2
+        exit 2
+    fi
+    if [[ "$HEINZEL_MAC_PROFILE" == "$HEINZEL_MAC_WIDGET_PROFILE" ]]; then
+        printf '%s\n' 'iCloud sign-in requires separate Mac app and widget provisioning profiles.' >&2
+        exit 2
+    fi
+    signing+=("CODE_SIGN_STYLE=Manual" "CODE_SIGN_IDENTITY=Apple Development"
+        "HEINZEL_MAC_ENTITLEMENTS=App/MacCloudSignIn.entitlements"
+        "HEINZEL_MAC_PROFILE=$HEINZEL_MAC_PROFILE"
+        "HEINZEL_MAC_WIDGET_PROFILE=$HEINZEL_MAC_WIDGET_PROFILE")
+fi
+if [[ "$widget_refresh" == YES ]]; then
+    signing+=("HEINZEL_MAC_ENTITLEMENTS=App/MacWidgetRefresh.entitlements"
+        "HEINZEL_MAC_WIDGET_ENTITLEMENTS=Widgets/MacWidgetRefresh.entitlements")
 fi
 out="$PWD/.build/package"
-stage="$(mktemp -d)"
+mkdir -p "$out"
+archive="$out/heinzel-desktop-swift-$version-darwin-arm64.tar.gz"
+stage="$(mktemp -d "$out/.package.XXXXXXXX")"
 trap 'rm -rf -- "$stage"' EXIT
+candidate="$stage/${archive##*/}"
 xcodebuild -scheme Heinzel -configuration Release -destination 'generic/platform=macOS' \
     -derivedDataPath "$out" ARCHS=arm64 MARKETING_VERSION="$version" HEINZEL_MANAGED_INSTALL=YES \
     HEINZEL_SOURCE_REVISION="$(git rev-parse HEAD)" \
-    HEINZEL_HTTPS_LINKS="$https_links" ${signing[@]+"${signing[@]}"} build -quiet
+    HEINZEL_MAC_WIDGET_REFRESH="$widget_refresh" \
+    HEINZEL_HTTPS_LINKS="$https_links" HEINZEL_ICLOUD_SIGN_IN="$cloud_sign_in" ${signing[@]+"${signing[@]}"} build -quiet
 app="$stage/Heinzelmaennchen.app"
 /usr/bin/ditto "$out/Build/Products/Release/Heinzel.app" "$app"
 /usr/bin/codesign --verify --strict --deep "$app"
-COPYFILE_DISABLE=1 /usr/bin/tar --format=pax --no-mac-metadata --no-xattrs --no-acls --no-fflags -czf "$out/heinzel-desktop-swift-$version-darwin-arm64.tar.gz" \
+COPYFILE_DISABLE=1 /usr/bin/tar --format=pax --no-mac-metadata --no-xattrs --no-acls --no-fflags -czf "$candidate" \
     -C "$stage" Heinzelmaennchen.app
 mkdir "$stage/verified"
-/usr/bin/tar -xzf "$out/heinzel-desktop-swift-$version-darwin-arm64.tar.gz" -C "$stage/verified"
+/usr/bin/tar -xzf "$candidate" -C "$stage/verified"
 /usr/bin/codesign --verify --strict --deep "$stage/verified/Heinzelmaennchen.app"
 archived_links=$(/usr/bin/plutil -extract HeinzelHTTPSLinks raw -o - \
     "$stage/verified/Heinzelmaennchen.app/Contents/Info.plist")
@@ -46,4 +80,14 @@ if [[ "$archived_links" != "$https_links" ]]; then
     printf '%s\n' 'The archived app does not match HEINZEL_HTTPS_LINKS.' >&2
     exit 1
 fi
-printf '%s\n' "$out/heinzel-desktop-swift-$version-darwin-arm64.tar.gz"
+archived_app="$stage/verified/Heinzelmaennchen.app"
+archived_cloud=$(/usr/bin/plutil -extract HeinzelCloudSignIn raw -o - "$archived_app/Contents/Info.plist")
+if [[ "$archived_cloud" != "$cloud_sign_in" ]]; then
+    printf '%s\n' 'The archived app does not match HEINZEL_ICLOUD_SIGN_IN.' >&2
+    exit 1
+fi
+if [[ "$cloud_sign_in" == YES || "$widget_refresh" == YES ]]; then
+    python3 scripts/verify-macos-cloud.py "$archived_app" "$HEINZEL_MAC_SIGNING_TEAM" "$widget_refresh"
+fi
+mv -f -- "$candidate" "$archive"
+printf '%s\n' "$archive"

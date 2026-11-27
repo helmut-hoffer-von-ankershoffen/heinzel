@@ -19,6 +19,8 @@ export type Row = {
   /** A spinner instead of a dot: something is being asked or installed right now. */
   busy?: boolean;
   alert?: boolean;
+  /** The plugin whose version pin a person may lift from this row. */
+  unpin?: string;
 };
 
 export type Inputs = {
@@ -131,6 +133,7 @@ export function describe(input: Inputs): View {
         hold.why === "pinned"
           ? t("updates.pinned", { name: hold.name, version: hold.version ?? "" })
           : t("updates.bySource", { name: hold.name, where: wherePhrase(hold) }),
+      unpin: hold.why === "pinned" ? hold.name : undefined,
     });
   let pluginsUnknown = false;
   if (plan === undefined) {

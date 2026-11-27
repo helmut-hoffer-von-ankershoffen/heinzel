@@ -1,6 +1,9 @@
 import AVFoundation
 import SwiftUI
 import UserNotifications
+#if os(macOS)
+import Carbon
+#endif
 #if os(iOS)
 import UIKit
 #endif
@@ -8,7 +11,10 @@ import UIKit
 private let workspaceSwitchTitle = "Switch Workspace"
 private let workspaceSwitchSymbol = "arrow.left.arrow.right"
 
-private let heinzelTagline = "Durable agents accelerating product teams, like the little elves from Cologne."
+private let heinzelTagline = """
+    Durable agents accelerating product teams,
+    like the little elves from Cologne.
+    """
 
 private var heinzelAppVersion: String {
     let bundle = Bundle.main
@@ -38,7 +44,7 @@ private struct ConnectionFooter: View {
     var showTagline = false
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 8) {
             if showTagline { Text(heinzelTagline).font(.footnote) }
             Text(heinzelAppVersion).font(.caption2)
         }
@@ -156,6 +162,7 @@ private extension View {
 struct HeinzelApp: App {
     #if os(macOS)
     @NSApplicationDelegateAdaptor(LocalService.self) private var service
+    @State private var menu = MacStatusMenu()
     #endif
 
     init() { WorkspaceNotifications.shared.install() }
@@ -163,14 +170,26 @@ struct HeinzelApp: App {
     var body: some Scene {
         #if os(macOS)
         Window("Heinzelmännchen", id: "workspace") {
-            ConnectionView(service: service)
+            MacWorkspaceHost(menu: menu, service: service)
                 .frame(minWidth: 550, minHeight: 440)
         }
         .defaultSize(width: 1100, height: 760)
         .windowStyle(.hiddenTitleBar)
+        .defaultLaunchBehavior(MacLoginLaunch.isLoginItem ? .suppressed : .automatic)
         .commands {
             WorkspaceCommands()
         }
+        MenuBarExtra {
+            MacStatusMenuView(menu: menu)
+        } label: {
+            MacStatusLabel(menu: menu, service: service)
+        }
+        .menuBarExtraStyle(.window)
+        Window("Quick Chat", id: "quick-chat") {
+            MacStatusMenuView(menu: menu, quickChatWindow: true)
+        }
+        .defaultLaunchBehavior(.suppressed)
+        .defaultSize(width: 400, height: 560)
         #else
         WindowGroup {
             ConnectionView()
@@ -184,6 +203,270 @@ private extension Notification.Name {
 }
 
 #if os(macOS)
+private enum MacLoginLaunch {
+    static let isLoginItem = NSAppleEventManager.shared().currentAppleEvent?
+        .paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue == OSType(keyAELaunchedAsLogInItem)
+}
+
+/// One retained hosting view keeps the source and its Navigation alive while its window is closed.
+private final class MacWorkspaceHostingView: NSHostingView<AnyView> {
+    private let visibilityID = UUID().uuidString
+    private var visibilityObservers: [NSObjectProtocol] = []
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        for observer in visibilityObservers { NotificationCenter.default.removeObserver(observer) }
+        visibilityObservers = []
+        if let window {
+            for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didBecomeKeyNotification,
+                         NSWindow.didResignKeyNotification, NSWindow.didMiniaturizeNotification,
+                         NSWindow.didDeminiaturizeNotification, NSWindow.willCloseNotification] {
+                let closing = name == NSWindow.willCloseNotification
+                visibilityObservers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.updateVisibility(closing: closing)
+                    }
+                })
+            }
+        }
+        updateVisibility()
+    }
+    private func updateVisibility(closing: Bool = false) {
+        MacMenuHostSource.scheduler.setVisible(!closing && window?.isVisible == true && window?.isMiniaturized == false,
+                                              surface: visibilityID)
+    }
+}
+
+private struct MacWorkspaceHost: NSViewRepresentable {
+    let menu: MacStatusMenu
+    let service: LocalService
+    func makeNSView(context: Context) -> NSHostingView<AnyView> { menu.host(service: service) }
+    func updateNSView(_ view: NSHostingView<AnyView>, context: Context) {}
+    static func dismantleNSView(_ view: NSHostingView<AnyView>, coordinator: ()) {
+        // Return the same source tree to an unordered window when the workspace closes.
+        NotificationCenter.default.post(name: .init("parkHeinzelWorkspaceHost"), object: view)
+    }
+}
+
+private struct MacStatusLabel: View {
+    let menu: MacStatusMenu
+    let service: LocalService
+    @Environment(\.openWindow) private var openWindow
+    var body: some View {
+        Image(systemName: menu.status.symbol)
+            .foregroundStyle(menu.status == .attention ? Color.orange : Color.primary)
+            .symbolEffect(.pulse, isActive: menu.status == .working)
+            .accessibilityLabel(menu.status.label)
+            .task {
+                _ = menu.host(service: service)
+                menu.preferences.start {
+                    menu.prepareQuickChat?()
+                    openWindow(id: "quick-chat")
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                menu.preferences.refreshLogin()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                menu.preferences.stop()
+            }
+    }
+}
+
+@MainActor @Observable
+private final class MacStatusMenu {
+    let preferences = MenuPreferences()
+    @ObservationIgnored private var workspaceHost: NSHostingView<AnyView>?
+    @ObservationIgnored private var backgroundWindow: NSWindow?
+    @ObservationIgnored private var parkingObserver: NSObjectProtocol?
+    func host(service: LocalService) -> NSHostingView<AnyView> {
+        if let workspaceHost { return workspaceHost }
+        let host = MacWorkspaceHostingView(rootView: AnyView(ConnectionView(service: service, statusMenu: self)))
+        host.frame = NSRect(x: 0, y: 0, width: 1100, height: 760)
+        workspaceHost = host
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        backgroundWindow = window
+        parkingObserver = NotificationCenter.default.addObserver(
+            forName: .init("parkHeinzelWorkspaceHost"), object: host, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.backgroundWindow?.contentView = self.workspaceHost
+            }
+        }
+        host.layoutSubtreeIfNeeded()
+        return host
+    }
+    var snapshot: ActivityWidgetData?
+    var scope: String?
+    var available = false
+    var status: MacMenuStatus = .offline
+
+    func configure(scope: String?, available: Bool) {
+        guard self.scope != scope || self.available != available else {
+            readCache()
+            return
+        }
+        if self.scope != scope { snapshot = nil }
+        self.scope = scope
+        self.available = available
+        restart()
+    }
+
+    func restart() {
+        MacMenuHostSource.scheduler.didRefresh = { [weak self] in self?.readCache() }
+        readCache()
+    }
+
+    func readCache() {
+        let cached = ActivityWidgetData.read()
+        snapshot = available && cached?.visibleInStatusMenu(scope: scope, at: .now) == true ? cached : nil
+        status = MacMenuStatus.resolve(cached, scope: scope, available: available, now: .now)
+    }
+    var pending: NativeRoute?
+    var workspaces: [RecentWorkspace] = []
+    var selectedWorkspace: String?
+    var canSwitchWorkspace = false
+    var pendingWorkspace: MacWorkspaceChoice?
+    var refreshWorkspaces: (() -> Void)?
+    // App-owned models survive popover dismissal and are never reused across scopes.
+    let promptDrafts = NativePromptDrafts.shared
+    var prepareQuickChat: (() -> Void)?
+
+    var quickChat: NativePromptComposer? {
+        guard let snapshot, snapshot.expiresAt > .now, let scope = snapshot.workspaceScope else { return nil }
+        return promptDrafts.composer(for: scope)
+    }
+}
+
+private enum MacWorkspaceChoice: Equatable {
+    case local, recent(String), manage
+}
+
+private struct MacWorkspaceSwitcher: View {
+    let menu: MacStatusMenu
+    let select: (MacWorkspaceChoice) -> Void
+
+    var body: some View {
+        Button { select(.local) } label: {
+            Label("This Mac", systemImage: menu.selectedWorkspace.flatMap({ URL(string: $0) })?.scheme == "http"
+                  ? "checkmark" : "desktopcomputer")
+        }
+        ForEach(menu.workspaces.filter { URL(string: $0.address)?.scheme != "http" }) { item in
+            Button { select(.recent(item.address)) } label: {
+                Label(item.name, systemImage: item.address == menu.selectedWorkspace ? "checkmark" :
+                      (item.source == .iCloud ? "icloud" : "network"))
+            }
+            .help(item.address)
+        }
+        Divider()
+        Button("Workspaces…") { select(.manage) }
+            .onAppear { menu.refreshWorkspaces?() }
+    }
+}
+
+private struct MacStatusMenuView: View {
+    let menu: MacStatusMenu
+    var quickChatWindow = false
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+    @State private var visibilityID = UUID().uuidString
+    @State private var showingQuickChat = false
+    private func open(_ route: NativeRoute) {
+        menu.pending = route
+        openWindow(id: "workspace")
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    var body: some View {
+        ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+            if let snapshot = menu.snapshot, snapshot.expiresAt > .now, let scope = snapshot.workspaceScope {
+                Text("\(snapshot.awake) awake · \(snapshot.waiting) waiting")
+                if snapshot.roster.isEmpty { Text("No Heinzels yet") }
+                let attention = snapshot.menuNeedsAttention
+                if !attention.isEmpty {
+                    Text("NEEDS ATTENTION").font(.caption)
+                    statusRows(attention, scope: scope)
+                }
+                Text("ALL").font(.caption)
+                statusRows(snapshot.roster, scope: scope)
+            } else {
+                Text(menu.status == .offline ? "Workspace offline" : "Workspace status out of date")
+            }
+            Divider()
+            Menu("Switch Workspace") {
+                MacWorkspaceSwitcher(menu: menu) { choice in
+                    guard menu.canSwitchWorkspace, menu.pendingWorkspace == nil else { return }
+                    menu.pendingWorkspace = choice
+                    openWindow(id: "workspace")
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+            }
+            .disabled(!menu.canSwitchWorkspace || menu.pendingWorkspace != nil)
+            .help("Finish or clear your workspace link before switching workspaces.")
+            Button("Quick Chat…") {
+                menu.prepareQuickChat?()
+                showingQuickChat.toggle()
+            }
+            if showingQuickChat || quickChatWindow {
+                if let composer = menu.quickChat {
+                    NativePromptSheet(composer: composer, openWorkspace: { open(.workspace) }, openChat: { request in
+                        open(.chat(workspace: request.workspaceScope, id: request.recipientID))
+                    }, inline: true, closeInline: {
+                        showingQuickChat = false
+                        if quickChatWindow { dismissWindow(id: "quick-chat") }
+                    })
+                    .onChange(of: composer.search) { _, _ in menu.prepareQuickChat?() }
+                    .onChange(of: composer.page) { _, _ in menu.prepareQuickChat?() }
+                } else {
+                    Text("Open a workspace to choose a Heinzel. Your drafts are kept for each workspace.")
+                        .font(.callout)
+                }
+            }
+            Button("Open Heinzel") { open(.workspace) }
+            Divider()
+            Text("Quick Chat shortcut · Default ⌥Space").font(.caption)
+            if let shortcut = menu.preferences.shortcut {
+                Text("Saved shortcut: \(shortcut.label)").font(.caption)
+            }
+            ShortcutRecorder { menu.preferences.apply($0) }.frame(height: 28)
+            HStack {
+                Button("Use ⌥Space") { menu.preferences.apply(.standard) }
+                Button("Turn Shortcut Off") { menu.preferences.apply(nil) }
+            }
+            Text(menu.preferences.shortcutMessage).font(.caption)
+            Text("Launch at login: \(menu.preferences.loginStatus)").font(.caption)
+            HStack {
+                Button("Enable at Login") { menu.preferences.setLogin(true) }
+                Button("Disable at Login") { menu.preferences.setLogin(false) }
+            }
+            if let error = menu.preferences.loginError { Text(error).font(.caption) }
+        }
+        .padding(16)
+        }
+        .frame(width: 380)
+        .frame(maxHeight: 640)
+        .onAppear { MacMenuHostSource.scheduler.setVisible(true, surface: visibilityID); menu.restart(); menu.prepareQuickChat?(); menu.preferences.refreshLogin() }
+        .onDisappear { MacMenuHostSource.scheduler.setVisible(false, surface: visibilityID) }
+    }
+
+    private func statusRows(_ rows: [WidgetHeinzel], scope: String) -> some View {
+        ForEach(rows) { heinzel in
+            Button { open(.chat(workspace: scope, id: heinzel.id)) } label: {
+                VStack(alignment: .leading) {
+                    Text("\(heinzel.name) · \(heinzel.status)")
+                    if let wake = heinzel.nextWake, wake.isFinite {
+                        Text("Next wake \(Date(timeIntervalSince1970: wake), style: .relative)").font(.caption)
+                    }
+                }
+            }
+        }
+    }
+}
+
 private struct WorkspaceMenuAvailableKey: FocusedValueKey {
     typealias Value = Bool
 }
@@ -203,16 +486,6 @@ private extension FocusedValues {
     }
 }
 
-enum WorkspaceMenuAction: String {
-    case settings, updates, search, sidebar, terminal, browser, chat, notifications
-    case newChat = "new-chat"
-    case today = "go:today", heinzel = "go:heinzel", team = "go:team", plugins = "go:plugins"
-    case help, changelog, doctor, copy, daemon
-    case reload, zoomIn, zoomOut, resetZoom
-
-    static let notification = Notification.Name("heinzelWorkspaceMenuAction")
-}
-
 private struct WorkspaceCommands: Commands {
     @FocusedValue(\.workspaceMenuAvailable) private var workspaceAvailable
     @FocusedValue(\.connectionMenuAvailable) private var connectionAvailable
@@ -221,7 +494,11 @@ private struct WorkspaceCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
-            Button("About Heinzelmännchen") { NSApp.orderFrontStandardAboutPanel(nil) }
+            Button("About Heinzelmännchen") {
+                WorkspaceMenuRequest.send(.about) {
+                    NSApp.orderFrontStandardAboutPanel(nil)
+                }
+            }
         }
         CommandGroup(replacing: .appSettings) {
             command("Settings…", .settings).keyboardShortcut(",")
@@ -278,7 +555,7 @@ private struct WorkspaceCommands: Commands {
     }
 
     private func command(_ title: String, _ action: WorkspaceMenuAction) -> some View {
-        Button(title) { NotificationCenter.default.post(name: WorkspaceMenuAction.notification, object: action) }
+        Button(title) { WorkspaceMenuRequest.send(action) }
             .disabled(workspaceAvailable != true)
     }
 
@@ -291,11 +568,15 @@ private struct WorkspaceCommands: Commands {
 #endif
 
 struct ConnectionView: View {
+    @State private var soundDockAvailableSize = CGSize(width: 600, height: 800)
+    @State private var soundscape = SoundscapePlayback.shared
     #if os(macOS)
     let service: LocalService
+    fileprivate let statusMenu: MacStatusMenu
     #endif
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
     @State private var started = false
     @State private var showingColdStart = true
     @State private var startupStage = "Preparing Heinzelmännchen…"
@@ -356,7 +637,11 @@ struct ConnectionView: View {
     @State private var chatRequest: HeinzelChatRequest?
     @State private var showPromptComposer = false
     @State private var dismissingPromptComposer = false
-    @State private var promptComposer = NativePromptComposer()
+    @State private var disconnectedPromptComposer = NativePromptComposer()
+    private var promptComposer: NativePromptComposer {
+        guard let scope = widgetWorkspaceScope else { return disconnectedPromptComposer }
+        return NativePromptDrafts.shared.composer(for: scope)
+    }
     @State private var sharedWorkspace: Endpoint?
     @State private var loadFailure: WorkspaceProblem?
     @State private var loadRevision = 0
@@ -395,6 +680,65 @@ struct ConnectionView: View {
                      connectionPresented: showConnection,
                      otherSheetPresented: showConnectionHelp || helpAfterConnection || showHeinzelPicker ||
                         showPromptComposer || showDisconnectConfirmation || sharedWorkspace != nil)
+    }
+
+    private func refreshStatusMenu() {
+        refreshWorkspaceMenu()
+        statusMenu.configure(scope: widgetWorkspaceScope, available: menuState.workspaceAvailable)
+        guard menuState.workspaceAvailable, let snapshot = ActivityWidgetData.read(),
+              snapshot.visibleInStatusMenu(scope: widgetWorkspaceScope, at: .now) else {
+            statusMenu.snapshot = nil
+            return
+        }
+        statusMenu.snapshot = snapshot
+        prepareQuickChat()
+    }
+
+    private func prepareQuickChat() {
+        guard let snapshot = statusMenu.snapshot, snapshot.expiresAt > .now,
+              let scope = snapshot.workspaceScope, scope == widgetWorkspaceScope else { return }
+        let composer = statusMenu.promptDrafts.composer(for: scope)
+        composer.prepareCatalog(scope: scope, snapshot: snapshot)
+    }
+
+    private func refreshWorkspaceMenu() {
+        statusMenu.workspaces = recentWorkspaces
+        statusMenu.selectedWorkspace = endpoint?.origin.absoluteString
+        statusMenu.canSwitchWorkspace = canSwitchWorkspaceFromMenu
+    }
+
+    private var canSwitchWorkspaceFromMenu: Bool {
+        !connecting && !stoppingLocalWorkspace && !showingColdStart && !loadingWorkspace &&
+            !MacWorkspaceSwitchState.protectsEditor(link: link, focused: editingLink) &&
+            !soundscape.showingDock && !showPromptComposer && !showHeinzelPicker && !showDisconnectConfirmation &&
+            !showConnectionHelp && !helpAfterConnection && sharedWorkspace == nil
+    }
+
+    private func selectMenuWorkspace(_ choice: MacWorkspaceChoice) async {
+        refreshWorkspaceMenu()
+        guard statusMenu.canSwitchWorkspace else { return }
+        // Discard an old chat destination before changing its workspace scope.
+        statusMenu.pending = nil
+        switch choice {
+        case .local:
+            if endpoint?.origin.scheme == "http", loadFailure == nil { return }
+            showConnection = false
+            if await startLocal() == false {
+                var presentation = MacWorkspaceSwitchState(
+                    choosingWorkspace: choosingWorkspace, connectionPresented: showConnection,
+                    hasEndpoint: endpoint != nil)
+                presentation.localStartFailed()
+                choosingWorkspace = presentation.choosingWorkspace
+                showConnection = presentation.connectionPresented
+            }
+        case .recent(let address):
+            guard let item = recentWorkspaces.first(where: { $0.address == address }) else { return }
+            showConnection = false
+            await connectRecent(item.address, source: item.source)
+        case .manage:
+            chooseAnotherWorkspace()
+        }
+        refreshStatusMenu()
     }
 
     private func openConnectionFromMenu() {
@@ -436,7 +780,12 @@ struct ConnectionView: View {
     }
 
     private var shouldRefreshSyncedWorkspaces: Bool {
+        #if os(macOS)
+        // The status menu is available even while the workspace window is in the background.
+        scenePhase == .active
+        #else
         scenePhase == .active && (endpoint == nil || choosingWorkspace || showConnection || loadFailure == .signIn)
+        #endif
     }
 
     private var recentWorkspaces: [RecentWorkspace] {
@@ -704,7 +1053,7 @@ struct ConnectionView: View {
         }
     }
 
-    var body: some View {
+    private var menuContent: some View {
         content
         .accessibilityHidden(choosingWorkspace)
         .allowsHitTesting(!choosingWorkspace)
@@ -717,7 +1066,57 @@ struct ConnectionView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showHeinzelConnection)) { _ in
             openConnectionFromMenu()
         }
+        .onChange(of: menuState.workspaceAvailable ? endpoint : nil, initial: true) { _, _ in
+            refreshStatusMenu()
+        }
+        .onChange(of: workspaceHistory) { _, _ in refreshWorkspaceMenu() }
+        .onChange(of: forgottenWorkspaces) { _, _ in refreshWorkspaceMenu() }
+        .onChange(of: cloudDirectoryUnavailable) { _, _ in refreshWorkspaceMenu() }
+        .onChange(of: syncedWorkspaces.map { "\($0.address)|\($0.name)|\($0.source?.rawValue ?? "")" }) { _, _ in
+            refreshWorkspaceMenu()
+        }
+        .onChange(of: canSwitchWorkspaceFromMenu) { _, _ in refreshWorkspaceMenu() }
+        .onAppear {
+            statusMenu.prepareQuickChat = { prepareQuickChat() }
+            statusMenu.refreshWorkspaces = {
+                refreshSyncedWorkspaces()
+                refreshWorkspaceMenu()
+            }
+        }
+        .task(id: statusMenu.pendingWorkspace) { @MainActor in
+            guard let choice = statusMenu.pendingWorkspace else { return }
+            // Keep the claim until completion so repeated clicks cannot start another connection.
+            await selectMenuWorkspace(choice)
+            statusMenu.pendingWorkspace = nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ActivityWidgetData.changed)) { _ in
+            refreshStatusMenu()
+        }
+        .task(id: statusMenu.snapshot?.expiresAt) {
+            guard let expiry = statusMenu.snapshot?.expiresAt else { return }
+            if expiry > .now {
+                do { try await Task.sleep(for: .seconds(expiry.timeIntervalSinceNow)) } catch { return }
+            }
+            if statusMenu.snapshot?.expiresAt == expiry { statusMenu.readCache() }
+        }
+        .onDisappear {
+            statusMenu.refreshWorkspaces = nil
+        }
+        .task(id: canOpenShortcut ? statusMenu.pending : nil) { @MainActor in
+            guard !Task.isCancelled, canOpenShortcut, let route = statusMenu.pending else { return }
+            statusMenu.pending = nil
+            openShortcut(route)
+        }
         #endif
+    }
+
+    private var presentedContent: some View {
+        menuContent
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { soundDockAvailableSize = $0 }
+        .sheet(isPresented: $soundscape.showingDock) {
+            SoundDock(playback: soundscape, availableSize: soundDockAvailableSize)
+                .presentationSizing(.fitted)
+        }
         .sheet(isPresented: $showConnection, onDismiss: {
             if helpAfterConnection {
                 helpAfterConnection = false
@@ -757,6 +1156,10 @@ struct ConnectionView: View {
                 }
             }
         }
+    }
+
+    private var lifecycleContent: some View {
+        presentedContent
         .task {
             guard !started else { return }
             started = true
@@ -837,6 +1240,10 @@ struct ConnectionView: View {
         } message: {
             Text("Widgets may still display information from the previous workspace. Retry clearing it from this device.")
         }
+    }
+
+    var body: some View {
+        lifecycleContent
         .task(id: draftProbe) {
             guard let probe = draftProbe else { return }
             #if os(iOS)
@@ -875,6 +1282,15 @@ struct ConnectionView: View {
         }
         #endif
         .onOpenURL { url in
+            if url == SoundscapeLink.artist {
+                openURL(SoundscapeLink.artist)
+                return
+            }
+            if SoundscapeLink.handles(url) {
+                if url == SoundscapeLink.picker { soundscape.openPicker() }
+                else { soundscape.dockWidth = nil; soundscape.openVideo() }
+                return
+            }
             if let shortcut = NativeRoute(url: url) {
                 pendingShortcutURL = shortcut
                 return
@@ -1148,7 +1564,7 @@ struct ConnectionView: View {
 
     private var nativeFooterBottomValue: CGFloat {
         #if os(iOS)
-        nativeFooterBottom
+        WorkspaceFooterGeometry.webBottomInset(safeArea: nativeFooterBottom, hasSlot: nativeFooterSlot != nil)
         #else
         0
         #endif
@@ -1300,8 +1716,22 @@ struct ConnectionView: View {
                     }
                 }
                 VStack(spacing: 0) {
-                    Button(action: chooseAnotherWorkspace) { connectionRow(workspaceSwitchTitle, workspaceSwitchSymbol) }
-                        .foregroundStyle(ConnectionPalette.accent)
+                    Group {
+                        #if os(macOS)
+                        Menu {
+                            MacWorkspaceSwitcher(menu: statusMenu) { choice in
+                                guard canSwitchWorkspaceFromMenu, statusMenu.pendingWorkspace == nil else { return }
+                                statusMenu.pendingWorkspace = choice
+                            }
+                        } label: {
+                            connectionRow(workspaceSwitchTitle, workspaceSwitchSymbol)
+                        }
+                        .disabled(!canSwitchWorkspaceFromMenu || statusMenu.pendingWorkspace != nil)
+                        #else
+                        Button(action: chooseAnotherWorkspace) { connectionRow(workspaceSwitchTitle, workspaceSwitchSymbol) }
+                        #endif
+                    }
+                    .foregroundStyle(ConnectionPalette.accent)
                     Divider()
                     Button {
                         showDisconnectConfirmation = true
@@ -2280,6 +2710,8 @@ private struct NativePromptSheet: View {
     @Bindable var composer: NativePromptComposer
     let openWorkspace: () -> Void
     let openChat: (NativePromptRequest) -> Void
+    var inline = false
+    var closeInline: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @FocusState private var editing: Bool
     @State private var confirmingDiscard = false
@@ -2287,8 +2719,8 @@ private struct NativePromptSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                connectionSheetHeader("Write a Prompt") {
-                    connectionIconButton("xmark", label: "Close") { dismiss() }
+                connectionSheetHeader(inline ? "Quick Chat" : "Write a Prompt") {
+                    connectionIconButton("xmark", label: "Close") { close() }
                 }
                 if composer.scope == nil {
                     ContentUnavailableView("Open a workspace first", systemImage: "link",
@@ -2311,7 +2743,7 @@ private struct NativePromptSheet: View {
                             }
                             TextEditor(text: $composer.text)
                                 .scrollContentBackground(.hidden)
-                                .frame(minHeight: 160, maxHeight: 260)
+                                .frame(minHeight: inline ? 100 : 160, maxHeight: inline ? 160 : 260)
                                 .focused($editing)
                                 .disabled(composer.pending != nil)
                                 .accessibilityLabel("Prompt")
@@ -2354,6 +2786,7 @@ private struct NativePromptSheet: View {
                         .buttonStyle(.borderedProminent).controlSize(.large)
                         .disabled(!composer.canSend)
                         .accessibilityIdentifier("nativePromptSend")
+                        .keyboardShortcut(.return, modifiers: .command)
                         if let request = composer.pending {
                             HStack {
                                 Button("Check Chat") { openChat(request) }.buttonStyle(.bordered)
@@ -2374,7 +2807,11 @@ private struct NativePromptSheet: View {
             .padding(24)
             .frame(maxWidth: .infinity)
         }
-        .frame(idealWidth: 520, minHeight: 460, idealHeight: 630)
+        .frame(idealWidth: inline ? 348 : 520, minHeight: inline ? 300 : 460, idealHeight: inline ? 430 : 630)
+        .onAppear { editing = true }
+        #if os(macOS)
+        .onExitCommand { close() }
+        #endif
         .environment(\.colorScheme, .light)
         .foregroundStyle(ConnectionPalette.ink)
         .tint(ConnectionPalette.accent)
@@ -2387,6 +2824,10 @@ private struct NativePromptSheet: View {
             Text("The host may have received it. This removes the saved retry copy from this device; it does not cancel work. Check the chat first if you’re unsure.")
         }
         .privacySensitive()
+    }
+
+    private func close() {
+        if let closeInline { closeInline() } else { dismiss() }
     }
 
     private var sendPromptTitle: String {

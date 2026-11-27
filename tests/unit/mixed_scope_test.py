@@ -1237,7 +1237,7 @@ def test_mixed_children_drop_git_redirection_without_changing_parent_binding(sco
     monkeypatch.setattr(scoped.shutil, "which", lambda _: str(tmp_path / "hz-gate") if gated else None)
     monkeypatch.setattr(scoped.subprocess, "run", lambda command, **kwargs: calls.append((command, kwargs)))
     with scoped.mixed_guard_context(plan):
-        scoped.run_check(["uv", "run", "pytest", "tests/unit/ci_test.py"], timeout=180)
+        scoped.run_check(["uv", "run", "pytest", "tests/unit/ci_test.py"], timeout=scaled(180))
         assert os.environ["GIT_DIR"] == "synthetic-parent-value"
         assert os.environ["GIT_INDEX_FILE"] == "synthetic-parent-value"
         assert scoped.mixed_guard_binding(

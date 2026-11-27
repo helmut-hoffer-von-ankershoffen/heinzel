@@ -65,10 +65,10 @@ def plist(path: Path) -> Plist:
 
 
 def check_info(info: Plist, keychain: str, *, widget: bool) -> None:
-    """Require enrollment, shared Keychain group and app-only background capture."""
+    """Require enrollment, shared Keychain group and app-only background capture/audio."""
     role = "Widget" if widget else "App"
     require(
-        "UIBackgroundModes" not in info if widget else info.get("UIBackgroundModes") == ["screen-capture"],
+        "UIBackgroundModes" not in info if widget else info.get("UIBackgroundModes") == ["screen-capture", "audio"],
         f"{role} background capture modes differ",
     )
     require(info.get("HeinzelWidgetEnrollmentEnabled") is True, f"{role} must enable widget enrollment")

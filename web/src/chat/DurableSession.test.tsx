@@ -2002,8 +2002,9 @@ it("shows the reply as the Heinzel writes it, then only the final message from t
   expect(await screen.findByText("Preparation: 12 ms")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /Internal/ }));
   expect(screen.getByText("doctor")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Back" }));
-  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to chat diagnostics" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close chat diagnostics" }));
+  expect(screen.queryByRole("complementary", { name: "Chat diagnostics" })).not.toBeInTheDocument();
   expect(partial).toHaveAttribute("data-message-speaker", "heinzel");
   expect(partial).toHaveAttribute("aria-busy", "true");
   expect(partial.closest("[aria-live]")).toBeNull();

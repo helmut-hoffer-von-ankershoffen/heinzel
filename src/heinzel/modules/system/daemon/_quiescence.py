@@ -37,7 +37,7 @@ from heinzel.modules.system.daemon._ownership import (
     systemd_owned,
     tick_environment,
 )
-from heinzel.modules.system.daemon._runtime import lock
+from heinzel.modules.system.daemon._runtime import held, lock
 from heinzel.modules.system.daemon._units import LABEL, PLATFORMS, SYSTEMD_NAME, plist_path, systemd_paths
 
 
@@ -65,6 +65,10 @@ class QuiescenceChecks:
         def _unit_files(self, executable: Path, minutes: int) -> dict[Path, str]: ...
         def _unit_paths(self) -> list[Path]: ...
         def _write_state(self, name: str, data: dict[str, str | int]) -> None: ...
+
+    def lifecycle_busy(self) -> bool:
+        """Whether a tick or another writer currently holds lifecycle authority."""
+        return held(self.state_dir / "lifecycle.lock")
 
     def _mutation_token_matches(self, token: str, name: str = "mutation-pending.json") -> bool:
         try:

@@ -3,9 +3,9 @@ import json
 import pytest
 from rich.console import Console
 
+from heinzel._phases import Phases
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._steps import StepBoard
-from heinzel.modules.system.updater._phases import Phases
 
 pytestmark = pytest.mark.unit
 
@@ -48,6 +48,16 @@ def test_plain_output_prints_a_line_when_a_step_starts_and_ends_but_none_for_the
         "[1/3] Finding the newest version ...",
         "[1/3] Finding the newest version: failed (offline)",
     ]
+
+
+def test_discovered_details_do_not_renumber_the_planned_steps():
+    console = Console(record=True, width=100)
+    board = StepBoard(console, "plain")
+    for id_, label in PLAN:
+        board.event({"id": id_, "label": label, "state": "pending"})
+    board.event({"id": "needs:auth", "label": "Plugin auth", "state": "done", "numbered": False})
+    board.event({"id": "install", "label": "Installing the update", "state": "done"})
+    assert console.export_text().splitlines() == ["  Plugin auth: done", "[2/3] Installing the update: done"]
 
 
 def test_json_mode_writes_every_event_as_one_json_line():

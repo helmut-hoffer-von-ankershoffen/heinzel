@@ -13,14 +13,17 @@ from contextlib import contextmanager
 
 import pytest
 from packaging.utils import canonicalize_name
+from rich.console import Console
 
 from heinzel import HeinzelError, Kernel, Module, ModuleRecord, Progress, Settings, Theme
+from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.kernel import DEFAULT_THEME, Installation, Origin
 from heinzel.kernel._logging import record_fields
 from heinzel.modules.system.plugin import _receipts, _service, _sources
 from heinzel.modules.system.plugin._models import PluginCandidate, PluginInfo, PluginSettings
 from heinzel.modules.system.plugin._receipts import PluginReceipts
 from heinzel.modules.system.plugin._service import PluginService, distributions_in_spec
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -106,7 +109,9 @@ def service_for(make_kernel, prefix, runner=None, kernel=None, settings=None):
     installation.remove_transient_tool_constraint = (  # type: ignore[method-assign]
         lambda **_kwargs: installation.startup_fingerprint()
     )
-    service = PluginService(kernel, installation, configured, lifecycle=types.SimpleNamespace(mutation=mutation))
+    service = PluginService(
+        kernel, installation, configured, lifecycle=types.SimpleNamespace(mutation=mutation, busy=lambda: False)
+    )
     service.github_api = lambda path: _sources.get_json(f"https://api.github.com/{path}", configured.github_token, 10)
     return service
 
@@ -1181,7 +1186,7 @@ with PluginReceipts(directory).installing():
     try:
         deadline = time.monotonic() + 10
         while not acquired.exists() and process.is_alive() and time.monotonic() < deadline:
-            time.sleep(0.01)
+            time.sleep(scaled(0.01))
         assert acquired.exists()
         with (
             pytest.raises(HeinzelError, match="Another plugin installation is running"),
@@ -1190,10 +1195,10 @@ with PluginReceipts(directory).installing():
             pass
     finally:
         release.touch()
-        process.join(10)
+        process.join(scaled(10))
         if process.is_alive():
             process.terminate()
-            process.join(10)
+            process.join(scaled(10))
     assert process.exitcode == 0
 
 
@@ -2044,19 +2049,50 @@ def test_a_confirmed_add_tells_its_steps_with_each_plugin_it_needs(make_kernel, 
         ],
     )
     service.add("heinzel-crm", confirm=True)
-    assert progress.events[:3] == [
+    assert progress.events[:4] == [
         ("install", "pending", None),
         ("verify", "pending", None),
+        ("record", "pending", None),
         ("bind", "pending", None),
     ]
-    finished = [event for event in progress.events if event[1] != "running"][3:]
+    finished = [event for event in progress.events if event[1] not in {"pending", "running"}]
     assert finished == [
         ("install", "done", None),
-        ("verify", "done", None),
         ("needs:heinzel-auth", "done", "Installed with it: 1.0.0"),
         ("needs:heinzel-base", "done", "Already installed: 2.0.0"),
+        ("verify", "done", None),
         ("record", "done", None),
         ("bind", "skipped", "No playbook recommends a connector"),
+    ]
+
+
+def test_connector_install_prints_the_planned_cli_steps_in_execution_order(make_kernel, tool_env, monkeypatch):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda _url: pypi_project("heinzel-crm", "1.1.0")
+    output = io.StringIO()
+    console = Console(file=output, force_terminal=False)
+    progress = ConsoleProgress(console)
+    service._kernel.bind(Progress, progress)
+    fresh_hz = service._installation.hz
+
+    def hz_with_binding(*args):
+        if args[:3] == ("system", "plugin", "bind"):
+            return json.dumps(
+                {"bindings": [{"capability": "tracker", "adapter": "github", "state": "written", "by": "crm"}]}
+            )
+        return fresh_hz(*args)
+
+    monkeypatch.setattr(service._installation, "hz", hz_with_binding)
+    change = service.add("heinzel-crm", confirm=True)
+    progress.finish()
+
+    assert [binding.state for binding in change.bindings] == ["written"]
+    lines = output.getvalue().splitlines()
+    assert [line for line in lines if line.endswith(" ...")] == [
+        "[1/4] Installing heinzel-crm ...",
+        "[2/4] Verifying the plugin installation ...",
+        "[3/4] Recording the add ...",
+        "[4/4] Set up which connector serves what ...",
     ]
 
 
@@ -2073,7 +2109,7 @@ def test_a_failed_add_marks_the_install_step_failed(make_kernel, tmp_path, monke
     with pytest.raises(HeinzelError):
         service.add("heinzel-crm", confirm=True)
     states = {event[0]: event[1] for event in progress.events}
-    assert states == {"install": "failed", "verify": "pending", "bind": "pending"}
+    assert states == {"install": "failed", "verify": "pending", "record": "pending", "bind": "pending"}
 
 
 def test_a_plugin_add_logs_each_step_and_each_needed_plugin(make_kernel, tool_env, monkeypatch, caplog):
@@ -2416,14 +2452,16 @@ def git_repository(root, files, tag=None):
         (root / name).write_text(text, encoding="utf-8")
     steps = [["init", "-q", "-b", "main"], ["add", "."], ["commit", "-q", "-m", "plugin"]]
     for step in [*steps, *([["tag", tag]] if tag else [])]:
-        subprocess.run(["git", "-C", str(root), *step], check=True, env=environment, capture_output=True, timeout=30)
+        subprocess.run(
+            ["git", "-C", str(root), *step], check=True, env=environment, capture_output=True, timeout=scaled(30)
+        )
     return subprocess.run(
         ["git", "-C", str(root), "rev-parse", "HEAD"],
         check=True,
         env=environment,
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=scaled(30),
     ).stdout.strip()
 
 
@@ -2503,7 +2541,9 @@ def test_a_local_ref_pins_that_commit_not_head(make_kernel, tool_env, monkeypatc
         "GIT_COMMITTER_EMAIL": "a@e.org",
     }
     for step in (["add", "."], ["commit", "-q", "-m", "more"]):
-        subprocess.run(["git", "-C", str(repository), *step], check=True, env=env, capture_output=True, timeout=30)
+        subprocess.run(
+            ["git", "-C", str(repository), *step], check=True, env=env, capture_output=True, timeout=scaled(30)
+        )
     service, _ = installing(make_kernel, tool_env, monkeypatch)
     candidate = service.candidate(f"git+{repository.resolve().as_uri()}@v0.1.0")
     assert candidate.revision == first

@@ -9,6 +9,8 @@ from typing import Any
 
 import pytest
 
+from heinzel.testing import scaled
+
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("affected", ROOT / "scripts" / "affected.py")
 assert spec
@@ -137,7 +139,7 @@ def test_affected_browser_lanes_match_make_allocation(repo):
         check=True,
         capture_output=True,
         text=True,
-        timeout=3,
+        timeout=scaled(3),
     )
     first, second, third = [set(line.split()) for line in result.stdout.splitlines()]
     assert set(repo.lanes["web-1"]) == first
@@ -197,7 +199,7 @@ def test_the_cli_prints_json_for_the_repo_it_lives_in():
         check=True,
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=scaled(60),
     )
     result = json.loads(out.stdout)
     assert result["full"] is False
@@ -210,7 +212,7 @@ def test_the_cli_exits_two_for_an_unusable_repo(tmp_path):
         check=False,
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=scaled(60),
     )
     assert out.returncode == 2
     assert "not a core checkout" in out.stderr

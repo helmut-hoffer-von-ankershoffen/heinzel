@@ -171,6 +171,13 @@ enum WidgetIssuanceResult {
 }
 
 struct WidgetCredentialStore {
+    static var enrollmentEnabled: Bool {
+        #if os(macOS)
+        return Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetEnrollmentEnabled") as? String == "YES"
+        #else
+        return Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetEnrollmentEnabled") as? Bool == true
+        #endif
+    }
     static let activationChanged = Notification.Name("HeinzelWidgetActivationChanged")
     static let preparationRecovered = Notification.Name("HeinzelWidgetPreparationRecovered")
     static let receiptRetired = Notification.Name("HeinzelWidgetReceiptRetired")
@@ -179,7 +186,7 @@ struct WidgetCredentialStore {
 
     /// Enrollment stays disabled unless the signed app explicitly provisions it.
     static func configured() -> WidgetCredentialStore? {
-        guard Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetEnrollmentEnabled") as? Bool == true,
+        guard enrollmentEnabled,
               let url = ActivityWidgetData.sharedCatalogURL(),
               let group = Bundle.main.object(forInfoDictionaryKey: "HeinzelWidgetKeychainGroup") as? String,
               let keychain = SharedWidgetKeychain(accessGroup: group) else { return nil }

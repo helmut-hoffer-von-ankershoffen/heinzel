@@ -8,6 +8,7 @@ never claims a head runs the new version without that observation.
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -45,3 +46,4 @@ class WebHeadRefresh:
     """
 
     refresh: Callable[[str], HeadRefresh]
+    recovery_ready: Callable[[Path], bool] | None = None

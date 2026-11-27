@@ -18,6 +18,7 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 from heinzel import CurrentUser, HeinzelError, ModelOffer, UsageEntry
 from heinzel.kernel import AiModelsSource
 from heinzel.kernel.ai._ai_models import list_offers
+from heinzel.testing import scaled
 from tests.unit.modules.user_chat_plugin_test import REPLY, Plugin, Settings, answer, answer_from, service
 from tests.unit.modules.user_chat_test import setup_chat
 
@@ -27,7 +28,7 @@ pytestmark = pytest.mark.unit
 # --- R2: plugin.model() runs synchronously on the event loop with no timeout -------------------------------------
 class SlowBuild(Plugin):
     def model(self, model_id: str) -> Model:
-        time.sleep(3)  # a hung SSO prompt or a network call while building
+        time.sleep(scaled(3))  # a hung SSO prompt or a network call while building
         return super().model(model_id)
 
 
@@ -62,7 +63,7 @@ class SlowList(Plugin):
     def models(self) -> list[ModelOffer]:
         self.calls += 1
         if self.calls > 1:
-            time.sleep(1.5)  # the cache refresh is slow now and then
+            time.sleep(scaled(1.5))  # the cache refresh is slow now and then
         return super().models()
 
 
@@ -96,7 +97,7 @@ class Hung:
         self.release = threading.Event()
 
     def models(self) -> list[ModelOffer]:
-        self.release.wait(30)
+        self.release.wait(scaled(30))
         return [ModelOffer(id="x")]
 
     def model(self, model_id: str) -> object:
@@ -109,7 +110,7 @@ def test_probe_r4_a_hung_models_call_does_not_leak_a_thread_per_listing():
     before = threading.active_count()
     try:
         for _ in range(10):
-            offers, note = list_offers(source, timeout=0.05)
+            offers, note = list_offers(source, timeout=scaled(0.05))
             assert offers == []
             assert "took longer" in note
         grown = threading.active_count() - before

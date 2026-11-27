@@ -121,6 +121,7 @@ FOREGROUND_UI = {
     "0.9.53": ("ui", "serve"),
     "0.9.54": ("ui", "serve"),
     "0.9.55": ("ui", "serve"),
+    "0.9.57": ("ui", "serve"),
 }
 PROFILE_FIXTURE = {
     "HZ_ORG__NAME": "Mira Example",
@@ -1007,7 +1008,20 @@ print(Installation(Progress()).startup_state_matches())
 """
 
 
-def verify_cli(case, *, retained=False):
+def verify_sound_choice(sound, *, keep_sound_off=False):
+    """The CLI reports a soundscape preference. The renderer owns playback and waits for Play."""
+    selected = sound.get("selected")
+    allowed = ("off",) if keep_sound_off else ("off", "singularity")
+    check(selected in allowed and sound.get("effective") == selected, "Unexpected soundscape preference")
+    rows = sound.get("soundscapes")
+    check(isinstance(rows, list) and all(isinstance(row, dict) for row in rows), "Invalid soundscape catalog")
+    for key in ("selected", "effective"):
+        active = [row.get("name") for row in rows if row.get(key) is True]
+        check(active == [selected], f"The soundscape catalog disagrees with {key}")
+    return selected
+
+
+def verify_cli(case, *, retained=False, keep_sound_off=False):
     version = case.expect_version
     python = case.prefix / "bin/python"
     _, out, _ = case.run([str(python), "-I", "-c", CHECKPOINT], "startup-checkpoint", SHORT_DEADLINE)
@@ -1025,8 +1039,13 @@ def verify_cli(case, *, retained=False):
     sharing = case.json_command("tailscale", "status", label="hz-sharing-status")
     check(sharing.get("desired_enabled") is False, "Sharing was enabled by the installation")
     sound = case.json_command("system", "sound", "list", label="hz-sound-list")
-    check(sound.get("selected") == sound.get("effective") == "off", "Playback was enabled by the installation")
-    return {"cli_version": info["version"], "cli_plugins": plugins, "startup_checkpoint": True}
+    sound_choice = verify_sound_choice(sound, keep_sound_off=keep_sound_off)
+    return {
+        "cli_version": info["version"],
+        "cli_plugins": plugins,
+        "startup_checkpoint": True,
+        "soundscape_preference": sound_choice,
+    }
 
 
 def app_cycle(case, name, command, *, retained=False):
@@ -1039,7 +1058,7 @@ def app_cycle(case, name, command, *, retained=False):
         case.step(f"{name}: HTTP identity, plugins, frontend assets", lambda: verify_http(case, holder))
     finally:
         case.step(f"{name}: stop owned foreground app", holder.stop)
-    case.step(f"{name}: CLI identity, checkpoint, nothing enabled", lambda: verify_cli(case, retained=retained))
+    case.step(f"{name}: CLI identity, checkpoint and preferences", lambda: verify_cli(case, retained=retained))
 
 
 def _start(case, name, command):
@@ -1662,11 +1681,15 @@ def expect_plugins(case, **changes):
             case.plugins_expected[name] = {**case.plugins_expected.get(name, {"enabled": True}), **value}
 
 
-def verify_state(case, label, *, retained=False):
-    """Everything that does not need a running app: checkpoint, CLI identity, inventory, nothing enabled."""
-    result = verify_cli(case, retained=retained)
+def verify_state(case, label, *, retained=False, keep_sound_off=False):
+    """Report the checkpoint, CLI identity, inventory and preferences without a running app."""
+    result = verify_cli(case, retained=retained, keep_sound_off=keep_sound_off)
     result["interpreter"] = installed_interpreter(case)
-    return {label: result["cli_plugins"], "checkpoint": result["startup_checkpoint"]}
+    return {
+        label: result["cli_plugins"],
+        "checkpoint": result["startup_checkpoint"],
+        "soundscape_preference": result["soundscape_preference"],
+    }
 
 
 def candidate_wheel_of(case):
@@ -2621,7 +2644,7 @@ def app_cycle_keep(case, name, command, expected):
         case.step(f"{name}: HTTP identity, plugins, frontend assets", lambda: verify_http(case, holder))
     finally:
         case.step(f"{name}: stop owned foreground app", holder.stop)
-    case.step(f"{name}: CLI identity, checkpoint, nothing enabled", lambda: verify_cli(case))
+    case.step(f"{name}: CLI identity, checkpoint and preferences", lambda: verify_cli(case))
 
 
 def case_stopped_unit_update(case):

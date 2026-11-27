@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.unit
 REPO = Path(__file__).resolve().parents[2]
 UI_PLANNER = runpy.run_path(str(REPO / "scripts/prepare_release_ui.py"))
@@ -42,7 +44,9 @@ def test_blank_summary_cannot_start_a_release(tmp_path: Path, intro: str | None,
     else:
         shutil.copyfile(REPO / "Makefile", tmp_path / "Makefile")
         command = ["make", "--no-print-directory", entry]
-    result = subprocess.run(command, cwd=tmp_path, env=env, capture_output=True, text=True, check=False, timeout=10)
+    result = subprocess.run(
+        command, cwd=tmp_path, env=env, capture_output=True, text=True, check=False, timeout=scaled(10)
+    )
     assert result.returncode != 0
     assert "is required" in result.stderr
     # Make reads remote names while parsing; it must never dispatch or invoke release tooling.
@@ -67,7 +71,7 @@ def test_make_passes_summary_as_data(tmp_path: Path, entry: str):
         env=env,
         capture_output=True,
         check=False,
-        timeout=10,
+        timeout=scaled(10),
     )
     expected = f"intro={summary}" if entry == "release" else summary
     assert (tmp_path / "args").read_text().splitlines()[-1] == expected
@@ -170,7 +174,7 @@ esac
         capture_output=True,
         text=True,
         check=False,
-        timeout=5,
+        timeout=scaled(5),
     )
     assert result.returncode == (1 if plan == "refused" else 29), result.stderr
     assert events.read_text().splitlines() == calls

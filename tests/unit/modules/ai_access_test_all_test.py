@@ -17,6 +17,7 @@ from heinzel.kernel.ai._ai_models import list_offers
 from heinzel.modules.ai.access._models import AccessSettings
 from heinzel.modules.ai.access._plugin_models import PROBE_TOKENS, PluginModelsAccess
 from heinzel.modules.ai.access._service import MAX_MODELS_TESTED, AccessService
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -64,7 +65,7 @@ class Stuck(Models):
     """Its own `test` blocks the thread it runs on, as a careless plugin's synchronous call does."""
 
     def test(self, model_id: str) -> AccessTest:
-        RELEASE.wait(30)
+        RELEASE.wait(scaled(30))
         return AccessTest(ok=True, detail="late")
 
 
@@ -91,7 +92,9 @@ def test_each_model_answers_fails_or_times_out_and_is_kept_for_the_picker(tmp_pa
     assert (failed.ok, failed.model) == (False, "boom")
     assert failed.detail == "RuntimeError"
     started = time.monotonic()
-    hung = option(tmp_path, adapter, timeout=0.3)[0].test_model("slow")
+    hung = option(tmp_path, adapter, timeout=0.3)[0].test_model(
+        "slow"
+    )  # unscaled: the product limit, named in the answer
     assert time.monotonic() - started < 2.5, "bounded by its timeout"
     assert (hung.ok, hung.model) == (False, "slow")
     assert hung.detail == "no answer within 0.3s"
@@ -123,7 +126,11 @@ def test_a_later_answer_clears_the_mark(tmp_path, monkeypatch):
 
 def test_a_plugins_own_test_that_blocks_its_thread_is_cut_off(tmp_path):
     RELEASE.clear()
-    access, found = option(tmp_path, Stuck(), timeout=0.2)
+    access, found = option(
+        tmp_path,
+        Stuck(),
+        timeout=0.2,
+    )  # unscaled: the product limit, named in the answer
     try:
         started = time.monotonic()
         result = access.test_model("ok")
@@ -246,7 +253,7 @@ def test_test_all_stops_on_ctrl_c_with_what_it_learned_recorded(tmp_path):
 
 
 def _blocks(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-    RELEASE.wait(30)
+    RELEASE.wait(scaled(30))
     return ModelResponse(parts=[TextPart("late")])
 
 
@@ -273,7 +280,11 @@ class Broken(Models):
 
 def test_a_model_that_blocks_its_request_thread_is_cut_off(tmp_path):
     RELEASE.clear()
-    access, found = option(tmp_path, Blocking(), timeout=0.2)
+    access, found = option(
+        tmp_path,
+        Blocking(),
+        timeout=0.2,
+    )  # unscaled: the product limit, named in the answer
     try:
         result = access.test_model("ok")
         assert (result.ok, result.detail, result.model) == (False, "no answer within 0.2s", "ok")
@@ -420,7 +431,7 @@ def test_a_second_run_is_refused_while_one_is_going_on(tmp_path):
     class Slow(Fake):
         def test_model(self, model_id: str) -> AccessTest:
             started.set()
-            release.wait(10)
+            release.wait(scaled(10))
             return AccessTest(ok=True, detail="OK")
 
     slow = Slow({"a": AccessTest(ok=True)})
@@ -430,12 +441,12 @@ def test_a_second_run_is_refused_while_one_is_going_on(tmp_path):
     worker = threading.Thread(target=lambda: reports.append(first.test_all("acme", {"acme": slow}, Progress())))
     worker.start()
     try:
-        assert started.wait(5)
+        assert started.wait(scaled(5))
         with pytest.raises(HeinzelError, match="A check of every model is already running"):
             second.test_all("acme", {"acme": slow}, Progress())  # type: ignore[arg-type]
     finally:
         release.set()
-        worker.join(10)
+        worker.join(scaled(10))
     assert len(reports) == 1
     assert second.test_all("acme", {"acme": slow}, Progress()).ok, "free again once the first ended"  # type: ignore[arg-type]
 

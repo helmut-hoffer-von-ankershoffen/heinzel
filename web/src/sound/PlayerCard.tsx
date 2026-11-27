@@ -11,19 +11,31 @@ import { PaneAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
 import { clampToWindow } from "@/lib/placement";
 import { cn } from "@/lib/utils";
-import { watchViewport } from "@/lib/viewport";
+import { viewportBounds, watchViewport } from "@/lib/viewport";
 import { nearSlot, setDocked, setFloating, useDockPref, useDockSlot } from "./dock";
 import { stop } from "./store";
 
-const WIDTH = 288;
+// 480px of video plus the floating card's borders: 16:9 clears YouTube's 200px minimum height.
+const WIDTH = 482;
 const HEADER = 44;
 /** Movement under this many pixels is a click, not a drag. */
 const DRAG_PX = 6;
 const STEP = 16;
 
-type Props = { title: string; watchUrl?: string; host: string; children: ReactNode; headerAction?: ReactNode };
+type Props = {
+  title: string;
+  /** The video on YouTube, the one host with a page to open. */
+  watchUrl?: string;
+  /** Where the sound comes from. */
+  host: string;
+  children: ReactNode;
+  headerAction?: ReactNode;
+  onClose?: () => void;
+};
 
-export function PlayerCard({ title, watchUrl, host, children, headerAction }: Props) {
+export function PlayerCard({ title, watchUrl, host, children, headerAction, onClose = stop }: Props) {
+  const [viewport, setViewport] = useState(viewportBounds);
+  useLayoutEffect(() => watchViewport(() => setViewport(viewportBounds())), []);
   const pref = useDockPref();
   const slot = useDockSlot();
   const docked = pref.docked && slot !== null;
@@ -166,6 +178,9 @@ export function PlayerCard({ title, watchUrl, host, children, headerAction }: Pr
 
   const floatingStyle = pref.x === null || pref.y === null ? { left: 12, bottom: 68 } : { left: pref.x, top: pref.y };
   const dockedAt = at ?? { left: 0, top: 0, width: WIDTH };
+  const narrow = viewport.width < 218;
+  const subminimum = !docked && viewport.width < 200;
+  const geometry = floatingPlayerGeometry(viewport.width);
   const style = docked
     ? { left: dockedAt.left + (offset?.dx ?? 0), top: dockedAt.top + (offset?.dy ?? 0), width: dockedAt.width }
     : offset
@@ -178,15 +193,38 @@ export function PlayerCard({ title, watchUrl, host, children, headerAction }: Pr
       aria-label={t("sound.player", { title })}
       data-native-surface-container=""
       data-dock={docked ? "docked" : "floating"}
-      style={style}
+      tabIndex={subminimum ? 0 : undefined}
+      onKeyDown={(event) => {
+        // Keep arrow movement on the drag handle; the focused viewport pans the unchanged provider instead.
+        if (!subminimum || event.target !== event.currentTarget) return;
+        const element = event.currentTarget;
+        if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+          event.preventDefault();
+          element.scrollLeft += event.key === "ArrowLeft" ? -STEP : STEP;
+        } else if (event.key === "Home" || event.key === "End") {
+          event.preventDefault();
+          element.scrollLeft = event.key === "Home" ? 0 : element.scrollWidth;
+        }
+      }}
+      style={docked ? style : {
+        ...style,
+        width: geometry.width,
+        maxWidth: geometry.width,
+        borderWidth: geometry.border,
+        ...(narrow ? { maxHeight: "none", overflow: "visible" } : {}),
+        ...(subminimum ? { maxHeight: viewport.height, overflow: "auto" } : {}),
+      }}
       hidden={compact}
       className={cn(
         "viewport-popover fixed z-(--layer-media) overflow-y-auto bg-popover",
         docked
           ? "border-t border-border" // the account row's hairline closes it below, so no band or double line follows
-          : "w-72 max-w-[calc(var(--hz-viewport-width,100vw)-1rem)] rounded-xl border border-border shadow-xl",
+          : "w-[482px] max-w-[calc(var(--hz-viewport-width,100vw)-1rem)] rounded-xl border border-border shadow-xl",
       )}
     >
+      {/* Keep this wrapper mounted through every mode: moving an iframe would restart playback. Native guests
+          outside the viewport are hidden by useNativeSurface; their existing header help remains reachable here. */}
+      <div style={subminimum ? { minWidth: 200 } : undefined}>
       <header
         onPointerDown={down}
         onPointerMove={move}
@@ -195,13 +233,13 @@ export function PlayerCard({ title, watchUrl, host, children, headerAction }: Pr
           drag.current = null;
           setOffset(null);
         }}
-        className="flex cursor-grab touch-none items-center gap-1 px-3 py-1.5 active:cursor-grabbing"
+        className="flex flex-wrap cursor-grab touch-none items-center gap-1 px-3 py-1.5 active:cursor-grabbing"
       >
         <div className="min-w-0 flex-1">
           <p className="truncate text-ui-sm font-medium">{title}</p>
           <p className="truncate text-xs text-muted-foreground">{t("sound.playsFrom", { host })}</p>
         </div>
-        <div data-pane-chrome="" className="flex shrink-0 items-center gap-1.5">
+        <div data-pane-chrome="" className="flex flex-wrap items-center gap-1.5">
           {headerAction}
           {!docked && (
             <PaneAction ghost icon={GripHorizontal} data-player-drag-handle onKeyDown={key}>
@@ -230,16 +268,23 @@ export function PlayerCard({ title, watchUrl, host, children, headerAction }: Pr
           )}
           {watchUrl && (
             <PaneAction ghost icon={ExternalLink} href={watchUrl} onClick={stop}>
-              {t("sound.openOn", { host })}
+              {t("sound.openOn", { host: "YouTube" })}
             </PaneAction>
           )}
-          <PaneAction ghost icon={X} onClick={stop}>
+          <PaneAction ghost icon={X} onClick={onClose}>
             {t("sound.close")}
           </PaneAction>
         </div>
       </header>
       {children}
+      </div>
     </section>
   );
   return createPortal(body, document.body);
+}
+
+/** Spend margins and borders only when the full provider minimum still fits. */
+export function floatingPlayerGeometry(available: number): { width: number; border: number } {
+  const width = Number.isFinite(available) ? Math.max(0, available) : 200;
+  return width < 218 ? { width, border: 0 } : { width: Math.min(WIDTH, width - 16), border: 1 };
 }

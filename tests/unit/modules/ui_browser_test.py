@@ -50,6 +50,7 @@ from heinzel.modules.ui.browser._service import (
     quoted,
     summary,
 )
+from heinzel.testing import scaled
 from tests._fake_browser import ELEMENTS, PAGE_TEXT, FakeDesktop, png
 
 pytestmark = pytest.mark.unit
@@ -1012,14 +1013,14 @@ def test_services_are_built_once_however_many_threads_ask(make_kernel):
     found: list[tuple[int, int]] = []
 
     def ask() -> None:
-        start.wait(5)
+        start.wait(scaled(5))
         found.append((id(kernel.resolve(BrowserBridge)), id(kernel.resolve(Browser))))
 
     threads = [threading.Thread(target=ask) for _ in range(8)]
     for thread in threads:
         thread.start()
     for thread in threads:
-        thread.join(5)
+        thread.join(scaled(5))
     assert len(found) == 8
     assert len(set(found)) == 1
 
@@ -1101,7 +1102,7 @@ def test_a_sender_that_trickles_its_request_is_cut_off_at_one_deadline(kernel, d
         while time.monotonic() - started < REQUEST_SECONDS + 4:
             try:
                 connection.sendall(b"x")  # a byte now and then: each alone would be in time
-                time.sleep(0.2)
+                time.sleep(scaled(0.2))
             except OSError:
                 closed = True
                 break
@@ -1119,7 +1120,7 @@ def test_asking_whether_a_turn_runs_never_costs_the_person_their_message(kernel)
     def probe() -> None:
         while not stop.is_set():
             store.turn_running(session)
-            time.sleep(0.001)  # as often as a thousand relayed calls a second, far above the limit
+            time.sleep(scaled(0.001))  # as often as a thousand relayed calls a second, far above the limit
 
     prober = threading.Thread(target=probe)
     prober.start()
@@ -1129,7 +1130,7 @@ def test_asking_whether_a_turn_runs_never_costs_the_person_their_message(kernel)
                 assert chat.id == session
     finally:
         stop.set()
-        prober.join(5)
+        prober.join(scaled(5))
 
 
 def test_a_session_a_turn_really_holds_is_still_busy(kernel):

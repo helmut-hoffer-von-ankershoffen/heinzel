@@ -1873,13 +1873,71 @@
         "title": "CalendarReminderStatus",
         "type": "object"
       },
+      "CalendarSource": {
+        "description": "A readable calendar exposed by a calendar adapter.",
+        "properties": {
+          "id": {
+            "description": "Stable opaque source id, suitable for events_for.",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "primary": {
+            "default": false,
+            "description": "Whether this is the owner's primary calendar.",
+            "title": "Primary",
+            "type": "boolean"
+          },
+          "title": {
+            "description": "Name of the calendar shown to its owner.",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "CalendarSource",
+        "type": "object"
+      },
       "CalendarWeek": {
         "description": "A bounded week of calendar events or an explanation why it could not be read.",
         "properties": {
+          "adapter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The bound adapter whose calendar ids these are.",
+            "title": "Adapter"
+          },
+          "calendars": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CalendarSource"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Readable calendars, or none for a single-calendar adapter.",
+            "title": "Calendars"
+          },
           "events": {
             "description": "Non-cancelled events overlapping the week.",
             "items": {
-              "$ref": "#/components/schemas/Event"
+              "$ref": "#/components/schemas/CalendarWeekEvent"
             },
             "title": "Events",
             "type": "array"
@@ -1931,6 +1989,14 @@
             "format": "date-time",
             "title": "Until",
             "type": "string"
+          },
+          "warnings": {
+            "description": "Selected calendars that could not be read.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -1938,6 +2004,188 @@
           "until"
         ],
         "title": "CalendarWeek",
+        "type": "object"
+      },
+      "CalendarWeekEvent": {
+        "description": "An occurrence in the weekly view, labeled with its source when available.",
+        "properties": {
+          "all_day": {
+            "default": false,
+            "description": "Whether it is an all-day event.",
+            "title": "All Day",
+            "type": "boolean"
+          },
+          "attendees": {
+            "description": "Who is invited, the user included.",
+            "items": {
+              "$ref": "#/components/schemas/Participant"
+            },
+            "title": "Attendees",
+            "type": "array"
+          },
+          "calendar_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source calendar id, when reading several calendars.",
+            "title": "Calendar Id"
+          },
+          "conference_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Identifier of the conference it is held in, in the meeting tool's notation (a Zoom meeting number taken from the conferencing data, location or description; a Meet code), so that the `Meeting` with the same `conference_id` and an overlapping time is this event's meeting; none without conferencing.",
+            "title": "Conference Id"
+          },
+          "conference_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Link to join the conference; none without one.",
+            "title": "Conference Url"
+          },
+          "end": {
+            "description": "When it ends, exclusive; the next midnight for an all-day event.",
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "id": {
+            "description": "Identifier of this occurrence in the adapter's notation.",
+            "title": "Id",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where it takes place, in the event's words; none if unset.",
+            "title": "Location"
+          },
+          "organized_by_user": {
+            "default": false,
+            "description": "Whether the user organizes it, and so may move or cancel it for everyone.",
+            "title": "Organized By User",
+            "type": "boolean"
+          },
+          "organizer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Participant"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who organizes it; none if the vendor doesn't say."
+          },
+          "response": {
+            "anyOf": [
+              {
+                "enum": [
+                  "accepted",
+                  "declined",
+                  "tentative",
+                  "pending"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The user's own answer to the invitation: one of `RESPONSES`, or `pending` while unanswered; none when the user is not among the attendees.",
+            "title": "Response"
+          },
+          "start": {
+            "description": "When it starts; midnight in the calendar's zone for an all-day event.",
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          },
+          "status": {
+            "default": "confirmed",
+            "description": "State in the vendor's words, e.g. `confirmed`, `cancelled`.",
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "description": "Title (summary) of the event.",
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where people open it; none if it has no web address.",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "start",
+          "end"
+        ],
+        "title": "CalendarWeekEvent",
+        "type": "object"
+      },
+      "CalendarWeekSelection": {
+        "additionalProperties": false,
+        "description": "Browser calendar exclusions for one week.",
+        "properties": {
+          "adapter": {
+            "default": "",
+            "maxLength": 32768,
+            "pattern": "^(?:[a-z][a-z0-9-]*)?$",
+            "title": "Adapter",
+            "type": "string"
+          },
+          "excluded": {
+            "items": {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Excluded",
+            "type": "array"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Weeks before or after this week.",
+            "maximum": 52.0,
+            "minimum": -52.0,
+            "title": "Offset",
+            "type": "integer"
+          }
+        },
+        "title": "CalendarWeekSelection",
         "type": "object"
       },
       "CallerActivity": {
@@ -11241,6 +11489,30 @@
             "title": "Popup",
             "type": "boolean"
           },
+          "producer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The registered distribution and module for a replacement group, assigned by the kernel.",
+            "title": "Producer"
+          },
+          "replaces": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The replacement group within the registered producer, notice kind, route and command.",
+            "title": "Replaces"
+          },
           "resolve_when": {
             "anyOf": [
               {
@@ -12988,6 +13260,12 @@
             "$ref": "#/components/schemas/PluginCandidate",
             "description": "The exact candidate shown before confirmation."
           },
+          "lifecycle_busy": {
+            "default": false,
+            "description": "Whether a previewed install is waiting for a daemon job or another change.",
+            "title": "Lifecycle Busy",
+            "type": "boolean"
+          },
           "operation_id": {
             "description": "Opaque id returned by the preview; it contains no candidate details.",
             "title": "Operation Id",
@@ -13512,6 +13790,61 @@
           "url"
         ],
         "title": "PluginSoundscape",
+        "type": "object"
+      },
+      "PluginUnpin": {
+        "description": "The exact installed plugin whose update policy would change or changed.",
+        "properties": {
+          "confirmation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Digest binding this preview to the observed installed generation.",
+            "title": "Confirmation"
+          },
+          "distribution": {
+            "description": "The installed distribution whose index pin is selected.",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "done": {
+            "description": "Whether the exact confirmed pin was removed.",
+            "title": "Done",
+            "type": "boolean"
+          },
+          "message": {
+            "description": "What happens to the current plugin and its future updates.",
+            "title": "Message",
+            "type": "string"
+          },
+          "next": {
+            "description": "Command that confirms this exact preview, if still applicable.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "version": {
+            "description": "The installed version, which the unpin leaves in place.",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "distribution",
+          "version",
+          "done",
+          "confirmation",
+          "message",
+          "next"
+        ],
+        "title": "PluginUnpin",
         "type": "object"
       },
       "PluginUpdate": {
@@ -17997,6 +18330,39 @@
         "title": "SoundStreamView",
         "type": "object"
       },
+      "SoundTrackView": {
+        "description": "One track the web app plays in its own audio element.",
+        "properties": {
+          "duration_seconds": {
+            "description": "How long it is, in seconds.",
+            "title": "Duration Seconds",
+            "type": "integer"
+          },
+          "title": {
+            "description": "What the player shows, e.g. `Morning tide`.",
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "description": "Its media type, `audio/mpeg` or `audio/mp4`.",
+            "title": "Type",
+            "type": "string"
+          },
+          "url": {
+            "description": "The https URL to play after Play, on a media host of the core's list.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "url",
+          "type",
+          "duration_seconds"
+        ],
+        "title": "SoundTrackView",
+        "type": "object"
+      },
       "SoundscapeView": {
         "description": "One available soundscape, ready for the web app to play.",
         "properties": {
@@ -18096,12 +18462,20 @@
                 "type": "null"
               }
             ],
-            "description": "The stream; none unless the kind is `stream`."
+            "description": "The stream; none for another kind or tracks only."
           },
           "title": {
             "description": "What people pick it by, e.g. `Claude FM`.",
             "title": "Title",
             "type": "string"
+          },
+          "tracks": {
+            "description": "Tracks to play in order, before the stream; empty while the feature `native_audio` is off.",
+            "items": {
+              "$ref": "#/components/schemas/SoundTrackView"
+            },
+            "title": "Tracks",
+            "type": "array"
           }
         },
         "required": [
@@ -24181,6 +24555,19 @@
         "title": "heinzel_share_draft_link_Input",
         "type": "object"
       },
+      "org_calendar_selection_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "selection": {
+            "$ref": "#/components/schemas/CalendarWeekSelection"
+          }
+        },
+        "required": [
+          "selection"
+        ],
+        "title": "org_calendar_selection_Input",
+        "type": "object"
+      },
       "system_claude_acknowledge_Input": {
         "additionalProperties": false,
         "properties": {
@@ -29284,7 +29671,7 @@
     },
     "/org/calendar": {
       "get": {
-        "description": "Show a week from your connected calendar.",
+        "description": "Show a week from your connected calendar.\n\nRaises:\n    HeinzelError: If the calendar selection is invalid.",
         "operationId": "org_calendar",
         "parameters": [
           {
@@ -29297,6 +29684,18 @@
               "description": "Weeks before or after this week.",
               "title": "Offset",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Calendar exclusions and their adapter as JSON.",
+            "in": "query",
+            "name": "selection",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Calendar exclusions and their adapter as JSON.",
+              "title": "Selection",
+              "type": "string"
             }
           }
         ],
@@ -29439,6 +29838,48 @@
           }
         },
         "summary": "Stop and remove the supervised calendar reminder worker.",
+        "tags": [
+          "org"
+        ]
+      }
+    },
+    "/org/calendar-selection": {
+      "post": {
+        "description": "Read a calendar week with the browser's current calendar exclusions.",
+        "operationId": "org_calendar_selection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/org_calendar_selection_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarWeek"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read a calendar week with the browser's current calendar exclusions.",
         "tags": [
           "org"
         ]
@@ -32732,6 +33173,69 @@
           }
         },
         "summary": "Undo the connector bindings setup wrote for a module; one you changed since stays as you set it.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/plugin/unpin": {
+      "post": {
+        "description": "Remove an exact index version pin while keeping the installed plugin.\n\nWithout `confirm`, show the installed version and the exact confirmation command. The confirmed change removes\nonly its version requirement, so future ordinary updates may move it. Git, local and constrained sources refuse.",
+        "operationId": "system_plugin_unpin",
+        "parameters": [
+          {
+            "description": "Distribution name, as `hz system plugin list` shows it.",
+            "in": "query",
+            "name": "distribution",
+            "required": true,
+            "schema": {
+              "description": "Distribution name, as `hz system plugin list` shows it.",
+              "title": "Distribution",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Confirm the exact installation generation and version shown by the unpin preview.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Confirm the exact installation generation and version shown by the unpin preview.",
+              "title": "Confirm"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginUnpin"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove an exact index version pin while keeping the installed plugin.",
         "tags": [
           "system"
         ]

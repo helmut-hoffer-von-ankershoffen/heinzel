@@ -1,13 +1,13 @@
-"""The kernel: discovers modules, collects the lets they advertise and injects services.
+"""The kernel discovers modules and injects their lets; heads expose them."""
 
-The kernel knows nothing about any head. Heads (`heinzel.heads`) ask it for lets and decide how to expose them.
-"""
+# ruff: noqa: F405
 
 from heinzel.kernel._api_access import ConfiguredApiAccess, ConfiguredApiLease, ConfiguredApiSnapshot
 from heinzel.kernel._bindings import HOWS, Adapters, CapabilitySettings, CapabilityView, How, Requester
 from heinzel.kernel._boot import boot
 from heinzel.kernel._bounded_process import MAX_OUTPUT as PROCESS_MAX_OUTPUT
 from heinzel.kernel._bounded_process import ProcessExecute, ProcessOutcome, run_bounded_process, signal_process_group
+from heinzel.kernel._calendar_sources import CalendarSource, CalendarSources
 from heinzel.kernel._captured_source import captured_source_active
 from heinzel.kernel._captured_write import (
     CapturedWriteAcknowledgement,
@@ -257,6 +257,7 @@ from heinzel.kernel._sign_in import (
     SignInStatus,
 )
 from heinzel.kernel._signals import SIGNALS, Signal
+from heinzel.kernel._soundscape_exports import *  # noqa: F403
 from heinzel.kernel._source_loading import SourceGuardedConnectedService
 from heinzel.kernel._telemetry import (
     HEINZEL_ID,
@@ -437,19 +438,6 @@ from heinzel.kernel.look._contributions import (
     WidgetLet,
     link_problem,
 )
-from heinzel.kernel.look._soundscapes import (
-    SOUND_CSP,
-    SOUND_ROUTE,
-    STREAM_PROVIDERS,
-    SoundAssets,
-    SoundEarcon,
-    SoundLayer,
-    Soundscape,
-    SoundscapeLet,
-    SoundStream,
-    StreamProvider,
-    ThemeChoice,
-)
 from heinzel.kernel.look._theme_signals import DAYPARTS, WEATHERS, Daypart, SignalLet, ThemeSignals, Weather, daypart
 from heinzel.kernel.look._themes import (
     DEFAULT_LOGO,
@@ -522,6 +510,7 @@ __all__ = [
     "MAX_WINDOW",
     "MCP_HTTP",
     "MCP_STDIO",
+    "MEDIA_ORIGINS",
     "MODES",
     "NO_ADAPTER",
     "PREREQUISITE_CONTEXTS",
@@ -567,6 +556,8 @@ __all__ = [
     "ByArguments",
     "CachedOverviewLet",
     "Calendar",
+    "CalendarSource",
+    "CalendarSources",
     "CallIdentity",
     "Caller",
     "Capability",
@@ -847,6 +838,7 @@ __all__ = [
     "SoundEarcon",
     "SoundLayer",
     "SoundStream",
+    "SoundTrack",
     "Soundscape",
     "SoundscapeLet",
     "SourceFailure",

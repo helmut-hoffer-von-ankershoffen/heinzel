@@ -59,6 +59,24 @@ upgrade lane and macOS selection); until they merge, the current workflows apply
   in-place upgrade job; main's coalesced macOS lane runs on every main commit; release candidates run everything on
   both OSes.
 
+- 2026-11-23, owner: the in-place upgrade job, like the macOS unit and integration cells, runs on a PR only when the
+  upgrade selector picks it; it always runs on main and on release commits. This supersedes the "in-place upgrade job
+  on every PR" half of the 2026-11-22 entry above.
+
+- Repeat a hosted-only failure in one focused job on the failing runner. This Linux example uses stress to reproduce
+  a timing failure. `--throwaway` dispatches on a new validation commit with the same tree as `BRANCH`.
+
+  ```sh
+  sm ci one dispatch BRANCH --test 'tests/e2e/docs_test.py::test_readme_instructions' \
+    --kind e2e --os ubuntu-24.04 --repeat 10 --stress --throwaway --wait --cleanup
+  ```
+
+  Use `sm ci one repeats --fail-rate P` to choose the repeat count from the observed failure rate. If the focused
+  repeat passes, read the original failed job's log and record the cause before rerunning it with
+  `sm ci one rerun RUN --job NAME`, using its exact job name. If the repeat fails, fix the cause. If the same check
+  fails twice, read its log and record the cause before pushing again. The focused result is diagnostic evidence
+  only. Merge still requires the normal CI checks.
+
 ## Picking up work
 
 - Sonar security remediation: read [docs/SONAR_SECURITY.md](docs/SONAR_SECURITY.md) first.

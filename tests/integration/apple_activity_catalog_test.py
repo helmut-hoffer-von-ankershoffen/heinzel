@@ -17,6 +17,30 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.mark.timeout(75)
+def test_mac_extra_large_roster_bounds_order_fallback_and_overflow(tmp_path: Path) -> None:
+    probe = tmp_path / "roster-probe"
+    subprocess.run(
+        [
+            "xcrun",
+            "swiftc",
+            "-swift-version",
+            "6",
+            "-target",
+            f"{platform.machine()}-apple-macosx15.0",
+            str(ROOT / "apple/Shared/ActivityCatalog.swift"),
+            str(ROOT / "apple/Shared/ActivityWidgetData.swift"),
+            str(ROOT / "apple/Shared/NativeRoute.swift"),
+            str(ROOT / "tests/fixtures/apple-widget-roster.swift"),
+            "-o",
+            str(probe),
+        ],
+        check=True,
+        timeout=55,
+    )
+    subprocess.run([str(probe)], check=True, timeout=20)
+
+
+@pytest.mark.timeout(75)
 def test_catalog_publishes_complete_scoped_generations_atomically(tmp_path: Path) -> None:
     probe = tmp_path / "catalog-probe"
     subprocess.run(

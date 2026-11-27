@@ -1,8 +1,15 @@
-import { screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import { config, noTeam, shell } from "@/test/fixtures";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+import { config, noTeam, profile, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi } from "@/test/render";
 import { renderAt } from "@/test/renderApp";
+
+vi.mock("@/features/runtime/lifecycle/RestartAndApply", () => ({
+  RestartAndApply: ({ onUnsupported }: { onUnsupported: () => Promise<void> }) => (
+    <button type="button" onClick={onUnsupported}>Save staged setting</button>
+  ),
+}));
 
 describe("Organisation", () => {
   it("says why there is no org chart yet and what to look at", async () => {
@@ -61,5 +68,52 @@ describe("Profile", () => {
     expect(within(screen.getByText("Team").closest("div") as HTMLElement).getByRole("button")).toHaveTextContent(
       "not set",
     );
+  });
+
+  it.each(["mira", null])("edits handle %s and reads it again after remount", async (initial) => {
+    let handle = initial;
+    const { calls } = mockApi({
+      ...shell,
+      "/api/org/show": () => ({ ...profile, handle }),
+      "/api/system/config/show": () => ({
+        ...config,
+        settings: [
+          ...config.settings,
+          {
+            section: "org",
+            key: "handle",
+            value: handle,
+            default: null,
+            source: "user",
+            env: "HZ_ORG__HANDLE",
+            description: "Your handle.",
+            json_schema: { type: "string", title: "Handle" },
+          },
+        ],
+      }),
+      "/api/system/config/set": (request: Request) => {
+        handle = new URL(request.url).searchParams.get("value");
+        return "config.toml";
+      },
+    });
+    const user = userEvent.setup();
+    const view = renderAt("/profile");
+    expect(await screen.findByRole("button", { name: "Edit profile" })).toBeInTheDocument();
+    expect(screen.queryByText("Run in terminal")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: `Edit Handle, currently ${initial || "not set"}` }));
+    const settings = await screen.findByRole("dialog", { name: "Settings" });
+    const input = within(settings).getByRole("textbox", { name: "Handle" });
+    await user.clear(input);
+    await user.type(input, "mira-two{Enter}");
+    expect(calls.some((call) => call.url.includes("key=org.handle&value=mira-two"))).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Save staged setting" }));
+    await waitFor(() => expect(calls.some((call) => call.url.includes("key=org.handle&value=mira-two"))).toBe(true));
+    await user.keyboard("{Escape}");
+    expect(await screen.findByRole("button", { name: "Edit Handle, currently mira-two" })).toBeInTheDocument();
+    view.unmount();
+    const reads = calls.filter((call) => new URL(call.url).pathname === "/api/org/show").length;
+    renderAt("/profile");
+    expect(await screen.findByRole("button", { name: "Edit Handle, currently mira-two" })).toBeInTheDocument();
+    expect(calls.filter((call) => new URL(call.url).pathname === "/api/org/show").length).toBeGreaterThan(reads);
   });
 });
