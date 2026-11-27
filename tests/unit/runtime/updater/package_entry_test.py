@@ -6,7 +6,7 @@ import sys
 import pytest
 
 from heinzel.modules.system import updater
-from heinzel.modules.system.updater import _schedule
+from heinzel.modules.system.updater import _schedule, _schedule_plan, _schedule_state
 from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
@@ -15,6 +15,15 @@ pytestmark = pytest.mark.unit
 @pytest.mark.parametrize("name", updater.__all__)
 def test_the_entry_hands_out_the_schedule_names(name: str) -> None:
     assert getattr(updater, name) is getattr(_schedule, name)
+
+
+@pytest.mark.parametrize("name", ["Activity", "AutoUpdateStatus", "Plan", "PluginHold"])
+def test_the_old_schedule_path_reexports_the_original_plan_types(name: str) -> None:
+    assert getattr(_schedule, name) is getattr(_schedule_plan, name)
+
+
+def test_the_old_schedule_path_reexports_the_original_state_type() -> None:
+    assert _schedule.StateFiles is _schedule_state.StateFiles
 
 
 def test_an_unknown_name_is_an_attribute_error() -> None:
