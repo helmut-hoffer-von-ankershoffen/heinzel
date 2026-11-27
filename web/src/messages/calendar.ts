@@ -160,6 +160,8 @@ export const calendar = {
     "Turn on meeting reminders on this computer? A small helper starts at every login, so reminders arrive while the app is closed. Reading your calendar for them needs separate consent in Notification settings.",
   "calendar.removeSummary": "Turn off meeting reminders on this computer and remove their helper from login?",
   "calendar.notificationSettings": "Notification settings",
+  "calendar.signIn": "Sign in to {name}",
+  "calendar.signInDetails": "Details",
   "calendar.connect": "Connect a calendar\u2026",
   "calendar.provider": "Provider",
   "calendar.location": "Location",

@@ -36,6 +36,7 @@ import {
   weekCaption,
 } from "./agendaModel";
 import { spanText } from "./calendarModel";
+import { SignInProblem } from "./SignInProblem";
 import { CONNECTORS } from "./settingsSections";
 
 type Person = { name?: string | null; email?: string | null };
@@ -159,7 +160,7 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
           <p className="pt-3">{t("calendar.unavailable")}</p>
         ) : week.data.problem ? (
           <div className="pt-3">
-            <p>{week.data.problem}</p>
+            <SignInProblem problem={week.data.problem} />
           </div>
         ) : chosen ? (
           <div className="pt-3">
