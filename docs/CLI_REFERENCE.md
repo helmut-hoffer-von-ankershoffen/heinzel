@@ -5332,7 +5332,7 @@ $ hz ui serve [OPTIONS]
 
 ### `hz ui status`
 
-Show exact OS ownership and the live web server&#x27;s readiness and version.
+Show service readiness and recently observed desktop use (never live connections).
 
 **Usage**:
 

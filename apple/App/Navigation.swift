@@ -961,11 +961,18 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     private func resolveWorkspaceVersion(in view: WKWebView) async -> WorkspaceVersionObservation? {
         guard view.url.map(endpoint.owns) == true else { return nil }
+        #if os(macOS)
+        let machine = ProcessInfo.processInfo.hostName
+        let identity = ClientIdentity.header(appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+                                             backendVersion: ClientIdentity.backendVersion, machine: machine)
+        #else
+        let identity = ""
+        #endif
         let revision = documentRevision
         for attempt in 0..<5 {
             guard !Task.isCancelled, workspace === view, revision == documentRevision,
                   view.url.map(endpoint.owns) == true else { return nil }
-            let data = try? await inspectWorkspace(in: view, body: """
+            let data = try? await inspectWorkspace(in: view, arguments: ["clientIdentity": identity], body: """
                 const date = value => {
                     if (typeof value !== 'string') return null;
                     const m = /^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(?:[.][0-9]{1,6})?(?:Z|[+-]([0-9]{2}):([0-9]{2}))$/.exec(value);
@@ -975,7 +982,8 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                         hour > 23 || minute > 59 || second > 59 || (offsetHour || 0) > 23 || (offsetMinute || 0) > 59) return null;
                     const ms = Date.parse(value); return Number.isFinite(ms) ? ms : null;
                 };
-                const response = await fetch('/api/workspace-version', options);
+                const response = await fetch('/api/workspace-version', { ...options,
+                    headers: { ...options.headers, ...(clientIdentity ? { 'X-Heinzel-Client': clientIdentity } : {}) }, redirect: 'error', mode: 'same-origin' });
                 if (response.ok) {
                     const info = await response.json();
                     return {version:info?.web?.version ?? null, installedVersion:info?.installed?.version ?? null,
