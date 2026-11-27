@@ -64,6 +64,18 @@ def test_the_ratchet_refuses_growth_new_large_files_and_a_stale_baseline() -> No
     assert problems({"src/a.py": 900}, {"src/a.py": 900}) == []
 
 
+def test_the_inventory_rejects_an_oversized_file(tmp_path: Path) -> None:
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "at_limit.py").write_text("# line\n" * LIMIT)
+    too_large = source / "too_large.py"
+    too_large.write_text("# line\n" * (LIMIT + 1))
+
+    assert problems(sizes(tmp_path), {}) == [
+        f"src/too_large.py has {LIMIT + 1} lines, over {LIMIT}: split it by concern"
+    ]
+
+
 def write() -> None:
     """Write the baseline from the tree as it is."""
     body = "".join(f'"{path}" = {lines}\n' for path, lines in sizes().items())
