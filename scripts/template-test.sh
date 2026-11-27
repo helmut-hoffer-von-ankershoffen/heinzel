@@ -9,13 +9,85 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 destination="${1:-$(mktemp -d)/heinzel-example}"
 
 uv run --no-build --quiet --script scripts/build.py prepare
+candidate_dir="$(mktemp -d)"
+uv run --no-build --quiet --script scripts/build.py --wheel --quiet --out-dir "$candidate_dir"
+core_wheel="$(find "$candidate_dir" -name 'heinzel-*.whl' -print -quit)"
+[[ -n "$core_wheel" && -f "$core_wheel" ]]
+
+# The starter journey reads the same built artifact and template tree, but owns its output and cache directories.
+pyyaml_wheels="$(mktemp -d)"
+bash scripts/bootstrap-pyyaml.sh --wheel-dir "$pyyaml_wheels"
+starter_destination="$(mktemp -d)/starter"
+mkdir -p "$starter_destination"
+starter_pid=""
+starter_grouped=0
+stop_starter() {
+  [[ -n "$starter_pid" ]] || return 0
+  # The starter gives its children two seconds to exit before escalating.
+  local attempt grace_seconds=3
+  if (( starter_grouped )); then
+    kill -TERM -- "-$starter_pid" 2>/dev/null || true
+  else
+    kill -TERM "$starter_pid" 2>/dev/null || true
+  fi
+  for ((attempt = 0; attempt < grace_seconds; attempt++)); do
+    if (( starter_grouped )); then
+      kill -0 -- "-$starter_pid" 2>/dev/null || break
+    else
+      kill -0 "$starter_pid" 2>/dev/null || break
+    fi
+    sleep 1
+  done
+  if (( attempt == grace_seconds )); then
+    if (( starter_grouped )); then
+      kill -KILL -- "-$starter_pid" 2>/dev/null || true
+    else
+      kill -KILL "$starter_pid" 2>/dev/null || true
+    fi
+  fi
+  wait "$starter_pid" 2>/dev/null || true
+  starter_pid=""
+}
+on_exit() {
+  local status=$?
+  trap - EXIT INT TERM HUP
+  stop_starter
+  exit "$status"
+}
+on_signal() {
+  local status=$1
+  trap - EXIT INT TERM HUP
+  stop_starter
+  exit "$status"
+}
+trap on_exit EXIT
+trap 'on_signal 130' INT
+trap 'on_signal 143' TERM
+trap 'on_signal 129' HUP
+if command -v setsid >/dev/null 2>&1; then
+  starter_grouped=1
+  (
+    unset VIRTUAL_ENV UV_FROZEN
+    export UV_FIND_LINKS="$pyyaml_wheels" UV_CACHE_DIR="$starter_destination/uv-cache"
+    export UV_TOOL_DIR="$starter_destination/uv-tool"
+    exec setsid uv run --no-project --script scripts/starter-test.py \
+      --core "$core_wheel" --template "$repo_root" --destination "$starter_destination"
+  ) &
+else
+  (
+    unset VIRTUAL_ENV UV_FROZEN
+    export UV_FIND_LINKS="$pyyaml_wheels" UV_CACHE_DIR="$starter_destination/uv-cache"
+    export UV_TOOL_DIR="$starter_destination/uv-tool"
+    exec uv run --no-project --script scripts/starter-test.py \
+      --core "$core_wheel" --template "$repo_root" --destination "$starter_destination"
+  ) &
+fi
+starter_pid=$!
+
 uv run --frozen copier copy --defaults --vcs-ref HEAD --quiet \
   --data preset=governed --data plugin_name=sprocket --data author_name="Template Test" --data author_email=template-test@example.test \
   --data github_owner=helmut-hoffer-von-ankershoffen \
   "$repo_root" "$destination"
-candidate_dir="$(mktemp -d)"
-uv run --no-build --quiet --script scripts/build.py --wheel --quiet --out-dir "$candidate_dir"
-core_wheel="$(find "$candidate_dir" -name 'heinzel-*.whl' -print -quit)"
 cd "$destination"
 git init --quiet -b main
 
@@ -38,11 +110,6 @@ make docs-plugins # the plugin's page (ADR 0082), which `make check` then checks
 make check
 HZ_SPEC="$core_wheel" make test-e2e
 if [ -n "${TEMPLATE_AUDIT:-}" ]; then make audit; fi
+wait "$starter_pid"
+starter_pid=""
 echo "Template rendered and checked in $destination"
-
-# New authors use the small presets. Exercise their actual installed-artifact commands in both layouts too.
-cd "$repo_root"
-# The starter journeys install through the external toolkit: let their fresh uv installs find the reviewed PyYAML.
-pyyaml_wheels="$(mktemp -d)"
-bash scripts/bootstrap-pyyaml.sh --wheel-dir "$pyyaml_wheels"
-UV_FIND_LINKS="$pyyaml_wheels" uv run --no-project --script scripts/starter-test.py --core "$core_wheel"

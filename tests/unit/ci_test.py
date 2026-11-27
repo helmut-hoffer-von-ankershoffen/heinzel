@@ -1,5 +1,6 @@
 """CI runs what developers run locally."""
 
+import contextlib
 import hashlib
 import importlib.util
 import io
@@ -7,9 +8,11 @@ import json
 import os
 import re
 import runpy
+import signal
 import stat
 import subprocess
 import sys
+import time
 import tomllib
 import zipfile
 from copy import deepcopy
@@ -972,6 +975,8 @@ def test_the_template_audit_runs_in_template_test_ci_and_full_preflight():
         assert step not in between, f"template-test must not run `{step}` before make setup"
     ci = "\n".join(commands(REPO / ".github" / "workflows" / "ci.yml"))
     assert "make template-test AUDIT=1" in ci
+    workflow = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    assert workflow["jobs"]["template"]["timeout-minutes"] == 10
 
 
 def _gate_review():
@@ -2275,9 +2280,268 @@ def test_the_documented_app_launch_never_inherits_the_reviewed_pyyaml_find_links
 def test_the_starter_journeys_find_the_reviewed_pyyaml_through_find_links():
     lines = (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8").splitlines()
     build = next(i for i, line in enumerate(lines) if "bootstrap-pyyaml.sh --wheel-dir" in line)
-    launch = next(i for i, line in enumerate(lines) if "scripts/starter-test.py" in line and "uv run" in line)
+    launch = next(i for i, line in enumerate(lines) if 'UV_FIND_LINKS="$pyyaml_wheels"' in line)
+    wheel = next(i for i, line in enumerate(lines) if "scripts/build.py --wheel" in line)
+    setup = next(i for i, line in enumerate(lines) if line.strip() == "make setup")
+    assert wheel < build < launch < setup
+    assert "scripts/starter-test.py" in "\n".join(lines[launch : launch + 4])
+    assert '--core "$core_wheel"' in "\n".join(lines[launch : launch + 4])
+    assert '--destination "$starter_destination"' in "\n".join(lines[launch : launch + 4])
+    assert 'UV_CACHE_DIR="$starter_destination/uv-cache"' in lines[launch]
+    assert 'UV_TOOL_DIR="$starter_destination/uv-tool"' in lines[launch + 1]
+    assert "trap on_exit EXIT" in lines
+    assert "trap 'on_signal 143' TERM" in lines
+    assert 'wait "$starter_pid"' in lines
     assert build < launch
-    assert lines[launch].lstrip().startswith('UV_FIND_LINKS="$pyyaml_wheels" ')
+    assert any("unset VIRTUAL_ENV UV_FROZEN" in line for line in lines)
+    assert (
+        lines[launch].lstrip() == 'export UV_FIND_LINKS="$pyyaml_wheels" UV_CACHE_DIR="$starter_destination/uv-cache"'
+    )
+
+
+def _template_test_fixture(
+    tmp_path: Path,
+    *,
+    make_failure: str = "",
+    starter_failure: bool = False,
+    starter_ignores_term: bool = False,
+) -> dict[str, str]:
+    """Provide deterministic external tools for the template shell's overlap and cleanup paths."""
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    temporary = tmp_path / "tmp"
+    temporary.mkdir()
+    started = tmp_path / "starter.started"
+    child_ready = tmp_path / "starter.child"
+    child_stopped = tmp_path / "starter.child-stopped"
+    parent_stopped = tmp_path / "starter.parent-stopped"
+    starter_args = tmp_path / "starter.args"
+    starter_environment = tmp_path / "starter.environment"
+    events = tmp_path / "events.log"
+    wheel = tmp_path / "heinzel-fixture.whl"
+    uv = binary / "uv"
+    uv.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, pathlib, sys\n"
+        "args = sys.argv[1:]\n"
+        "if 'scripts/build.py' in args:\n"
+        "    if '--out-dir' in args:\n"
+        "        out = pathlib.Path(args[args.index('--out-dir') + 1]); out.mkdir(parents=True, exist_ok=True)\n"
+        f"        (out / {wheel.name!r}).write_text('fixture')\n"
+        "    raise SystemExit(0)\n"
+        "if 'copier' in args and 'copy' in args:\n"
+        "    destination = pathlib.Path(args[-1]); destination.mkdir(parents=True, exist_ok=True)\n"
+        "    (destination / 'pyproject.toml').write_text('\"heinzel==0.9.55\"\\n')\n"
+        "    raise SystemExit(0)\n"
+        "if 'scripts/starter-test.py' in args:\n"
+        f"    pathlib.Path(os.environ['FAKE_STARTER_ARGS']).write_text(json.dumps(args))\n"
+        "    names = ('UV_CACHE_DIR', 'UV_TOOL_DIR', 'UV_FIND_LINKS', 'VIRTUAL_ENV', 'UV_FROZEN')\n"
+        "    observed = {key: os.environ.get(key) for key in names}\n"
+        "    pathlib.Path(os.environ['FAKE_STARTER_ENV']).write_text(json.dumps(observed))\n"
+        "    os.execv(sys.executable, [sys.executable, os.environ['FAKE_STARTER']])\n"
+        "if args and args[-1].endswith('.whl'):\n"
+        "    path = pathlib.Path('pyproject.toml')\n"
+        "    local = f'\"heinzel @ {pathlib.Path(args[-1]).as_uri()}\"'\n"
+        "    path.write_text(__import__('re').sub(r'\"heinzel==[^\"]*\"', local, path.read_text()))\n"
+        "    raise SystemExit(0)\n"
+        "raise SystemExit(f'unexpected uv command: {args!r}')\n",
+        encoding="utf-8",
+    )
+    uv.chmod(0o700)
+    bootstrap = binary / "bash"
+    bootstrap.write_text(
+        f"#!{sys.executable}\n"
+        "import os, pathlib, sys\n"
+        "if sys.argv[1].endswith('scripts/bootstrap-pyyaml.sh'):\n"
+        "    directory = pathlib.Path(sys.argv[sys.argv.index('--wheel-dir') + 1])\n"
+        "    directory.mkdir(parents=True, exist_ok=True)\n"
+        "    (directory / 'pyyaml.whl').write_text('fixture')\n"
+        "else:\n"
+        "    os.execv('/bin/bash', ['/bin/bash', *sys.argv[1:]])\n",
+        encoding="utf-8",
+    )
+    bootstrap.chmod(0o700)
+    make = binary / "make"
+    make.write_text(
+        f"#!{sys.executable}\n"
+        "import os, pathlib, sys, time\n"
+        "target = sys.argv[-1]\n"
+        f"with pathlib.Path({str(events)!r}).open('a') as stream: stream.write(target + '\\n')\n"
+        "if target == 'setup':\n"
+        "    ready = pathlib.Path(os.environ['STARTER_STARTED'])\n"
+        "    deadline = time.monotonic() + 2\n"
+        "    while not ready.exists() and time.monotonic() < deadline:\n"
+        "        time.sleep(.01)\n"
+        "    if not ready.exists(): raise SystemExit('starter did not overlap setup')\n"
+        "    pathlib.Path('uv.lock').write_text('fixture')\n"
+        "if target == os.environ.get('MAKE_FAILURE'): raise SystemExit(23)\n",
+        encoding="utf-8",
+    )
+    make.chmod(0o700)
+    git = binary / "git"
+    git.write_text(f"#!{sys.executable}\nraise SystemExit(0)\n", encoding="utf-8")
+    git.chmod(0o700)
+    child = tmp_path / "child.py"
+    child.write_text(
+        "import os, pathlib, signal, time\n"
+        f"stopped = pathlib.Path({str(child_stopped)!r})\n"
+        "def stop(_signum, _frame): stopped.write_text('stopped'); raise SystemExit(0)\n"
+        "signal.signal(signal.SIGTERM, stop)\n"
+        f"pathlib.Path({str(child_ready)!r}).write_text(str(os.getpid()))\n"
+        "while True: time.sleep(.05)\n",
+        encoding="utf-8",
+    )
+    starter = tmp_path / "starter.py"
+    child_start = (
+        "child = None\n"
+        if starter_ignores_term
+        else "child = subprocess.Popen([sys.executable, child_script], start_new_session=True)\n"
+    )
+    starter.write_text(
+        "import os, pathlib, signal, subprocess, sys, time\n"
+        f"started = pathlib.Path({str(started)!r}); parent_stopped = pathlib.Path({str(parent_stopped)!r})\n"
+        f"child_script = {str(child)!r}\n"
+        "child = None\n"
+        "def stop(signum, _frame):\n"
+        "    if child is not None:\n"
+        "        try: os.killpg(child.pid, signal.SIGTERM)\n"
+        "        except ProcessLookupError: pass\n"
+        "        try: child.wait(timeout=2)\n"
+        "        except subprocess.TimeoutExpired: os.killpg(child.pid, signal.SIGKILL); child.wait()\n"
+        "    parent_stopped.write_text('stopped'); raise SystemExit(128 + signum)\n"
+        f"signal.signal(signal.SIGTERM, {'signal.SIG_IGN' if starter_ignores_term else 'stop'})\n"
+        + child_start
+        + "if child is not None:\n"
+        + "    ready = pathlib.Path(os.environ['STARTER_CHILD_READY'])\n"
+        + "    deadline = time.monotonic() + 2\n"
+        + "    while not ready.exists() and time.monotonic() < deadline: time.sleep(.01)\n"
+        + "    if not ready.exists(): raise SystemExit('starter child did not start')\n"
+        + "started.write_text(str(os.getpid()))\n"
+        f"if {starter_failure!r}: stop(15, None)\n"
+        "while True: time.sleep(.05)\n",
+        encoding="utf-8",
+    )
+    return {
+        **os.environ,
+        "PATH": f"{binary}{os.pathsep}{os.environ['PATH']}",
+        "TMPDIR": str(temporary),
+        "VIRTUAL_ENV": str(tmp_path / "caller-venv"),
+        "UV_FROZEN": "1",
+        "FAKE_STARTER": str(starter),
+        "STARTER_STARTED": str(started),
+        "STARTER_CHILD_READY": str(child_ready),
+        "STARTER_CHILD_STOPPED": str(child_stopped),
+        "STARTER_PARENT_STOPPED": str(parent_stopped),
+        "FAKE_STARTER_ARGS": str(starter_args),
+        "FAKE_STARTER_ENV": str(starter_environment),
+        "MAKE_FAILURE": make_failure,
+        "EVENTS": str(events),
+        "TEMPLATE_AUDIT": "1",
+    }
+
+
+def test_template_test_overlaps_after_wheel_and_cleans_starter_when_governed_check_fails(tmp_path):
+    environment = _template_test_fixture(tmp_path, make_failure="check")
+    result = subprocess.run(
+        ["/bin/bash", str(REPO / "scripts/template-test.sh"), str(tmp_path / "governed")],
+        cwd=REPO,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 23, result.stdout + result.stderr
+    assert (tmp_path / "starter.started").is_file()
+    assert (tmp_path / "starter.parent-stopped").is_file()
+    assert (tmp_path / "starter.child-stopped").is_file()
+    args = json.loads((tmp_path / "starter.args").read_text())
+    core_wheel = Path(args[args.index("--core") + 1])
+    starter_destination = Path(args[args.index("--destination") + 1])
+    assert core_wheel.is_file()
+    assert core_wheel.name == "heinzel-fixture.whl"
+    assert starter_destination != tmp_path / "governed"
+    starter_environment = json.loads((tmp_path / "starter.environment").read_text())
+    assert starter_environment["UV_CACHE_DIR"] == str(starter_destination / "uv-cache")
+    assert starter_environment["UV_TOOL_DIR"] == str(starter_destination / "uv-tool")
+    assert starter_environment["VIRTUAL_ENV"] is None
+    assert starter_environment["UV_FROZEN"] is None
+    assert (Path(starter_environment["UV_FIND_LINKS"]) / "pyyaml.whl").is_file()
+    assert f'"heinzel @ {core_wheel.as_uri()}"' in (tmp_path / "governed" / "pyproject.toml").read_text()
+    events = (tmp_path / "events.log").read_text().splitlines()
+    assert events == ["setup", "fix", "docs-plugins", "check"]
+
+
+def test_template_test_propagates_starter_failure_after_governed_audit(tmp_path):
+    environment = _template_test_fixture(tmp_path, starter_failure=True)
+    result = subprocess.run(
+        ["/bin/bash", str(REPO / "scripts/template-test.sh"), str(tmp_path / "governed")],
+        cwd=REPO,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 143, result.stdout + result.stderr
+    assert (tmp_path / "starter.parent-stopped").is_file()
+    assert (tmp_path / "starter.child-stopped").is_file()
+    args = json.loads((tmp_path / "starter.args").read_text())
+    assert Path(args[args.index("--core") + 1]).is_file()
+    events = (tmp_path / "events.log").read_text().splitlines()
+    assert events == ["setup", "fix", "docs-plugins", "check", "test-e2e", "audit"]
+
+
+def test_template_test_signal_cleans_the_independent_starter_tree(tmp_path):
+    environment = _template_test_fixture(tmp_path)
+    process = subprocess.Popen(
+        ["/bin/bash", str(REPO / "scripts/template-test.sh"), str(tmp_path / "governed")],
+        cwd=REPO,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not (tmp_path / "starter.started").exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert (tmp_path / "starter.started").exists()
+        process.send_signal(signal.SIGTERM)
+        output, _ = process.communicate(timeout=5)
+        assert process.returncode == 143, output
+        assert (tmp_path / "starter.parent-stopped").is_file()
+        assert (tmp_path / "starter.child-stopped").is_file()
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+        if (tmp_path / "starter.started").exists():
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(int((tmp_path / "starter.started").read_text()), signal.SIGTERM)
+        if (tmp_path / "starter.child").exists():
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(int((tmp_path / "starter.child").read_text()), signal.SIGKILL)
+
+
+@pytest.mark.timeout(10)
+def test_template_test_bounds_cleanup_of_a_nonresponsive_starter(tmp_path):
+    environment = _template_test_fixture(tmp_path, make_failure="check", starter_ignores_term=True)
+    started_at = time.monotonic()
+    result = subprocess.run(
+        ["/bin/bash", str(REPO / "scripts/template-test.sh"), str(tmp_path / "governed")],
+        cwd=REPO,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=8,
+        check=False,
+    )
+    assert result.returncode == 23, result.stdout + result.stderr
+    assert (tmp_path / "starter.started").is_file()
+    assert time.monotonic() - started_at < 7
+    assert not (tmp_path / "starter.parent-stopped").exists()
 
 
 @pytest.mark.parametrize("makefile", ["Makefile", "template/Makefile"])
