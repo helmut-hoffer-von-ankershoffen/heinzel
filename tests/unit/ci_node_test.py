@@ -9,8 +9,6 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from heinzel.testing import scaled
-
 pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -107,18 +105,6 @@ def test_invalid_wheel_never_exports_a_path_or_executes_node(selector, monkeypat
     assert not marker.exists()
 
 
-def test_hosted_coverage_allows_twenty_minutes_for_the_measured_suite(monkeypatch):
-    coverage = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]["coverage"]
-    measurement = next(step for step in coverage["steps"] if step.get("run") == "make test")
-    assert measurement["env"] == {"COVERAGE_SESSION_TIMEOUT": "1200", "STEP_TIMEOUT": "1260"}
-    assert coverage["timeout-minutes"] == 26
-    for name, value in measurement["env"].items():
-        monkeypatch.setenv(name, value)
-    plan = subprocess.check_output(["make", "-n", "test"], cwd=ROOT, text=True, timeout=scaled(10))
-    assert "-m '(unit or integration) and not perf' -n 4 -q --session-timeout=1200" in plan
-    assert "coverage combine" in plan
-
-
 def test_python_cells_and_apple_build_select_locked_node():
     jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
     coverage = jobs["coverage"]
@@ -136,6 +122,7 @@ def test_python_cells_and_apple_build_select_locked_node():
         < steps.index(selected)
         < next(i for i, step in enumerate(steps) if step.get("run") == "make test")
     )
+    assert coverage["timeout-minutes"] == 18  # setup plus make test's 720 s covered session (es8j)
     assert coverage["env"]["UV_NO_SYNC"] == "1"
     test = jobs["test"]
     assert test["env"]["CI_NODE_GROUP_ARGUMENT"] == "${{ matrix.levels != 'integration' && '--group=build' || '' }}"

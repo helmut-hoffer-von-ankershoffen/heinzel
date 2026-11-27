@@ -484,7 +484,7 @@ jobs:
     name: Coverage
     # One measured run, in parallel with the matrix instead of after it.
     runs-on: ubuntu-24.04
-    timeout-minutes: 26 # Dependency setup, the covered suite and its report uploads.
+    timeout-minutes: 18 # setup, then make test's 720 s covered session (es8j), then the report
     permissions:
       contents: read
     outputs:
@@ -508,9 +508,6 @@ jobs:
       - name: Select the locked wheel Node without executing it
         run: uv run --frozen --no-sync --no-build python scripts/ci_node.py
       - run: make test
-        env:
-          COVERAGE_SESSION_TIMEOUT: "1200"
-          STEP_TIMEOUT: "1260" # Let pytest finish teardown and combine coverage after its 20-minute budget.
       - name: Enforce coverage and record the measured total
         if: ${{ !cancelled() }} # after make test's own threshold failed too, so the floor names the measured total
         env:
