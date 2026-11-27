@@ -32,7 +32,7 @@ from heinzel.modules.system.updater._update import UpdateService
 from tests.unit.runtime.updater import supervised_recovery_entry_test as launcher_fixture
 from tests.unit.runtime.updater.system_announced_test import Releases, news, replace_tool_prefix, service
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.real_system]
 installed_launch = launcher_fixture.installed_launch
 
 
