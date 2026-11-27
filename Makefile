@@ -239,16 +239,21 @@ test: ## Run unit and integration tests with coverage on 4 workers (offline; wha
 		"coverage-xml=uv run coverage xml -q"
 	@uv run --quiet coverage report --format=total | xargs printf '  coverage %s%%\n'
 
-# Leave headroom under CI's 10-minute job timeout for the full unit/integration suite on slower runners.
-# TEST_LEVELS picks a shard: CI's macOS cells set unit or integration, each under the same session cap.
+# TEST_LEVELS picks the unit or integration shard in hosted CI.
 TEST_LEVELS ?= unit or integration
 # macOS runners have 3 vCPUs shared with browsers and subprocesses; fewer workers keep the fixed time budgets honest there.
 PARALLEL_WORKERS := $(if $(filter Darwin,$(shell uname -s)),3,4)
 # Core Linux retirement mitigation: the owning module showed scheduling sensitivity with four workers.
 # Keep its real durability checks serial; the original full-suite timeout cause remains unresolved.
 SERIAL_RETIREMENT_TEST :=
+PARALLEL_HOST_OS := $(shell uname -s)
+UNIT_SESSION_TIMEOUT := 420
 PARALLEL_STEPS := $(STEPS)
-ifeq ($(shell uname -s),Linux)
+ifeq ($(PARALLEL_HOST_OS):$(TEST_LEVELS),Darwin:unit)
+UNIT_SESSION_TIMEOUT := 600
+PARALLEL_STEPS := @STEP_TIMEOUT=660 $(patsubst @%,%,$(STEPS))
+endif
+ifeq ($(PARALLEL_HOST_OS),Linux)
 SERIAL_RETIREMENT_TEST := $(if $(filter unit,$(TEST_LEVELS)),tests/unit/modules/daemon_legacy_retirement_test.py)
 PARALLEL_STEPS := @STEP_TIMEOUT=420 $(patsubst @%,%,$(STEPS))
 endif
@@ -256,7 +261,7 @@ endif
 # in the one CI job, so the job names and counts stay as they were.
 test-parallel: ## Unit and integration tests on 4 workers (3 on macOS), stopping at the first failure; no coverage (the CI test matrix)
 	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
-	$(PARALLEL_STEPS) $(if $(filter-out integration,$(TEST_LEVELS)),"tests=$(if $(SERIAL_RETIREMENT_TEST),uv run pytest $(SERIAL_RETIREMENT_TEST) -m '($(TEST_LEVELS)) and not perf' -n 1 --max-worker-restart=0 -x -q --session-timeout=420 --durations=20 && )uv run pytest -m '($(TEST_LEVELS)) and not perf' $(if $(SERIAL_RETIREMENT_TEST),--ignore=$(SERIAL_RETIREMENT_TEST) )-n $(PARALLEL_WORKERS) -x -q --session-timeout=420 --durations=20",$(foreach half,1 2,"integration-$(half)=uv run pytest -m '(integration) and not perf' --integration-half=$(half) -n $(PARALLEL_WORKERS) -x -q --session-timeout=420 --durations=20"))
+	$(PARALLEL_STEPS) $(if $(filter-out integration,$(TEST_LEVELS)),"tests=$(if $(SERIAL_RETIREMENT_TEST),uv run pytest $(SERIAL_RETIREMENT_TEST) -m '($(TEST_LEVELS)) and not perf' -n 1 --max-worker-restart=0 -x -q --session-timeout=420 --durations=20 && )uv run pytest -m '($(TEST_LEVELS)) and not perf' $(if $(SERIAL_RETIREMENT_TEST),--ignore=$(SERIAL_RETIREMENT_TEST) )-n $(PARALLEL_WORKERS) -x -q --session-timeout=$(UNIT_SESSION_TIMEOUT) --durations=20",$(foreach half,1 2,"integration-$(half)=uv run pytest -m '(integration) and not perf' --integration-half=$(half) -n $(PARALLEL_WORKERS) -x -q --session-timeout=420 --durations=20"))
 
 commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conventional, no confidential terms
 	$(STEPS) \

@@ -29,6 +29,9 @@ from heinzel.testing import scaled
 pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
+TEST_MATRIX_TIMEOUT = (
+    "${{ (matrix.levels == 'integration' || (contains(matrix.os, 'macos') && matrix.levels == 'unit')) && 15 || 10 }}"
+)
 
 
 def test_installed_browser_service_journey_keeps_cold_starts_out_of_browser_shards():
@@ -350,6 +353,7 @@ def test_core_lint_does_not_export_an_empty_github_token_to_zizmor():
 
 @pytest.mark.parametrize(("event", "batch_base"), [("pull_request", False), ("push", False), ("push", True)])
 @pytest.mark.parametrize("path", ["plugins/heinzel-unforeseen/src/plugin.py", "src/heinzel/kernel/public.py"])
+@pytest.mark.timeout(10)
 def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(
     tmp_path, monkeypatch, event, path, batch_base
 ):
@@ -1592,7 +1596,7 @@ def test_matrix_caps_keep_every_workload_and_failure_required():
         assert "continue-on-error" not in job
         assert "concurrency" not in job
         assert name in jobs["ci-ok"]["needs"]
-    assert jobs["test"]["timeout-minutes"] == "${{ matrix.levels == 'integration' && 15 || 10 }}"
+    assert jobs["test"]["timeout-minutes"] == TEST_MATRIX_TIMEOUT
     assert jobs["e2e"]["timeout-minutes"] == 15
     assert any(step.get("run") == "make test-parallel" for step in jobs["test"]["steps"])
     assert any(step.get("run") == "make test-e2e SUITE=${{ matrix.suite }}" for step in jobs["e2e"]["steps"])
@@ -1621,7 +1625,7 @@ def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes(event, full_ci, 
     ]
     recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-parallel:", 1)[1].split("\n\n", 1)[0]
     assert "-m '($(TEST_LEVELS)) and not perf'" in recipe
-    assert "--session-timeout=420" in recipe  # each shard has the cap the whole suite had
+    assert "--session-timeout=420" in recipe  # integration shards retained their existing cap
     assert {"changes", "notifier", "build"} <= set(jobs["ci-ok"]["needs"])
 
 
@@ -1954,11 +1958,33 @@ def test_every_selector_key_stays_on_outside_a_pull_request(tmp_path, ci_paths, 
 
 def test_the_test_matrix_keeps_the_whole_output_of_a_failure():
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
-    assert jobs["test"]["timeout-minutes"] == "${{ matrix.levels == 'integration' && 15 || 10 }}"
+    assert jobs["test"]["timeout-minutes"] == TEST_MATRIX_TIMEOUT
     recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-parallel:", 1)[1].split("\n\n", 1)[0]
     assert "--session-timeout=420" in recipe
     step = next(step for step in jobs["test"]["steps"] if step.get("run") == "make test-parallel")
     assert step["env"]["VERBOSE"] == "1"
+
+
+@pytest.mark.parametrize(
+    ("host", "level", "sessions", "step_timeout"),
+    [
+        ("Darwin", "unit", ["600"], "660"),
+        ("Darwin", "integration", ["420", "420"], None),
+        ("Linux", "unit", ["420", "420"], "420"),
+        ("Linux", "integration", ["420", "420"], "420"),
+    ],
+)
+def test_only_macos_unit_gets_a_longer_test_parallel_budget(host, level, sessions, step_timeout):
+    plan = subprocess.run(
+        ["make", "--no-print-directory", "-n", "test-parallel", f"PARALLEL_HOST_OS={host}", f"TEST_LEVELS={level}"],
+        cwd=REPO,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=scaled(4),
+    ).stdout
+    assert re.findall(r"--session-timeout=(\d+)", plan) == sessions
+    assert re.findall(r"STEP_TIMEOUT=(\d+)", plan) == ([step_timeout] if step_timeout else [])
 
 
 SITE_ONLY_PATHS = [
@@ -3467,6 +3493,7 @@ SELECTION_PATHS = [
 @pytest.mark.parametrize("release", [False, True])
 @pytest.mark.parametrize("changed", SELECTION_PATHS)
 @pytest.mark.parametrize("event", ["pull_request", "push", "schedule", "workflow_dispatch"])
+@pytest.mark.timeout(10)
 def test_ci_ok_requires_only_jobs_the_selection_runs(  # noqa: PLR0913,PLR0917 - one parametrized axis each
     tmp_path, ci_contexts_paths, event, changed, release, plugins
 ):

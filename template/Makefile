@@ -114,8 +114,7 @@ test: ## Run unit and integration tests with coverage on 4 workers (offline; wha
 		"coverage-xml=uv run coverage xml -q"
 	@uv run --quiet coverage report --format=total | xargs printf '  coverage %s%%\n'
 
-# Leave headroom under CI's 10-minute job timeout for the full unit/integration suite on slower runners.
-# TEST_LEVELS picks a shard: CI's macOS cells set unit or integration, each under the same session cap.
+# TEST_LEVELS picks the unit or integration shard in hosted CI.
 TEST_LEVELS ?= unit or integration
 # macOS runners have 3 vCPUs shared with browsers and subprocesses; fewer workers keep the fixed time budgets honest there.
 PARALLEL_WORKERS := $(if $(filter Darwin,$(shell uname -s)),3,4)

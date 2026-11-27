@@ -146,6 +146,7 @@ def test_a_chat_asked_for_all_tools_gets_every_tool_the_mcp_head_has_and_nothing
     }  # it can consume a human grant, never confirm/authorize directly
 
 
+@pytest.mark.timeout(10)
 def test_chat_read_uses_only_the_local_stdio_identity(kernel):
     assert json.loads(tools(kernel)["notes_authenticated_read"]()) == "mcp-stdio:private:read"
 

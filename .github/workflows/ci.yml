@@ -462,8 +462,8 @@ jobs:
     if: needs.changes.outputs.full_ci == 'true' && (needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true') # Core candidate-only
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
-    # Integration runs two sequential sessions, each still capped at 420 seconds; allow setup and cleanup too.
-    timeout-minutes: ${{ matrix.levels == 'integration' && 15 || 10 }}
+    # Integration runs two 420-second sessions; macOS unit allows 600 seconds plus reporting and setup.
+    timeout-minutes: ${{ (matrix.levels == 'integration' || (contains(matrix.os, 'macos') && matrix.levels == 'unit')) && 15 || 10 }}
     strategy:
       # Only the coalesced macOS main lane limits concurrent cells; other runs keep their full matrix. # main lanes
       max-parallel: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.lane == 'macos' && 1 || 256 }} # main lanes
@@ -476,8 +476,7 @@ jobs:
         # One shard per level on Linux too: the whole suite ran 4m42-6m50 against the 420 s cap on 4 vCPU and hit it
         # under runner contention with every test passing (#585). Each shard keeps that same cap.
         levels: [unit, integration]
-        # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
-        # under that same cap. Full PRs keep both macOS cells; main runs them in its coalesced macOS lane.
+        # macOS has 3 vCPU, so unit and integration run in separate cells.
         include:
           ${{ fromJSON(needs.changes.outputs.lane == 'linux' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.full_ci != 'true' && '[]' || github.event_name == 'pull_request' && needs.changes.outputs.upgrade != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
     env:
