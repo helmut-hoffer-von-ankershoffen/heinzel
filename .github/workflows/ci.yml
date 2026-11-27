@@ -279,9 +279,10 @@ jobs:
             echo "electron=false" >> "$GITHUB_OUTPUT"
           fi
           # The merge gate derives the jobs this run must have from this selection (focused_gate.py in scripts).
-          sed 's/^/selector-output: /' "$GITHUB_OUTPUT" | grep -E '^selector-output: (core|site_only|surface_only|macos_full|notifier|contracts|electron|plugins|upgrade)=(true|false)$'
+          sed 's/^/selector-output: /' "$GITHUB_OUTPUT" | grep -E '^selector-output: (core|site_only|surface_only|macos_full|notifier|contracts|electron|plugins)=(true|false)$'
           echo "selector-output: release=${FULL_RELEASE:-false}"
-          # Keep the ordinary full-PR evidence compatible with the verifier on the current protected base.
+          # Keep ordinary full-workload evidence compatible with the verifier on the current protected base.
+          if [ "$upgrade" = false ]; then echo "selector-output: upgrade=false"; fi
           if [ "$homepage_only" = true ]; then echo "selector-output: homepage_only=true"; fi
 
   macos-main: # main lanes

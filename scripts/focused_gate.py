@@ -592,7 +592,6 @@ SELECTOR_KEYS = frozenset(
         "contracts",
         "electron",
         "plugins",
-        "upgrade",
         "release",
     }
 )
@@ -623,7 +622,7 @@ def selector_output(log: bytes) -> dict[str, bool]:
         len(found) == len(values)
         and all(value in (b"true", b"false") for _, value in found)
         and keys >= SELECTOR_KEYS
-        and keys <= SELECTOR_KEYS | {"homepage_only"}
+        and keys <= SELECTOR_KEYS | {"homepage_only", "upgrade"}
         and values.get("homepage_only", True),
         "missing or ambiguous selector output",
     )
@@ -650,6 +649,7 @@ def selected_pr_inventory(selected: dict[str, bool]) -> dict[str, str]:
         return inventory
     full = not homepage
     tested = full and core and not site
+    upgrade = selected.get("upgrade", True)
     for name in [n for n in inventory if n.endswith("(macos-latest)") and n.startswith(MAIN_ONLY_MACOS)]:
         del inventory[name]  # a pull request that is not a release candidate runs these on Linux only
 
@@ -666,7 +666,7 @@ def selected_pr_inventory(selected: dict[str, bool]) -> dict[str, str]:
 
     rule("make setup", full and core, SKIPPED_TEMPLATES["setup"])
     rule("Test (", tested, SKIPPED_TEMPLATES["test"])
-    if tested and not selected["upgrade"]:
+    if tested and not upgrade:
         for name in [name for name in inventory if name.startswith("Test (macos")]:
             del inventory[name]
     rule("End-to-end ", tested, SKIPPED_TEMPLATES["e2e"])
@@ -682,7 +682,7 @@ def selected_pr_inventory(selected: dict[str, bool]) -> dict[str, str]:
         "Heinzel Notifier (macOS app)": full and selected["notifier"],
         "macOS-specific tests": full and (selected["macos_full"] or surface) and (core or surface) and not site,
         "Build": full and core,
-        "Upgrade in place (published to candidate, Linux)": full and selected["upgrade"],
+        "Upgrade in place (published to candidate, Linux)": full and upgrade,
         "Plugin SDK candidate": full,
         "Optional source plugins": full and (selected["plugins"] or selected["contracts"]),
         "Public contract consumers": full and selected["contracts"],
@@ -690,6 +690,20 @@ def selected_pr_inventory(selected: dict[str, bool]) -> dict[str, str]:
     }.items():
         inventory[name] = "success" if on else "skipped"
     return inventory
+
+
+def homepage_diff(base: str, commit: str) -> bool:
+    """Check the name-only paths of the same change the workflow classifies."""
+    raw = git("diff", "--name-only", "--no-renames", "-z", "--end-of-options", base, commit, "--")
+    try:
+        paths = raw.decode("utf-8").split("\0")
+    except UnicodeError:
+        return False
+    return (
+        paths[-1] == ""
+        and 0 < len(paths) - 1 < HOMEPAGE_PATH_LIMIT
+        and all("\n" not in path and "\r" not in path and HOMEPAGE_PATH.fullmatch(path) for path in paths[:-1])
+    )
 
 
 def full_pr_jobs(
@@ -722,10 +736,8 @@ def full_pr_jobs(
     selected = selector_output(log)
     homepage = selected.get("homepage_only", False)
     if homepage:
-        changed = changed_paths(raw_diff(base, source.commit))
         require(
-            0 < len(changed) < HOMEPAGE_PATH_LIMIT
-            and all(status != "T" and HOMEPAGE_PATH.fullmatch(path) for path, status in changed.items()),
+            homepage_diff(base, source.commit),
             "homepage selector includes changes outside its presentation-only paths",
         )
     inventory = selected_pr_inventory(selected)

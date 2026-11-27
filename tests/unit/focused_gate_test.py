@@ -883,6 +883,9 @@ def selector_log(selected):
 
 def test_selector_output_is_read_strictly(focused_gate):
     assert focused_gate.selector_output(selector_log(SELECTED).encode()) == SELECTED
+    legacy = {key: value for key, value in SELECTED.items() if key != "upgrade"}
+    assert focused_gate.selector_output(selector_log(legacy).encode()) == legacy
+    assert focused_gate.selected_pr_inventory(legacy) == focused_gate.selected_pr_inventory(SELECTED)
     homepage = {**SELECTED, "homepage_only": True}
     assert focused_gate.selector_output(selector_log(homepage).encode()) == homepage
     lines = selector_log(SELECTED).splitlines(keepends=True)
@@ -891,7 +894,7 @@ def test_selector_output_is_read_strictly(focused_gate):
         "".join(lines[1:]).encode(),  # a key is missing
         (selector_log(SELECTED) + lines[0]).encode(),  # a key is repeated
         selector_log({**SELECTED, "extra": True}).encode(),
-        selector_log({key: value for key, value in SELECTED.items() if key != "upgrade"}).encode(),
+        selector_log({key: value for key, value in SELECTED.items() if key != "plugins"}).encode(),
         selector_log(SELECTED).replace("core=true", "core=maybe").encode(),
         selector_log({**SELECTED, "homepage_only": False}).encode(),
         selector_log(homepage).replace("homepage_only=true", "homepage_only=maybe").encode(),
@@ -1178,7 +1181,13 @@ def test_full_pr_verdict_keeps_original_coverage_and_final_source_guards(
 
 
 @pytest.mark.parametrize(
-    ("path", "valid"), [("docs/assets/website/album/demo.webp", True), ("src/heinzel/kernel/demo.py", False)]
+    ("path", "valid"),
+    [
+        ("docs/assets/website/album/Hero 2.webp", True),
+        ("docs/overrides/partials/Frohe Nächte.html", True),
+        ("docs/assets/website/bad\nname.webp", False),
+        ("src/heinzel/kernel/demo.py", False),
+    ],
 )
 def test_full_homepage_pr_binds_the_selector_to_the_authenticated_git_diff(focused_gate, monkeypatch, path, valid):
     from types import SimpleNamespace
@@ -1200,13 +1209,14 @@ def test_full_homepage_pr_binds_the_selector_to_the_authenticated_git_diff(focus
     monkeypatch.setattr(focused_gate, "full_pr_inputs", lambda *_: None)
     monkeypatch.setattr(focused_gate, "jobs_for", lambda *_: jobs)
     monkeypatch.setattr(focused_gate, "_check", lambda *_: None)
-    monkeypatch.setattr(focused_gate, "raw_diff", lambda *_: f":100644 100644 {base} {merge} M\0{path}\0".encode())
     monkeypatch.setattr(
         focused_gate,
         "git",
         lambda *args: (
             f"{merge} {base} {head}".encode()
             if args[0] == "rev-list"
+            else f"{path}\0".encode()
+            if args[0] == "diff"
             else (
                 b"name: Run the complete CI workload without an external admission plan\n"
                 b"run: echo 'selected=true' >> \"$GITHUB_OUTPUT\""
@@ -1344,6 +1354,7 @@ def test_the_selector_prints_every_key_the_merge_gate_derives_its_inventory_from
     assert printed
     assert {*printed["keys"].split("|"), "release"} == keys
     assert 'echo "selector-output: release=${FULL_RELEASE:-false}"' in step["run"]
+    assert 'if [ "$upgrade" = false ]; then echo "selector-output: upgrade=false"; fi' in step["run"]
     assert 'if [ "$homepage_only" = true ]; then echo "selector-output: homepage_only=true"; fi' in step["run"]
     for key in printed["keys"].split("|"):  # each is a real output of the same step
         assert f'echo "{key}=' in step["run"]
