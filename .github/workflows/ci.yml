@@ -475,6 +475,8 @@ jobs:
         env:
           UV_NO_SYNC: "1" # use the test group just installed
           TEST_LEVELS: ${{ matrix.levels || 'unit or integration' }}
+          # Reduce contention with subprocesses and test I/O on four-CPU Linux unit runners.
+          MAKEFLAGS: ${{ matrix.os == 'ubuntu-24.04' && matrix.levels == 'unit' && 'PARALLEL_WORKERS=3' || '' }}
           VERBOSE: "1" # a worker's INTERNALERROR trace comes first, above what the step wrapper's tail keeps
         run: make test-parallel
 
