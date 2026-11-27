@@ -50,6 +50,16 @@ it("waits for idle and does not restart after automatic updates are disabled", (
   page.rerender({ enabled: false, idle: true });
   act(() => vi.advanceTimersByTime(35_000));
   expect(restart).not.toHaveBeenCalled();
+  page.rerender({ enabled: true, idle: true });
+  expect(page.result.current.seconds).toBe(30);
+  expect(restart).not.toHaveBeenCalled();
+});
+
+it("recognizes the published native Mac bridge before clientOS was added", () => {
+  vi.stubGlobal("heinzelDesktop", { clientFlavor: "native", lifecycle: () => {} });
+  expect(localMacClient()).toBe("native");
+  vi.stubGlobal("heinzelDesktop", { clientFlavor: "native", mobileWorkspace: true });
+  expect(localMacClient()).toBeNull();
 });
 
 it("does not use a remote workspace or an iPhone as a Mac update authority", () => {

@@ -5,17 +5,19 @@ import { reloadHeld, workOnScreen } from "./work";
 const KEY = "hz.update.desktopCountdown";
 const COUNTDOWN_MS = 30_000;
 type Decision = { target: string; deadline: number | null };
+type DesktopClient = { clientFlavor?: string; clientOS?: string; remoteWorkspace?: boolean; lifecycle?: unknown };
 let inThisWindow: Decision | null = null;
 
 export function localMacClient(): string | null {
-  const bridge = (
-    window as Window & { heinzelDesktop?: { clientFlavor?: string; clientOS?: string; remoteWorkspace?: boolean } }
-  ).heinzelDesktop;
+  const bridge = (window as Window & { heinzelDesktop?: DesktopClient }).heinzelDesktop;
   const local = ["127.0.0.1", "localhost", "[::1]"].includes(window.location.hostname);
   if (!local || !bridge || bridge.remoteWorkspace) return null;
   // The Electron bundle being replaced may predate clientOS.
   if (bridge.clientFlavor === "electron") return /^Mac/.test(navigator.platform) ? "electron" : null;
-  return bridge.clientFlavor === "native" && bridge.clientOS === "macOS" ? "native" : null;
+  // Older native Mac bundles expose lifecycle on their local workspace. Their iOS counterparts do not.
+  const nativeMac =
+    bridge.clientOS === "macOS" || (bridge.clientOS === undefined && typeof bridge.lifecycle === "function");
+  return bridge.clientFlavor === "native" && nativeMac ? "native" : null;
 }
 
 export function desktopRestartTarget(status: UpdateStatus | undefined): string | null {
@@ -29,17 +31,18 @@ export function desktopRestartTarget(status: UpdateStatus | undefined): string |
 function read(target: string): Decision | null {
   try {
     const raw = localStorage.getItem(KEY);
-    const saved = raw ? (JSON.parse(raw) as Decision | null) : inThisWindow;
+    const saved = raw ? (JSON.parse(raw) as Decision | null) : null;
     return saved?.target === target && (saved.deadline === null || Number.isFinite(saved.deadline)) ? saved : null;
   } catch {
     return inThisWindow?.target === target ? inThisWindow : null;
   }
 }
 
-function store(target: string, deadline: number | null): void {
-  inThisWindow = { target, deadline };
+function store(decision: Decision | null): void {
+  inThisWindow = decision;
   try {
-    localStorage.setItem(KEY, JSON.stringify(inThisWindow));
+    if (decision) localStorage.setItem(KEY, JSON.stringify(decision));
+    else localStorage.removeItem(KEY);
   } catch {
     // The decision still applies for the lifetime of this window.
   }
@@ -53,30 +56,32 @@ export function useDesktopCountdown(target: string | null, enabled: boolean, idl
     setSeconds(null);
     setManual(false);
     if (!target) return;
+    let active = true;
     const update = () => {
       const decision = read(target);
       setManual(decision?.deadline === null);
       if (!enabled || decision?.deadline === null) {
+        if (decision && decision.deadline !== null) store(null);
         setSeconds(null);
         return;
       }
       const now = Date.now();
       if (!idle || reloadHeld() || workOnScreen()) {
-        if (decision) store(target, now + COUNTDOWN_MS);
+        if (decision) store(null);
         setSeconds(null);
         return;
       }
       const deadline = decision?.deadline ?? now + COUNTDOWN_MS;
-      if (!decision) store(target, deadline);
+      if (!decision) store({ target, deadline });
       const left = Math.max(0, Math.ceil((deadline - now) / 1000));
       if (left) {
         setSeconds(left);
         return;
       }
       const attempt = () => {
-        if (read(target)?.deadline !== deadline) return;
+        if (!active || read(target)?.deadline !== deadline) return;
         if (reloadHeld() || workOnScreen()) return;
-        store(target, null);
+        store({ target, deadline: null });
         setSeconds(null);
         setManual(true);
         restart();
@@ -86,14 +91,17 @@ export function useDesktopCountdown(target: string | null, enabled: boolean, idl
     };
     update();
     const timer = window.setInterval(update, 250);
-    return () => window.clearInterval(timer);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, [enabled, idle, restart, target]);
   return {
     seconds,
     manual,
     cancel: () => {
       if (!target) return;
-      store(target, null);
+      store({ target, deadline: null });
       setSeconds(null);
       setManual(true);
     },
