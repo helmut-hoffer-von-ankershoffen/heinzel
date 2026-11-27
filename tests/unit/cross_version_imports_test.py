@@ -179,7 +179,7 @@ class Tree:
 type Imports = tuple[tuple[str, tuple[str, ...]], ...]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SourceTree:
     """Immutable scan summaries; no AST or mutable container escapes into another test."""
 
