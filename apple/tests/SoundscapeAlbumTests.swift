@@ -75,5 +75,14 @@ struct SoundscapeAlbumTests {
         try require(states.last?.verified == (snapshot["verified"] as? Int) &&
                     states.last?.total == (snapshot["total"] as? Int) &&
                     states.last?.phase == (snapshot["phase"] as? String), "published download snapshot differs")
+
+        let savedPosition = states.last?.position ?? 0
+        var restoredState: SoundscapeWidgetState?
+        let restored = SoundscapePlayback(library: library, defaults: defaults, publish: { restoredState = $0 })
+        restored.player.isMuted = true
+        defer { restored.pause() }
+        restored.openVideo(trackID: tracks[1].id)
+        try require(abs((restoredState?.position ?? 0) - savedPosition) < 0.05,
+                    "opening saved video reset the widget position while seeking")
     }
 }
