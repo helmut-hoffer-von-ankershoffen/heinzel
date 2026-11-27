@@ -258,6 +258,7 @@ def test_system_info_json(app):
             "document search → documents:read": "optional: not connected: no adapter bound",
             "org agenda → calendar:read": "optional: not connected: no adapter bound",
             "org calendar → calendar:read": "optional: not connected: no adapter bound",
+            "org calendar-selection → calendar:read": "optional: not connected: no adapter bound",
             "system.runner ask → agent-runner:read": "claude-code → api.anthropic.com",
             "system.runner.chat send → agent-runner:read": "claude-code → api.anthropic.com",
         },
