@@ -1,10 +1,13 @@
 """Starter resolver policy stays with uv, while nested acceptance retains the reviewed wrapper."""
 
+import contextlib
 import importlib.util
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -78,6 +81,124 @@ def test_nested_uv_run_keeps_policy_out_of_child_and_retains_explicit_wrapper(st
     )
 
 
+def test_journey_uses_private_uv_and_state_directories(starter, tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_STATE_DIR", str(tmp_path / "caller-state"))
+    monkeypatch.setenv("VIRTUAL_ENV", str(tmp_path / "caller-venv"))
+    monkeypatch.setenv("UV_FROZEN", "1")
+    monkeypatch.delenv("UV_FIND_LINKS", raising=False)
+    destination = tmp_path / "starter"
+    environment = starter.journey_environment(destination)
+    assert environment["UV_CACHE_DIR"] == str(destination / "uv-cache")
+    assert environment["UV_TOOL_DIR"] == str(destination / "uv-tool")
+    assert environment["HZ_STATE_DIR"] == str(destination / "state" / "state_dir")
+    assert "VIRTUAL_ENV" not in environment
+    assert "UV_FROZEN" not in environment
+
+
+@pytest.mark.parametrize("resists_term", [False, True])
+def test_interrupted_starter_command_terminates_its_process_group(starter, tmp_path, resists_term):
+    parent_ready = tmp_path / "parent.pid"
+    child_ready = tmp_path / "child.pid"
+    child_stopped = tmp_path / "child.stopped"
+    child = tmp_path / "child.py"
+    child.write_text(
+        "import os, pathlib, signal, time\n"
+        f"stopped = pathlib.Path({str(child_stopped)!r})\n"
+        "def stop(_signum, _frame): stopped.write_text('stopped'); raise SystemExit(0)\n"
+        f"signal.signal(signal.SIGTERM, {'signal.SIG_IGN' if resists_term else 'stop'})\n"
+        f"pathlib.Path({str(child_ready)!r}).write_text(str(os.getpid()))\n"
+        "while True: time.sleep(.05)\n",
+        encoding="utf-8",
+    )
+    command = tmp_path / "command.py"
+    command.write_text(
+        "import os, pathlib, signal, subprocess, sys, time\n"
+        f"if {resists_term}: signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        f"child = subprocess.Popen([sys.executable, {str(child)!r}])\n"
+        f"pathlib.Path({str(parent_ready)!r}).write_text(str(os.getpid()))\n"
+        "while True: time.sleep(.05)\n",
+        encoding="utf-8",
+    )
+    runner = tmp_path / "runner.py"
+    runner.write_text(
+        "import importlib.util, sys\n"
+        f"spec = importlib.util.spec_from_file_location('starter_for_signal', {str(starter.__file__)!r})\n"
+        "module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)\n"
+        "module.install_signal_handlers()\n"
+        f"module.run_process([sys.executable, {str(command)!r}], {str(tmp_path)!r}, "
+        "dict(__import__('os').environ), sys.stdout)\n",
+        encoding="utf-8",
+    )
+    process = subprocess.Popen([sys.executable, str(runner)], start_new_session=True, stdout=subprocess.PIPE)
+    try:
+        deadline = time.monotonic() + 5
+        while not child_ready.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert parent_ready.exists()
+        assert child_ready.exists()
+        process.send_signal(signal.SIGTERM)
+        # EOF also requires the child to release its inherited output pipe.
+        process.communicate(timeout=3 if resists_term else 5)
+        assert process.returncode == 143
+        if resists_term:
+            assert not child_stopped.exists()
+        else:
+            assert child_stopped.read_text() == "stopped"
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+        if parent_ready.exists():
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(int(parent_ready.read_text()), signal.SIGKILL)
+
+
+@pytest.mark.parametrize("returncode", [0, 23])
+def test_completed_starter_command_reaps_background_descendants(starter, tmp_path, returncode):
+    child_ready = tmp_path / "normal-child.pid"
+    child_stopped = tmp_path / "normal-child.stopped"
+    child = tmp_path / "normal-child.py"
+    child.write_text(
+        "import os, pathlib, signal, time\n"
+        f"stopped = pathlib.Path({str(child_stopped)!r})\n"
+        "def stop(_signum, _frame): stopped.write_text('stopped'); raise SystemExit(0)\n"
+        "signal.signal(signal.SIGTERM, stop)\n"
+        f"pathlib.Path({str(child_ready)!r}).write_text(str(os.getpid()))\n"
+        "while True: time.sleep(.05)\n",
+        encoding="utf-8",
+    )
+    command = tmp_path / "returning-command.py"
+    command.write_text(
+        "import pathlib, subprocess, sys, time\n"
+        f"subprocess.Popen([sys.executable, {str(child)!r}])\n"
+        f"ready = pathlib.Path({str(child_ready)!r})\n"
+        "deadline = time.monotonic() + 5\n"
+        "while not ready.exists() and time.monotonic() < deadline: time.sleep(.01)\n"
+        f"raise SystemExit({returncode})\n",
+        encoding="utf-8",
+    )
+    runner = tmp_path / "normal-runner.py"
+    runner.write_text(
+        "import importlib.util, signal, sys\n"
+        f"spec = importlib.util.spec_from_file_location('starter_for_return', {str(starter.__file__)!r})\n"
+        "module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)\n"
+        f"raise SystemExit(module.run_process([sys.executable, {str(command)!r}], {str(tmp_path)!r}, "
+        "dict(__import__('os').environ), sys.stdout))\n",
+        encoding="utf-8",
+    )
+    process = subprocess.Popen([sys.executable, str(runner)], start_new_session=True, stdout=subprocess.DEVNULL)
+    try:
+        assert process.wait(timeout=8) == returncode
+        assert child_stopped.read_text() == "stopped"
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+        if child_ready.exists():
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(int(child_ready.read_text()), signal.SIGKILL)
+
+
 def test_journey_owns_its_cache_without_changing_the_callers_cache(starter, tmp_path, monkeypatch):
     caller_cache = str(tmp_path / "caller-cache")
     destination = tmp_path / "journey"
@@ -89,10 +210,10 @@ def test_journey_owns_its_cache_without_changing_the_callers_cache(starter, tmp_
         pass
 
     def inspect_first_command(*args, **kwargs):
-        assert kwargs["env"]["UV_CACHE_DIR"] == str(destination / "uv-cache")
+        assert args[2]["UV_CACHE_DIR"] == str(destination / "uv-cache")
         raise FirstCommandError
 
-    monkeypatch.setattr(starter.subprocess, "run", inspect_first_command)
+    monkeypatch.setattr(starter, "run_process", inspect_first_command)
     with pytest.raises(FirstCommandError):
         starter.journey("fixture-core", None, tmp_path, destination)
     assert os.environ["UV_CACHE_DIR"] == caller_cache

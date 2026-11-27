@@ -7,8 +7,8 @@ name: Gate review
 #     gate? The check passes only when the last non-empty line of the model output is exactly "VERDICT: APPROVE"; the
 #     review is posted as a pull request comment;
 #   - gate paths touched but the review cannot run (bot sender such as Dependabot or the update-prs merge, fork, draft,
-#     CLAUDE_REVIEW not "true"): the check fails with "needs a human or agent review". A review that did not run never
-#     passes.
+#     CLAUDE_REVIEW unset or unrecognized): the check fails with "needs a human or agent review".
+#   - CLAUDE_REVIEW exactly "false": the operator paused model reviews; record the skip in the job summary.
 # It runs on pull_request_target, so the workflow and its gate-path list are the base branch's: a pull request cannot
 # edit them to pass its own review. The pull request head is data only: the file list comes from the API, and the
 # reviewer works in a checkout of the base branch (its CLAUDE.md, settings and hooks are the base's) and reads the head
@@ -56,6 +56,10 @@ jobs:
           CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
         run: |
           gate_paths='^(\.github/(workflows/|actions/|CODEOWNERS$|dependabot\.yml$|zizmor\.yml$)|\.claude/|(CLAUDE|AGENTS)\.md$|\.pre-commit-config\.yaml$|\.sonarcloud\.properties$|contexts\.toml$|Makefile$|scripts/(release_|release\.sh|merge_gate|coverage_floor|sonar_ratings|focused_|ci_|pypi_release|prepare_release|check_|review_|acceptance/)|tools/release_|src/heinzel/bootstrap_|tests/.*(acceptance|merge_gate|coverage_floor|sonar_ratings|focused_gate|release_policy|ci)_test\.py$)'
+          if [[ "$ENABLED" == false ]]; then
+            echo "mode=paused" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # both sides of a rename: the API lists filename and previous_filename
           files="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR}/files" --jq '.[] | .filename, (.previous_filename // empty)')"
           hits="$(grep -E "$gate_paths" <<<"$files" || true)"
@@ -166,13 +170,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           MODE: ${{ needs.scope.outputs.mode }}
+          SCOPE_RESULT: ${{ needs.scope.result }}
           MODEL: ${{ needs.model.result }}
           VERDICT_LINE: ${{ needs.model.outputs.verdict_line }}
           RESULT: ${{ needs.model.outputs.result }}
         run: |
           if [[ "$MODE" == pass ]]; then echo "No gate path touched: passes without a review."; exit 0; fi
+          if [[ "$MODE" == paused && "$SCOPE_RESULT" == success && "$MODEL" == skipped ]]; then
+            echo "Claude review skipped by operator (CLAUDE_REVIEW=false)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           if [[ "$MODE" == refuse ]]; then
-            echo "::error::Gate review needs a human or agent review: this pull request touches gate paths and the model review cannot run for a bot sender, fork, draft or with CLAUDE_REVIEW off"
+            echo "::error::Gate review needs a human or agent review: this pull request touches gate paths and the model review cannot run for a bot sender, fork, draft or with an unset or unrecognized CLAUDE_REVIEW"
             exit 1
           fi
           if [[ "$MODE" != review || "$MODEL" != success ]]; then
