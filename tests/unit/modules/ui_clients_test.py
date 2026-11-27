@@ -1,8 +1,11 @@
 """Additive status data remains optional across server generations."""
 
+import json
+from http.client import HTTPException
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
 from unittest.mock import Mock
 
-import httpx
 import pytest
 
 from heinzel.modules.system.lifecycle._service import WebStatus
@@ -11,11 +14,43 @@ from heinzel.modules.ui import _clients
 pytestmark = pytest.mark.unit
 
 
+@pytest.fixture
+def local_endpoint():
+    calls = []
+    reply = {"code": 200, "body": []}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            calls.append((self.path, dict(self.headers)))
+            body = json.dumps(reply["body"]).encode()
+            self.send_response(reply["code"])
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Location", "/must-not-follow")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+        thread = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+        thread.start()
+        service = Mock()
+        service.status.return_value = WebStatus(installed=True, loaded=True, ready=True, port=server.server_port)
+        service.open_local.return_value = f"http://127.0.0.1:{server.server_port}/ignored?ignored#token=example"
+        try:
+            yield service, reply, calls
+        finally:
+            server.shutdown()
+            thread.join()
+
+
 @pytest.mark.parametrize(
     ("code", "body", "state"),
     [
         (200, [], "available"),
         (404, {}, "unsupported"),
+        (405, {}, "unsupported"),
         (503, {}, "unavailable"),
         (302, {}, "unavailable"),
         (200, [{"labels": {"machine": "x" * 65}}], "unavailable"),
@@ -38,34 +73,32 @@ pytestmark = pytest.mark.unit
         ),
     ],
 )
-def test_authenticated_status(monkeypatch, code, body, state):
-    service = Mock()
-    service.status.return_value = WebStatus(installed=True, loaded=True, ready=True, port=8737)
-    service.open_local.return_value = "http://127.0.0.1:8737/#token=example"
-    calls = []
-
-    def respond(request):
-        calls.append(request)
-        return httpx.Response(code, json=body)
-
-    real_client = httpx.Client
-
-    def local_client(**kwargs):
-        assert kwargs == {"timeout": 2, "trust_env": False, "follow_redirects": False}
-        return real_client(transport=httpx.MockTransport(respond), **kwargs)
-
-    monkeypatch.setattr(_clients.httpx, "Client", local_client)
+def test_authenticated_status(monkeypatch, local_endpoint, code, body, state):
+    service, reply, calls = local_endpoint
+    reply.update(code=code, body=body)
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+        monkeypatch.setenv(name, "http://127.0.0.1:1")
+    monkeypatch.setenv("NO_PROXY", "")
     result = _clients.read_status(service)
     assert result.ready
     assert result.client_observations_status == state
     assert result.installed
     assert result.loaded
-    assert result.port == 8737
+    assert result.port == service.status.return_value.port
     if state == "unavailable":
         assert result.client_observations == []
         assert "Desktop observations: unavailable" in _clients.render_status(result).plain
-    assert calls[0].url.path == "/api/client-observations"
-    assert calls[0].headers["authorization"] == "Bearer example"
+    assert calls == [
+        (
+            "/api/client-observations",
+            {
+                "Host": f"127.0.0.1:{result.port}",
+                "Accept-Encoding": "identity",
+                "Authorization": "Bearer example",
+                "Cache-Control": "no-store",
+            },
+        )
+    ]
     service.open_local.assert_called_once_with()
     if body == [] and state == "available":
         assert "No retained desktop observations" in _clients.render_status(result).plain
@@ -80,19 +113,9 @@ def test_authenticated_status(monkeypatch, code, body, state):
 
 
 @pytest.mark.parametrize("count", [50, 51])
-def test_response_row_bound_preserves_local_status(monkeypatch, count):
-    service = Mock()
-    service.status.return_value = WebStatus(installed=True, loaded=True, ready=True, port=8737)
-    service.open_local.return_value = "http://127.0.0.1:8737/#token=example"
-    real_client = httpx.Client
-
-    def local_client(**kwargs):
-        return real_client(
-            transport=httpx.MockTransport(lambda request: httpx.Response(200, json=[{} for _ in range(count)])),
-            **kwargs,
-        )
-
-    monkeypatch.setattr(_clients.httpx, "Client", local_client)
+def test_response_row_bound_preserves_local_status(local_endpoint, count):
+    service, reply, _ = local_endpoint
+    reply["body"] = [{} for _ in range(count)]
     result = _clients.read_status(service)
     assert (
         result.model_dump(exclude={"client_observations", "client_observations_status"})
@@ -130,6 +153,8 @@ def test_connection_error_preserves_service_status(monkeypatch):
         "https://127.0.0.1:8737/#token=example",
         "http://127.0.0.1:8738/#token=example",
         "http://localhost:8737/#token=example",
+        "http://user@127.0.0.1:8737/#token=example",
+        "http://127.0.0.1:8737.example.invalid/#token=example",
         "http://127.0.0.1:8737/",
     ],
 )
@@ -138,9 +163,30 @@ def test_status_refuses_other_origins_and_missing_credentials(monkeypatch, link)
     service.status.return_value = WebStatus(installed=True, loaded=True, ready=True, port=8737)
     service.open_local.return_value = link
     client = Mock()
-    monkeypatch.setattr(_clients.httpx, "Client", client)
+    monkeypatch.setattr(_clients, "HTTPConnection", client)
     assert _clients.read_status(service).client_observations_status == "unavailable"
     client.assert_not_called()
+
+
+@pytest.mark.parametrize("error", [OSError("private details"), HTTPException("private details")])
+def test_transport_failure_closes_connection_and_preserves_status(monkeypatch, error):
+    service = Mock()
+    service.status.return_value = WebStatus(installed=True, loaded=True, ready=True, port=8737)
+    service.open_local.return_value = "http://127.0.0.1:8737/#token=example"
+    client = Mock()
+    client.getresponse.side_effect = error
+    factory = Mock(return_value=client)
+    monkeypatch.setattr(_clients, "HTTPConnection", factory)
+    result = _clients.read_status(service)
+    factory.assert_called_once()
+    assert factory.call_args.args == ("127.0.0.1", 8737)
+    assert factory.call_args.kwargs == {"timeout": 2}
+    client.close.assert_called_once_with()
+    assert result.client_observations_status == "unavailable"
+    assert result.model_dump(exclude={"client_observations", "client_observations_status"}) == (
+        service.status.return_value.model_dump()
+    )
+    assert "private details" not in result.model_dump_json()
 
 
 @pytest.mark.parametrize("provenance", ["device-credential", "session-observation"])
