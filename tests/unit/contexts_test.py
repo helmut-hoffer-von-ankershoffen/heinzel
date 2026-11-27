@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 import tomllib
+from collections import Counter
 from pathlib import Path, PurePosixPath
 
 import pytest
@@ -27,8 +28,33 @@ OWNERS = contexts.owners(CONFIG, FILES)
 WORLD = re.compile(
     r"\bsubprocess\.(?:run|Popen|check_output|check_call|call)\b|\btime\.(?:sleep|monotonic)\b|\blaunchctl\b|\bdatetime\.now\("
 )
-MAX_CONTEXT_EDGES = 3
-MAX_HEAD_EDGES = 5
+CONTEXT_EXCEPTIONS = {
+    "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._models",
+    "heinzel.modules.system.updater._plugin_releases -> heinzel.modules.system.plugin._sources",
+    "heinzel.modules.system.updater._update_install -> heinzel.modules.system.plugin._sources",
+}
+HEAD_EXCEPTIONS = {
+    "heinzel.heads._served_tools -> heinzel.heads.mcp",
+    "heinzel.heads.cli -> heinzel.heads._compose",
+    "heinzel.heads.cli._serve -> heinzel.heads._compose",
+    "heinzel.heads.web -> heinzel.heads.api",
+    "heinzel.heads.web._mcp -> heinzel.heads.mcp",
+}
+HEAD_TO_MODULE_EXCEPTIONS = {
+    "heinzel.heads._compose -> heinzel.modules.system.client",
+    "heinzel.heads._mcp_tokens -> heinzel.modules.system.client",
+    "heinzel.heads.mcp -> heinzel.modules.system.client",
+    "heinzel.heads.web -> heinzel.modules.system.client",
+    "heinzel.heads.web._auto_update -> heinzel.modules.system.client",
+    "heinzel.heads.web._mcp -> heinzel.modules.system.client",
+    "heinzel.heads.web._pairing -> heinzel.modules.system.client",
+    "heinzel.heads.web._widget -> heinzel.modules.system.client",
+    "heinzel.heads.web._widget_fence_routes -> heinzel.modules.system.client",
+    "heinzel.heads.web._workspace_version -> heinzel.modules.system.client",
+    "heinzel.heads.web._auto_update -> heinzel.modules.system.updater.api",
+    "heinzel.heads.web._supervision -> heinzel.modules.system.lifecycle.api",
+    "heinzel.heads.web._lifecycle -> heinzel.modules.system.lifecycle.api",
+}
 
 
 def test_every_mapped_file_has_exactly_one_owner():
@@ -61,24 +87,54 @@ def test_the_import_contracts_in_pyproject_are_generated_from_the_map():
     assert problems == []
 
 
-def test_the_contract_allowlists_only_shrink():
-    allow = CONFIG["allow"]
-    assert len(allow["contexts"]) <= MAX_CONTEXT_EDGES, (
-        "a context may not gain an import of another; lower the cap when one goes"
-    )
-    assert len(allow["heads"]) <= MAX_HEAD_EDGES, "a head may not gain an import of another head"
+def _exception_problems(entries: list[str], approved: set[str]) -> list[str]:
+    counts = Counter(entries)
+    return [
+        *(f"new exception: {edge}" for edge in sorted(counts.keys() - approved)),
+        *(f"remove retired exception from the baseline: {edge}" for edge in sorted(approved - counts.keys())),
+        *(f"duplicate exception: {edge}" for edge, count in sorted(counts.items()) if count > 1),
+    ]
 
 
-def test_head_import_exceptions_name_exact_edges():
-    """An exception permits the existing import, not future imports hidden by a wildcard."""
+def test_the_contract_allowlists_pin_exact_importers_and_targets():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    head_contract = next(
-        contract
-        for contract in project["tool"]["importlinter"]["contracts"]
-        if contract["name"] == "Heads only know what the kernel discovered"
-    )
-    entries = [*CONFIG["allow"]["heads"], *head_contract["ignore_imports"]]
-    assert [entry for entry in entries if "*" in entry or "?" in entry] == []
+    contracts = {contract["name"]: contract for contract in project["tool"]["importlinter"]["contracts"]}
+    allow = CONFIG["allow"]
+    checks = {
+        "contexts.toml context edges": (allow["contexts"], CONTEXT_EXCEPTIONS),
+        "contexts.toml head edges": (allow["heads"], HEAD_EXCEPTIONS),
+        "system submodules": (
+            contracts["Every module could be a plugin: system's submodules don't import each other"]["ignore_imports"],
+            CONTEXT_EXCEPTIONS,
+        ),
+        "heads to modules": (
+            contracts["Heads only know what the kernel discovered"]["ignore_imports"],
+            HEAD_TO_MODULE_EXCEPTIONS,
+        ),
+    }
+    failures = [
+        f"{name}: {problem}"
+        for name, (listed, baseline) in checks.items()
+        for problem in _exception_problems(listed, baseline)
+    ]
+    assert failures == []
+
+
+def test_exact_edge_ratchet_rejects_same_size_substitution_wildcards_and_duplicates():
+    approved = {"heinzel.heads.web -> heinzel.heads.api"}
+    edge = next(iter(approved))
+    assert _exception_problems([edge], approved) == []
+    for replacement in (
+        "heinzel.heads.web._new_importer -> heinzel.heads.api",
+        "heinzel.heads.web -> heinzel.heads.mcp",
+        "heinzel.heads.web -> heinzel.heads.*",
+        "heinzel.heads.web -> heinzel.heads.?pi",
+    ):
+        assert _exception_problems([replacement], approved) == [
+            f"new exception: {replacement}",
+            f"remove retired exception from the baseline: {edge}",
+        ]
+    assert _exception_problems([edge, edge], approved) == [f"duplicate exception: {edge}"]
 
 
 def _world_touches(path: str) -> int:

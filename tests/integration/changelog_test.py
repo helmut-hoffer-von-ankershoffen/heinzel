@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.integration
 
 REPO = Path(__file__).resolve().parents[2]
@@ -34,7 +36,7 @@ def git(repo: Path, *args: str) -> None:
         "GIT_COMMITTER_NAME": "Dev",
         "GIT_COMMITTER_EMAIL": "dev@example.com",
     }
-    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, env=env, timeout=60)
+    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, env=env, timeout=scaled(60))
 
 
 def test_squash_merge_trailers_stay_out_of_the_changelog(tmp_path):
@@ -47,7 +49,7 @@ def test_squash_merge_trailers_stay_out_of_the_changelog(tmp_path):
 
     result = subprocess.run(
         [str(GIT_CLIFF), "--offline", "--unreleased", "--tag", "v0.1.0"],
-        cwd=tmp_path, capture_output=True, text=True, check=True, timeout=60,
+        cwd=tmp_path, capture_output=True, text=True, check=True, timeout=scaled(60),
     )  # fmt: skip
 
     bullets = [line for line in result.stdout.splitlines() if line.startswith("- ")]
