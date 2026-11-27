@@ -7,6 +7,7 @@ const COUNTDOWN_MS = 30_000;
 type Decision = { target: string; deadline: number | null };
 type DesktopClient = { clientFlavor?: string; clientOS?: string; remoteWorkspace?: boolean; lifecycle?: unknown };
 let inThisWindow: Decision | null = null;
+let localOnly = false;
 
 export function localMacClient(): string | null {
   const bridge = (window as Window & { heinzelDesktop?: DesktopClient }).heinzelDesktop;
@@ -30,8 +31,7 @@ export function desktopRestartTarget(status: UpdateStatus | undefined): string |
 
 function read(target: string): Decision | null {
   try {
-    const raw = localStorage.getItem(KEY);
-    const saved = raw ? (JSON.parse(raw) as Decision | null) : null;
+    const saved = localOnly ? inThisWindow : (JSON.parse(localStorage.getItem(KEY) ?? "null") as Decision | null);
     return saved?.target === target && (saved.deadline === null || Number.isFinite(saved.deadline)) ? saved : null;
   } catch {
     return inThisWindow?.target === target ? inThisWindow : null;
@@ -43,8 +43,9 @@ function store(decision: Decision | null): void {
   try {
     if (decision) localStorage.setItem(KEY, JSON.stringify(decision));
     else localStorage.removeItem(KEY);
+    localOnly = false;
   } catch {
-    // The decision still applies for the lifetime of this window.
+    localOnly = true;
   }
 }
 

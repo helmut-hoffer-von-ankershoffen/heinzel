@@ -68,3 +68,21 @@ it("does not use a remote workspace or an iPhone as a Mac update authority", () 
   vi.stubGlobal("heinzelDesktop", { clientOS: "iOS", clientFlavor: "native" });
   expect(localMacClient()).toBeNull();
 });
+
+it("keeps the timer and cancellation when storage is readable but full", () => {
+  const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new DOMException("Full", "QuotaExceededError");
+  });
+  const restart = vi.fn();
+  try {
+    const timer = renderHook(() => useDesktopCountdown("native:full-storage", true, true, restart));
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(timer.result.current.seconds).toBe(20);
+    act(() => timer.result.current.cancel());
+    act(() => vi.advanceTimersByTime(30_000));
+    expect(timer.result.current.manual).toBe(true);
+    expect(restart).not.toHaveBeenCalled();
+  } finally {
+    write.mockRestore();
+  }
+});

@@ -109,7 +109,7 @@ export const runtime = {
   "updates.desktopHow": "It quits, updates and opens again by itself.",
   "updates.desktopStarted": "Updating the desktop app; it reopens in a moment.",
   "updates.desktopRestartTitle": "Restarting the Mac app",
-  "updates.desktopRestartCountdown": "The backend is updated. The app will update and reopen in {seconds}s.",
+  "updates.desktopRestartCountdown": "The app will quit, update, and reopen in {seconds}s.",
   "updates.desktopRestartCancel": "Cancel restart",
   "updates.desktopRestartRequired": "Desktop app out of date · restart required",
   "updates.desktopRestartAction": "Restart to update",
