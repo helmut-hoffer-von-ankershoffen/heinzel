@@ -25,8 +25,8 @@ from urllib.parse import quote, urlsplit, urlunsplit
 
 TOOLKIT = (
     "heinzel-plugin-tools @ https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/"
-    "tools-v0.4.1/heinzel_plugin_tools-0.4.1-py3-none-any.whl"
-    "#sha256=56072dabdd2a7c94f5210b10dedb85099d6ad67f19a58e37949a05d4b830ad38"
+    "tools-v0.4.2/heinzel_plugin_tools-0.4.2-py3-none-any.whl"
+    "#sha256=5e7649b5b9dd4546d11793c6e76ace8743bad5967ad37479fcdfe762f83e604a"
 )
 
 REQUIREMENTS = Path(__file__).with_name("plugin-tooling-requirements.txt")
