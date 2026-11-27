@@ -654,9 +654,10 @@ describe("a layered soundscape", () => {
 });
 
 describe("a stream's fades", () => {
-  it.each(["iframe", "desktop"])("syncs the footer speaker with YouTube controls in the %s", async (surface) => {
-    let state = 1;
-    if (surface === "desktop") {
+  const surfaces = ["iframe", "desktop", "desktop before first playing poll"];
+  it.each(surfaces)("syncs the footer speaker with YouTube controls in the %s", async (surface) => {
+    let state = surface === "desktop before first playing poll" ? 5 : 1;
+    if (surface !== "iframe") {
       vi.stubGlobal("heinzelDesktop", {
         lifecycle: vi.fn(),
         player: vi.fn(async () => ({ status: "ready", ready: true, state })),

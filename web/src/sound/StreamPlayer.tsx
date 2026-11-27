@@ -122,7 +122,8 @@ function Player({
     [guest, origin],
   );
   const sawReady = useRef(false);
-  const providerPlaying = useRef(false);
+  // A quick Pause can reach the desktop poll before it has ever sampled Playing.
+  const providerPlaying = useRef<boolean | null>(null);
   const pausedInPlayer = useRef(false);
   const observePlayback = useCallback(
     (state: unknown) => {
@@ -130,6 +131,8 @@ function Player({
       if (state !== 1 && state !== 2) return;
       const playing = state === 1;
       if (providerPlaying.current === playing) return;
+      // A newly opened player can report Paused before the initial Play command.
+      if (!playing && providerPlaying.current === null && !sawReady.current) return;
       providerPlaying.current = playing;
       const sound = soundState();
       if (!sound.started || sound.albumSelected || (sound.soundscape && sound.soundscape !== soundscape.name)) return;
@@ -225,6 +228,7 @@ function Player({
             : undefined;
       observePlayback(state);
       if (data.event !== "onReady" && data.event !== "initialDelivery") return;
+      sawReady.current = true;
       // The frame starts silent so a retry cannot jump to YouTube's own volume.
       if (deviceVolume) command(frame.current, origin, volume.current === 0 ? "mute" : "unMute");
       else command(frame.current, origin, "setVolume", [volume.current]);
