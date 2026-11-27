@@ -94,6 +94,11 @@ def test_ci_lanes_preserve_every_original_node_once_including_supervised_paramet
         for platform in ("linux", "darwin")
         for name, suffix in [
             ("test_installed_server_keeps_session_on_update_exec_and_pairing_after_cold_restart", ""),
+            ("test_installed_supervisor_recovers_its_server_after_the_update_owner_is_killed", ""),
+            *[
+                ("test_historical_migration_recovers_interrupted_real_uv_replacement", f"-{phase}")
+                for phase in ("snapshot", "install", "recovery")
+            ],
             *[("test_fresh_installed_server_repeatedly_publishes_authenticated_control", f"-{i}") for i in range(5)],
         ]
     }
