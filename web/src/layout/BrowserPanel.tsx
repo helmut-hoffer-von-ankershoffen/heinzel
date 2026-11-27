@@ -57,7 +57,10 @@ const NOTICES = {
   "no-device": "browser.noDeviceNote",
   "clear-failed": "browser.clearFailedNote",
 } as const;
-type BrowserBridge = { browser: (request: Record<string, unknown>) => Promise<BrowserState> };
+type BrowserBridge = {
+  browserPlayerCutout?: boolean;
+  browser: (request: Record<string, unknown>) => Promise<BrowserState>;
+};
 function bridge(): BrowserBridge | undefined {
   const value = (window as Window & { heinzelDesktop?: Partial<BrowserBridge> }).heinzelDesktop;
   return typeof value?.browser === "function" ? (value as BrowserBridge) : undefined;
@@ -384,6 +387,7 @@ export function BrowserPanel({
         .catch(() => {});
     },
     "browser",
+    native?.browserPlayerCutout === true,
   );
   const status =
     state.status === "loading"

@@ -114,6 +114,38 @@ private final class GuestBlank: NSObject, WKNavigationDelegate {
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { finish(false) }
 }
 
+#if os(macOS)
+/// Paint and hit-test the same region so the workspace controls receive clicks through the guest.
+@MainActor
+final class BrowserGuestView: WKWebView {
+    private var cutout: CGRect?
+    private var maskedBounds: CGRect?
+
+    func excludePlayer(_ rect: CGRect?) {
+        guard rect != cutout || maskedBounds != bounds else { return }
+        cutout = rect
+        maskedBounds = bounds
+        guard let rect, !rect.isEmpty else { layer?.mask = nil; return }
+        wantsLayer = true
+        let path = CGMutablePath()
+        path.addRect(bounds)
+        path.addRect(rect.intersection(bounds))
+        let mask = CAShapeLayer()
+        mask.frame = bounds
+        mask.path = path
+        mask.fillRule = .evenOdd
+        layer?.mask = mask
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if let cutout, cutout.contains(convert(point, from: superview)) { return nil }
+        return super.hitTest(point)
+    }
+}
+#else
+private typealias BrowserGuestView = WKWebView
+#endif
+
 /// Owns a separate, in-memory WebKit session for the shared workspace's Browser panel.
 @MainActor
 final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
@@ -139,6 +171,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
     private var surface: WKWebView? { selected?.view }
     private var configuration: WKWebViewConfiguration?
     private var frame: CGRect?
+    private var playerCutout: CGRect?
     private var network: BrowserNetwork?
     private var opening = false
     private var generation = 0
@@ -207,6 +240,15 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
             )
             guard !frame.isEmpty, [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite),
                   workspace.bounds.contains(frame) else { hide(); break }
+            playerCutout = nil
+            if let requested = request["playerCutout"] {
+                guard let box = requested as? [String: CGFloat], let x = box["x"], let y = box["y"],
+                      let width = box["width"], let height = box["height"],
+                      [x, y, width, height].allSatisfy(\.isFinite), width > 0, height > 0 else { hide(); break }
+                let overlap = Self.surfaceFrame(CGRect(x: x, y: y, width: width, height: height), in: workspace).intersection(frame)
+                guard !overlap.isNull, !overlap.isEmpty else { hide(); break }
+                playerCutout = overlap
+            }
             self.frame = frame
             updateVisibility()
         case "hide": hide()
@@ -359,6 +401,11 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
         // WebKit temporarily owns the guest's window and geometry during element fullscreen.
         guard let surface, surface.fullscreenState == .notInFullscreen else { return }
         if let frame { surface.frame = frame }
+        #if os(macOS)
+        if let guest = surface as? BrowserGuestView {
+            guest.excludePlayer(playerCutout.map { guest.convert($0, from: guest.superview) })
+        }
+        #endif
         surface.isHidden = frame == nil || status == "unavailable"
     }
 
@@ -429,7 +476,7 @@ final class IntegratedBrowser: NSObject, WKNavigationDelegate, WKUIDelegate {
             }
         }
         guard let configuration, tabs.contains(where: { $0 === tab }) else { throw URLError(.cancelled) }
-        let view = WKWebView(frame: .zero, configuration: configuration)
+        let view = BrowserGuestView(frame: .zero, configuration: configuration)
         view.navigationDelegate = self
         view.uiDelegate = self
         view.isHidden = true

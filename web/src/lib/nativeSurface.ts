@@ -18,6 +18,7 @@ export function useNativeSurface(
   send: SurfaceBridge | undefined,
   poll?: () => void,
   name?: "browser" | "player",
+  supportsPlayerCutout = false,
 ): boolean {
   const [bridgeFailed, setBridgeFailed] = useState(false);
   const refresh = useRef(poll);
@@ -72,13 +73,23 @@ export function useNativeSurface(
       const box = element.getBoundingClientRect();
       // The player card contains its own surface and can sit beside another. Other overlays still hide every
       // native view, including their backdrops, so a modal cannot leave a guest interactive behind it.
+      let cutout: { x: number; y: number; width: number; height: number } | undefined;
       const overlay = Array.from(document.querySelectorAll(OVERLAYS)).some((node) => {
         if (node.closest("[hidden], [inert]")) return false;
         if (!node.hasAttribute("data-native-surface-container")) return node.getClientRects().length > 0;
         if (node.contains(element)) return false;
-        return Array.from(node.getClientRects()).some(
-          (rect) => rect.left < box.right && rect.right > box.left && rect.top < box.bottom && rect.bottom > box.top,
-        );
+        for (const rect of node.getClientRects()) {
+          const left = Math.floor(Math.max(rect.left, box.left));
+          const top = Math.floor(Math.max(rect.top, box.top));
+          const right = Math.ceil(Math.min(rect.right, box.right));
+          const bottom = Math.ceil(Math.min(rect.bottom, box.bottom));
+          if (rect.left >= box.right || rect.right <= box.left || rect.top >= box.bottom || rect.bottom <= box.top)
+            continue;
+          if (!supportsPlayerCutout || name !== "browser" || node.getAttribute("data-dock") !== "floating" || cutout)
+            return true;
+          cutout = { x: left, y: top, width: right - left, height: bottom - top };
+        }
+        return false;
       });
       if (overlay) {
         hide("overlay");
@@ -100,6 +111,7 @@ export function useNativeSurface(
       dispatch(
         {
           action: "layout",
+          ...(cutout ? { playerCutout: cutout } : {}),
           bounds: {
             x: Math.round(box.x),
             y: Math.round(box.y),
@@ -174,6 +186,6 @@ export function useNativeSurface(
       disposed = true;
       if (name) recordSurface(name, "inactive", bridge, null);
     };
-  }, [active, send, surface, name]);
+  }, [active, send, surface, name, supportsPlayerCutout]);
   return bridgeFailed;
 }

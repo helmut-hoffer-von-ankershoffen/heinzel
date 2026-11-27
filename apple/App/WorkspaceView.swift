@@ -106,7 +106,7 @@ struct WorkspaceView: WebRepresentable {
                 """
             : ""
         let chrome = """
-            titlebar: Object.freeze({ height: 44, left: 80, right: 0 }), onFullscreen,
+            titlebar: Object.freeze({ height: 44, left: 80, right: 0 }), onFullscreen, browserPlayerCutout: true,
             \(localCommands)
             """
         #else
