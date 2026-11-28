@@ -52,10 +52,13 @@ const FIELDS = { open: ["action", "video"], layout: ["action", "bounds"], hide: 
 export function createMediaPlayer({ windows, fromWebContents, connection, lease, createView, openExternal,
   now = Date.now, platform = process.platform }) {
   const players = new Map();
+  const openings = new Map();
   const generations = new WeakMap();
   let stopped = false;
   const close = (window) => {
     generations.set(window, (generations.get(window) ?? 0) + 1);
+    openings.get(window)?.detach();
+    openings.delete(window);
     const player = players.get(window);
     if (!player) return;
     players.delete(window);
@@ -198,8 +201,28 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
       if (request.action === "open") {
         playerUrl(request.video);
         if (player?.video !== request.video) {
-          close(window);
-          player = await open(window, request.video);
+          let opening = openings.get(window);
+          if (opening?.video !== request.video) {
+            close(window);
+            const owner = window.webContents;
+            const cancel = () => close(window);
+            const navigate = (navigation) => {
+              if (navigation.isMainFrame && !navigation.isSameDocument) cancel();
+            };
+            opening = { video: request.video, detach: () => {
+              window.off("closed", cancel);
+              owner.off("did-start-navigation", navigate);
+            } };
+            window.on("closed", cancel);
+            owner.on("did-start-navigation", navigate);
+            openings.set(window, opening);
+            const current = opening;
+            opening.promise = open(window, request.video).finally(() => {
+              current.detach();
+              if (openings.get(window) === current) openings.delete(window);
+            });
+          }
+          player = await opening.promise;
         }
       }
       if (!player) return { status: "empty", ready: false, state: -1, error: false };
@@ -212,7 +235,7 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
     /** At quit: never throws, so a window that is already gone cannot keep the app from quitting. */
     closeAll() {
       stopped = true;
-      for (const window of [...players.keys()]) {
+      for (const window of new Set([...players.keys(), ...openings.keys()])) {
         try { close(window); } catch { /* the other windows are still closed */ }
       }
     },

@@ -63,6 +63,31 @@ test("player diagnostics report native visibility without video identity", async
   assert.deepEqual(await f.play({ action: "diagnostics" }), { focused: true, visible: null, status: "loading", reason: "unknown" });
 });
 
+test("concurrent opens of the same video share one guest", async () => {
+  const f = fixture();
+  await Promise.all([f.play({ action: "open", video: VIDEO }), f.play({ action: "open", video: VIDEO })]);
+  assert.equal(f.views.length, 1);
+  assert.equal(f.sender.listenerCount("did-start-navigation"), 1);
+  f.player.closeAll();
+  assert.equal(f.sender.listenerCount("did-start-navigation"), 0);
+});
+
+for (const cancel of ["navigation", "close", "quit"]) {
+  test(`pending player open cannot survive ${cancel}`, async () => {
+    const f = fixture();
+    const opening = f.play({ action: "open", video: VIDEO });
+    const rejected = assert.rejects(opening, /closed/);
+    if (cancel === "navigation") f.sender.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
+    else if (cancel === "close") await f.play({ action: "close" });
+    else f.player.closeAll();
+    await rejected;
+    assert.equal(f.views.length, 0);
+    assert.equal(f.sender.listenerCount("did-start-navigation"), 0);
+    assert.equal(f.owner.listenerCount("closed"), 0);
+    f.browser.closeAll();
+  });
+}
+
 test("the player guest is the YouTube embed on the shared website partition, never the product session", async () => {
   const f = fixture();
   const state = await f.play({ action: "open", video: VIDEO });
