@@ -163,3 +163,55 @@ test("a rejected saved credential requests sign-in for that candidate and retain
   f.controller.cancel();
   assert.equal(f.controller.state().signInOrigin, null);
 });
+
+test("selecting an unsigned saved workspace focuses its empty sign-in sheet and cancel restores the row", async () => {
+  const origin = "https://studio.example";
+  const { controller } = fixture({ directory: {
+    list: () => [{ origin, name: "Studio", signedIn: false }], connection: () => null,
+  } });
+  const elements = new Map();
+  const document = {
+    activeElement: null,
+    createElement() {
+      return {
+        children: [], dataset: {}, classList: { toggle() {} }, setAttribute() {},
+        addEventListener(name, handler) { this[name] = handler; },
+        append(...children) { this.children.push(...children); },
+        replaceChildren(...children) { this.children = children; },
+        showModal() { this.open = true; }, close() { this.open = false; },
+        focus() { document.activeElement = this; },
+      };
+    },
+    getElementById(id) {
+      if (!elements.has(id)) elements.set(id, this.createElement());
+      return elements.get(id);
+    },
+    querySelectorAll() { return this.getElementById("rows").children.flatMap((row) => row.children); },
+  };
+  let opened = 0, cancelled = 0;
+  runInNewContext(readFileSync(new URL("../src/workspace-picker.js", import.meta.url), "utf8"), {
+    document, navigator: {}, window: { addEventListener() {}, workspacePicker: {
+      onState() {}, async state() { return controller.state(); },
+      async edit() { opened++; }, async cancel() { cancelled++; controller.cancel(); },
+      recent() { assert.fail("an unsigned workspace must wait for a sign-in URL"); },
+    } },
+  });
+  await new Promise(setImmediate);
+  const get = (id) => document.getElementById(id);
+  const choose = document.querySelectorAll().find((node) => node.dataset.key === `choose-${origin}`);
+  assert.ok(choose);
+  choose.click();
+  assert.equal(get("sheet").open, true);
+  assert.equal(get("sheet-title").textContent, "Sign in");
+  assert.equal(document.activeElement, get("link"));
+  assert.equal(get("link").value, "");
+  assert.equal(get("submit").disabled, true);
+  assert.equal(get("paste").hidden, false);
+  assert.equal(get("retry").hidden, true);
+  assert.equal(opened, 1);
+  get("cancel").onclick();
+  assert.equal(get("sheet").open, false);
+  assert.equal(document.activeElement, choose);
+  assert.equal(cancelled, 1);
+  assert.equal(controller.state().current, local.origin);
+});

@@ -96,6 +96,18 @@ describe("a window that outlived hz ui", () => {
     },
   );
 
+  it("keeps a refused session without attempting recovery when no paired device exists", async () => {
+    sessionStorage.setItem("hz.token", "old-session");
+    const fetcher = vi.fn(async () => new Response(null, { status: 401 }));
+    const reload = vi.fn();
+
+    await dropRefusedDevice(401, "old-session", fetcher, reload);
+
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+    expect(sessionToken()).toBe("old-session");
+  });
+
   it("never tells a paired window to sign in again while it moves to its device token", async () => {
     sessionStorage.setItem("hz.token", "old-session");
     localStorage.setItem(DEVICE_KEY, "hzd_device");
