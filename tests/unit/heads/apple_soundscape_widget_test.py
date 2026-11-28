@@ -24,6 +24,11 @@ def test_artwork_and_read_only_position_open_the_selected_track_or_picker(surfac
     assert "WatchSoundscapeIntent(trackID: id)" in view("information")
 
 
+def test_album_cover_opens_picker_while_progress_still_targets_the_selected_track() -> None:
+    assert "state?.albumArtwork != true" in view("artworkControl")
+    assert "albumArtwork" not in view("progressControl")
+
+
 def test_download_edge_is_attached_to_the_playback_rail_only_during_an_active_download() -> None:
     fraction = view("downloadFraction")
     assert 'state.phase == "downloading"' in fraction

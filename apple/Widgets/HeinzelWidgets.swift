@@ -1101,7 +1101,7 @@ private struct SoundscapeWidgetView: View {
     }
 
     @ViewBuilder private var artworkControl: some View {
-        if let id = state?.selectedID {
+        if let id = state?.selectedID, state?.albumArtwork != true {
             Link(destination: SoundscapeLink.track(id)) { artwork }
                 .accessibilityLabel("Open player: \(title)")
         } else {
