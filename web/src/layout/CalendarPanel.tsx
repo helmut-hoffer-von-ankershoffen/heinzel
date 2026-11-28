@@ -16,10 +16,12 @@ import {
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { useNavigate } from "react-router";
 import { stream } from "@/api/stream";
 import { token } from "@/api/token";
 import { OperationDialog } from "@/components/OperationDialog";
 import { PaneAction, PaneActions, PaneTitle } from "@/components/PaneActions";
+import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { isLocalServer } from "@/lib/browser";
 import { conferenceLink, conferenceProvider } from "@/lib/conferenceLink";
@@ -101,6 +103,7 @@ function showToday(node: HTMLElement | null) {
 }
 
 export function CalendarPanel({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate();
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [selection, setSelection] = useState<CalendarSelection>(() => savedSelection());
@@ -237,11 +240,19 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
             <p className="text-muted-foreground">
               {t(week.data?.calendars?.length === 0 ? "calendar.noReadableSources" : "calendar.sourcesUnavailable")}
             </p>
-            <PaneActions words="all" className="m-0 border-0 p-0">
-              <PaneAction ghost icon={Plug} to={`?settings=${CONNECTORS}`} onClick={onClose}>
-                {t(week.data?.fix ? "calendar.connect" : "calendar.connectorSettings")}
-              </PaneAction>
-            </PaneActions>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="pointer-coarse:min-h-11"
+              onClick={() => {
+                onClose();
+                void navigate(`?settings=${CONNECTORS}`);
+              }}
+            >
+              <Plug aria-hidden />
+              {t(week.data?.fix ? "calendar.connect" : "calendar.connectorSettings")}
+            </Button>
           </div>
         )
       )}

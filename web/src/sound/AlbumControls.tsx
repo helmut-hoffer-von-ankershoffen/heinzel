@@ -1,5 +1,6 @@
 import { ListMusic, Pause, Play, Repeat, Repeat1, SkipBack, SkipForward } from "lucide-react";
 import { PaneAction } from "@/components/PaneActions";
+import { Button } from "@/components/ui/button";
 import { AlbumProgress } from "./AlbumProgress";
 import { ALBUM_TITLE, albumAction, useAlbum, useAlbumPosition } from "./album";
 import { selectAlbum } from "./store";
@@ -105,19 +106,21 @@ export function AlbumControls({
         <fieldset aria-label="Tracks" className="max-h-40 min-w-0 overflow-auto rounded border border-border">
           <div className="flex items-center justify-between px-2 py-1">
             <span className="text-sm font-semibold">Tracks</span>
-            <button type="button" className="rounded px-2 py-1 text-sm hover:bg-accent" onClick={onDismissTrackPicker}>
+            <Button type="button" variant="ghost" size="sm" onClick={onDismissTrackPicker}>
               Done
-            </button>
+            </Button>
           </div>
           {album?.media?.tracks.map((track) => (
-            <button
-              className="block min-h-8 w-full px-2 text-left text-sm hover:bg-accent focus-visible:bg-accent"
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex w-full whitespace-normal px-2 text-left text-sm"
               key={track.id}
               type="button"
               onClick={() => choose(track.id)}
             >
               {track.title}
-            </button>
+            </Button>
           ))}
         </fieldset>
       )}

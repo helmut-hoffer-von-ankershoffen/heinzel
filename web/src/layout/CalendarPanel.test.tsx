@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import * as browser from "@/lib/browser";
 import { shell } from "@/test/fixtures";
@@ -76,6 +76,14 @@ const weekOf = (events: object[]) => ({
   fix: null,
 });
 
+function CalendarSettingsLocation() {
+  return (
+    <span hidden data-testid="calendar-settings-location">
+      {useLocation().search}
+    </span>
+  );
+}
+
 it.each([
   { inventory: null, status: "Calendar choices unavailable." },
   { inventory: [], status: "No readable calendars." },
@@ -93,17 +101,18 @@ it.each([
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <MemoryRouter>
         <CalendarPanel onClose={onClose} />
+        <CalendarSettingsLocation />
       </MemoryRouter>
     </QueryClientProvider>,
   );
   expect(await screen.findByText(status)).toBeInTheDocument();
   expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   if (inventory === null) expect(screen.getByRole("button", { name: /Existing meeting/ })).toBeInTheDocument();
-  const settings = screen.getByRole("link", { name: "Calendar settings" });
-  expect(settings).toHaveAttribute("href", "/?settings=connectors");
+  const settings = screen.getByRole("button", { name: "Calendar settings" });
   await expectAccessible(container);
   await userEvent.setup().click(settings);
   expect(onClose).toHaveBeenCalledOnce();
+  expect(screen.getByTestId("calendar-settings-location")).toHaveTextContent("?settings=connectors");
 });
 
 it("shows how to connect when there is no calendar", async () => {
@@ -115,11 +124,13 @@ it("shows how to connect when there is no calendar", async () => {
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <MemoryRouter>
         <CalendarPanel onClose={vi.fn()} />
+        <CalendarSettingsLocation />
       </MemoryRouter>
     </QueryClientProvider>,
   );
   expect(await screen.findByText("No calendar connected.")).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: /Connect a calendar/ })).toHaveAttribute("href", "/?settings=connectors");
+  await userEvent.setup().click(screen.getByRole("button", { name: /Connect a calendar/ }));
+  expect(screen.getByTestId("calendar-settings-location")).toHaveTextContent("?settings=connectors");
 });
 
 it("combines readable calendars and preserves an explicit exclusion on reopen", async () => {
@@ -560,7 +571,7 @@ it("says the reminder state in one line with an icon and nothing to press", asyn
   expect(band.querySelector("svg")).not.toBeNull();
   expect(band.querySelector("a, button")).toBeNull();
   expect(band.closest("a, button")).toBeNull();
-  expect(container.querySelectorAll("a")).toHaveLength(2); // the review meeting and Calendar settings
+  expect(container.querySelectorAll("a")).toHaveLength(1); // only the review meeting
   expect(screen.getByRole("button", { name: "Turn on reminders" })).toBeInTheDocument();
 });
 
