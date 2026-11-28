@@ -54,6 +54,7 @@ export function createWindowLifecycle() {
       prepareWindow: (window, server) => {
         if (server?.version) ctx.windowVersions.set(window, server.version);
         productWindows.add(window);
+        if (!connection.remote) window.webContents.setUserAgent(`${window.webContents.getUserAgent()} HeinzelAlbum/1`);
         window.webContents.on("dom-ready", () => {
           void window.webContents.executeJavaScript(`(${installLegacyWorkspaceMenu})(${JSON.stringify(connection.origin)})`).catch(() => {});
         });

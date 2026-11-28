@@ -312,13 +312,21 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     files = {file.name: file for file in static.iterdir() if file.is_file() and file != index}
 
     @app.get("/{path:path}", include_in_schema=False)
-    def page(path: str) -> Response:
+    def page(path: str, request: Request) -> Response:
         # Not async: the page's CSP reads the configuration, so FastAPI runs it in its thread pool.
         # Top-level files as themselves; every other path is a route of the app.
         if path in files:
             headers = {"Cache-Control": "no-cache"} if path in NO_CACHE else None
             return FileResponse(files[path], headers=headers)
-        return FileResponse(index, headers={"Cache-Control": "no-store", CSP_HEADER: page_csp(kernel)})
+        return FileResponse(
+            index,
+            headers={
+                "Cache-Control": "no-store",
+                CSP_HEADER: page_csp(
+                    kernel, desktop_album="HeinzelAlbum/1" in request.headers.get("user-agent", "").split()
+                ),
+            },
+        )
 
     return app
 
@@ -375,7 +383,7 @@ def add_views(app: FastAPI, kernel: Kernel) -> None:
         return Response(status_code=404)
 
 
-def page_csp(kernel: Kernel) -> str:
+def page_csp(kernel: Kernel, *, desktop_album: bool = False) -> str:
     """The page CSP admits only fixed origins needed by currently installed capabilities.
 
     A streaming frame is available only while a known stream is in effect, and
@@ -400,6 +408,12 @@ def page_csp(kernel: Kernel) -> str:
         admitted = [origin for origin in MEDIA_ORIGINS if origin in media]
     except Exception:  # noqa: BLE001 - fail closed, and apart from the frame: a stream still plays
         admitted = []
+    if desktop_album:
+        # The desktop dock has one approved film, served online or from the verified host cache.
+        digest = "306c4b7f00c9f89aa80b624f7dcaeace22c52a14ece3b3f7a1e9b107d6c0f126"
+        admitted.extend(
+            (f"https://latentheinzels.heinzel.team/media/sha256/{digest}.mp4", f"heinzel-album://film/{digest}.mp4")
+        )
     policy = f"{CSP}; frame-src {' '.join(dict.fromkeys(origins))}" if origins else CSP
     return f"{policy}; media-src {' '.join(admitted)}" if admitted else policy
 
