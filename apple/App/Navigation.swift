@@ -533,6 +533,13 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                 case "toggle": try await playback.toggleApp()
                 case "previous": try await playback.previousApp()
                 case "next": try await playback.nextApp()
+                case "seek":
+                    guard let body = message.body as? [String: Any], Set(body.keys) == Set(["action", "trackID", "seconds"]),
+                          let id = body["trackID"] as? String, !id.isEmpty, id.utf8.count <= 256,
+                          let value = body["seconds"] as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID(),
+                          await playback.seekSelectedTrack(id, to: value.doubleValue) else {
+                        return (nil, "Track position unavailable")
+                    }
                 case "repeat": playback.cycleRepeat()
                 case "picker": playback.openPicker()
                 case "openVideo":
@@ -545,6 +552,11 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                 default: return (nil, "Unknown album action")
                 }
                 var snapshot = library.snapshot()
+                guard revision == documentRevision, verifiedWorkspace(for: message) != nil else {
+                    return (nil, "Workspace command unavailable")
+                }
+                snapshot["positionSeconds"] = playback.playbackPosition
+                snapshot["durationSeconds"] = playback.albumDuration
                 snapshot["playing"] = playback.isPlaying
                 snapshot["title"] = playback.currentTitle
                 snapshot["repeatMode"] = playback.repeatMode

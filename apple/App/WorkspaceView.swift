@@ -150,8 +150,9 @@ struct WorkspaceView: WebRepresentable {
                     if (action === "start" && !navigator.userActivation?.isActive) return Promise.resolve(false);
                     return window.webkit.messageHandlers.heinzelAudio.postMessage(action);
                 };
-                const album = (action, geometry) => window.webkit.messageHandlers.heinzelAlbum.postMessage(
-                    geometry ? { action, geometry } : action);
+                const album = (action, options) => window.webkit.messageHandlers.heinzelAlbum.postMessage(
+                    action === "seek" ? { action, trackID: options?.trackID, seconds: options?.seconds }
+                    : options ? { action, geometry: options } : action);
                 const browser = request => window.webkit.messageHandlers.heinzelBrowser.postMessage(request);
                 const notices = request => window.webkit.messageHandlers.heinzelNotices.postMessage(request);
                 Object.defineProperty(window, "heinzelDesktop", {
@@ -218,6 +219,9 @@ struct WorkspaceView: WebRepresentable {
         } catch { failed(); }
     };
     addEventListener("pointerdown", activate, true);
+    addEventListener("pointerup", event => {
+        if (event.target instanceof HTMLInputElement && event.target.hasAttribute("data-album-seek")) activate(event);
+    }, true);
     addEventListener("keydown", activate, true);
     addEventListener("click", activate, true);
     addEventListener("click", openGuest, true);

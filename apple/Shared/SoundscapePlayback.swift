@@ -512,7 +512,25 @@ final class SoundscapePlayback {
         }
     }
 
-    private var playbackPosition: Double {
+    var albumDuration: Double? {
+        guard let seconds = player.currentItem?.duration.seconds, seconds.isFinite, seconds > 0 else { return nil }
+        return seconds
+    }
+
+    func seekSelectedTrack(_ trackID: String, to seconds: Double) async -> Bool {
+        guard selectedID == trackID, seconds.isFinite, seconds >= 0,
+              pendingResumePosition == nil, let item = player.currentItem, let duration = albumDuration else { return false }
+        let target = CMTime(seconds: min(seconds, duration), preferredTimescale: 600)
+        item.cancelPendingSeeks()
+        let finished = await withCheckedContinuation { continuation in
+            player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) {
+                continuation.resume(returning: $0)
+            }
+        }
+        return finished && player.currentItem === item && selectedID == trackID
+    }
+
+    var playbackPosition: Double {
         if let pendingResumePosition { return pendingResumePosition }
         let seconds = player.currentTime().seconds
         return loadedURL != nil && player.currentItem != nil && seconds.isFinite ? max(0, seconds) : restoredPosition
