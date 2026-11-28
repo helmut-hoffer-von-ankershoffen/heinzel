@@ -9,13 +9,13 @@ import {
   ChevronRight,
   ExternalLink,
   type LucideIcon,
+  Plug,
   Trash2,
   TriangleAlert,
   Video,
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import { Link } from "react-router";
 import { stream } from "@/api/stream";
 import { token } from "@/api/token";
 import { OperationDialog } from "@/components/OperationDialog";
@@ -237,13 +237,11 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
             <p className="text-muted-foreground">
               {t(week.data?.calendars?.length === 0 ? "calendar.noReadableSources" : "calendar.sourcesUnavailable")}
             </p>
-            <Link
-              className="inline-flex min-h-8 items-center underline underline-offset-4 pointer-coarse:min-h-11"
-              to={`?settings=${CONNECTORS}`}
-              onClick={onClose}
-            >
-              {t(week.data?.fix ? "calendar.connect" : "calendar.connectorSettings")}
-            </Link>
+            <PaneActions words="all" className="m-0 border-0 p-0">
+              <PaneAction ghost icon={Plug} to={`?settings=${CONNECTORS}`} onClick={onClose}>
+                {t(week.data?.fix ? "calendar.connect" : "calendar.connectorSettings")}
+              </PaneAction>
+            </PaneActions>
           </div>
         )
       )}
