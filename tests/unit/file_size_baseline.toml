@@ -11,7 +11,7 @@
 "src/heinzel/kernel/install/_installation.py" = 1557
 "src/heinzel/kernel/install/_uninstall_recovery.py" = 879
 "src/heinzel/kernel/look/_contributions.py" = 805
-"src/heinzel/kernel/look/_themes.py" = 1094
+"src/heinzel/kernel/look/_themes.py" = 1005
 "src/heinzel/modules/heinzel/_connected_grants.py" = 974
 "src/heinzel/modules/heinzel/_models.py" = 855
 "src/heinzel/modules/heinzel/_service.py" = 1794
