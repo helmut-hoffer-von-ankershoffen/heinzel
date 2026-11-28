@@ -125,6 +125,13 @@ if [[ "$distribution" == developer-id ]]; then
     python3 scripts/verify-macos-developer-id.py "$archived_app" "$HEINZEL_MAC_SIGNING_TEAM" "$version" "$revision"
     xcrun stapler validate "$archived_app"
     /usr/sbin/spctl --assess --type execute "$archived_app"
+    if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
+        submission=$(/usr/bin/plutil -extract id raw -o - "$stage/notary.json")
+        [[ "$submission" =~ ^[A-Fa-f0-9]{8}(-[A-Fa-f0-9]{4}){3}-[A-Fa-f0-9]{12}$ ]]
+        digest=$(/usr/bin/shasum -a 256 "$candidate")
+        printf 'Swift v%s (%s), archive SHA-256 %s, notary submission %s Accepted. Extracted app and widget signatures, App Group, ticket and Gatekeeper verified.\n' \
+            "$version" "$revision" "${digest%% *}" "$submission" >> "$GITHUB_STEP_SUMMARY"
+    fi
 fi
 mv -f -- "$candidate" "$archive"
 printf '%s\n' "$archive"

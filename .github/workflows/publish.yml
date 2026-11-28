@@ -14,7 +14,7 @@ on:
     secrets:
       CONFIDENTIAL_TERMS:
         required: false
-      # The signing job reads these from its protected environment. Shared callers do not pass them.
+      # Core forwards these named environment secrets. Plugin callers omit them.
       HEINZEL_MAC_CERTIFICATE_B64:
         required: false
       HEINZEL_MAC_CERTIFICATE_PASSWORD:
@@ -37,6 +37,7 @@ jobs:
       actions: read
     outputs:
       promoted: ${{ steps.promote.outputs.promoted }}
+      reviewed: ${{ steps.signing-source.outputs.commit }}
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
     steps:
@@ -55,6 +56,20 @@ jobs:
       - uses: ./.github/actions/setup-uv
         with:
           enable-cache: false
+      - id: signing-source
+        name: Admit the protected release event and reviewed Core source
+        shell: bash
+        run: |
+          test "$GITHUB_REF_PROTECTED" = true
+          workflow="$GITHUB_REPOSITORY/.github/workflows"
+          case "$GITHUB_EVENT_NAME:$GITHUB_REF:$GITHUB_WORKFLOW_REF" in
+            "push:refs/tags/$TAG:$workflow/publish.yml@refs/tags/$TAG") ;;
+            "push:refs/heads/main:$workflow/release-tag.yml@refs/heads/main") ;;
+            "workflow_dispatch:refs/heads/main:$workflow/release-tag.yml@refs/heads/main") ;;
+            *) echo "Unexpected caller, event or ref for Core signing." >&2; exit 1 ;;
+          esac
+          test "$(git cat-file -t "refs/tags/$TAG")" = tag
+          uv run --no-project --frozen --no-build --python 3.15 python -I scripts/pypi_release.py checkout "$TAG" >> "$GITHUB_OUTPUT"
       - id: promote
         name: Find, verify and rebind the candidate's apps (falls back to building them)
         env:
@@ -157,7 +172,13 @@ jobs:
 
   swift-developer-id:
     name: Sign and notarize the managed Swift desktop archive
-    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
+    needs: [promote, notifier, desktop]
+    if: >-
+      ${{ !cancelled() && github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' &&
+          needs.promote.result == 'success' && needs.promote.outputs.reviewed == github.sha &&
+          (needs.promote.outputs.promoted == 'true' ||
+           (needs.promote.outputs.promoted == 'false' &&
+            needs.notifier.result == 'success' && needs.desktop.result == 'success')) }}
     environment: macos-developer-id
     runs-on: macos-latest
     timeout-minutes: 40

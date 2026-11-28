@@ -552,7 +552,13 @@ def test_desktop_release_assets_share_the_official_core_attestation():
     assert desktop["steps"][5]["run"] == "make desktop-electron-package"
     assert not any(step.get("run") == "make desktop-swift-package" for step in desktop["steps"])
     swift = jobs["swift-developer-id"]
-    assert swift["if"] == f"github.repository == '{release.REPOSITORY}'"
+    assert f"github.repository == '{release.REPOSITORY}'" in swift["if"]
+    assert swift["needs"] == ["promote", "notifier", "desktop"]
+    assert "needs.promote.result == 'success' && needs.promote.outputs.reviewed == github.sha" in swift["if"]
+    assert "needs.promote.outputs.promoted == 'true'" in swift["if"]
+    assert "needs.promote.outputs.promoted == 'false'" in swift["if"]
+    assert "needs.notifier.result == 'success' && needs.desktop.result == 'success'" in swift["if"]
+    assert jobs["promote"]["outputs"]["reviewed"] == "${{ steps.signing-source.outputs.commit }}"
     assert swift["environment"] == "macos-developer-id"
     assert swift["runs-on"] == "macos-latest"
     assert swift["permissions"] == {"contents": "read"}

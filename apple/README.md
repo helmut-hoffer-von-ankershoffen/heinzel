@@ -35,6 +35,14 @@ On Mac, the app starts and signs in to its local workspace automatically. To ope
 For an iCloud-enabled Mac development package, also set `HEINZEL_ICLOUD_SIGN_IN=YES`, `HEINZEL_MAC_PROFILE` to the installed app profile specifier, and `HEINZEL_MAC_WIDGET_PROFILE` to the separate installed widget profile specifier. The build uses an Apple Development signing identity and requires profiles for the target Mac and corresponding bundle identifiers. Before promoting the package, the script checks both extracted products against
 their signing team, profile, certificate, bundle identifier and required entitlements.
 
+### Managed Mac release signing
+
+The release administrator configures the GitHub environment `macos-developer-id` with required reviewers and two separate deployment rules for the protected `main` branch and protected `v*` tags. The normal Release tag workflow calls Publish from `main`. A direct version-tag push uses its tag ref. GitHub evaluates environment restrictions against the caller’s ref. [Deployment rules](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments) · [Reusable workflow context](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations)
+
+Keep the Developer ID Application P12, its password and the Apple notary P8 exclusively in that environment as `HEINZEL_MAC_CERTIFICATE_B64`, `HEINZEL_MAC_CERTIFICATE_PASSWORD` and `HEINZEL_MAC_NOTARY_KEY_B64`. Set environment variables `HEINZEL_MAC_SIGNING_TEAM`, `HEINZEL_MAC_NOTARY_KEY_ID` and `HEINZEL_MAC_NOTARY_ISSUER`. Core forwards the three named secrets to the protected job. [Environment secrets in reusable workflows](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows)
+
+Before approving the environment, match the reviewed release commit to the peeled annotated tag and the successful promotion or fallback builds. Retain the signer job summary with the notary submission ID, archive SHA-256 and extracted host/widget checks. After publication, compare the attested archive hash and exercise the installed widget against the same app, including saved Watch with networking disconnected.
+
 In notification settings, choose **Notify me on this device**. Heinzel confirms the workspace and asks for system permission. Notifications come from the connected workspace while the app is open. Tapping an alert opens the notice when its workspace is connected. On iPhone and iPad, keep Heinzel active to receive new notices.
 
 In the local macOS workspace, system audio uses a private Core Audio tap and macOS audio recording permission. On iOS/iPadOS 27 or later, it uses the system ScreenCaptureKit picker where available. iOS Simulator builds omit system audio because their SDK does not expose ScreenCaptureKit. The microphone uses WebKit’s permission prompt in the workspace.
