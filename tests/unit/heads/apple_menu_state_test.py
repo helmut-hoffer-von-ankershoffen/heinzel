@@ -41,6 +41,16 @@ def test_retained_workspace_host_extends_to_the_native_titlebar() -> None:
     assert ".windowStyle(.hiddenTitleBar)" in scene
 
 
+def test_web_sound_dock_does_not_block_the_mac_workspace_switcher() -> None:
+    app = (ROOT / "apple/App/HeinzelApp.swift").read_text(encoding="utf-8")
+    gate = app.split("private var canSwitchWorkspaceFromMenu: Bool {", 1)[1].split("\n    }", 1)[0]
+    # The Mac dock lives in the workspace page. Neither a pending widget handoff
+    # nor its visible player is a native sheet that blocks the Workspaces menu.
+    assert "soundscape.dockRequest" not in gate
+    assert "soundscape.showingDock" not in gate
+    assert "MacWorkspaceSwitchState.protectsEditor" in gate
+
+
 def test_about_uses_the_guarded_workspace_menu_with_a_native_fallback() -> None:
     app = (ROOT / "apple/App/HeinzelApp.swift").read_text(encoding="utf-8")
     coordinator = (ROOT / "apple/App/Navigation.swift").read_text(encoding="utf-8")
