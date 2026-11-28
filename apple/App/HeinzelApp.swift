@@ -211,6 +211,8 @@ struct HeinzelApp: App {
         #if os(macOS)
         Window("Heinzelmännchen", id: "workspace") {
             MacWorkspaceHost(menu: menu, service: service)
+                // The retained host must reach the title bar before its web toolbar can draw underneath it.
+                .ignoresSafeArea(.container, edges: .top)
                 .focusedSceneValue(\.workspaceMenuAvailable, menu.available)
                 .focusedSceneValue(\.connectionMenuAvailable, menu.connectionAvailable)
                 .frame(minWidth: 550, minHeight: 440)

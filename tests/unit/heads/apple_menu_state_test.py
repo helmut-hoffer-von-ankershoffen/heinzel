@@ -33,6 +33,14 @@ def test_menu_probe_covers_every_state_field_and_route() -> None:
         assert f"{parameter}:" in probe, f"the probe never passes MacMenuDelivery {parameter}"
 
 
+def test_retained_workspace_host_extends_to_the_native_titlebar() -> None:
+    app = (ROOT / "apple/App/HeinzelApp.swift").read_text(encoding="utf-8")
+    scene = app[app.index('id: "workspace") {') : app.index(".defaultLaunchBehavior")]
+    host = scene[scene.index("MacWorkspaceHost(") : scene.index(".defaultSize")]
+    assert ".ignoresSafeArea(.container, edges: .top)" in host
+    assert ".windowStyle(.hiddenTitleBar)" in scene
+
+
 def test_about_uses_the_guarded_workspace_menu_with_a_native_fallback() -> None:
     app = (ROOT / "apple/App/HeinzelApp.swift").read_text(encoding="utf-8")
     coordinator = (ROOT / "apple/App/Navigation.swift").read_text(encoding="utf-8")
