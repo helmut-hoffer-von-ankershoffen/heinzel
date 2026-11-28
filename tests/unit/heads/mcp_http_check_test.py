@@ -12,6 +12,7 @@ from heinzel import HeinzelError
 from heinzel.heads import mcp
 from heinzel.heads.cli import build
 from heinzel.heads.mcp._http_check import _PROBE, check_http
+from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
 
@@ -101,6 +102,6 @@ def test_probe_child_runs_isolated_without_importing_the_heinzel_package(monkeyp
         "    print(stop.code, 'mcp' in sys.modules, sorted(m for m in sys.modules if m.split('.')[0] == 'heinzel'))\n"
     )
     result = subprocess.run(
-        [sys.executable, "-I", "-c", observe, _PROBE], capture_output=True, text=True, timeout=30, check=True
+        [sys.executable, "-I", "-c", observe, _PROBE], capture_output=True, text=True, timeout=scaled(30), check=True
     )
     assert result.stdout.strip().split(maxsplit=2) == ["2", "True", "[]"]
