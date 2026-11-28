@@ -9,13 +9,13 @@ import {
   ChevronRight,
   ExternalLink,
   type LucideIcon,
-  Plug,
   Trash2,
   TriangleAlert,
   Video,
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { Link } from "react-router";
 import { stream } from "@/api/stream";
 import { token } from "@/api/token";
 import { OperationDialog } from "@/components/OperationDialog";
@@ -207,7 +207,7 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
         </PaneTitle>
       </header>
       <ReminderBand reminders={reminders} />
-      {week.data?.calendars && week.data.adapter && (
+      {week.data?.calendars?.length && week.data.adapter ? (
         <details
           open={showCalendars}
           onToggle={(event) => setShowCalendars(event.currentTarget.open)}
@@ -231,6 +231,21 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
             ))}
           </fieldset>
         </details>
+      ) : (
+        !week.isPending && (
+          <div className="flex flex-wrap items-center justify-between gap-x-3 border-b border-border px-3 py-1 text-sm">
+            <p className="text-muted-foreground">
+              {t(week.data?.calendars?.length === 0 ? "calendar.noReadableSources" : "calendar.sourcesUnavailable")}
+            </p>
+            <Link
+              className="inline-flex min-h-8 items-center underline underline-offset-4 pointer-coarse:min-h-11"
+              to={`?settings=${CONNECTORS}`}
+              onClick={onClose}
+            >
+              {t(week.data?.fix ? "calendar.connect" : "calendar.connectorSettings")}
+            </Link>
+          </div>
+        )
       )}
       {!week.isPlaceholderData && !!week.data?.warnings?.length && (
         <div role="status" className="border-b border-border px-3 py-2 text-sm">
@@ -302,11 +317,6 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
         <PaneAction key="next" icon={ChevronRight} disabled={offset >= 52} onClick={() => setOffset(offset + 1)}>
           {t("calendar.nextWeek")}
         </PaneAction>
-        {week.data?.problem && week.data.fix && (
-          <PaneAction key="connect" icon={Plug} to={`?settings=${CONNECTORS}`}>
-            {t("calendar.connect")}
-          </PaneAction>
-        )}
         {reminders.data && isLocalServer() && reminders.data.service !== "not installed" && (
           <PaneAction key="remove" icon={Trash2} destructive onClick={() => workerAction(false)}>
             {t("calendar.removeWorker")}

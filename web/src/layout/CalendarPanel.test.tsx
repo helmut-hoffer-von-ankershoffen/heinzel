@@ -76,6 +76,52 @@ const weekOf = (events: object[]) => ({
   fix: null,
 });
 
+it.each([
+  { inventory: null, status: "Calendar choices unavailable." },
+  { inventory: [], status: "No readable calendars." },
+])("keeps Calendar settings visible without choices ($status)", async ({ inventory, status }) => {
+  mockApi({
+    "/api/org/calendar": {
+      ...weekOf(inventory === null ? [{ ...baseEvent, title: "Existing meeting" }] : []),
+      calendars: inventory,
+      adapter: "fixture",
+    },
+    "/api/org/calendar-reminders-status": { enabled: false, service: "not installed" },
+  });
+  const onClose = vi.fn();
+  const { container } = render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter>
+        <CalendarPanel onClose={onClose} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText(status)).toBeInTheDocument();
+  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  if (inventory === null) expect(screen.getByRole("button", { name: /Existing meeting/ })).toBeInTheDocument();
+  const settings = screen.getByRole("link", { name: "Calendar settings" });
+  expect(settings).toHaveAttribute("href", "/?settings=connectors");
+  await expectAccessible(container);
+  await userEvent.setup().click(settings);
+  expect(onClose).toHaveBeenCalledOnce();
+});
+
+it("shows how to connect when there is no calendar", async () => {
+  mockApi({
+    "/api/org/calendar": { ...weekOf([]), problem: "No calendar connected.", fix: "fixture-link" },
+    "/api/org/calendar-reminders-status": { enabled: false, service: "not installed" },
+  });
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter>
+        <CalendarPanel onClose={vi.fn()} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText("No calendar connected.")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /Connect a calendar/ })).toHaveAttribute("href", "/?settings=connectors");
+});
+
 it("combines readable calendars and preserves an explicit exclusion on reopen", async () => {
   const calendars = [
     { id: "personal", title: "Personal", primary: true },
@@ -514,7 +560,7 @@ it("says the reminder state in one line with an icon and nothing to press", asyn
   expect(band.querySelector("svg")).not.toBeNull();
   expect(band.querySelector("a, button")).toBeNull();
   expect(band.closest("a, button")).toBeNull();
-  expect(container.querySelectorAll("a")).toHaveLength(1); // only the Join link of the review meeting
+  expect(container.querySelectorAll("a")).toHaveLength(2); // the review meeting and Calendar settings
   expect(screen.getByRole("button", { name: "Turn on reminders" })).toBeInTheDocument();
 });
 
