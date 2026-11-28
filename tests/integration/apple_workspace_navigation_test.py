@@ -92,8 +92,8 @@ def fake_checkout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     (root / "web/src/components").mkdir(parents=True)
     (root / "apple/App.swift").write_text("struct App {}\n")
     (root / "web/src/components/heinzel.ts").write_text("export const artwork = 1;\n")
-    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
-    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True, timeout=scaled(30))
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True, timeout=scaled(30))
     builds: list[Path] = []
 
     def fake_build(derived: Path) -> Path:
