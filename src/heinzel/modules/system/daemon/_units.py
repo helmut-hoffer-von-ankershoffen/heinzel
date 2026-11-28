@@ -119,7 +119,9 @@ def systemd_service(executable: Path, profile: Mapping[str, str] | None = None) 
             f"Environment={json.dumps(f'{key}={value}', ensure_ascii=False).replace('%', '%%')}\n"
             for key, value in sorted(environment.items())
         )
-        routing += f"WorkingDirectory={json.dumps(profile['HOME'], ensure_ascii=False).replace('%', '%%')}\n"
+        directory = profile["HOME"].replace("%", "%%")
+        # systemd reads this as a path. The /. preserves a trailing space or backslash before path normalization.
+        routing += f"WorkingDirectory={directory}/.\n"
     return (
         "[Unit]\n"
         "Description=Heinzelmännchen daemon tick\n"
