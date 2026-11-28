@@ -58,6 +58,9 @@ upgrade lane and macOS selection); until they merge, the current workflows apply
   selector picks update, lifecycle, kernel/spec or upgrade paths. Every PR still runs the full Linux suite and an
   in-place upgrade job; main's coalesced macOS lane runs on every main commit; release candidates run everything on
   both OSes.
+- 2026-11-23, owner: the in-place upgrade job, like the macOS unit and integration cells, runs on a PR only when the
+  upgrade selector picks it; it always runs on main and on release commits. This supersedes the "in-place upgrade job
+  on every PR" half of the 2026-11-22 entry above.
 
 - 2026-11-23, owner: the in-place upgrade job, like the macOS unit and integration cells, runs on a PR only when the
   upgrade selector picks it; it always runs on main and on release commits. This supersedes the "in-place upgrade job
