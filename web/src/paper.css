@@ -26,3 +26,7 @@ html[data-paper-theme] :is([data-widget], .bg-card, [class~="bg-card/40"], .bg-s
 html[data-paper-theme] [data-widget] {
   box-shadow: 0 1px 0 var(--color-border);
 }
+
+html[data-paper-theme] :is(main, [data-pane], [data-widget]) :is(h1, h2, h3):not(.sr-only) {
+  padding-inline-start: 0.5rem;
+}
