@@ -430,8 +430,7 @@ try {
       () =>
         document.documentElement.classList.contains("dark") &&
         getComputedStyle(document.body).color === "rgb(233, 237, 229)" &&
-        Number(getComputedStyle(document.querySelector('[data-testid="heinzel-wordmark"]')).color.match(/\d+/)?.[0]) >
-          200,
+        Number(getComputedStyle(document.querySelector('aside[aria-label="Main"]')).color.match(/\d+/)?.[0]) > 200,
     );
     const dark = await audit();
     await page.evaluate(() => {

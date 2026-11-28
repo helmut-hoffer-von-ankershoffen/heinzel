@@ -1,7 +1,7 @@
 import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import { everyday, shell, theme, themeList } from "@/test/fixtures";
+import { everyday, shell, themeList } from "@/test/fixtures";
 import { expectAccessible, mockApi } from "@/test/render";
 import { renderAt } from "@/test/renderApp";
 
@@ -23,11 +23,11 @@ function desktop() {
   return (full: boolean) => act(() => relay?.(full));
 }
 
-function api() {
+function api(selected = "default") {
   mockApi({
     ...shell,
     "/api/system/expert": everyday,
-    "/api/system/theme/list": themeList("default", [theme()]),
+    "/api/system/theme/list": themeList(selected),
   });
 }
 
@@ -41,20 +41,20 @@ describe("Integrated title bar", () => {
     api();
     renderAt("/doctor");
     const navigation = screen.getByRole("complementary", { name: "Main" });
-    await within(navigation).findByTestId("heinzel-wordmark");
+    await within(navigation).findByRole("link", { name: "Today" });
     expect(root).not.toHaveAttribute("data-desktop-titlebar");
     expect(variable("--titlebar-height")).toBe("0px");
     expect(variable("--titlebar-inset-left")).toBe("0px");
     expect(navigation.querySelector("[data-titlebar]")).toBeNull();
   });
 
-  it("puts the toggle, Home, Bell and Search in the desktop row after the lights, the lockup below", async () => {
+  it("puts the toggle, Home, Bell and Search after the lights and the built-in navigation directly below", async () => {
     const fullscreen = desktop();
     api();
     const user = userEvent.setup();
     renderAt("/doctor");
     const navigation = screen.getByRole("complementary", { name: "Main" });
-    const lockup = await within(navigation).findByTestId("heinzel-wordmark");
+    await within(navigation).findByRole("link", { name: "Heinzelmännchen" });
     expect(root).toHaveAttribute("data-desktop-titlebar");
     expect(variable("--titlebar-height")).toBe("44px");
     expect(variable("--titlebar-inset-left")).toBe("80px");
@@ -65,10 +65,8 @@ describe("Integrated title bar", () => {
       element.getAttribute("aria-label"),
     );
     expect(controls).toEqual(["Collapse navigation", "Today", "Notifications", "Search"]);
-    // The lockup is the next line, outside the row, still the way home.
-    expect(row).not.toContainElement(lockup);
-    expect((row as HTMLElement).compareDocumentPosition(lockup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(lockup.closest("a")).toHaveAttribute("href", "/");
+    expect(within(navigation).queryByTestId("heinzel-wordmark")).toBeNull();
+    expect(row?.nextElementSibling).toBe(navigation.querySelector("nav"));
     await expectAccessible(navigation);
     // Full screen hides the lights: their inset goes back to the row.
     fullscreen(true);
@@ -81,5 +79,17 @@ describe("Integrated title bar", () => {
     expect(within(railRow as HTMLElement).getByRole("button", { name: "Expand navigation" })).toBeInTheDocument();
     expect(variable("--titlebar-main-start")).toBe("64px");
     expect(within(navigation).getByRole("link", { name: "Today" })).toBeInTheDocument();
+  });
+
+  it("retains a selected plugin theme's home link below the native title bar", async () => {
+    desktop();
+    api("acme");
+    renderAt("/doctor");
+    const navigation = screen.getByRole("complementary", { name: "Main" });
+    const logo = await within(navigation).findByRole("img", { name: "Acme" });
+    const brand = logo.closest("a");
+    expect(brand).toHaveAccessibleName("Heinzelmännchen home");
+    expect(brand).toHaveAttribute("href", "/");
+    expect(navigation.querySelector("[data-titlebar]")?.nextElementSibling).toContainElement(brand);
   });
 });

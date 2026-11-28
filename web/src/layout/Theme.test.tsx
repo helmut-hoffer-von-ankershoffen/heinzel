@@ -177,9 +177,8 @@ describe("Themes", () => {
     );
   });
 
-  it("shows the swarm and the app's name for a theme without a logo, the built-in one included", async () => {
-    const logo = { light: "/theme-assets/default/light.svg", dark: "/x.svg", mark: null, alt: "x", height: "24px" };
-    mockApi({ ...shell, "/api/system/theme/list": themeList("default", [theme({ logo }), acmeTheme]) });
+  it("keeps the swarm and app name for a plugin theme without a logo", async () => {
+    mockApi({ ...shell, "/api/system/theme/list": themeList("acme", [theme(), { ...acmeTheme, logo: null }]) });
     const user = userEvent.setup();
     renderAt("/doctor");
     const navigation = screen.getByRole("complementary", { name: "Main" });

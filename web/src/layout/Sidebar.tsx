@@ -107,93 +107,67 @@ function Full({ drawer, titlebar, onToggle, onSearch, onNotifications }: Omit<Pr
       section.items.length > 0 ||
       Boolean(contracts.data?.heinzelmaennchen.length),
   );
+  const theme = useSelectedTheme();
+  const dark = useDark();
+  const brand = theme && theme.name !== "default" && (
+    <Link
+      to="/"
+      aria-label={t("nav.brand")}
+      className="ml-0.5 flex min-w-0 items-center rounded-lg px-1 py-1 transition-colors hover:bg-accent/70"
+    >
+      <Branding theme={theme} dark={dark} />
+    </Link>
+  );
+  const toggleButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={onToggle}
+      aria-expanded
+      aria-label={t(drawer ? "op.close" : "nav.collapse")}
+      title={t(drawer ? "op.close" : "nav.collapse")}
+      className={cn(
+        "relative shrink-0 text-icon before:absolute before:-inset-1 before:content-['']",
+        !titlebar && brand && "ml-auto",
+      )}
+    >
+      {drawer ? <X aria-hidden /> : <PanelLeftClose aria-hidden />}
+    </Button>
+  );
   return (
     <div className="flex h-full flex-col px-2">
-      {titlebar ? (
-        <>
-          {/* The window's title bar row: the traffic lights, then the toggle where it never moves, Home, Bell and Search.
-              The theme's lockup follows below it and carries the name the window chrome no longer draws. */}
-          <div data-titlebar className={cn(TITLEBAR_ROW, "pr-3 pl-[calc(var(--titlebar-inset-left)+0.25rem)]")}>
-            {/* The top bar's icon button, with a 44 px touch target around its 36 px. */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onToggle}
-              aria-expanded
-              aria-label={t(drawer ? "op.close" : "nav.collapse")}
-              title={t(drawer ? "op.close" : "nav.collapse")}
-              className="relative shrink-0 text-icon before:absolute before:-inset-1 before:content-['']"
-            >
-              {drawer ? <X aria-hidden /> : <PanelLeftClose aria-hidden />}
-            </Button>
-            <NavLink to="/" end className={topButton} aria-label={t("nav.home")} title={t("nav.home")}>
-              <Home aria-hidden />
-            </NavLink>
-            <BellButton onOpen={onNotifications} className={topButton({ isActive: false })} />
-            <button
-              type="button"
-              onClick={onSearch}
-              aria-keyshortcuts="Meta+K Control+K"
-              aria-label={t("search.open")}
-              title={`${t("search.open")} (⌘K)`}
-              className={topButton({ isActive: false })}
-            >
-              <Search aria-hidden />
-            </button>
-          </div>
-          <div className={cn(HAIRLINE_BELOW, "h-12")}>
-            <Link
-              to="/"
-              aria-label={t("nav.brand")}
-              className="ml-0.5 flex min-w-0 items-center rounded-lg px-1 py-1 transition-colors hover:bg-accent/70"
-            >
-              <ThemeLogo />
-            </Link>
-          </div>
-        </>
-      ) : (
-        <>
-          {/* The same height and hairline as the main column's top bar, so both lines run across the window. The brand
-          is the way home, named by its wordmark; its mark starts where the navigation's icons do. */}
-          <div className={cn(HAIRLINE_BELOW, "h-12")}>
-            <Link
-              to="/"
-              aria-label={t("nav.brand")}
-              className="ml-0.5 flex min-w-0 items-center rounded-lg px-1 py-1 transition-colors hover:bg-accent/70"
-            >
-              <ThemeLogo />
-            </Link>
-            {/* The top bar's icon button, with a 44 px touch target around its 36 px. */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onToggle}
-              aria-expanded
-              aria-label={t(drawer ? "op.close" : "nav.collapse")}
-              title={t(drawer ? "op.close" : "nav.collapse")}
-              className="relative ml-auto shrink-0 text-icon before:absolute before:-inset-1 before:content-['']"
-            >
-              {drawer ? <X aria-hidden /> : <PanelLeftClose aria-hidden />}
-            </Button>
-          </div>
-          <div className={cn(HAIRLINE_BELOW, "h-12 justify-evenly")}>
-            <NavLink to="/" end className={topButton} aria-label={t("nav.home")} title={t("nav.home")}>
-              <Home aria-hidden />
-            </NavLink>
-            <BellButton onOpen={onNotifications} className={topButton({ isActive: false })} />
-            <button
-              type="button"
-              onClick={onSearch}
-              aria-keyshortcuts="Meta+K Control+K"
-              aria-label={t("search.open")}
-              title={`${t("search.open")} (⌘K)`}
-              className={topButton({ isActive: false })}
-            >
-              <Search aria-hidden />
-            </button>
-          </div>
-        </>
+      {!titlebar && brand && (
+        <div className={cn(HAIRLINE_BELOW, "h-12")}>
+          {brand}
+          {toggleButton}
+        </div>
       )}
+      <div
+        data-titlebar={titlebar ? true : undefined}
+        className={
+          titlebar
+            ? cn(TITLEBAR_ROW, "pr-3 pl-[calc(var(--titlebar-inset-left)+0.25rem)]")
+            : cn(HAIRLINE_BELOW, "h-12 justify-evenly")
+        }
+      >
+        {titlebar && toggleButton}
+        <NavLink to="/" end className={topButton} aria-label={t("nav.home")} title={t("nav.home")}>
+          <Home aria-hidden />
+        </NavLink>
+        <BellButton onOpen={onNotifications} className={topButton({ isActive: false })} />
+        <button
+          type="button"
+          onClick={onSearch}
+          aria-keyshortcuts="Meta+K Control+K"
+          aria-label={t("search.open")}
+          title={`${t("search.open")} (⌘K)`}
+          className={topButton({ isActive: false })}
+        >
+          <Search aria-hidden />
+        </button>
+        {!titlebar && !brand && toggleButton}
+      </div>
+      {titlebar && brand && <div className={cn(HAIRLINE_BELOW, "h-12")}>{brand}</div>}
       {/* Sized by its links first (basis auto), so the audio stage below takes only the room they leave. */}
       <nav aria-label={t("nav.label")} className="mt-2 min-h-0 flex-[1_1_auto] overflow-y-auto">
         <ul className="flex flex-col gap-0.5">
