@@ -152,6 +152,20 @@ describe("the mini-player docked in the sidebar", () => {
     expect(JSON.parse(localStorage.getItem("hz.sound.player") ?? "{}").docked).toBe(true);
   });
 
+  it.each([178, 256, 357, 430])("retains the %ipx dock width until manually resized", async (width) => {
+    api();
+    const { user, card } = await play();
+    const media = card.querySelector("iframe");
+    vi.spyOn(dockSlot(), "getBoundingClientRect").mockReturnValue(new DOMRect(0, 40, width, 200));
+    fireEvent(window, new Event("resize"));
+    expect(card.style.width).toBe(`${width}px`);
+    await user.click(within(card).getByRole("button", { name: "Pop the player out of the sidebar" }));
+    expect(card.style.width).toBe(`${width}px`);
+    fireEvent.change(within(card).getByRole("slider", { name: "Player width" }), { target: { value: "450" } });
+    expect(card.style.width).toBe("450px");
+    expect(card.querySelector("iframe")).toBe(media);
+  });
+
   it("resizes a floating card without replacing its media element", async () => {
     api();
     const { user, card } = await play();

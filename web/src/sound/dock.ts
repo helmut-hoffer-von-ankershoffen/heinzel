@@ -6,15 +6,21 @@ import { useSyncExternalStore } from "react";
 
 const KEY = "hz.sound.player";
 
-export type DockPref = { docked: boolean; x: number | null; y: number | null };
-const DEFAULT: DockPref = { docked: true, x: null, y: null };
+export type DockPref = { docked: boolean; x: number | null; y: number | null; width: number | null };
+const DEFAULT: DockPref = { docked: true, x: null, y: null, width: null };
 
 function load(): DockPref {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<DockPref> | null;
     if (!raw) return DEFAULT;
     const coordinate = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : null);
-    return { docked: raw.docked !== false, x: coordinate(raw.x), y: coordinate(raw.y) };
+    const width = coordinate(raw.width);
+    return {
+      docked: raw.docked !== false,
+      x: coordinate(raw.x),
+      y: coordinate(raw.y),
+      width: width && width > 0 ? width : null,
+    };
   } catch {
     return DEFAULT;
   }
@@ -44,9 +50,18 @@ function save(next: DockPref): void {
 
 /** The remembered choice: docked or floating, and where it floats. */
 export const useDockPref = (): DockPref => useSyncExternalStore(subscribe, () => pref);
-export const setDocked = (docked: boolean): void => save({ ...pref, docked });
+function floatingWidth(): number | null {
+  // Read before notifying the sidebar: detaching a YouTube card can immediately narrow its slot.
+  const measured = pref.docked ? slot?.getBoundingClientRect().width : undefined;
+  return measured && measured > 0 ? measured : pref.width;
+}
+export const setDocked = (docked: boolean): void =>
+  save({ ...pref, docked, width: docked ? pref.width : floatingWidth() });
+export function setFloatingWidth(width: number): void {
+  if (!pref.docked && Number.isFinite(width) && width > 0 && width !== pref.width) save({ ...pref, width });
+}
 /** Float at `x`, `y` (the card's left and top, in the window's pixels). */
-export const setFloating = (x: number, y: number): void => save({ docked: false, x, y });
+export const setFloating = (x: number, y: number): void => save({ docked: false, x, y, width: floatingWidth() });
 
 /** A mounted YouTube card requests room only while docked. */
 export function setYoutubeCard(active: boolean): void {

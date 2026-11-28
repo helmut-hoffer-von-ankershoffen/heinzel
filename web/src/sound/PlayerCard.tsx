@@ -12,7 +12,7 @@ import { t } from "@/i18n";
 import { clampToWindow } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { viewportBounds, watchViewport } from "@/lib/viewport";
-import { nearSlot, setDocked, setFloating, setYoutubeCard, useDockPref, useDockSlot } from "./dock";
+import { nearSlot, setDocked, setFloating, setFloatingWidth, setYoutubeCard, useDockPref, useDockSlot } from "./dock";
 import { stop } from "./store";
 
 // 480px of video plus the floating card's borders: 16:9 clears YouTube's 200px minimum height.
@@ -42,7 +42,6 @@ export function PlayerCard({ title, watchUrl, youtube = false, host, children, h
   }, [youtube]);
   const [viewport, setViewport] = useState(viewportBounds);
   useLayoutEffect(() => watchViewport(() => setViewport(viewportBounds())), []);
-  const [requestedWidth, setRequestedWidth] = useState(WIDTH);
   const pref = useDockPref();
   const slot = useDockSlot();
   const docked = pref.docked && slot !== null;
@@ -185,9 +184,12 @@ export function PlayerCard({ title, watchUrl, youtube = false, host, children, h
 
   const floatingStyle = pref.x === null || pref.y === null ? { left: 12, bottom: 68 } : { left: pref.x, top: pref.y };
   const dockedAt = at ?? { left: 0, top: 0, width: WIDTH };
-  const narrow = viewport.width < 218;
-  const subminimum = !docked && viewport.width < 200;
-  const geometry = floatingPlayerGeometry(viewport.width, requestedWidth);
+  const geometry = floatingPlayerGeometry(viewport.width, pref.width ?? WIDTH);
+  const narrow = geometry.width < 218;
+  const subminimum = !docked && geometry.width < 200;
+  useLayoutEffect(() => {
+    if (!docked && pref.width !== null && pref.width > geometry.width) setFloatingWidth(geometry.width);
+  }, [docked, pref.width, geometry.width]);
   const style = docked
     ? { left: dockedAt.left + (offset?.dx ?? 0), top: dockedAt.top + (offset?.dy ?? 0), width: dockedAt.width }
     : offset
@@ -294,10 +296,10 @@ export function PlayerCard({ title, watchUrl, youtube = false, host, children, h
             {t("sound.playerWidth")}
             <input
               type="range"
-              min={202}
-              max={Math.floor(viewport.width - 16)}
+              min={Math.min(202, Math.floor(geometry.width))}
+              max={Math.floor(viewport.width)}
               value={Math.round(geometry.width)}
-              onChange={(event) => setRequestedWidth(event.currentTarget.valueAsNumber)}
+              onChange={(event) => setFloatingWidth(event.currentTarget.valueAsNumber)}
               className="min-w-0 flex-1"
             />
           </label>
@@ -311,5 +313,6 @@ export function PlayerCard({ title, watchUrl, youtube = false, host, children, h
 /** Spend margins and borders only when the full provider minimum still fits. */
 export function floatingPlayerGeometry(available: number, requestedWidth = WIDTH): { width: number; border: number } {
   const width = Number.isFinite(available) ? Math.max(0, available) : 200;
-  return width < 218 ? { width, border: 0 } : { width: Math.min(Math.max(202, requestedWidth), width - 16), border: 1 };
+  const fit = Math.min(width, requestedWidth);
+  return { width: fit, border: fit < 202 || width < 218 ? 0 : 1 };
 }
