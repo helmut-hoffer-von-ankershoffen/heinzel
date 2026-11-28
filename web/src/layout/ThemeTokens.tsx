@@ -88,10 +88,11 @@ export function ThemeTokens() {
   }, [variant]);
   const { daypart, weather } = signals;
   useEffect(() => {
-    const root = document.documentElement.style;
+    const root = document.documentElement;
     if (!selected || selected.name === DEFAULT) return;
     const applied = tokens(selected, dark, { daypart, weather });
-    for (const [name, value] of Object.entries(applied)) root.setProperty(name, value);
+    root.toggleAttribute("data-paper-theme", selected.name === "paper" && selected.module === null);
+    for (const [name, value] of Object.entries(applied)) root.style.setProperty(name, value);
     // Fonts the theme ships, served by hz from the plugin (same origin, as the CSP wants).
     const fonts = (
       (selected as unknown as { fonts?: { family: string; url: string; weight?: string; style?: string }[] }).fonts ??
@@ -105,7 +106,8 @@ export function ThemeTokens() {
       void font.load().catch(() => undefined);
     }
     return () => {
-      for (const name of Object.keys(applied)) root.removeProperty(name);
+      root.removeAttribute("data-paper-theme");
+      for (const name of Object.keys(applied)) root.style.removeProperty(name);
       for (const font of fonts) document.fonts.delete(font);
     };
   }, [selected, dark, daypart, weather]);

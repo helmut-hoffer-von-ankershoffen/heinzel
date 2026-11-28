@@ -46,7 +46,7 @@ PAPER_THEME = Theme(
         accent_foreground="#f5ead7",
         icon="#d3c0a5",
     ),
-    font_sans='Georgia, "Times New Roman", serif',
+    font_sans='"Source Serif 4", Georgia, "Times New Roman", serif',
     font_mono='ui-monospace, "SF Mono", Menlo, monospace',
     radius="0",
     radius_control="0",

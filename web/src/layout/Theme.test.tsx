@@ -29,6 +29,36 @@ function themedApi(initial: string) {
 }
 
 describe("Themes", () => {
+  it("uses the bundled Paper font and removes its texture when the theme changes", async () => {
+    let selected = "paper";
+    const paper = theme({
+      name: "paper",
+      title: "Paper",
+      radius: "0",
+      radius_control: "0",
+      font_sans: '"Source Serif 4", Georgia, serif',
+    });
+    mockApi({
+      ...shell,
+      get "/api/system/theme/list"() {
+        return themeList(selected, [paper, acmeTheme]);
+      },
+      get "/api/system/theme/use"() {
+        selected = "acme";
+        return { selected };
+      },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=appearance");
+    const group = await screen.findByRole("radiogroup", { name: "Theme" });
+    await waitFor(() => expect(document.documentElement).toHaveAttribute("data-paper-theme"));
+    expect(root().getPropertyValue("--font-sans")).toContain("Source Serif 4");
+    expect(root().getPropertyValue("--radius-xl")).toBe("0");
+    await user.click(within(group).getByRole("radio", { name: "Acme" }));
+    await waitFor(() => expect(document.documentElement).not.toHaveAttribute("data-paper-theme"));
+    expect(root().getPropertyValue("--font-sans")).not.toContain("Source Serif 4");
+  });
+
   it("uses the custom Appearance controls once and keeps hidden/expert raw fields out of the page", async () => {
     const managed = [
       ["system.theme", "name", "default"],
