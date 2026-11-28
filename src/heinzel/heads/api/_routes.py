@@ -19,7 +19,8 @@ from heinzel.kernel.ai._agent_writes import calling
 UNAVAILABLE = 503
 
 
-def _normal_body(item: Exposed) -> bool:
+def normal_body(item: Exposed) -> bool:
+    """Use a normal JSON body for private POST operations."""
     return item.operation.private and item.operation.http_method == "POST"
 
 
@@ -27,26 +28,26 @@ def endpoint(
     kernel: Kernel, item: Exposed, *, body_parameters: list[inspect.Parameter] | None = None
 ) -> Callable[..., Any]:
     """Bind public parameters, keeping opted-in private input in a strict JSON body."""
-    body = _normal_body(item)
+    body = normal_body(item)
 
     def run(response: Response, **kwargs: Any) -> Any:  # noqa: ANN401 - whatever the operation returns
         mark_authenticated_presence(kernel, item.record.qualname)
         with calling(request_person(kernel)):
-            result = kernel.invoke(item.operation, **_arguments(item, kwargs, body=body))
+            result = kernel.invoke(item.operation, **arguments(item, kwargs, body=body))
         if item.operation.exit_code is not None and item.operation.exit_code(result):
             response.status_code = UNAVAILABLE
         return result
 
     response_parameter = inspect.Parameter("response", inspect.Parameter.KEYWORD_ONLY, annotation=Response)
     run.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
-        [*(body_parameters if body_parameters is not None else _parameters(item, body=body)), response_parameter],
+        [*(body_parameters if body_parameters is not None else parameters(item, body=body)), response_parameter],
         return_annotation=item.returns,
     )
     run.__name__ = item.name
     return run
 
 
-def _bounded_body_route(limit: int) -> type[APIRoute]:
+def bounded_body_route(limit: int) -> type[APIRoute]:
     """Limit bytes as the router reads them, including chunked requests and JSON padding."""
 
     class BoundedBodyRoute(APIRoute):
@@ -79,19 +80,20 @@ def stream_endpoint(
 
     async def run(**kwargs: Any) -> Any:  # noqa: ANN401 - a streaming response
         return streamed(
-            kernel, item.operation, _arguments(item, kwargs, body=item.operation.private), module=item.record.qualname
+            kernel, item.operation, arguments(item, kwargs, body=item.operation.private), module=item.record.qualname
         )
 
     run.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
-        body_parameters if body_parameters is not None else _parameters(item, body=item.operation.private)
+        body_parameters if body_parameters is not None else parameters(item, body=item.operation.private)
     )
     run.__name__ = f"{item.name}_stream"
     return run
 
 
-def _parameters(item: Exposed, *, body: bool) -> list[inspect.Parameter]:
+def parameters(item: Exposed, *, body: bool) -> list[inspect.Parameter]:
+    """Describe the operation's query fields or strict JSON body to FastAPI."""
     if not body:
-        return [_query(parameter) for parameter in item.parameters]
+        return [query_parameter(parameter) for parameter in item.parameters]
     fields: dict[str, Any] = {  # runtime function annotations become Pydantic field definitions
         parameter.name: (
             parameter.annotation,
@@ -110,14 +112,16 @@ def _parameters(item: Exposed, *, body: bool) -> list[inspect.Parameter]:
     ]
 
 
-def _arguments(item: Exposed, values: dict[str, Any], *, body: bool) -> dict[str, Any]:
+def arguments(item: Exposed, values: dict[str, Any], *, body: bool) -> dict[str, Any]:
+    """Unpack the validated body before passing operation arguments to the kernel."""
     if not body:
         return values
     # FastAPI's strict model refuses unknown fields; the kernel still owns operation validation and enforcement.
     return {parameter.name: getattr(values["_input"], parameter.name) for parameter in item.parameters}
 
 
-def _query(parameter: inspect.Parameter) -> inspect.Parameter:
+def query_parameter(parameter: inspect.Parameter) -> inspect.Parameter:
+    """Carry an operation argument's annotations into its query field."""
     annotation, description = parameter.annotation, None
     if get_origin(annotation) is Annotated:
         annotation, *metadata = get_args(annotation)

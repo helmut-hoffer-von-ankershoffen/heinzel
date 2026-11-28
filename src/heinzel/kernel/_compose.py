@@ -21,8 +21,10 @@ class ServiceSet:
     dependency injection and caching. Each kernel copies the supplied mappings.
     """
 
-    instances: Mapping[type[object], object] = field(default_factory=dict)
-    factories: Mapping[type[object], Callable[..., object]] = field(default_factory=dict)
+    instances: Mapping[type[object], object] = field(default_factory=dict[type[object], object])
+    factories: Mapping[type[object], Callable[..., object]] = field(
+        default_factory=dict[type[object], Callable[..., object]]
+    )
 
 
 def _current_user() -> CurrentUser:

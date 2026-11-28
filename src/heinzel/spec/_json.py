@@ -27,6 +27,9 @@ def jsonable(value: Any) -> Any:  # noqa: ANN401 - any value in, its JSON form o
     return to_jsonable_python(value, fallback=_refuse)
 
 
+refuse_unserializable = _refuse
+
+
 # Keep the published qualified names for pickle and introspection.
 for _function in (_refuse, jsonable):
     _function.__module__ = "heinzel.kernel._json"

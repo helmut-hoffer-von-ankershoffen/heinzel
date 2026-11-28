@@ -81,6 +81,15 @@ def _sha(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+DIRECTORY = _DIRECTORY
+NOFOLLOW = _NOFOLLOW
+NONBLOCK = _NONBLOCK
+is_link = _is_link
+read_parts = _read_parts
+read_regular = _read_regular
+sha256_hex = _sha
+
+
 # Preserve the old qualified names for existing pickles and introspection.
 for _function in (fingerprint, read_beneath, _read_parts, _read_regular, _is_link, _sha):
     _function.__module__ = "heinzel.kernel.ai._skills"

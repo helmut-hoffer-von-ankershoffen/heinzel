@@ -236,6 +236,7 @@ does not inherit it.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `name` | `HZ_SYSTEM_THEME__NAME` | `'default'` | The selected theme; when unset a plugin may recommend one. Explicit default uses the built-in fallback. Never read from a project's hz.toml. |
+| `show_team_name` | `HZ_SYSTEM_THEME__SHOW_TEAM_NAME` | `True` | Use your team name in the sidebar when one is set. Otherwise use the selected theme's branding. Never read from a project's hz.toml. |
 
 ## `[system.ui]`
 

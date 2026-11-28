@@ -43,10 +43,9 @@ from heinzel.heads._kit import refusal as refusal
 from heinzel.heads._kit import request_refusal as request_refusal
 from heinzel.heads._served_tools import bind_served_tools
 from heinzel.heads._stream import error_body
+from heinzel.heads.api import _routes
 from heinzel.heads.api._auth import ApiBearer
-from heinzel.heads.api._routes import UNAVAILABLE, _bounded_body_route, _normal_body, _parameters
-from heinzel.heads.api._routes import _arguments as _arguments
-from heinzel.heads.api._routes import _query as _query
+from heinzel.heads.api._routes import UNAVAILABLE, bounded_body_route, normal_body, parameters
 from heinzel.heads.api._routes import endpoint as endpoint
 from heinzel.heads.api._routes import stream_endpoint as stream_endpoint
 from heinzel.kernel import CallIdentity, CurrentUser, HeinzelError, Kernel, boot
@@ -56,6 +55,11 @@ from heinzel.kernel._identity import LOCAL_PERMISSIONS
 
 HEAD = "api"
 UNAUTHORIZED = 401
+_arguments = _routes.arguments
+_bounded_body_route = bounded_body_route
+_normal_body = normal_body
+_parameters = parameters
+_query = _routes.query_parameter
 
 
 def _error_response(exc: HeinzelError, *, private: bool) -> JSONResponse:
@@ -160,8 +164,8 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
     for item in exposed(kernel, selected):
         # The private body model and byte limit apply equally to the normal and streaming routes.
         limit = item.operation.request_body_limit
-        route_class = _bounded_body_route(limit) if limit is not None else None
-        body_parameters = _parameters(item, body=True) if _normal_body(item) else None
+        route_class = bounded_body_route(limit) if limit is not None else None
+        body_parameters = parameters(item, body=True) if normal_body(item) else None
         returns = item.returns if item.returns is not inspect.Signature.empty else None
         app.router.add_api_route(
             "/" + "/".join(item.path),

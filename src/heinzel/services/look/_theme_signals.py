@@ -78,6 +78,15 @@ def daypart(now: datetime, sunrise: datetime | None = None, sunset: datetime | N
     return "dawn"
 
 
+DAWN = _DAWN
+DUSK_AFTER = _DUSK_AFTER
+DUSK_BEFORE = _DUSK_BEFORE
+EVENING = _EVENING
+MORNING_UNTIL = _MORNING_UNTIL
+NIGHT_FROM = _NIGHT_FROM
+at_local_time = _at
+
+
 # Preserve the published qualified names for pickle and introspection.
 ThemeSignals.__module__ = "heinzel.kernel.look._theme_signals"
 _at.__module__ = "heinzel.kernel.look._theme_signals"

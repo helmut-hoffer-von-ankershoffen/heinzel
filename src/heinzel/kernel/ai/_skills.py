@@ -23,17 +23,17 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstra
 
 from heinzel.kernel._lets import Let
 from heinzel.kernel._text import clean_text, redact_emails
-from heinzel.services.ai._skill_files import (
-    _DIRECTORY,  # noqa: F401 - retain the old module attribute
-    _NOFOLLOW,  # noqa: F401 - retain the old module attribute
-    _NONBLOCK,  # noqa: F401 - retain the old module attribute
-    _is_link,
-    _read_parts,  # noqa: F401 - retain the old module attribute
-    _read_regular,  # noqa: F401 - retain the old module attribute
-    _sha,
-    fingerprint,
-    read_beneath,
-)
+from heinzel.services.ai import _skill_files
+from heinzel.services.ai._skill_files import fingerprint, read_beneath
+
+# Retain the old qualified names for callers and serialized references.
+_DIRECTORY = _skill_files.DIRECTORY
+_NOFOLLOW = _skill_files.NOFOLLOW
+_NONBLOCK = _skill_files.NONBLOCK
+_is_link = _skill_files.is_link
+_read_parts = _skill_files.read_parts
+_read_regular = _skill_files.read_regular
+_sha = _skill_files.sha256_hex
 
 SKILL_FILE = "SKILL.md"
 MAX_NAME = 64

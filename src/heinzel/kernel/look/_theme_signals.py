@@ -9,23 +9,23 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from heinzel.kernel._lets import Let
 from heinzel.services.look._theme_signals import (
-    _DAWN,  # noqa: F401 - old module attribute
-    _DUSK_AFTER,  # noqa: F401 - old module attribute
-    _DUSK_BEFORE,  # noqa: F401 - old module attribute
-    _EVENING,  # noqa: F401 - old module attribute
-    _MORNING_UNTIL,  # noqa: F401 - old module attribute
-    _NIGHT_FROM,  # noqa: F401 - old module attribute
+    DAWN,
     DEFAULT_SUNRISE,
     DEFAULT_SUNSET,
+    DUSK_AFTER,
+    DUSK_BEFORE,
+    EVENING,
+    MORNING_UNTIL,
+    NIGHT_FROM,
     SIGNALS,
     Daypart,
     ThemeSignals,
     Weather,
+    at_local_time,
     daypart,
 )
 from heinzel.services.look._theme_signals import DAYPARTS as _SERVICE_DAYPARTS
 from heinzel.services.look._theme_signals import WEATHERS as _SERVICE_WEATHERS
-from heinzel.services.look._theme_signals import _at as _service_at
 
 # Keep the names previously exposed by this module, including explicit private attributes above.
 __all__ = [
@@ -60,7 +60,13 @@ DAYPARTS: tuple[Daypart, ...] = _SERVICE_DAYPARTS
 WEATHERS: tuple[Weather, ...] = _SERVICE_WEATHERS
 MIN_EVERY = timedelta(minutes=1)
 MAX_EVERY = timedelta(days=1)
-_at = _service_at
+_DAWN = DAWN
+_DUSK_AFTER = DUSK_AFTER
+_DUSK_BEFORE = DUSK_BEFORE
+_EVENING = EVENING
+_MORNING_UNTIL = MORNING_UNTIL
+_NIGHT_FROM = NIGHT_FROM
+_at = at_local_time
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)

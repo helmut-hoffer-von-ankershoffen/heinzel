@@ -4,7 +4,7 @@ import inspect
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 from uuid import uuid4
 
 from heinzel.kernel import Config, CurrentUser, Kernel, ModuleRecord, Principal, Settings
@@ -108,8 +108,10 @@ def _cli(kernel: Kernel, item: Exposed, arguments: Mapping[str, object]) -> Outc
 
 
 def _wire_values(value: object) -> list[str]:
-    if isinstance(value, (tuple, list)) and all(isinstance(part, (str, int, float, bool)) for part in value):
-        return [str(part) for part in value]
+    if isinstance(value, (tuple, list)):
+        parts = cast("Sequence[object]", value)
+        if all(isinstance(part, (str, int, float, bool)) for part in parts):
+            return [str(part) for part in parts]
     return [value if isinstance(value, str) else json.dumps(value)]
 
 

@@ -10,9 +10,9 @@ refused if they could run anything or load anything from outside themselves.
 """
 
 import hashlib
-import os  # noqa: F401 - old module attribute
+import os as _os
 import re
-import stat  # noqa: F401 - old module attribute
+import stat as _stat
 import tomllib
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -31,8 +31,10 @@ from pydantic import (
 
 from heinzel.kernel._lets import Let
 from heinzel.kernel.look._theme_signals import Daypart, Weather
-from heinzel.services.look._assets import _read_regular as _read_local_asset
+from heinzel.services.look._assets import read_regular as _read_local_asset
 
+os = _os
+stat = _stat
 _read_regular = _read_local_asset
 
 THEME_SUFFIX = ".toml"

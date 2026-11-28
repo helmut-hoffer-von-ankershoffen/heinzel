@@ -31,6 +31,10 @@ _EMAIL = re.compile(r"[\w.%+'-]{1,64}(?:@|%40)[\w-]{1,63}(?:\.[\w-]{1,63}){0,8}\
 REDACTED_EMAIL = "[email]"
 
 
+CONTROL_CHARACTER_PATTERN = _CONTROLS
+EMAIL_PATTERN = _EMAIL
+
+
 def redact_emails(text: str) -> str:
     """`text` with every email address replaced by `[email]`, before it goes into an agent's prompt.
 

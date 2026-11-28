@@ -24,5 +24,8 @@ def _read_regular(path: Path, limit: int, where: str) -> bytes:
         raise ValueError(msg) from exc
 
 
+read_regular = _read_regular
+
+
 # Preserve the published qualified name when the old path is serialized.
 _read_regular.__module__ = "heinzel.kernel.look._themes"
