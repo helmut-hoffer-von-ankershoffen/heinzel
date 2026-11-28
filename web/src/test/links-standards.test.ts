@@ -24,7 +24,7 @@ const LINKS: Record<string, { count: number; reason: string }> = {
   },
   "../components/Prose.tsx": { count: 3, reason: "KEEP: rendered Markdown: links and images in running text" },
   "../layout/Shell.tsx": { count: 1, reason: "KEEP: the skip link to #content, visually hidden (accessibility)" },
-  "../layout/Sidebar.tsx": { count: 12, reason: "KEEP: navigation and account-menu rows, the whole row is the target" },
+  "../layout/Sidebar.tsx": { count: 10, reason: "KEEP: navigation and account-menu rows, the whole row is the target" },
   "../pages/graph/TeamNodes.tsx": { count: 2, reason: "KEEP: the whole graph card is the hit target, no underline" },
   "../notifications/TodayNotifications.tsx": {
     count: 1,
