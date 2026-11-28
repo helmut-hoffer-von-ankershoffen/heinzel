@@ -41,59 +41,70 @@ trigger.onclick = () => {
 </script>"""
 
 
+# The Debug app build is the heaviest CPU load of an integration session: minutes on all of a 3-vCPU macOS runner,
+# alongside tests that hold product deadlines (a 10-second MCP probe). It yields the CPU to them; its own deadline
+# stays as it is.
+YIELD_CPU = ("nice", "-n", "10")
+
+
+def build_commands(build: Path) -> tuple[list[str], list[str]]:
+    """The Xcode app build and the probe compile, both at lowered scheduling priority."""
+    products = build / "Build/Products/Debug"
+    libs = products / "Heinzel.app/Contents/MacOS"
+    app = [
+        *YIELD_CPU,
+        "xcodebuild",
+        "-project",
+        "apple/Heinzel.xcodeproj",
+        "-scheme",
+        "Heinzel",
+        "-configuration",
+        "Debug",
+        "-destination",
+        f"platform=macOS,arch={platform.machine()}",
+        "-derivedDataPath",
+        str(build),
+        "CODE_SIGNING_ALLOWED=NO",
+        "ENABLE_TESTABILITY=YES",
+        "ONLY_ACTIVE_ARCH=YES",
+        "build",
+    ]
+    probe = [
+        *YIELD_CPU,
+        "xcrun",
+        "swiftc",
+        "-swift-version",
+        "6",
+        "-parse-as-library",
+        "-target",
+        f"{platform.machine()}-apple-macos15.0",
+        "-I",
+        str(products),
+        str(libs / "Heinzel.debug.dylib"),
+        "-Xlinker",
+        "-rpath",
+        "-Xlinker",
+        str(libs),
+        "apple/tests/WorkspaceNavigationTests.swift",
+        "-o",
+        str(build / "navigation-probe"),
+    ]
+    return app, probe
+
+
 @pytest.fixture(scope="module")
 def navigation_probe(tmp_path_factory: pytest.TempPathFactory) -> Path:
     build = tmp_path_factory.mktemp("mac-workspace-build")
-    subprocess.run(
-        [
-            "xcodebuild",
-            "-project",
-            "apple/Heinzel.xcodeproj",
-            "-scheme",
-            "Heinzel",
-            "-configuration",
-            "Debug",
-            "-destination",
-            f"platform=macOS,arch={platform.machine()}",
-            "-derivedDataPath",
-            str(build),
-            "CODE_SIGNING_ALLOWED=NO",
-            "ENABLE_TESTABILITY=YES",
-            "ONLY_ACTIVE_ARCH=YES",
-            "build",
-        ],
-        cwd=ROOT,
-        check=True,
-        timeout=scaled(240),
-    )
-    products = build / "Build/Products/Debug"
-    libs = products / "Heinzel.app/Contents/MacOS"
-    probe = build / "navigation-probe"
-    subprocess.run(
-        [
-            "xcrun",
-            "swiftc",
-            "-swift-version",
-            "6",
-            "-parse-as-library",
-            "-target",
-            f"{platform.machine()}-apple-macos15.0",
-            "-I",
-            str(products),
-            str(libs / "Heinzel.debug.dylib"),
-            "-Xlinker",
-            "-rpath",
-            "-Xlinker",
-            str(libs),
-            "apple/tests/WorkspaceNavigationTests.swift",
-            "-o",
-            str(probe),
-        ],
-        cwd=ROOT,
-        check=True,
-        timeout=scaled(60),
-    )
-    return probe
+    app, probe = build_commands(build)
+    subprocess.run(app, cwd=ROOT, check=True, timeout=scaled(240))
+    subprocess.run(probe, cwd=ROOT, check=True, timeout=scaled(60))
+    return build / "navigation-probe"
+
+
+def test_the_app_build_yields_the_cpu_to_deadline_bound_tests(tmp_path: Path) -> None:
+    for command in build_commands(tmp_path):
+        assert tuple(command[:3]) == YIELD_CPU
+        assert command[3] in {"xcodebuild", "xcrun"}
 
 
 @pytest.mark.parametrize("scheme", ["http", "https"], ids=["local", "remote"])
