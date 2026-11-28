@@ -6,7 +6,7 @@ import { extractFile, getRawHeader, listPackage, statFile, uncacheAll } from "@e
 
 // Adding a runtime file is an explicit packaging decision, not an automatic inclusion of arbitrary source files.
 export const RUNTIME_FILES = Object.freeze([
-  "album-audio.html", "album-audio.js", "album-catalog.json", "album-transport.js",
+  "album-audio.html", "album-audio.js", "album-catalog.json", "album-scheme.js", "album-transport.js",
   "player-chrome-preload.cjs", "player-chrome-ui.js", "player-chrome.css", "player-chrome.html", "player-chrome.js",
   "app-menu.js", "browser-agent.js", "browser-bridge.js", "client-identity.js", "connection.js", "identity.js", "instance-lifecycle.js",
   "lifecycle-ipc.js", "main-controller.js", "main-ipc.js", "main-menu.js", "main-picker.js", "main-quit.js",
