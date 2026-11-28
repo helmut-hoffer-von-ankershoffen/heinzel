@@ -26,6 +26,7 @@ type Props = {
   title: string;
   /** The video on YouTube, the one host with a page to open. */
   watchUrl?: string;
+  sourceUrl?: string;
   youtube?: boolean;
   /** Where the sound comes from. */
   host: string;
@@ -38,6 +39,7 @@ type Props = {
 export function PlayerCard({
   title,
   watchUrl,
+  sourceUrl,
   youtube = false,
   host,
   children,
@@ -275,7 +277,24 @@ export function PlayerCard({
         >
           <div className="min-w-0 flex-1">
             <p className="truncate text-ui-sm font-medium">{title}</p>
-            <p className="truncate text-xs text-muted-foreground">{t("sound.playsFrom", { host })}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {sourceUrl ? (
+                <>
+                  By{" "}
+                  <a
+                    href={sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex max-w-full items-center gap-1"
+                  >
+                    {host}
+                    <ExternalLink aria-hidden className="size-3 shrink-0" />
+                  </a>
+                </>
+              ) : (
+                t("sound.playsFrom", { host })
+              )}
+            </p>
           </div>
           <div data-pane-chrome="" className="flex flex-wrap items-center gap-1.5">
             {headerAction}

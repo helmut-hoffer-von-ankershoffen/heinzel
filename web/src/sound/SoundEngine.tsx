@@ -11,7 +11,9 @@ import { publishOwnAudio } from "@/audio/own";
 import { t } from "@/i18n";
 import { isIOS } from "@/lib/browser";
 import { AlbumControls } from "./AlbumControls";
-import { ALBUM_TITLE, nativeAlbum, useAlbum } from "./album";
+import { AlbumVisual } from "./AlbumVisual";
+import { ALBUM_TITLE, albumAction, nativeAlbum, useAlbum } from "./album";
+import { setDocked } from "./dock";
 import { type Inputs, rampSeconds, type Signals, targetGain, type Why, why } from "./machine";
 import { type EarconView, type LayerView, Mixer } from "./mixer";
 import { NativePlayer } from "./NativePlayer";
@@ -50,15 +52,19 @@ export function SoundEngine() {
   const list = useSoundscapes();
   const sound = useSound();
   const album = useAlbum();
-  const restoredAlbum = useRef(false);
   useEffect(() => {
-    if (!album) return;
-    const restore = !restoredAlbum.current && Boolean(album.title || album.phase !== "idle");
-    restoredAlbum.current = true;
-    // Reading status restores native playback and download progress without a command
-    // that consumes activation. Later native starts also stop ordinary tab audio.
-    if ((restore || album.playing) && !soundState().albumSelected) selectAlbum();
+    // Download state and a remembered title do not express playback intent.
+    if (album?.playing && !soundState().albumSelected) selectAlbum();
   }, [album]);
+  useEffect(() => {
+    const openDock = () => {
+      setDocked(true);
+      selectAlbum();
+      void albumAction("catalog");
+    };
+    window.addEventListener("heinzel-album-dock", openDock);
+    return () => window.removeEventListener("heinzel-album-dock", openDock);
+  }, []);
   const current = effective(list.data);
   const deviceStream = isProgramme(current) && isIOS();
   const meeting = useMeeting(Boolean(list.data?.mute_in_meetings && sound.started));
@@ -100,7 +106,8 @@ export function SoundEngine() {
   const retracked = previous.current.name === name && previous.current.tracks !== tracks;
   useEffect(() => {
     const was = previous.current;
-    if (was.name !== name ? soundState().soundscape !== name : was.tracks !== tracks) stop();
+    if (!soundState().albumSelected && (was.name !== name ? soundState().soundscape !== name : was.tracks !== tracks))
+      stop();
     previous.current = { name, tracks };
   }, [name, tracks]);
   const level = useLevel(
@@ -124,9 +131,15 @@ export function SoundEngine() {
     publishOwnAudio({ mode: "frame", label: streamTitle });
     return () => publishOwnAudio({ mode: "none" });
   }, [streaming, streamTitle]);
-  if (nativeAlbum() && sound.albumSelected && album && (album.playing || album.title || album.phase !== "idle"))
+  if (nativeAlbum() && sound.albumSelected)
     return (
-      <PlayerCard title={ALBUM_TITLE} host="Latent Heinzels" onClose={() => void closeAlbum()}>
+      <PlayerCard
+        title={ALBUM_TITLE}
+        host="Latent Heinzels"
+        sourceUrl="https://latentheinzels.heinzel.team"
+        onClose={() => void closeAlbum()}
+      >
+        <AlbumVisual album={sound.albumCover ? null : album} />
         <AlbumControls />
       </PlayerCard>
     );

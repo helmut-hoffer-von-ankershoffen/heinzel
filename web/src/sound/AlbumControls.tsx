@@ -1,49 +1,33 @@
-import { ExternalLink, ListMusic, Pause, Play, Repeat, Repeat1, SkipBack, SkipForward, X } from "lucide-react";
-import { useRef } from "react";
-import { PaneAction, PaneActions } from "@/components/PaneActions";
-import { Button } from "@/components/ui/button";
+import { Pause, Play, Repeat, Repeat1, SkipBack, SkipForward, X } from "lucide-react";
+import { PaneAction } from "@/components/PaneActions";
 import { albumAction, useAlbum } from "./album";
-import { stop } from "./store";
+import { selectAlbum } from "./store";
 
 export function AlbumControls() {
   const album = useAlbum();
-  const dock = useRef<HTMLElement>(null);
   const bytes = album ? `${album.receivedBytes ?? album.verifiedBytes} / ${album.totalBytes} bytes` : "";
   return (
-    <section ref={dock} aria-label="Album controls" className="min-w-0 space-y-1 px-3 pb-2">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="w-full min-w-0 justify-between px-0 pointer-coarse:min-h-11"
-        aria-label={album?.title ? `Choose album track: ${album.title}` : "Choose album track"}
-        title={album?.title || "Choose album track"}
-        disabled={!album}
-        onClick={() => void albumAction("picker")}
+    <section aria-label="Album controls" className="min-w-0 space-y-1 px-3 pb-2">
+      <select
+        aria-label="Choose album track"
+        className="block min-h-11 w-full min-w-0 max-w-full rounded bg-background text-base"
+        value={album?.media?.selectedTrackID ?? ""}
+        onPointerDown={() => void albumAction("catalog")}
+        onKeyDown={() => void albumAction("catalog")}
+        onChange={(event) => {
+          selectAlbum(false);
+          void albumAction("select", { trackID: event.target.value });
+        }}
       >
-        <span className="truncate">{album?.title || "Choose album track"}</span>
-        <ListMusic aria-hidden />
-      </Button>
-      <div className="flex min-w-0 items-center justify-between gap-2">
-        <PaneActions words="all" className="m-0 min-w-0 border-0 p-0">
-          <PaneAction ghost icon={ExternalLink} href="https://latentheinzels.heinzel.team" className="min-w-0">
-            Latent Heinzels
-          </PaneAction>
-        </PaneActions>
-        <PaneAction
-          ghost
-          icon={ExternalLink}
-          disabled={!album}
-          onClick={() => {
-            const width = dock.current?.getBoundingClientRect().width;
-            void albumAction(
-              "openVideo",
-              width && Number.isFinite(width) ? { width, viewportWidth: window.innerWidth } : undefined,
-            );
-          }}
-        >
-          Open video
-        </PaneAction>
-      </div>
+        <option value="" disabled>
+          Choose album track
+        </option>
+        {album?.media?.tracks.map((track) => (
+          <option key={track.id} value={track.id}>
+            {track.title}
+          </option>
+        ))}
+      </select>
       <span className="sr-only" role="status">
         {album
           ? `${album.playing ? "Playing" : "Paused"} · ${album.title || "No track selected"}`
@@ -58,7 +42,7 @@ export function AlbumControls() {
           icon={album?.playing ? Pause : Play}
           disabled={!album}
           onClick={() => {
-            if (!album?.playing) stop();
+            if (!album?.playing) selectAlbum(false);
             void albumAction(album?.title ? "toggle" : "play");
           }}
         >
@@ -71,6 +55,8 @@ export function AlbumControls() {
           ghost
           icon={album?.repeatMode === "Track" ? Repeat1 : Repeat}
           disabled={!album}
+          className={album?.repeatMode === "Off" ? "[&_svg]:stroke-[1.75]" : "font-bold [&_svg]:stroke-[3]"}
+          aria-pressed={album?.repeatMode !== "Off"}
           onClick={() => void albumAction("repeat")}
         >
           {`Repeat: ${album?.repeatMode ?? "Off"}`}

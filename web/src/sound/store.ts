@@ -2,13 +2,14 @@
 // whole app, so the sidebar's button, the settings and the engine that plays agree without a provider.
 // Play needs a gesture: browsers allow audio only after one, and the person decides when a stream's host is contacted.
 import { useSyncExternalStore } from "react";
-import { albumAction, albumState, leaveAlbum, nativeAlbum } from "./album";
+import { albumAction, albumState, dismissAlbum, leaveAlbum, nativeAlbum } from "./album";
 import { Ducker } from "./machine";
 
 export type SoundState = {
   /** Pressed Play and not Pause since; never true without a gesture. */
   playing: boolean;
   albumSelected: boolean;
+  albumCover: boolean;
   /** Ever pressed Play in this tab for the soundscape in effect: a stream's player exists only from then on. */
   started: boolean;
   /** The soundscape Play was pressed for; null when it was pressed for "whatever is in effect". */
@@ -21,6 +22,7 @@ export type SoundState = {
 
 const initial: SoundState = {
   albumSelected: false,
+  albumCover: true,
   playing: false,
   started: false,
   soundscape: null,
@@ -94,7 +96,11 @@ export function pause(): void {
 export function stop(): void {
   ++playbackRequest;
   ducker.stop();
-  set({ playing: false, started: false, soundscape: null });
+  if (state.albumSelected) {
+    dismissAlbum();
+    void albumAction("pausePlayback");
+  }
+  set({ albumSelected: false, playing: false, started: false, soundscape: null });
 }
 
 export function toggle(soundscape?: string): boolean {
@@ -133,17 +139,16 @@ export function resetSound(): void {
 }
 
 /** Select the native album without changing the saved ordinary soundscape. */
-export function selectAlbum(): void {
-  stop();
-  set({ albumSelected: true });
+export function selectAlbum(cover = true): void {
+  ++playbackRequest;
+  ducker.stop();
+  set({ albumSelected: true, albumCover: cover, playing: false, started: false, soundscape: null });
 }
 
-/** Close the native player after playback stops; saving continues independently. */
+/** Close immediately; native completion cannot reopen a dismissed player. */
 export async function closeAlbum(): Promise<void> {
-  const request = ++playbackRequest;
-  const answer = await albumAction("pausePlayback");
-  if (request === playbackRequest && answer && !answer.playing) {
-    stop();
-    set({ albumSelected: false });
-  }
+  dismissAlbum();
+  set({ albumSelected: false });
+  stop();
+  await albumAction("pausePlayback");
 }

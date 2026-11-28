@@ -72,7 +72,8 @@ async function open(selected: string) {
   const user = userEvent.setup();
   const { client } = renderAt("/");
   refresh = () => client.refetchQueries({ queryKey: SOUND_KEY });
-  await user.click(await screen.findByRole("button", { name: "Choose a soundscape" }));
+  (await screen.findByRole("button", { name: "Choose a soundscape" })).focus();
+  await user.keyboard("{ArrowDown}");
   const dialog = await screen.findByRole("dialog", { name: "Sound" });
   return { user, dialog };
 }

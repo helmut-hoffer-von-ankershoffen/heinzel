@@ -16,8 +16,9 @@ import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { viewportBounds, watchViewport } from "@/lib/viewport";
 import { ALBUM_TITLE, albumAction, nativeAlbum, useAlbum } from "./album";
-import { setDocked, useDockPref } from "./dock";
+import { setDocked, useDockPref, useDockSlot } from "./dock";
 import { effective, isProgramme, pendingResume, useSetSound, useSoundSetting, useSoundscapes } from "./queries";
+import { inDesktop } from "./StreamPlayer";
 import { play, selectAlbum, toggle, useSound } from "./store";
 
 const LONG_PRESS_MS = 500;
@@ -54,7 +55,7 @@ function detail(soundscape: SchemaSoundscapeView): string | null {
  * Claude FM and the plugins' soundscapes, the configured one checked, as a group of radios. Picking one plays it at
  * once (switching from what plays). The native album hands over to the player when picked.
  */
-export function SoundChoices({ list, onAlbumPlay }: Readonly<{ list: SchemaSoundList; onAlbumPlay?: () => void }>) {
+export function SoundChoices({ list, onActivate }: Readonly<{ list: SchemaSoundList; onActivate?: () => void }>) {
   const choose = useSetSound();
   const sound = useSound();
   const themes = useThemes().data?.themes ?? [];
@@ -97,6 +98,7 @@ export function SoundChoices({ list, onAlbumPlay }: Readonly<{ list: SchemaSound
                 if (sound.albumSelected && soundscape.name === list.effective) play(soundscape.name);
                 else if (!checked || list.follow_theme) choose.pick(soundscape.name);
                 else if (!sound.playing) play(soundscape.name);
+                onActivate?.();
               }}
               className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui hover:bg-accent aria-busy:opacity-50"
             >
@@ -118,7 +120,7 @@ export function SoundChoices({ list, onAlbumPlay }: Readonly<{ list: SchemaSound
             setDocked(true);
             selectAlbum();
             void albumAction("play");
-            onAlbumPlay?.();
+            onActivate?.();
           }}
           className="h-auto w-full justify-start gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui font-normal hover:bg-accent"
         >
@@ -136,13 +138,20 @@ export function SoundChoices({ list, onAlbumPlay }: Readonly<{ list: SchemaSound
 /** The volume, saved to `[system.sound] volume` once the slider rests; the sound follows it at once. */
 function VolumeSlider({ list }: { list: SchemaSoundList }) {
   const setting = useSoundSetting();
-  const [value, setValue] = useState(list.volume);
+  const sound = useSound();
+  const album = useAlbum();
+  const hostVolume = album?.volume ?? album?.gain ?? 1;
+  const volume = sound.albumSelected ? Math.round(hostVolume * 100) : list.volume;
+  const [value, setValue] = useState(volume);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => setValue(list.volume), [list.volume]);
+  useEffect(() => {
+    if (sound.albumSelected) clearTimeout(timer.current);
+    setValue(volume);
+  }, [volume, sound.albumSelected]);
   useEffect(() => () => clearTimeout(timer.current), []);
   const id = useId();
   const current = effective(list);
-  if (isIOS() && isProgramme(current)) {
+  if (!sound.albumSelected && isIOS() && isProgramme(current)) {
     const words = current?.tracks?.length ? "sound.deviceVolumeTracks" : "sound.deviceVolume";
     return <p className="px-2.5 py-1.5 text-ui-sm text-muted-foreground">{t(words)}</p>;
   }
@@ -158,11 +167,29 @@ function VolumeSlider({ list }: { list: SchemaSoundList }) {
         max={100}
         step={5}
         value={value}
+        onKeyDown={(event) => {
+          if (!sound.albumSelected) return;
+          const next =
+            event.key === "Home"
+              ? 0
+              : event.key === "End"
+                ? 100
+                : event.key === "ArrowLeft" || event.key === "ArrowDown"
+                  ? Math.max(0, value - 5)
+                  : event.key === "ArrowRight" || event.key === "ArrowUp"
+                    ? Math.min(100, value + 5)
+                    : null;
+          if (next === null) return;
+          event.preventDefault();
+          setValue(next);
+          void albumAction("volume", { gain: next / 100 });
+        }}
         onChange={(event) => {
           const next = Number(event.target.value);
           setValue(next);
           clearTimeout(timer.current);
-          timer.current = setTimeout(() => setting.save("volume", next), VOLUME_DEBOUNCE_MS);
+          if (sound.albumSelected) void albumAction("volume", { gain: Math.max(0, Math.min(1, next / 100)) });
+          else timer.current = setTimeout(() => setting.save("volume", next), VOLUME_DEBOUNCE_MS);
         }}
         className="flex-1 accent-(--color-primary)"
       />
@@ -240,6 +267,9 @@ function Popover({
 /** The speaker button and its popover, beside the light/dark toggle; `compact` in the collapsed rail. */
 export function SoundButton({ compact = false, onPopOut }: { compact?: boolean; onPopOut?: () => void }) {
   const { docked } = useDockPref();
+  const slot = useDockSlot();
+  const desktop = inDesktop() || nativeAlbum();
+  const [options, setOptions] = useState(false);
   const list = useSoundscapes();
   const sound = useSound();
   const album = useAlbum();
@@ -271,14 +301,55 @@ export function SoundButton({ compact = false, onPopOut }: { compact?: boolean; 
       window.removeEventListener("keydown", onKey);
     };
   }, [open]);
-  const label = t("sound.choose");
+  const audible =
+    playing &&
+    (!sound.albumSelected || (!album?.muted && (album?.effectiveGain ?? album?.volume ?? album?.gain ?? 1) > 0));
+  const label = sound.albumSelected
+    ? `${t("sound.choose")} · ${playing ? "Playing" : "Paused"}${playing && !audible ? " · Muted" : ""}`
+    : t("sound.choose");
   const size = compact ? "size-7" : "size-9";
+  const choices = list.data ? (
+    <section
+      ref={dialog}
+      aria-label={t("sound.title")}
+      className="min-w-0 rounded-xl border border-border bg-popover p-1.5"
+    >
+      <PaneTitle>{t("sound.title")}</PaneTitle>
+      <SoundChoices
+        list={list.data}
+        onActivate={() => {
+          setOpen(false);
+          opener.current?.focus();
+        }}
+      />
+      <Notes list={list.data} />
+      <VolumeSlider list={list.data} />
+      <Toggle list={list.data} field="duck_while_typing" label={t("sound.duckWhileTyping")} />
+      <Toggle list={list.data} field="follow_theme" label={t("sound.followTheme")} />
+      <Toggle list={list.data} field="mute_in_meetings" label={t("sound.muteInMeetings")} />
+      <PaneAction icon={Settings2} to={settingsTarget} onClick={() => setOpen(false)}>
+        {t("sound.more")}
+      </PaneAction>
+      {!sound.albumSelected && (
+        <PaneAction icon={sound.playing ? Pause : Play} disabled={!current} onClick={() => toggle(current?.name)}>
+          {current ? t(sound.playing ? "sound.pause" : "sound.play", { title: current.title }) : t("sound.choose")}
+        </PaneAction>
+      )}
+    </section>
+  ) : null;
   return (
     <div ref={ref} className={cn("relative flex items-center", compact && "flex-col")}>
-      {open && list.data && (
+      {desktop && !options && open && slot && createPortal(choices, slot)}
+      {(!desktop || options) && open && list.data && (
         <Popover anchor={ref} side={compact ? "right" : "above"} dialog={dialog}>
           <PaneTitle>{t("sound.title")}</PaneTitle>
-          <SoundChoices list={list.data} onAlbumPlay={() => setOpen(false)} />
+          <SoundChoices
+            list={list.data}
+            onActivate={() => {
+              setOpen(false);
+              opener.current?.focus();
+            }}
+          />
           <Notes list={list.data} />
           <hr className="mx-2 my-1 border-border" />
           <VolumeSlider list={list.data} />
@@ -342,15 +413,19 @@ export function SoundButton({ compact = false, onPopOut }: { compact?: boolean; 
             pressed.current = false; // the long press opened the options: this click doesn't also play
             return;
           }
+          setOptions(false);
+          if (desktop) setDocked(true);
           setOpen((value) => !value);
         }}
         onContextMenu={(event) => {
           event.preventDefault();
+          setOptions(true);
           setOpen(true);
         }}
         onKeyDown={(event) => {
           if (event.key !== "ArrowDown") return;
           event.preventDefault();
+          setOptions(true);
           setOpen(true);
         }}
         onPointerDown={() => {
@@ -358,12 +433,13 @@ export function SoundButton({ compact = false, onPopOut }: { compact?: boolean; 
           pressed.current = false;
           press.current = setTimeout(() => {
             pressed.current = true;
+            setOptions(true);
             setOpen(true);
           }, LONG_PRESS_MS);
         }}
         onPointerUp={() => clearTimeout(press.current)}
         onPointerLeave={() => clearTimeout(press.current)}
-        aria-haspopup="dialog"
+        aria-haspopup={desktop ? undefined : "dialog"}
         aria-expanded={open}
         aria-keyshortcuts="ArrowDown"
         aria-description={t("sound.optionsKeyboardHelp")}
@@ -374,7 +450,13 @@ export function SoundButton({ compact = false, onPopOut }: { compact?: boolean; 
           size,
         )}
       >
-        {!current ? <Volume aria-hidden /> : sound.playing ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />}
+        {audible ? (
+          <Volume2 aria-hidden />
+        ) : sound.albumSelected || current ? (
+          <VolumeX aria-hidden />
+        ) : (
+          <Volume aria-hidden />
+        )}
       </button>
     </div>
   );
