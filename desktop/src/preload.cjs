@@ -11,10 +11,16 @@ contextBridge.exposeInMainWorld("heinzelDesktop", Object.freeze({
     currentName: () => ipcRenderer.invoke("hz:workspace-menu", "name"),
     open: () => ipcRenderer.invoke("hz:workspace-menu", "open"),
   }),
+  album: (action, options = {}) => ipcRenderer.invoke("hz:album", action, options),
   clientFlavor: "electron",
   workspaceAudio: true,
   titlebar,
   browser: (request) => ipcRenderer.invoke("hz:browser", request),
+  onPlayerIntent: (callback) => {
+    const listener = (_event, intent) => callback(intent);
+    ipcRenderer.on("hz:player-intent", listener);
+    return () => ipcRenderer.removeListener("hz:player-intent", listener);
+  },
   player: (request) => ipcRenderer.invoke("hz:player", request),
   // Settings: whether links open in the built-in browser (true) or the system's default browser (false). Stored by
   // the desktop app itself; called with no argument it only reads the choice.
@@ -55,3 +61,7 @@ document.addEventListener("click", (event) => {
   const failed = () => anchor.dispatchEvent(new CustomEvent("hz-public-media-result", { detail: false }));
   void ipcRenderer.invoke("hz:public-media", anchor.href).then((opened) => { if (opened !== true) failed(); }, failed);
 }, true);
+
+ipcRenderer.on("hz:album-change", (_event, snapshot) => {
+  window.dispatchEvent(new CustomEvent("heinzel-album-change", { detail: snapshot }));
+});

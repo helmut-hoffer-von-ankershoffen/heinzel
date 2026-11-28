@@ -5,7 +5,7 @@
 // snapped back by letting go near the dock spot. In the collapsed rail the docked card is hidden, with playback
 // controlled by the rail button; the same iframe remains mounted when the full sidebar returns.
 import { ExternalLink, GripHorizontal, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
-import { type KeyboardEvent, type PointerEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { type KeyboardEvent, type PointerEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PaneAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
@@ -32,9 +32,19 @@ type Props = {
   children: ReactNode;
   headerAction?: ReactNode;
   onClose?: () => void;
+  chromeIntent?: { action: string; value?: number; x?: number; y?: number };
 };
 
-export function PlayerCard({ title, watchUrl, youtube = false, host, children, headerAction, onClose = stop }: Props) {
+export function PlayerCard({
+  title,
+  watchUrl,
+  youtube = false,
+  host,
+  children,
+  headerAction,
+  onClose = stop,
+  chromeIntent,
+}: Props) {
   useLayoutEffect(() => {
     if (!youtube) return;
     setYoutubeCard(true);
@@ -181,6 +191,20 @@ export function PlayerCard({ title, watchUrl, youtube = false, host, children, h
     const rect = card.current?.getBoundingClientRect();
     floatAt((pref.x ?? rect?.left ?? 0) + by[0], (pref.y ?? rect?.top ?? 0) + by[1]);
   };
+
+  useEffect(() => {
+    if (!chromeIntent) return;
+    if (chromeIntent.action === "close") onClose();
+    if (chromeIntent.action === "redock") setDocked(true);
+    if (chromeIntent.action === "resize" && chromeIntent.value !== undefined) setRequestedWidth(chromeIntent.value);
+    if (chromeIntent.action === "move") {
+      const rect = card.current?.getBoundingClientRect();
+      if (rect) {
+        const next = clampToWindow(rect.left + (chromeIntent.x ?? 0), rect.top + (chromeIntent.y ?? 0), rect);
+        setFloating(next.x, next.y);
+      }
+    }
+  }, [chromeIntent, onClose]);
 
   const floatingStyle = pref.x === null || pref.y === null ? { left: 12, bottom: 68 } : { left: pref.x, top: pref.y };
   const dockedAt = at ?? { left: 0, top: 0, width: WIDTH };

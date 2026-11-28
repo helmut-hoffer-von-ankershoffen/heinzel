@@ -10,7 +10,7 @@ import { useNativeSurface } from "@/lib/nativeSurface";
 import { refreshName } from "@/lib/refreshFeedback";
 import { PlayerCard } from "./PlayerCard";
 import { PlayerHelp } from "./PlayerHelp";
-import { page } from "./queries";
+import { page, useSoundSetting } from "./queries";
 import { pause, resume, soundState, stop } from "./store";
 import {
   ACCOUNT_SANDBOX,
@@ -25,6 +25,7 @@ import {
   type StreamView,
 } from "./stream";
 
+type ChromeIntent = { action: string; value?: number; x?: number; y?: number };
 type Level = { gain: number; seconds: number; playing: boolean };
 type GuestState = { status?: string; ready?: boolean; state?: number; error?: boolean };
 type GuestBridge = (request: Record<string, unknown>) => Promise<GuestState>;
@@ -94,10 +95,33 @@ function Player({
   chooseAccount?: (next: boolean) => void;
   retry: () => void;
 }) {
+  const settings = useSoundSetting();
+  const intentHandler = useRef<(intent: ChromeIntent) => void>(() => {});
+  const [chromeIntent, setChromeIntent] = useState<ChromeIntent>();
+  const chromeSurface = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const surface = useRef<HTMLDivElement>(null);
   // In the desktop the YouTube player is a guest on the website session, so a sign-in in the browser counts here.
   const guest = desktop && stream.provider === "youtube" ? guestBridge() : undefined;
+  const subscribe = (window as Window & { heinzelDesktop?: {
+    onPlayerIntent?: (callback: (intent: ChromeIntent) => void) => () => void;
+  } }).heinzelDesktop?.onPlayerIntent;
+  intentHandler.current = (intent) => {
+    if (intent.action === "play") resume(soundscape.name);
+    else if (intent.action === "pause") pause();
+    else if (intent.action === "volume" && intent.value !== undefined) settings.save("volume", intent.value);
+    else setChromeIntent(intent);
+  };
+  useEffect(() => {
+    if (!guest || !subscribe) return;
+    return subscribe((intent) => intentHandler.current(intent));
+  }, [guest, subscribe]);
+  const chromeBridge = useCallback(async (request: Record<string, unknown>) => {
+    if (!guest) return;
+    if (request.action === "layout") return guest({ ...request, action: "chromeLayout" });
+    if (request.action === "hide") return guest({ action: "chromeHide" });
+  }, [guest]);
+  useNativeSurface(chromeSurface, Boolean(guest && subscribe), guest && subscribe ? chromeBridge : undefined);
   const [ready, setReady] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [reloading, setReloading] = useState(false);
@@ -330,6 +354,7 @@ function Player({
   );
   return (
     <PlayerCard
+      chromeIntent={chromeIntent}
       title={soundscape.title}
       youtube
       watchUrl={desktop ? undefined : stream.watch_url}
@@ -382,6 +407,7 @@ function Player({
         )}
         {!guest && helpPane}
       </div>
+      {guest && subscribe && <div ref={chromeSurface} style={{ height: 140 }} aria-label="Player controls" />}
       {guestUnavailable && (
         <div role="alert" className="flex items-center gap-2 p-2 text-ui-sm">
           <span>{t("sound.desktopUnavailable")}</span>

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; frame-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Player controls</title>
+<link rel="stylesheet" href="player-chrome.css">
+<header>
+  <button id="move" aria-label="Move player">Move</button>
+  <span id="title">Player</span>
+  <button data-action="play">Play</button>
+  <button data-action="pause">Pause</button>
+  <button data-action="redock">Dock</button>
+  <button data-action="close">Close</button>
+</header>
+<label>Volume <input id="volume" type="range" min="0" max="100" value="0"></label>
+<label>Width <input id="width" type="range" min="202" max="1200" value="482"></label>
+<p id="status" role="status"></p>
+<script src="player-chrome-ui.js"></script>
+</html>

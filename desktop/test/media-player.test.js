@@ -332,3 +332,28 @@ test("the player's guest gets spell check only on macOS, where it downloads noth
     assert.equal(f.views[0].webContents.preferences.webPreferences.spellcheck, expected, platform);
   }
 });
+
+test("production player owns local controls without a second media guest", async () => {
+  const f = fixture();
+  const intents = [];
+  f.sender.send = (channel, intent) => intents.push([channel, intent]);
+  await f.play({ action: "open", video: VIDEO });
+  f.views[0].webContents.emit("did-stop-loading");
+  await f.play({ action: "chromeLayout", bounds: { x: 10, y: 220, width: 480, height: 140 } });
+  assert.equal(f.views.length, 2);
+  assert.equal(f.views[0].webContents.preferences.webPreferences.preload, undefined);
+  const controls = f.views[1];
+  assert.equal(controls.webContents.preferences.webPreferences.partition, "player-chrome");
+  assert.equal(controls.getVisible(), true);
+  const event = { sender: controls.webContents, senderFrame: controls.webContents.mainFrame };
+  for (const intent of [{ action: "play" }, { action: "pause" }, { action: "volume", value: 45 },
+    { action: "move", x: 16, y: 0 }, { action: "resize", value: 500 }, { action: "redock" }, { action: "close" }]) {
+    f.player.chromeHandle(event, intent);
+    assert.deepEqual(intents.at(-1), ["hz:player-intent", intent]);
+  }
+  assert.throws(() => f.player.chromeHandle({ sender: f.views[0].webContents }, { action: "play" }));
+  await f.play({ action: "chromeHide" });
+  assert.throws(() => f.player.chromeHandle(event, { action: "play" }));
+  await f.play({ action: "close" });
+  assert.equal(controls.webContents.isDestroyed(), true);
+});
