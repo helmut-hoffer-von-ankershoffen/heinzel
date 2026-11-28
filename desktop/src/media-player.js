@@ -1,3 +1,4 @@
+import { siblingStack } from "./sibling-stack.js";
 import { browserBounds, browserOwner, browserUrl, hasExactKeys, nativeSurfaceDiagnostics } from "./mini-browser-policy.js";
 import { classifyUiLink, createExternalOpener, createUserActivation, grantOnNativeInput } from "./ui-navigation.js";
 
@@ -61,7 +62,7 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
     player.detach();
     // The window may be destroyed already (it closes before the app quits): the lease is given back all the same.
     try {
-      if (!window.isDestroyed()) window.contentView.removeChildView(player.view);
+      siblingStack(window).release(player.view);
       if (!player.view.webContents.isDestroyed()) player.view.webContents.close({ waitForBeforeUnload: false });
     } catch { /* destroyed with its window */ }
     player.release();
@@ -132,7 +133,7 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
       if (mainFrame && code !== -3) player.status = "unavailable";
     });
     contents.on("render-process-gone", () => { player.status = "unavailable"; view.setVisible(false); });
-    window.contentView.addChildView(view);
+    siblingStack(window).attach(view, "media");
     view.setVisible(false);
     players.set(window, player);
     const onClosed = () => close(window);
