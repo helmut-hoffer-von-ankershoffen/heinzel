@@ -751,23 +751,37 @@ def test_tidying_with_nothing_kept_writes_nothing(world):
     assert not relay.ledger.path.exists()
 
 
-def test_an_older_ask_ending_keeps_the_newer_asks_live_entry(world):
+def test_an_older_ask_ending_keeps_the_newer_asks_live_entry(world, monkeypatch):
     current, crud, session = world
     inbox = Inbox("wait", "wait")
     with current.local("cli"):
         _ask(crud, session, "turn-1")
-        _ask(crud, session, "turn-2", "Which room?")
     relay = _relay(world, inbox, Chat())
-    relay.asked(session, "turn-1")
-    assert inbox.waiting.wait(scaled(5))
-    inbox.waiting.clear()
-    relay.asked(session, "turn-2")  # supersedes the first in this process
-    relay.threads[0].join(scaled(10))
-    assert not relay.threads[0].is_alive()
-    with relay.ledger.locked() as state:
-        assert state["live"] == {session: str(os.getpid())}, "the newer ask still counts as live"
-    inbox.release.set()
-    relay.threads[1].join(scaled(10))
+    unregister = relay._unregister
+
+    def after_replacement_is_live(ask):
+        if threading.current_thread() is relay.threads[0]:
+            inbox.waiting.wait(scaled(5))
+        return unregister(ask)
+
+    monkeypatch.setattr(relay, "_unregister", after_replacement_is_live)
+    try:
+        relay.asked(session, "turn-1")
+        assert inbox.waiting.wait(scaled(5))
+        inbox.waiting.clear()
+        with current.local("cli"):
+            _ask(crud, session, "turn-2", "Which room?")
+        relay.asked(session, "turn-2")
+        assert inbox.waiting.wait(scaled(5)), "the replacement began waiting after writing its live entry"
+        relay.threads[0].join(scaled(10))
+        assert not relay.threads[0].is_alive()
+        with relay.ledger.locked() as state:
+            assert state["live"] == {session: str(os.getpid())}, "the newer ask still counts as live"
+    finally:
+        inbox.release.set()
+        for worker in relay.threads:
+            worker.join(scaled(10))
+    assert not relay.threads[1].is_alive()
     with relay.ledger.locked() as state:
         assert state["live"] == {}
 
