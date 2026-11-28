@@ -145,7 +145,9 @@ it("restores native status in the dock and keeps the reopened picker for sources
   expect(within(dock).getByRole("combobox", { name: "Choose album track" })).toBeInTheDocument();
   expect(within(dock).getAllByText(ALBUM_TITLE)).toHaveLength(1);
   expect(within(dock).queryByText("200 / 800 bytes")).toBeNull();
-  expect(within(dock).getByText("Downloading album · 25%")).toBeInTheDocument();
+  expect(within(dock).getByRole("progressbar", { name: "Album download" })).toHaveTextContent(
+    "Downloading album · 25%",
+  );
   expect(within(dock).getByRole("progressbar", { name: "Album download" })).toHaveAttribute("aria-valuenow", "25");
   expect(within(dock).getByRole("progressbar", { name: "Album download" })).toHaveAttribute(
     "aria-valuetext",
@@ -155,7 +157,9 @@ it("restores native status in the dock and keeps the reopened picker for sources
   act(() => window.dispatchEvent(new Event("heinzel-album-change")));
   expect(await within(dock).findByText("Paused · Berlin Evening")).toBeInTheDocument();
   expect(within(dock).getByRole("combobox", { name: "Choose album track" })).toBeInTheDocument();
-  expect(within(dock).getByText("Downloading album · 25%")).toBeInTheDocument();
+  expect(within(dock).getByRole("progressbar", { name: "Album download" })).toHaveTextContent(
+    "Downloading album · 25%",
+  );
   expect(within(dock).getByRole("button", { name: "Repeat: Track" })).toHaveClass("font-bold");
   await user.keyboard("{Escape}");
   await user.click(screen.getByRole("button", { name: /^Choose a soundscape/ }));
@@ -188,7 +192,9 @@ it("connects dock operations and keeps saving independent of playback", async ()
     expect(album).toHaveBeenCalledWith(action);
   }
   await user.click(within(dock).getByRole("button", { name: "Pause Album" }));
-  expect(await within(dock).findByText(/Downloading album ·/)).toBeInTheDocument();
+  expect(await within(dock).findByRole("progressbar", { name: "Album download" })).toHaveTextContent(
+    /Downloading album ·/,
+  );
   await user.click(within(dock).getByRole("button", { name: "Play Album" }));
   await user.click(within(dock).getByRole("button", { name: "Pause download" }));
   expect(await within(dock).findByText("Playing · Berlin Morning")).toBeInTheDocument();
@@ -226,7 +232,7 @@ it("uses play for the first track and waits for the actual native pause before o
   expect(album).not.toHaveBeenCalledWith("toggle");
   const dock = await screen.findByRole("region", { name: `${ALBUM_TITLE} player` });
   expect(dock).toHaveAttribute("data-dock", "docked");
-  expect(within(dock).getByText(/Downloading album ·/)).toBeInTheDocument();
+  expect(within(dock).getByRole("progressbar", { name: "Album download" })).toHaveTextContent(/Downloading album ·/);
   expect(screen.queryByRole("button", { name: /^Download$/ })).toBeNull();
   act(() => resume("singularity"));
   expect(soundState()).toMatchObject({ playing: false, albumSelected: true });

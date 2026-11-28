@@ -20,7 +20,7 @@ it("shows download under the track-time rail, then removes only completed transf
     "aria-valuetext",
     "400 of 1000 bytes",
   );
-  expect(screen.getByText("Downloading album · 40%")).toBeInTheDocument();
+  expect(screen.getByRole("progressbar", { name: "Album download" })).toHaveTextContent("Downloading album · 40%");
   const slider = screen.getByRole("slider", { name: "Seek in track" });
   const rail = slider.closest(".album-seek-rail");
   expect(rail?.querySelector(".album-seek-track .album-seek-download")).toBeInTheDocument();

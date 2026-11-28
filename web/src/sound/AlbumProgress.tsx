@@ -100,20 +100,30 @@ export function AlbumProgress({
           }}
         />
       </div>
-      <div className="flex min-w-0 items-start justify-between gap-2">
+      <div className="grid min-w-0 grid-cols-[minmax(5ch,max-content)_minmax(0,1fr)_minmax(5ch,max-content)] items-start gap-1">
         <span aria-hidden>{seekable ? time(shown) : "—"}</span>
         {showTransfer && (
           <span
-            className="text-center"
+            className="flex min-w-0 items-start justify-center gap-0.5 whitespace-nowrap text-[11px]"
+            title={transferLabel}
             role="progressbar"
             aria-label="Album download"
             aria-valuenow={percent}
             aria-valuetext={`${received} of ${transfer.totalBytes} bytes`}
           >
-            {transferLabel}
+            {downloading ? (
+              <>
+                <span className="truncate">Downloading album</span>
+                <span className="shrink-0">{` · ${percent}%`}</span>
+              </>
+            ) : (
+              <span className="truncate">{transferLabel}</span>
+            )}
           </span>
         )}
-        <span aria-hidden>{seekable ? time(duration) : "—"}</span>
+        <span className="col-start-3 text-right" aria-hidden>
+          {seekable ? time(duration) : "—"}
+        </span>
       </div>
       {showTransfer && (
         <fieldset className="flex min-w-0 items-center justify-center gap-1" aria-label="Album download actions">
