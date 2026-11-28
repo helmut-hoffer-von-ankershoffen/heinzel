@@ -27,6 +27,7 @@ function brandedTheme(name: string, title: string) {
   return theme({
     name,
     title,
+    plugin: name === "heinzelmaennchen" ? "heinzel-theme" : null,
     logo: {
       alt: title,
       light: `/theme-assets/${name}/light.svg`,
