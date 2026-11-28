@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: desktop-swift-admit-release desktop-swift-sign-release desktop-bind-signed-release-assets ci-macos-arm help pyyaml install setup release-local doctor tools-verify check check-fast check-push linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-apple-ci build-apple-ci test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e test-upgrade e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-static managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package desktop-swift-package desktop-bind-release-assets build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-stage-apple-association docs-catalog docs-site-check docs-publish-check design-check release clean
+.PHONY: desktop-swift-admit-release desktop-swift-sign-release desktop-bind-signed-release-assets ci-macos-arm help pyyaml install setup release-local doctor tools-verify check check-fast check-push linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-apple-ci apple-integration-prepare build-apple-ci test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e test-upgrade e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-static managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package desktop-swift-package desktop-bind-release-assets build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-stage-apple-association docs-catalog docs-site-check docs-publish-check design-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -300,6 +300,10 @@ test-apple-ci: ## Verify iOS widget source configuration and required Apple fixt
 	uv run --frozen --no-sync python apple/scripts/widget_configuration.py source
 	uv run --frozen --no-sync pytest -m macos_specific tests/integration/apple_activity_catalog_test.py tests/integration/apple_audio_samples_test.py tests/integration/apple_browser_clear_test.py tests/integration/apple_local_service_test.py tests/integration/apple_prompt_lifecycle_test.py -q --junitxml=reports/apple-ci.xml
 	uv run --script scripts/check_apple_ci.py reports/apple-ci.xml
+
+apple-integration-prepare: ## Build the Debug Mac app the integration probes verify and reuse, before the timed sessions
+	@test -n "$(APPLE_DEBUG_BUILD)" || { echo "APPLE_DEBUG_BUILD=DIR is required" >&2; exit 2; }
+	uv run --no-sync python -m tests.fixtures.apple_debug_build "$(APPLE_DEBUG_BUILD)"
 
 build-apple-ci: ## Compile the unsigned Swift Release app on macOS CI
 	xcodebuild -project apple/Heinzel.xcodeproj -scheme Heinzel -configuration Release -destination 'generic/platform=macOS' ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
