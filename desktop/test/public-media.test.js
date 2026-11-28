@@ -6,13 +6,15 @@ import { createPublicMediaHandler, publicMediaUrl } from "../src/public-media.js
 
 const screenshot = `https://raw.githubusercontent.com/fictional-lab/harbor/${"a".repeat(40)}/docs/ui.png`;
 const sound = "https://www.youtube.com/watch?v=abcdefghijk";
+const artist = "https://latentheinzels.heinzel.team/";
 const connection = { origin: "http://127.0.0.1:30123", token: "synthetic_native_ui_test_token_1234567890" };
 
-test("only bounded canonical immutable rasters and exact watch identities may reach the browser", () => {
+test("only bounded canonical immutable rasters and exact soundscape links may reach the browser", () => {
   for (const url of [screenshot, screenshot.replace(".png", ".jpg"), screenshot.replace(".png", ".webp"),
     screenshot.replace("docs/ui.png", `${"d".repeat(200)}/${"f".repeat(200)}.png`), sound])
     assert.equal(publicMediaUrl(url), url);
-  for (const url of [null, {}, "x".repeat(1025), "file:///tmp/a.png", "javascript:alert(1)",
+  assert.equal(publicMediaUrl(artist), artist);
+  for (const url of [artist + "other", artist + "?other", null, {}, "x".repeat(1025), "file:///tmp/a.png", "javascript:alert(1)",
     "http://127.0.0.1/image.png", sound.replace("https:", "http:"), sound.replace("www.youtube.com", "www.youtube.com.evil.example"),
     sound + "&token=secret", sound + "#token=secret", sound.replace("www.youtube.com", "user:secret@www.youtube.com"),
     sound.replace("www.youtube.com", "www.youtube.com:443"), sound.replace("abcdefghijk", "bad"),

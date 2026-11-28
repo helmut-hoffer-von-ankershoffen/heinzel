@@ -17,7 +17,7 @@ export function albumIntent(action, options = {}) {
       Object.keys(options).length === 2 && Object.hasOwn(options, "trackID") && Object.hasOwn(options, "seconds") &&
       album.tracks.some(track => track.id === options.trackID) && Number.isFinite(options.seconds) && options.seconds >= 0)
     return action;
-  const actions = ["status", "catalog", "select", "play", "pause", "pausePlayback", "toggle", "next", "previous", "repeat", "download", "pauseDownload", "resumeDownload", "cancelDownload"];
+  const actions = ["status", "catalog", "cover", "select", "play", "pause", "pausePlayback", "toggle", "next", "previous", "repeat", "download", "pauseDownload", "resumeDownload", "cancelDownload"];
   if (!actions.includes(action) || !options || typeof options !== "object" || Array.isArray(options) ||
       Object.keys(options).some(key => key !== "trackID") ||
       (action !== "select" && Object.keys(options).length) ||
@@ -177,7 +177,7 @@ export function createAlbumTransport({ BrowserWindow, app, publish, fetchObject 
   }
   async function run(action, options) {
     if (window && !window.isDestroyed()) observe(await audio("status"));
-    if (["status", "catalog"].includes(action)) return snapshot();
+    if (["status", "catalog", "cover"].includes(action)) return snapshot();
     if (action === "seek") {
       if (sourced && selected && options.trackID === album.tracks[index].id) {
         revision++;

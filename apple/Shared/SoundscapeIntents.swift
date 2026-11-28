@@ -117,7 +117,11 @@ struct PlaySoundscapeIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Play saved Soundscape"
     static let openAppWhenRun = false
     @MainActor func perform() async throws -> some IntentResult {
+        #if HEINZEL_APP_INTENTS
         try SoundscapePlayback.shared.playSavedAlbum()
+        #else
+        throw CocoaError(.featureUnsupported)
+        #endif
         return .result()
     }
 }
@@ -126,7 +130,11 @@ struct PauseSoundscapeIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Pause Soundscape"
     static let openAppWhenRun = false
     @MainActor func perform() async throws -> some IntentResult {
+        #if HEINZEL_APP_INTENTS
         SoundscapePlayback.shared.pause()
+        #else
+        throw CocoaError(.featureUnsupported)
+        #endif
         return .result()
     }
 }
@@ -135,14 +143,37 @@ enum SoundscapeLink {
     static let artist = URL(string: "https://latentheinzels.heinzel.team/")!
     static let video = URL(string: "heinzel://app/sound/video")!
     static let picker = URL(string: "heinzel://app/sound/picker")!
-    static func handles(_ url: URL) -> Bool { url == video || url == picker }
+    private static let trackPath = "/sound/track"
+
+    static func track(_ id: String) -> URL {
+        var url = URLComponents()
+        url.scheme = "heinzel"
+        url.host = "app"
+        url.path = trackPath
+        url.queryItems = [URLQueryItem(name: "id", value: id)]
+        return url.url ?? picker
+    }
+
+    static func trackID(_ url: URL) -> String? {
+        guard let value = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              value.scheme == "heinzel", value.host == "app", value.path == trackPath,
+              value.user == nil, value.password == nil, value.port == nil, value.fragment == nil,
+              let items = value.queryItems, items.count == 1, items[0].name == "id",
+              let id = items[0].value, (1...128).contains(id.utf8.count),
+              id.utf8.allSatisfy({ (97...122).contains($0) || (48...57).contains($0) || $0 == 45 }) else { return nil }
+        return id
+    }
 }
 
 struct PreviousSoundscapeIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Previous track"
     static let openAppWhenRun = false
     @MainActor func perform() async throws -> some IntentResult {
+        #if HEINZEL_APP_INTENTS
         try SoundscapePlayback.shared.previous()
+        #else
+        throw CocoaError(.featureUnsupported)
+        #endif
         return .result()
     }
 }
@@ -151,7 +182,11 @@ struct NextSoundscapeIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Next track"
     static let openAppWhenRun = false
     @MainActor func perform() async throws -> some IntentResult {
+        #if HEINZEL_APP_INTENTS
         try SoundscapePlayback.shared.next()
+        #else
+        throw CocoaError(.featureUnsupported)
+        #endif
         return .result()
     }
 }
@@ -160,7 +195,11 @@ struct ToggleSoundscapeIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Play or pause Soundscape"
     static let openAppWhenRun = false
     @MainActor func perform() async throws -> some IntentResult {
+        #if HEINZEL_APP_INTENTS
         try SoundscapePlayback.shared.toggle()
+        #else
+        throw CocoaError(.featureUnsupported)
+        #endif
         return .result()
     }
 }
@@ -169,7 +208,11 @@ struct RepeatSoundscapeIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Change repeat mode"
     static let openAppWhenRun = false
     @MainActor func perform() async throws -> some IntentResult {
+        #if HEINZEL_APP_INTENTS
         SoundscapePlayback.shared.cycleRepeat()
+        #else
+        throw CocoaError(.featureUnsupported)
+        #endif
         return .result()
     }
 }
@@ -179,7 +222,11 @@ struct PickSoundscapeIntent: AppIntent {
     static let title: LocalizedStringResource = "Choose Soundscape track"
     static let openAppWhenRun = true
     @MainActor func perform() async throws -> some IntentResult {
+        #if HEINZEL_APP_INTENTS
         SoundscapePlayback.shared.openPicker()
+        #else
+        throw CocoaError(.featureUnsupported)
+        #endif
         return .result()
     }
 }
@@ -193,8 +240,12 @@ struct WatchSoundscapeIntent: AppIntent {
     init(trackID: String) { self.trackID = trackID }
 
     @MainActor func perform() async throws -> some IntentResult {
+        #if HEINZEL_APP_INTENTS
         SoundscapePlayback.shared.dockWidth = nil
         SoundscapePlayback.shared.openVideo(trackID: trackID)
+        #else
+        throw CocoaError(.featureUnsupported)
+        #endif
         return .result()
     }
 }

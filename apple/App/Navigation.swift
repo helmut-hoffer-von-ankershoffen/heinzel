@@ -516,8 +516,17 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     @objc private func openSoundDock() {
         guard isSelected(), hasCommittedWorkspace, case .idle = provisionalLoad,
               let workspace, workspace.url.map(endpoint.owns) == true else { return }
-        guard SoundscapePlayback.shared.dockRequestPending else { return }
-        workspace.evaluateJavaScript("window.dispatchEvent(new CustomEvent('heinzel-album-dock', { detail: { picker: true } }))")
+        let playback = SoundscapePlayback.shared
+        guard let request = playback.dockRequest else { return }
+        let revision = documentRevision
+        workspace.evaluateJavaScript("""
+            !window.dispatchEvent(new CustomEvent('heinzel-album-dock', {
+                detail: { picker: \(request.destination == .picker ? "true" : "false") }, cancelable: true
+            }))
+            """) { [weak self] result, _ in
+                guard result as? Bool == true, self?.documentRevision == revision, playback.dockRequest == request else { return }
+                playback.dockRequest = nil
+            }
     }
 
     private func verifiedWorkspace(for message: WKScriptMessage) -> WKWebView? {
@@ -537,10 +546,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             do {
                 switch action {
                 case "status":
-                    if playback.dockRequestPending {
-                        openSoundDock()
-                        playback.dockRequestPending = false
-                    }
+                    if playback.dockRequest != nil { openSoundDock() }
                 case "catalog": _ = try await library.catalogTracks()
                 case "select":
                     guard let body = message.body as? [String: Any],
@@ -557,7 +563,10 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                         return (nil, "Volume must be a number from 0 to 1")
                     }
                     try playback.setVolume(gain.doubleValue)
-                case "play": try await playback.playAlbum()
+                case "cover": playback.chooseAlbumArtwork()
+                case "play":
+                    try await playback.playAlbum()
+                    playback.chooseAlbumArtwork()
                 case "pausePlayback": playback.pause()
                 case "toggle": try await playback.toggleApp()
                 case "previous": try await playback.previousApp()

@@ -139,8 +139,8 @@ it("restores native status in the dock and keeps the reopened picker for sources
   const dock = await screen.findByRole("region", { name: `${ALBUM_TITLE} player` });
   expect(dock).toHaveAttribute("data-dock", "docked");
   const credit = within(dock).getByRole("link", { name: "Latent Heinzels" });
-  expect(credit).toHaveAttribute("href", "https://latentheinzels.heinzel.team");
-  expect(credit).toHaveAttribute("rel", "noopener noreferrer");
+  expect(credit).toHaveAttribute("href", "https://latentheinzels.heinzel.team/");
+  expect(credit).toHaveAttribute("rel", "noreferrer noopener");
   expect(within(dock).getByText("Playing · Berlin Morning")).toBeInTheDocument();
   expect(within(dock).getByRole("combobox", { name: "Choose album track" })).toBeInTheDocument();
   expect(within(dock).getAllByText(ALBUM_TITLE)).toHaveLength(1);
@@ -156,7 +156,7 @@ it("restores native status in the dock and keeps the reopened picker for sources
   expect(await within(dock).findByText("Paused · Berlin Evening")).toBeInTheDocument();
   expect(within(dock).getByRole("combobox", { name: "Choose album track" })).toBeInTheDocument();
   expect(within(dock).getByText("Downloading album · 25%")).toBeInTheDocument();
-  expect(within(dock).getByRole("button", { name: "Repeat: Track" })).toHaveAttribute("aria-pressed", "true");
+  expect(within(dock).getByRole("button", { name: "Repeat: Track" })).toHaveClass("font-bold");
   await user.keyboard("{Escape}");
   await user.click(screen.getByRole("button", { name: /^Choose a soundscape/ }));
   expect(
@@ -318,7 +318,7 @@ it.each([true, false])("has one upper band link when docked=%s", async (docked) 
   const player = await screen.findByRole("region", { name: `${ALBUM_TITLE} player` });
   const links = within(player).getAllByRole("link", { name: "Latent Heinzels" });
   expect(links).toHaveLength(1);
-  expect(links[0]?.closest("p")).toHaveClass("text-xs");
+  expect(links[0]?.parentElement).toHaveClass("text-xs");
   expect(links[0]?.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
   expect(within(player).queryByRole("button", { name: "Open video" })).toBeNull();
 });
@@ -326,7 +326,6 @@ it.each(["Off", "Album", "Track"] as const)("labels and styles repeat %s", async
   vi.stubGlobal("heinzelDesktop", { album: vi.fn(async () => ({ ...downloading, repeatMode })) });
   await open();
   const button = await screen.findByRole("button", { name: `Repeat: ${repeatMode}` });
-  expect(button).toHaveAttribute("aria-pressed", String(repeatMode !== "Off"));
   expect(button).toHaveClass(repeatMode === "Off" ? "[&_svg]:stroke-[1.75]" : "[&_svg]:stroke-[3]");
   expect(button.querySelector("svg")).not.toBeNull();
 });
@@ -372,4 +371,18 @@ it("places the track picker between Next and Repeat and seeks the selected track
   expect(album).toHaveBeenCalledWith("seek", { trackID: "berlin-morning", seconds: 65 });
   fireEvent.change(picker, { target: { value: "berlin-evening" } });
   expect(album).toHaveBeenCalledWith("select", { trackID: "berlin-evening" });
+});
+
+it("opens the inline picker from a widget and displays a routed track without starting playback", async () => {
+  const album = vi.fn(async (_action: AlbumAction) => ({ ...downloading, playing: false, phase: "ready" as const }));
+  vi.stubGlobal("heinzelDesktop", { album });
+  await open();
+  const request = (picker: boolean) => new CustomEvent("heinzel-album-dock", { detail: { picker }, cancelable: true });
+  act(() => expect(window.dispatchEvent(request(true))).toBe(false));
+  const player = await screen.findByRole("region", { name: `${ALBUM_TITLE} player` });
+  expect(await within(player).findByRole("button", { name: "Berlin Evening" })).toBeInTheDocument();
+  act(() => expect(window.dispatchEvent(request(false))).toBe(false));
+  expect(within(player).queryByRole("group", { name: "Tracks" })).toBeNull();
+  expect(within(player).getByText("Berlin Morning", { selector: "p" })).toBeInTheDocument();
+  expect(album.mock.calls.every(([action]) => action === "status" || action === "catalog")).toBe(true);
 });

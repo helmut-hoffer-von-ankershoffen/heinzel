@@ -37,6 +37,17 @@ struct SoundscapeVolumeTests {
         if stale || !sought || abs(queue.currentTime().seconds - 0.75) > 0.05 || queue.rate != 0 {
             throw SoundscapeAlbumTests.Failure(description: "Seek did not move the paused queue to the selected track position")
         }
+        let other = try library.savedTracks().first { $0.id != selected }
+        guard let other else { throw SoundscapeAlbumTests.Failure(description: "Missing widget fixture track") }
+        await playback.openWidgetTrack(selected)
+        try require(playback.selectedID == selected && abs(queue.currentTime().seconds - 0.75) <= 0.05 && queue.rate == 0)
+        let coldQueue = AVQueuePlayer()
+        let cold = SoundscapePlayback(library: library, defaults: defaults, player: coldQueue, publish: { _ in })
+        await cold.openWidgetTrack(other.id)
+        try require(cold.selectedID == other.id && cold.showingDock && !cold.showingPicker && coldQueue.rate == 0)
+        await cold.openWidgetTrack("missing-fixture-track")
+        try require(cold.selectedID == other.id && cold.showingPicker && coldQueue.rate == 0)
+
         for invalid in [Double.nan, .infinity, -0.1, 1.1] {
             do {
                 try playback.setVolume(invalid)

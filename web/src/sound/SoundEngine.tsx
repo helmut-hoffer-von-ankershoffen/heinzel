@@ -52,15 +52,20 @@ export function SoundEngine() {
   const list = useSoundscapes();
   const sound = useSound();
   const album = useAlbum();
+  const [showTrackPicker, setShowTrackPicker] = useState(false);
   useEffect(() => {
     // Download state and a remembered title do not express playback intent.
     if (album?.playing && !soundState().albumSelected) selectAlbum();
   }, [album]);
   useEffect(() => {
-    const openDock = () => {
+    const openDock = (event: Event) => {
+      if (!nativeAlbum() || !(event instanceof CustomEvent)) return;
+      event.preventDefault();
+      const picker = event.detail?.picker === true;
       setDocked(true);
-      selectAlbum();
-      void albumAction("catalog");
+      selectAlbum(picker);
+      setShowTrackPicker(picker);
+      void albumAction("status");
     };
     window.addEventListener("heinzel-album-dock", openDock);
     return () => window.removeEventListener("heinzel-album-dock", openDock);
@@ -136,11 +141,18 @@ export function SoundEngine() {
       <PlayerCard
         title={ALBUM_TITLE}
         host="Latent Heinzels"
-        sourceUrl="https://latentheinzels.heinzel.team"
+        sourceUrl="https://latentheinzels.heinzel.team/"
         artwork={<AlbumVisual album={sound.albumCover ? null : album} />}
-        onClose={closeAlbum}
+        onClose={() => {
+          setShowTrackPicker(false);
+          void closeAlbum();
+        }}
       >
-        <AlbumControls showCover={sound.albumCover} />
+        <AlbumControls
+          showCover={sound.albumCover}
+          showTrackPicker={showTrackPicker}
+          onDismissTrackPicker={() => setShowTrackPicker(false)}
+        />
       </PlayerCard>
     );
   if (!current || !sound.started) return null;

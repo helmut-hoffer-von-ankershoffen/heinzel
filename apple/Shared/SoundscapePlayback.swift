@@ -11,6 +11,8 @@ struct SoundscapeWidgetState: Codable {
     var verified = 0
     var total = 0
     var phase = "unavailable"
+    var downloadFraction: Double?
+    var albumArtwork: Bool?
     var selectedID: String?
     var video = false
     var posterID: String?
@@ -30,7 +32,7 @@ struct SoundscapeWidgetState: Codable {
     }
 
     var artworkURL: URL? {
-        guard selectedID != nil, let id = posterID, Self.validPosterID(id),
+        guard let id = posterID, Self.validPosterID(id),
               let folder = Self.url?.deletingLastPathComponent() else { return nil }
         return folder.appending(path: "soundscape-\(id).jpg")
     }
@@ -56,10 +58,10 @@ struct SoundscapeWidgetState: Codable {
               value.duration.map({ $0.isFinite && $0 > 0 && $0 <= 2_678_400 }) ?? true,
               value.posterID.map(Self.validPosterID) ?? true,
               value.selectedID.map({ !$0.isEmpty }) ?? true,
-              value.posterID == nil || value.selectedID != nil,
+              value.downloadFraction.map({ $0.isFinite && (0...1).contains($0) }) ?? true,
               !value.advancing || value.playing,
               !value.playing || (value.selectedID != nil && value.origin != "none"),
-              value.canPlaySaved || !(value.canPrevious || value.canNext),
+              value.canPlaySaved || (value.selectedID != nil && value.origin != "none") || !(value.canPrevious || value.canNext),
               !value.canWatch || value.selectedID != nil,
               !value.canPlaySaved || value.verified > 0
         else { return nil }
@@ -70,7 +72,7 @@ struct SoundscapeWidgetState: Codable {
         guard let url = Self.url else { return }
         var state = self
         state.posterID = nil
-        if selectedID != nil, let poster, Self.validPosterID(poster.deletingPathExtension().lastPathComponent) {
+        if let poster, Self.validPosterID(poster.deletingPathExtension().lastPathComponent) {
             let id = poster.deletingPathExtension().lastPathComponent
             let destination = url.deletingLastPathComponent().appending(path: "soundscape-\(id).jpg")
             if !FileManager.default.fileExists(atPath: destination.path),
@@ -105,9 +107,18 @@ struct SoundscapeWidgetState: Codable {
 /// All transport commands run in the app process and share this queue.
 @MainActor @Observable
 final class SoundscapePlayback {
-    static let shared = SoundscapePlayback()
+    static let shared: SoundscapePlayback = {
+        let playback = SoundscapePlayback()
+        playback.publishWidgetState()
+        return playback
+    }()
     static let changed = Notification.Name("SoundscapePlayback.changed")
-    var dockRequestPending = false
+    struct DockRequest: Equatable {
+        enum Destination { case picker, track }
+        let destination: Destination
+        let id = UUID()
+    }
+    var dockRequest: DockRequest?
     static let dockRequested = Notification.Name("SoundscapePlayback.dockRequested")
     typealias ResumeSeek = @MainActor (AVQueuePlayer, CMTime, @escaping @Sendable (Bool) -> Void) -> Void
 
@@ -146,6 +157,7 @@ final class SoundscapePlayback {
     private var tracks: [AlbumPlayableTrack] = []
     private(set) var selectedID: String?
     private var videoSelected: Bool
+    private var showsAlbumArtwork: Bool
     private var rateObservation: NSKeyValueObservation?
     private var itemObservation: NSKeyValueObservation?
     private var durationObservation: NSKeyValueObservation?
@@ -162,6 +174,7 @@ final class SoundscapePlayback {
         var repeatMode: String?
         var video: Bool?
         var position: Double?
+        var albumArtwork: Bool?
     }
 
     /// Fixture dependencies isolate playback, publishing and the outcome of a resume seek.
@@ -171,7 +184,8 @@ final class SoundscapePlayback {
              player.seek(to: time, completionHandler: completion)
          },
          publish: @escaping @MainActor (SoundscapeWidgetState) -> Void = { state in
-             state.write(poster: AlbumLibrary.shared.approvedSavedPoster(for: state.selectedID))
+             let library = AlbumLibrary.shared
+             state.write(poster: state.albumArtwork == true ? library.approvedSavedCover() : library.approvedSavedPoster(for: state.selectedID))
              WidgetCenter.shared.reloadTimelines(ofKind: "HeinzelSoundscape")
          }) {
         self.player = player
@@ -189,6 +203,7 @@ final class SoundscapePlayback {
         repeatMode = ["Off", "Album", "Track"].contains(mode) ? mode : "Off"
         currentTitle = saved?.title ?? "Soundscape"
         videoSelected = saved?.video ?? false
+        showsAlbumArtwork = saved?.albumArtwork ?? (saved?.selectedID == nil)
         let position = saved?.position ?? 0
         restoredPosition = position.isFinite ? min(max(0, position), 2_678_400) : 0
         downloadObserver = NotificationCenter.default.addObserver(
@@ -292,7 +307,7 @@ final class SoundscapePlayback {
         }
     }
 
-    /// Widget entry points always re-verify the local library, even with a loaded app stream.
+    /// A cold widget session uses only locally verified, saved media.
     func playSavedAlbum() throws {
         watchGeneration = UUID()
         do { try loadSaved(); try startSelected() }
@@ -304,18 +319,18 @@ final class SoundscapePlayback {
         // Decide before local verification can replace an app's streaming item.
         if isPlaying || player.rate != 0 { pause(); return }
         do {
-            try loadSaved()
+            if loadedURL == nil || player.currentItem == nil { try loadSaved() }
             try startSelected()
         } catch { fail(error.localizedDescription); throw error }
     }
 
-    func previous() throws { try savedMove(-1) }
-    func next() throws { try savedMove(1) }
+    func previous() throws { try moveFromWidget(-1) }
+    func next() throws { try moveFromWidget(1) }
 
-    private func savedMove(_ delta: Int) throws {
+    private func moveFromWidget(_ delta: Int) throws {
         watchGeneration = UUID()
         do {
-            try loadSaved()
+            if loadedURL == nil || player.currentItem == nil { try loadSaved() }
             try move(delta)
         } catch { fail(error.localizedDescription); throw error }
     }
@@ -355,6 +370,7 @@ final class SoundscapePlayback {
             next = (next + tracks.count) % tracks.count
         }
         selectedID = tracks[next].id
+        showsAlbumArtwork = false
         restoredPosition = 0
         clearItem()
         try startSelected()
@@ -369,6 +385,7 @@ final class SoundscapePlayback {
         guard tracks.contains(where: { $0.id == id }) else { throw PlaybackError.noSavedTracks }
         if selectedID != id { restoredPosition = 0; clearItem() }
         selectedID = id
+        showsAlbumArtwork = false
         try startSelected()
     }
 
@@ -379,6 +396,7 @@ final class SoundscapePlayback {
             guard tracks.contains(where: { $0.id == id }) else { throw PlaybackError.noSavedTracks }
             if selectedID != id { restoredPosition = 0; clearItem() }
             selectedID = id
+            showsAlbumArtwork = false
             videoSelected = video
             try startSelected()
         } catch { fail(error.localizedDescription); throw error }
@@ -396,13 +414,13 @@ final class SoundscapePlayback {
         #endif
     }
 
-    private func startSelected() throws {
+    private func startSelected(autoplay: Bool = true) throws {
         guard let track = tracks.first(where: { $0.id == selectedID })
         else { throw PlaybackError.noSavedTracks }
         currentTitle = track.title
-        try activateAudio()
+        if autoplay { try activateAudio() }
         if loadedURL == track.url, player.currentItem != nil, player.currentItem?.status != .failed {
-            if albumEnded {
+            if autoplay && albumEnded {
                 pendingResumePosition = nil
                 player.seek(to: .zero)
                 albumEnded = false
@@ -410,7 +428,7 @@ final class SoundscapePlayback {
             currentTitle = track.title
             videoURL = videoSelected ? track.url : nil
             errorMessage = nil
-            player.play()
+            if autoplay { player.play() }
             setPlaying(player.rate != 0)
             return
         }
@@ -454,18 +472,69 @@ final class SoundscapePlayback {
         currentTitle = track.title
         videoURL = videoSelected ? track.url : nil
         errorMessage = nil
-        player.play()
+        if autoplay { player.play() }
         setPlaying(player.rate != 0)
     }
 
     func pause() { watchGeneration = UUID(); player.pause(); setPlaying(false) }
 
-    func openPicker() {
-        dockWidth = nil; showingPicker = true; showingDock = true
+    private func requestDock(_ destination: DockRequest.Destination) {
         #if os(macOS)
-        dockRequestPending = true
+        dockRequest = DockRequest(destination: destination)
         NotificationCenter.default.post(name: Self.dockRequested, object: nil)
         #endif
+    }
+
+    func chooseAlbumArtwork() {
+        showsAlbumArtwork = true
+        publishWidgetState()
+    }
+
+    func openPicker() {
+        dockWidth = nil; showingPicker = true; showingDock = true
+        requestDock(.picker)
+        if (try? savedTracks().isEmpty) == true {
+            Task {
+                _ = try? await library.catalogTracks()
+                publishWidgetState()
+            }
+        }
+    }
+
+    /// Open exactly the track shown by the widget. A warm view keeps its current
+    /// transport and position. A cold view prepares a paused item for seeking.
+    func openWidgetTrack(_ id: String) async {
+        let generation = UUID()
+        watchGeneration = generation
+        do {
+            var available = try savedTracks()
+            if !available.contains(where: { $0.id == id }) {
+                if selectedID == id, player.currentItem != nil { available = tracks }
+                else { available = try await library.playableTracks() }
+            }
+            guard watchGeneration == generation else { return }
+            guard available.contains(where: { $0.id == id }) else { throw PlaybackError.noSavedTracks }
+            if selectedID != id {
+                clearItem()
+                restoredPosition = 0
+                videoSelected = false
+            }
+            if selectedID != id || player.currentItem == nil || player.currentItem?.status == .failed {
+                selectedID = id
+                tracks = available
+                try startSelected(autoplay: false)
+            }
+            showsAlbumArtwork = false
+            publishWidgetState()
+            dockWidth = nil
+            showingPicker = false
+            showingDock = true
+            requestDock(.track)
+        } catch {
+            guard watchGeneration == generation else { return }
+            openPicker()
+            errorMessage = "This track is unavailable. Choose another track."
+        }
     }
 
     /// The app's legacy unparameterized route may choose the normal current/first track.
@@ -474,10 +543,6 @@ final class SoundscapePlayback {
     /// A supplied ID is exact: only verified files or catalog entries may resolve it.
     /// Each foreground action owns a generation so late catalog results cannot reopen video.
     func openVideo(trackID requested: String?) {
-        #if os(macOS)
-        dockRequestPending = true
-        NotificationCenter.default.post(name: Self.dockRequested, object: nil)
-        #endif
         showingPicker = false
         showingDock = true
         watchGeneration = UUID()
@@ -505,7 +570,9 @@ final class SoundscapePlayback {
             tracks = available
             selectedID = track.id
             videoSelected = true
+            showsAlbumArtwork = false
             try startSelected()
+            requestDock(.track)
         }
         do {
             let saved = try savedTracks()
@@ -518,7 +585,9 @@ final class SoundscapePlayback {
                loadedURL?.isFileURL == false,
                tracks.contains(where: { $0.id == requested && $0.url == loadedURL }) {
                 videoSelected = true
+                showsAlbumArtwork = false
                 try startSelected()
+                requestDock(.track)
                 return
             }
         } catch { fail(error.localizedDescription); return }
@@ -582,6 +651,7 @@ final class SoundscapePlayback {
         state.playing = isPlaying
         state.repeatMode = repeatMode
         state.selectedID = selectedID
+        state.albumArtwork = showsAlbumArtwork || selectedID == nil
         state.video = videoSelected
         state.position = playbackPosition
         state.sampledAt = .now
@@ -592,15 +662,20 @@ final class SoundscapePlayback {
         // Waiting/buffering must freeze the widget clock until media actually advances.
         state.advancing = isPlaying && !isResuming && player.timeControlStatus == .playing
         let saved = (try? savedTracks()) ?? []
-        let index = saved.firstIndex(where: { $0.id == selectedID }) ?? 0
+        let queue = loadedURL == nil || player.currentItem == nil ? saved : tracks
+        let index = queue.firstIndex(where: { $0.id == selectedID }) ?? 0
         state.canPlaySaved = !saved.isEmpty
-        state.canPrevious = !saved.isEmpty && (index > 0 || repeatMode == "Album")
-        state.canNext = !saved.isEmpty && (index + 1 < saved.count || repeatMode == "Album")
+        state.canPrevious = !queue.isEmpty && (index > 0 || repeatMode == "Album")
+        state.canNext = !queue.isEmpty && (index + 1 < queue.count || repeatMode == "Album")
         // Watch opens the foreground app, whose selected-video path may stream.
         state.canWatch = selectedID != nil
         state.verified = download["verified"] as? Int ?? 0
         state.total = download["total"] as? Int ?? 0
         state.phase = download["phase"] as? String ?? "unavailable"
+        if state.phase == "downloading", state.verified < state.total,
+           let received = download["receivedBytes"] as? Int, let total = download["totalBytes"] as? Int, total > 0 {
+            state.downloadFraction = min(1, max(0, Double(received) / Double(total)))
+        }
         if let data = try? JSONEncoder().encode(state) {
             defaults.set(data, forKey: "soundscapePlayback")
         }

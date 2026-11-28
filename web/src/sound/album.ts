@@ -32,6 +32,7 @@ export type AlbumSnapshot = {
 export type AlbumAction =
   | "volume"
   | "catalog"
+  | "cover"
   | "select"
   | "seek"
   | "status"

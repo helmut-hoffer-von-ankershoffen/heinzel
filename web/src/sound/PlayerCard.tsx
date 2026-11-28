@@ -16,6 +16,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { PaneAction } from "@/components/PaneActions";
+import { PublicMediaLink } from "@/components/public-media-link";
 import { t } from "@/i18n";
 import { clampToWindow } from "@/lib/placement";
 import { cn } from "@/lib/utils";
@@ -288,24 +289,19 @@ export function PlayerCard({
         >
           <div className="min-w-0 flex-1">
             <p className="truncate text-ui-sm font-medium">{title}</p>
-            <p className="truncate text-xs text-muted-foreground">
+            <div className="truncate text-xs text-muted-foreground">
               {sourceUrl ? (
                 <>
                   By{" "}
-                  <a
-                    href={sourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex max-w-full items-center gap-1"
-                  >
+                  <PublicMediaLink href={sourceUrl} className="inline-flex max-w-full items-center gap-1">
                     {host}
                     <ExternalLink aria-hidden className="size-3 shrink-0" />
-                  </a>
+                  </PublicMediaLink>
                 </>
               ) : (
                 t("sound.playsFrom", { host })
               )}
-            </p>
+            </div>
           </div>
           <div data-pane-chrome="" className="flex flex-wrap items-center gap-1.5">
             {headerAction}

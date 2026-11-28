@@ -1523,9 +1523,17 @@ struct ConnectionView: View {
                 openURL(SoundscapeLink.artist)
                 return
             }
-            if SoundscapeLink.handles(url) {
-                if url == SoundscapeLink.picker { soundscape.openPicker() }
-                else { soundscape.dockWidth = nil; soundscape.openVideo() }
+            if url == SoundscapeLink.picker {
+                soundscape.openPicker()
+                return
+            }
+            if url == SoundscapeLink.video {
+                soundscape.dockWidth = nil
+                soundscape.openVideo()
+                return
+            }
+            if let id = SoundscapeLink.trackID(url) {
+                Task { await soundscape.openWidgetTrack(id) }
                 return
             }
             if let shortcut = NativeRoute(url: url) {

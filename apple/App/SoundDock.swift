@@ -14,6 +14,8 @@ struct SoundDock: View {
     @State private var verifiedBytes = 0
     @State private var totalBytes = 0
     @State private var videoAspect: CGFloat = 16 / 9
+    @State private var seekDraft: Double?
+    @State private var seekTrack: String?
 
     var body: some View {
         NavigationStack {
@@ -35,13 +37,18 @@ struct SoundDock: View {
                         .frame(width: videoSize.width, height: videoSize.height)
                         .frame(maxWidth: .infinity)
                     }
-                    if !AlbumLibrary.shared.approvedFilm(for: playback.selectedID),
-                       let poster = AlbumLibrary.shared.approvedSavedPoster(for: playback.selectedID) {
+                    if playback.videoURL == nil,
+                       let poster = playback.selectedID == nil
+                        ? AlbumLibrary.shared.approvedSavedCover()
+                        : AlbumLibrary.shared.approvedSavedPoster(for: playback.selectedID) {
                         AsyncImage(url: poster) { image in
                             image.resizable().scaledToFit()
                         } placeholder: { Color.clear }
                     }
-                    Link("Latent Heinzels", destination: SoundscapeLink.artist)
+                    HStack(spacing: 4) {
+                        Text("By")
+                        Link("Latent Heinzels", destination: SoundscapeLink.artist)
+                    }.font(.caption)
                     Button { playback.showingPicker.toggle() } label: {
                         HStack {
                             Text(playback.currentTitle).font(.headline)
@@ -77,6 +84,7 @@ struct SoundDock: View {
                             }
                         }
                     }
+                    timeline
                     HStack {
                         Button("Previous", systemImage: "backward.end.fill") {
                             performAsync { try await playback.previousApp() }
@@ -130,6 +138,49 @@ struct SoundDock: View {
             catch { self.error = error.localizedDescription }
             refresh()
         }
+    }
+
+    private var timeline: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            if let duration = playback.albumDuration, let id = playback.selectedID {
+                let elapsed = min(duration, seekDraft ?? playback.playbackPosition)
+                VStack(spacing: 1) {
+                    Slider(value: Binding(get: { elapsed }, set: { seconds in
+                        if seekTrack != nil { seekDraft = seconds }
+                        else { moveTrack(id, to: seconds) }
+                    }), in: 0...duration, onEditingChanged: { editing in
+                        if editing { seekTrack = id }
+                        else {
+                            if let seekTrack, let seekDraft { moveTrack(seekTrack, to: seekDraft) }
+                            seekTrack = nil
+                            seekDraft = nil
+                        }
+                    })
+                    .accessibilityLabel("Seek in track")
+                    .accessibilityValue("\(time(elapsed)) of \(time(duration))")
+                    HStack {
+                        Text(time(elapsed))
+                        Spacer()
+                        Text(time(duration))
+                    }
+                    .font(.caption.monospacedDigit())
+                    .accessibilityHidden(true)
+                }
+                .onChange(of: playback.selectedID) { _, _ in
+                    seekTrack = nil
+                    seekDraft = nil
+                }
+            }
+        }
+    }
+
+    private func moveTrack(_ id: String, to seconds: Double) {
+        Task { _ = await playback.seekSelectedTrack(id, to: seconds) }
+    }
+
+    private func time(_ seconds: Double) -> String {
+        let whole = Int(seconds)
+        return String(format: "%d:%02d", whole / 60, whole % 60)
     }
 
     private func transfer(_ action: SoundscapeTransferAction) {

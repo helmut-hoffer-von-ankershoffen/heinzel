@@ -228,6 +228,12 @@ final class AlbumLibrary {
         return size == object.bytes && digest.finalize().map { String(format: "%02x", $0) }.joined() == object.sha256
     }
 
+    func approvedSavedCover() -> URL? {
+        guard let cover = journal?.album.cover,
+              cover.sha256 == "bb465f44cecd01f1f84b3353704ca9fa7b2bdc995ff495a8879b1dcaf570d84c" else { return nil }
+        return available(cover)
+    }
+
     func approvedSavedPoster(for id: String?) -> URL? {
         guard let id, let track = journal?.album.tracks.first(where: { $0.id == id }),
               Self.approvedPosters[id] == track.poster.sha256 else { return nil }
