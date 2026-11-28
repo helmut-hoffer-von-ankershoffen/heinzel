@@ -110,7 +110,7 @@ def test_registered_private_http_search(make_kernel, tmp_path):
 def test_indexed_search_avoids_spine_reads_and_recovers_database(make_kernel, tmp_path, monkeypatch):
     import os
 
-    import heinzel.kernel.session._session_store as store
+    import heinzel.services.session._session_store as store
 
     kernel = make_kernel(builtins=True, settings_=Settings())
     kernel.bind(CurrentUser, CurrentUser(tmp_path / "identity"))

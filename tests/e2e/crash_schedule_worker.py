@@ -12,12 +12,12 @@ from typing import override
 import pytest
 
 import heinzel.kernel.ai._ai as ai_module
-import heinzel.kernel.session._session_store as store_module
 import heinzel.modules.heinzel._autonomous_schedule as schedule_module
 import heinzel.modules.heinzel._interactive_turn as interactive_module
 import heinzel.modules.heinzel._service as service_module
 import heinzel.modules.heinzel._session_crud as crud_module
 import heinzel.modules.heinzel._session_repository as repository_module
+import heinzel.services.session._session_store as store_module
 from heinzel import Config, ConnectedItemIdentity, Kernel, ModuleRecord, Notifications, Settings
 from heinzel.kernel import Origin, discover
 from heinzel.modules.org import _discovery as org_discovery
