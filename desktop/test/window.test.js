@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
+import { registerAlbumScheme } from "../src/album-scheme.js";
 import { createAlbumTransport } from "../src/album-transport.js";
 import { hideWindows, quitLogLine, shouldRefresh, showWindows, stopWithReport } from "../src/shutdown.js";
 import { createPublicMediaHandler } from "../src/public-media.js";
@@ -35,6 +36,22 @@ test("Electron readiness starts the CLI and retains the picker after startup err
   assert.ok(startup.indexOf("acquireDesktopGate()") < startup.indexOf("return ctx.ownedCli.start()"));
   assert.match(startup, /workspaceController\?\.failed\(failedConnection,/);
   assert.match(startup, /showConnection\(\)/);
+});
+
+test("a controller-gated start can reuse the album scheme registered before readiness", () => {
+  let ready = false;
+  const registrations = [];
+  const protocol = { registerSchemesAsPrivileged(schemes) {
+    assert.equal(ready, false);
+    registrations.push(...schemes);
+  } };
+  registerAlbumScheme(protocol);
+  ready = true;
+  registerAlbumScheme(protocol);
+  assert.deepEqual(registrations, [{
+    scheme: "heinzel-album",
+    privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true },
+  }]);
 });
 
 test("Quit stops the owned CLI without adding background integration", () => {
@@ -80,6 +97,7 @@ function quitHarness(result, rejects = false) {
     moduleUrl: new URL("../src/main.js", import.meta.url).href, URL,
     process: proc, app,
     protocol: { registerSchemesAsPrivileged: (registered) => schemes.push(...registered) },
+    registerAlbumScheme,
     createAlbumTransport,
     console: { ...console, warn: (line) => warnings.push(line) },
     BrowserWindow: { getAllWindows: () => [window] },

@@ -147,8 +147,9 @@ async function launch(redirectOnStart) {
       })(), 15_000, "The attached service's periodic lifecycle probe did not reach the isolated service.")
         .finally(() => { probeDeadline = true; });
       assert.deepEqual(await page.evaluate(() => Object.keys(window.heinzelDesktop)), [
-        "clientFlavor",
-        "workspaceAudio", "titlebar", "browser", "player", "linkMode", "lifecycle", "about", "systemAudio", "audioSource",
+        "workspaces", "album", "clientFlavor",
+        "workspaceAudio", "titlebar", "browser", "onPlayerIntent", "player", "linkMode", "lifecycle", "about",
+        "systemAudio", "audioSource",
         "onFullscreen",
       ]);
       assert.equal(await page.evaluate(() => window.heinzelDesktop.clientFlavor), "electron");

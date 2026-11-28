@@ -18,6 +18,7 @@ import { isOwnedMainFrame } from "../src/public-media.js";
 import { createMiniBrowser } from "../src/mini-browser.js";
 import { createMediaPlayer } from "../src/media-player.js";
 import { createAlbumTransport, filmURL, installWorkspaceFilm } from "../src/album-transport.js";
+import { registerAlbumScheme } from "../src/album-scheme.js";
 
 const moduleUrl = new URL("../src/main.js", import.meta.url).href;
 const source = mainScript();
@@ -123,7 +124,7 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
     };
   };
   runInNewContext(source, {
-    protocol: { registerSchemesAsPrivileged() {} }, createAlbumTransport, installWorkspaceFilm,
+    protocol: { registerSchemesAsPrivileged() {} }, registerAlbumScheme, createAlbumTransport, installWorkspaceFilm,
     probeWorkspaceRenderer: async (_window, connection) => {
       events.push(["renderer-verify", connection.origin]);
       if (outage) throw new Error("unreachable");
