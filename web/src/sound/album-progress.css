@@ -13,23 +13,26 @@
   pointer-events: none;
 }
 
-.album-seek-played,
-.album-seek-download {
+.album-seek-played {
   position: absolute;
   inset-inline-start: 0;
   display: block;
-}
-
-.album-seek-played {
   inset-block: 0;
   width: var(--album-playback);
   border-radius: inherit;
   background: var(--color-primary);
 }
 
-.album-seek-download {
+.album-seek-download-edge {
+  position: absolute;
+  inset-inline: 4px;
   inset-block-end: -2px;
   height: 2px;
+}
+
+.album-seek-download {
+  display: block;
+  height: 100%;
   border-radius: 9999px;
   background: #d98b21;
 }

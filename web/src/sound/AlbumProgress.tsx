@@ -59,7 +59,11 @@ export function AlbumProgress({
       <div className="album-seek-rail" style={fill}>
         <div className="album-seek-track" aria-hidden>
           <span className="album-seek-played" />
-          {showTransfer && <span className="album-seek-download" style={{ width: `${fraction * 100}%` }} />}
+          {showTransfer && (
+            <span className="album-seek-download-edge">
+              <span className="album-seek-download" style={{ width: `${fraction * 100}%` }} />
+            </span>
+          )}
         </div>
         <input
           type="range"
