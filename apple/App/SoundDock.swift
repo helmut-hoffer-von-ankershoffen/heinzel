@@ -20,6 +20,10 @@ struct SoundDock: View {
             ScrollView {
                 VStack(spacing: 16) {
                     if playback.videoURL != nil {
+                        let videoSize = SoundDockGeometry.videoSize(
+                            width: SoundDockGeometry.width(requested: playback.dockWidth, available: availableSize.width) - 32,
+                            height: availableSize.height, aspect: videoAspect
+                        )
                         ZStack {
                             Color.black
                             if playback.isResuming {
@@ -28,7 +32,7 @@ struct SoundDock: View {
                                 SoundscapeNativeVideo(player: playback.player)
                             }
                         }
-                        .aspectRatio(videoAspect, contentMode: .fit)
+                        .frame(width: videoSize.width, height: videoSize.height)
                         .frame(maxWidth: .infinity)
                     }
                     Link("Latent Heinzels", destination: SoundscapeLink.artist)

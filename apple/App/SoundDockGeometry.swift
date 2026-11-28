@@ -23,4 +23,13 @@ enum SoundDockGeometry {
         guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return 16 / 9 }
         return size.width / size.height
     }
+
+    /// Fit the whole movie within the card and leave room for its controls.
+    static func videoSize(width: CGFloat, height: CGFloat, aspect: CGFloat) -> CGSize {
+        let w = width.isFinite ? max(1, width) : 1
+        let h = height.isFinite ? max(1, height / 2) : 1
+        let ratio = aspect.isFinite && aspect > 0 ? aspect : 16 / 9
+        let fittedWidth = min(w, h * ratio)
+        return CGSize(width: fittedWidth, height: fittedWidth / ratio)
+    }
 }
