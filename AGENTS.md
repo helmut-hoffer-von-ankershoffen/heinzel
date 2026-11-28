@@ -58,6 +58,10 @@ upgrade lane and macOS selection); until they merge, the current workflows apply
   selector picks update, lifecycle, kernel/spec or upgrade paths. Every PR still runs the full Linux suite and an
   in-place upgrade job; main's coalesced macOS lane runs on every main commit; release candidates run everything on
   both OSes.
+- A hosted-only or flaky test: prove it, or its fix, with one dispatched job, not a full CI cycle. Failing job:
+  `gh workflow run focused-job.yml --ref BRANCH -f ref=BRANCH -f os=ubuntu-24.04 -f kind=e2e -f selector=TESTID -f repeat=10 -f stress=true`
+  (`sm ci one dispatch BRANCH --test ID --repeat N` does the same; `sm ci one repeats --fail-rate P` picks N). Passing
+  job: rerun only that job (`sm ci one rerun RUN --job NAME`), never the whole run. It is a diagnostic, not a merge signal.
 
 - 2026-11-23, owner: the in-place upgrade job, like the macOS unit and integration cells, runs on a PR only when the
   upgrade selector picks it; it always runs on main and on release commits. This supersedes the "in-place upgrade job
