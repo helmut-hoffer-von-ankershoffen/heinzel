@@ -36,6 +36,7 @@ class ThemeSettings(ModuleSettings):
         default=True,
         title="Show team name in sidebar",
         description="Use your team name in the sidebar when one is set. Otherwise use the selected theme's branding.",
+        json_schema_extra={"x-live": True},
     )
 
 

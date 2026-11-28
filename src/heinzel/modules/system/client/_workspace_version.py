@@ -4,7 +4,6 @@ from datetime import UTC, datetime, timedelta
 from math import isfinite
 from typing import Any
 
-import psutil
 from pydantic import BaseModel, Field
 
 from heinzel import __version__
@@ -85,6 +84,8 @@ def _past(value: object, now: datetime) -> datetime | None:
 
 def _process_started(now: datetime) -> datetime | None:
     """Inspect this answering process, never a registered daemon or another installed backend."""
+    import psutil  # noqa: PLC0415 - inspect the process only when workspace facts are requested
+
     try:
         timestamp = psutil.Process().create_time()
         if isinstance(timestamp, bool) or not isfinite(timestamp) or timestamp <= 0:

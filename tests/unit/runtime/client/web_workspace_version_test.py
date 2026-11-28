@@ -19,7 +19,7 @@ pytestmark = pytest.mark.unit
 def test_web_process_start_is_distinct_from_instance_initialization(monkeypatch):
     started = datetime.now(UTC) - timedelta(hours=2)
     initialized = started + timedelta(hours=1)
-    monkeypatch.setattr(subject.psutil, "Process", lambda: SimpleNamespace(create_time=started.timestamp))
+    monkeypatch.setattr(psutil, "Process", lambda: SimpleNamespace(create_time=started.timestamp))
     monkeypatch.setattr(subject, "_installed", lambda _kernel: subject.WorkspaceInstalledVersion())
     monkeypatch.setattr(subject, "_daemon", lambda _kernel, _now: subject.WorkspaceDaemonVersion())
     result = subject.observe(FakeKernel(), initialized)
@@ -32,15 +32,13 @@ def test_web_process_start_is_distinct_from_instance_initialization(monkeypatch)
 
 @pytest.mark.parametrize("timestamp", [0, -1, True, float("nan"), float("inf"), 1e100, None, "unknown"])
 def test_invalid_process_start_is_unknown(monkeypatch, timestamp):
-    monkeypatch.setattr(subject.psutil, "Process", lambda: SimpleNamespace(create_time=lambda: timestamp))
+    monkeypatch.setattr(psutil, "Process", lambda: SimpleNamespace(create_time=lambda: timestamp))
     assert subject._process_started(datetime.now(UTC)) is None
 
 
 def test_future_process_start_is_unknown_after_wall_clock_change(monkeypatch):
     now = datetime.now(UTC)
-    monkeypatch.setattr(
-        subject.psutil, "Process", lambda: SimpleNamespace(create_time=(now + timedelta(seconds=1)).timestamp)
-    )
+    monkeypatch.setattr(psutil, "Process", lambda: SimpleNamespace(create_time=(now + timedelta(seconds=1)).timestamp))
     assert subject._process_started(now) is None
 
 
@@ -49,7 +47,7 @@ def test_process_inspection_failure_is_unknown(monkeypatch, error):
     def inaccessible():
         raise error
 
-    monkeypatch.setattr(subject.psutil, "Process", inaccessible)
+    monkeypatch.setattr(psutil, "Process", inaccessible)
     assert subject._process_started(datetime.now(UTC)) is None
 
 
@@ -215,7 +213,7 @@ def test_workspace_version_is_authenticated_and_never_cached(make_kernel, monkey
     def unavailable():
         raise psutil.AccessDenied
 
-    monkeypatch.setattr(subject.psutil, "Process", unavailable)
+    monkeypatch.setattr(psutil, "Process", unavailable)
     unavailable_response = client.get("/api/workspace-version", headers={"Authorization": f"Bearer {token}"})
     assert unavailable_response.status_code == 200
     assert unavailable_response.json()["web"]["running_since"] is None
