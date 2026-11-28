@@ -173,6 +173,18 @@ desktop-electron-package: ## Build and verify an unsigned Electron artifact for 
 	pnpm --dir desktop build
 	pnpm --dir desktop verify:package
 
+.PHONY: desktop-swift-admit-release desktop-swift-sign-release desktop-bind-signed-release-assets
+desktop-swift-admit-release:
+	@bash apple/scripts/admit-macos-release
+
+desktop-swift-sign-release:
+	@bash apple/scripts/package-macos-release
+
+desktop-bind-signed-release-assets:
+	@set -eu; archive="heinzel-desktop-swift-$${TAG#v}-darwin-arm64.tar.gz"; \
+	mv -- "signed-desktop/$$archive" signed-desktop/desktop-swift-artifact-manifest.json desktop-release/
+	@$(MAKE) desktop-bind-release-assets
+
 desktop-swift-package: ## Build the Swift app and write its versioned desktop release manifest on macOS
 	@set -eu; \
 	output="$$(apple/scripts/package-macos "$${TAG#v}")"; \

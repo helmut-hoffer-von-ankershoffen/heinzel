@@ -25,7 +25,7 @@ TAG_REF = f"refs/tags/{TAG}"
     [
         ("push", MAIN, "release-tag", ""),
         ("workflow_dispatch", MAIN, "release-tag", ""),
-        ("push", TAG_REF, "publish", ""),
+        ("push", TAG_REF, "publish", "direct-tag"),
         ("push", MAIN, "publish", "caller"),
         ("pull_request", MAIN, "release-tag", "event"),
         ("workflow_dispatch", TAG_REF, "publish", "event"),
@@ -44,7 +44,12 @@ def test_signing_admission_requires_the_official_event_and_reviewed_tag(tmp_path
     guard = next(
         step["run"] for step in promote if step.get("name") == "Bind the exact official core source before tooling"
     )
-    admission = next(step["run"] for step in promote if step.get("id") == "signing-source")
+    step = next(step for step in promote if step.get("id") == "signing-source")
+    assert step["run"] == "make desktop-swift-admit-release"
+    admission = (ROOT / "apple/scripts/admit-macos-release").read_text()
+    assert 'scripts/release_latest.py "$TAG" "$GITHUB_SHA" --signing' in admission
+    admission = admission.splitlines()[:-1]  # The authenticated candidate verifier has its own API fixtures.
+    admission = "\n".join(admission)
     env = {
         "HOME": str(tmp_path),
         "PATH": os.environ["PATH"],

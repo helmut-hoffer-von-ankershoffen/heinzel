@@ -6,11 +6,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
+import os
 import re
 import sys
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -200,10 +203,69 @@ def defer_latest(
     return True
 
 
-def main(tag: str, sha: str) -> int:
+def signing_candidate(tag: str, sha: str, message: str, *, read: Callable[[str], Any], configured_run: str) -> dict:
+    """Verify the selected original candidate against the merged PR before releasing signing authority."""
+    number, head = merged_release_head(tag, sha, read)
+    squash = read(f"commits/{sha}") or {}
+    tree = (squash.get("commit") or {}).get("tree", {}).get("sha", "")
+    if not isinstance(tree, str) or not SHA.fullmatch(tree):
+        msg = "the release squash has no valid tree"
+        raise ChainError(msg)
+    parent = commit_identity(squash, sha, tree)
+    if commit_identity(read(f"commits/{head}") or {}, head, tree) != parent:
+        msg = "release squash and approved PR head must have identical trees and parents"
+        raise ChainError(msg)
+
+    chain_run = chain_run_in(message)
+    # Read the authenticated receipt once. defer_latest verifies its identity/status against this exact squash.
+    proof = receipt_for(chain_run) if chain_run is not None else {}
+    defer_latest(tag, sha, message, read, lambda _: proof)
+    selected = str(proof.get("candidate_run", "")) if chain_run is not None else configured_run
+    if not re.fullmatch(r"[1-9][0-9]{0,18}", selected):
+        msg = "no original candidate run was pinned for this protected release"
+        raise ChainError(msg)
+
+    candidate = chain.load_candidate_module()
+    pins = {
+        path: hashlib.sha256(candidate.source_bytes(read, path, sha)).hexdigest()
+        for path in (candidate.WORKFLOW, candidate.RECORDER)
+    }
+    evidence = candidate.verify(
+        read,
+        chain.download_artifact,
+        candidate.ExpectedCandidate(int(selected), number, head, tree, merged=(sha, parent)),
+        pins,
+    )
+    merged_at = (read(f"pulls/{number}") or {}).get("merged_at")
+    if not isinstance(merged_at, str) or datetime.fromisoformat(evidence["updated_at"]) > datetime.fromisoformat(
+        merged_at
+    ):
+        msg = "the candidate was not complete before the protected PR merged"
+        raise ChainError(msg)
+    return evidence
+
+
+def main(tag: str, sha: str, mode: str = "") -> int:
     """Print the producer mode after the caller verifies the exact tag and protected main ancestry."""
     try:
         message = run(["git", "show", "-s", "--format=%B", sha])
+        if mode == "--signing":
+            evidence = signing_candidate(
+                tag, sha, message, read=get, configured_run=os.environ.get("HEINZEL_MAC_CANDIDATE_RUN", "")
+            )
+            if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
+                with Path(summary).open("a", encoding="utf-8") as output:
+                    output.write(
+                        f"Approved candidate run {evidence['run_id']} attempt 1, {evidence['job_count']} jobs, "
+                        f"head {evidence['head']}, tested checkout {evidence['source_commit']}, "
+                        f"tree {evidence['tree']}, protected squash {sha}.\n"
+                    )
+            print(
+                f"candidate_run={evidence['run_id']}\ncandidate_checkout={evidence['source_commit']}\ncandidate_head={evidence['head']}"
+            )
+            return 0
+        if mode:
+            return 2
         defer = defer_latest(tag, sha, message, get, receipt_for)
     except (ChainError, OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         sys.stderr.write(f"release Latest policy refused: {exc}\n")

@@ -35,6 +35,8 @@ jobs:
     permissions:
       contents: read
       actions: read
+      pull-requests: read
+      statuses: read
     outputs:
       promoted: ${{ steps.promote.outputs.promoted }}
       reviewed: ${{ steps.signing-source.outputs.commit }}
@@ -58,22 +60,17 @@ jobs:
           enable-cache: false
       - id: signing-source
         name: Admit the protected release event and reviewed Core source
-        shell: bash
-        run: |
-          test "$GITHUB_REF_PROTECTED" = true
-          workflow="$GITHUB_REPOSITORY/.github/workflows"
-          case "$GITHUB_EVENT_NAME:$GITHUB_REF:$GITHUB_WORKFLOW_REF" in
-            "push:refs/tags/$TAG:$workflow/publish.yml@refs/tags/$TAG") ;;
-            "push:refs/heads/main:$workflow/release-tag.yml@refs/heads/main") ;;
-            "workflow_dispatch:refs/heads/main:$workflow/release-tag.yml@refs/heads/main") ;;
-            *) echo "Unexpected caller, event or ref for Core signing." >&2; exit 1 ;;
-          esac
-          test "$(git cat-file -t "refs/tags/$TAG")" = tag
-          uv run --no-project --frozen --no-build --python 3.15 python -I scripts/pypi_release.py checkout "$TAG" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEINZEL_MAC_CANDIDATE_RUN: ${{ vars.HEINZEL_MAC_CANDIDATE_RUN }}
+        run: make desktop-swift-admit-release
       - id: promote
         name: Find, verify and rebind the candidate's apps (falls back to building them)
         env:
           GH_TOKEN: ${{ github.token }}
+          APPROVED_RUN: ${{ steps.signing-source.outputs.candidate_run }}
+          APPROVED_CHECKOUT: ${{ steps.signing-source.outputs.candidate_checkout }}
+          APPROVED_HEAD: ${{ steps.signing-source.outputs.candidate_head }}
         run: >-
           uv run --no-project --frozen --no-build --python 3.15 python -I scripts/release_apps.py
           promote "$TAG" "$RUNNER_TEMP/promoted" | tee -a "$GITHUB_OUTPUT"
@@ -212,7 +209,7 @@ jobs:
           HEINZEL_HTTPS_LINKS: 'NO'
           HEINZEL_ICLOUD_SIGN_IN: 'NO'
           HEINZEL_MAC_WIDGET_REFRESH: 'NO'
-        run: bash apple/scripts/package-macos-release
+        run: make desktop-swift-sign-release
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: swift-developer-id-macos-arm64
@@ -326,10 +323,7 @@ jobs:
         if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
         env:
           SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
-        run: |
-          archive="heinzel-desktop-swift-${TAG#v}-darwin-arm64.tar.gz"
-          mv -- "signed-desktop/$archive" signed-desktop/desktop-swift-artifact-manifest.json desktop-release/
-          make desktop-bind-release-assets
+        run: make desktop-bind-signed-release-assets
       - id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
