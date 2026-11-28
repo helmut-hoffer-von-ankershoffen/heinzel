@@ -13,6 +13,8 @@ from threading import Thread
 import pytest
 
 from heinzel.testing import scaled
+from tests.fixtures import apple_debug_build
+from tests.fixtures.apple_debug_build import PRODUCTS, YIELD_CPU, app_build_command, debug_build
 from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 
 pytestmark = [
@@ -41,59 +43,111 @@ trigger.onclick = () => {
 </script>"""
 
 
+def probe_command(derived: Path, probe: Path) -> list[str]:
+    """The probe compile against the Debug products in `derived`, at lowered scheduling priority."""
+    products = derived / PRODUCTS
+    libs = products / "Heinzel.app/Contents/MacOS"
+    return [
+        *YIELD_CPU,
+        "xcrun",
+        "swiftc",
+        "-swift-version",
+        "6",
+        "-parse-as-library",
+        "-target",
+        f"{platform.machine()}-apple-macos15.0",
+        "-I",
+        str(products),
+        str(libs / "Heinzel.debug.dylib"),
+        "-Xlinker",
+        "-rpath",
+        "-Xlinker",
+        str(libs),
+        "apple/tests/WorkspaceNavigationTests.swift",
+        "-o",
+        str(probe),
+    ]
+
+
 @pytest.fixture(scope="module")
 def navigation_probe(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    build = tmp_path_factory.mktemp("mac-workspace-build")
-    subprocess.run(
-        [
-            "xcodebuild",
-            "-project",
-            "apple/Heinzel.xcodeproj",
-            "-scheme",
-            "Heinzel",
-            "-configuration",
-            "Debug",
-            "-destination",
-            f"platform=macOS,arch={platform.machine()}",
-            "-derivedDataPath",
-            str(build),
-            "CODE_SIGNING_ALLOWED=NO",
-            "ENABLE_TESTABILITY=YES",
-            "ONLY_ACTIVE_ARCH=YES",
-            "build",
-        ],
-        cwd=ROOT,
-        check=True,
-        timeout=scaled(240),
-    )
-    products = build / "Build/Products/Debug"
-    libs = products / "Heinzel.app/Contents/MacOS"
-    probe = build / "navigation-probe"
-    subprocess.run(
-        [
-            "xcrun",
-            "swiftc",
-            "-swift-version",
-            "6",
-            "-parse-as-library",
-            "-target",
-            f"{platform.machine()}-apple-macos15.0",
-            "-I",
-            str(products),
-            str(libs / "Heinzel.debug.dylib"),
-            "-Xlinker",
-            "-rpath",
-            "-Xlinker",
-            str(libs),
-            "apple/tests/WorkspaceNavigationTests.swift",
-            "-o",
-            str(probe),
-        ],
-        cwd=ROOT,
-        check=True,
-        timeout=scaled(60),
-    )
+    # CI builds the app before the timed session (`make apple-integration-prepare`); a local run builds it here.
+    derived = debug_build(tmp_path_factory.mktemp("mac-workspace-build"))
+    probe = tmp_path_factory.mktemp("mac-workspace-probe") / "navigation-probe"
+    subprocess.run(probe_command(derived, probe), cwd=ROOT, check=True, timeout=scaled(60))
     return probe
+
+
+def test_the_builds_yield_the_cpu_to_deadline_bound_tests(tmp_path: Path) -> None:
+    for command in (app_build_command(tmp_path), probe_command(tmp_path, tmp_path / "probe")):
+        assert tuple(command[:3]) == YIELD_CPU
+        assert command[3] in {"xcodebuild", "xcrun"}
+
+
+@pytest.fixture
+def fake_checkout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, list[Path]]:
+    """A checkout with the tracked Apple inputs, and a build that writes fictional products instead of compiling."""
+    root = tmp_path / "checkout"
+    (root / "apple").mkdir(parents=True)
+    (root / "web/src/components").mkdir(parents=True)
+    (root / "apple/App.swift").write_text("struct App {}\n")
+    (root / "web/src/components/heinzel.ts").write_text("export const artwork = 1;\n")
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True, timeout=scaled(30))
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True, timeout=scaled(30))
+    builds: list[Path] = []
+
+    def fake_build(derived: Path) -> Path:
+        builds.append(derived)
+        library = derived / apple_debug_build.DYLIB
+        library.parent.mkdir(parents=True, exist_ok=True)
+        library.write_bytes(b"fictional debug dylib")
+        (derived / PRODUCTS / "Heinzel.swiftmodule").mkdir(exist_ok=True)
+        return derived
+
+    monkeypatch.setattr(apple_debug_build, "build", fake_build)
+    return root, builds
+
+
+def test_the_fixture_reuses_the_prepared_build_without_building(
+    fake_checkout: tuple[Path, list[Path]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout, builds = fake_checkout
+    prepared = tmp_path / "prepared"
+    apple_debug_build.prepare(prepared, checkout)
+    assert builds == [prepared]
+    monkeypatch.setenv(apple_debug_build.PREPARED_VARIABLE, str(prepared))
+    assert debug_build(tmp_path / "fallback", checkout) == prepared
+    assert builds == [prepared]  # reused, not rebuilt
+    monkeypatch.delenv(apple_debug_build.PREPARED_VARIABLE)
+    assert debug_build(tmp_path / "fallback", checkout) == tmp_path / "fallback"
+    assert builds == [prepared, tmp_path / "fallback"]  # without a prepared build, it builds its own
+
+
+@pytest.mark.parametrize("change", ["product", "added-product", "source", "manifest", "relative", "link"])
+def test_the_fixture_refuses_a_prepared_build_that_does_not_match(
+    fake_checkout: tuple[Path, list[Path]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    checkout, builds = fake_checkout
+    prepared = tmp_path / "prepared"
+    apple_debug_build.prepare(prepared, checkout)
+    named = str(prepared)
+    if change == "product":
+        (prepared / apple_debug_build.DYLIB).write_bytes(b"another dylib")
+    elif change == "added-product":
+        (prepared / PRODUCTS / "Extra.dylib").write_bytes(b"unexpected")
+    elif change == "source":
+        (checkout / "apple/App.swift").write_text("struct Changed {}\n")
+    elif change == "manifest":
+        (prepared / apple_debug_build.MANIFEST).unlink()
+    elif change == "relative":
+        named = os.path.relpath(prepared)
+    else:
+        (tmp_path / "alias").symlink_to(prepared)
+        named = str(tmp_path / "alias")
+    monkeypatch.setenv(apple_debug_build.PREPARED_VARIABLE, named)
+    with pytest.raises(apple_debug_build.PreparedBuildError):
+        debug_build(tmp_path / "fallback", checkout)
+    assert builds == [prepared]  # refused, never silently rebuilt
 
 
 @pytest.mark.parametrize("scheme", ["http", "https"], ids=["local", "remote"])

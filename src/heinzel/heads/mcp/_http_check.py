@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from heinzel.kernel import HeinzelError
@@ -15,6 +16,9 @@ _MAX_PORT = 65535
 _MAX_COUNT_DIGITS = 9
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _TOKEN = re.compile(r"hzmcp_[A-Za-z0-9_-]{1,4090}\Z")
+# Run by path, not `-m`: `-I` keeps the script directory off sys.path, and the child skips importing the whole
+# heinzel package (kernel and MCP server), which was most of its start-up cost under the 10 s bound.
+_PROBE = str(Path(__file__).with_name("_http_probe.py"))
 
 
 def _loopback_url(url: str) -> bool:
@@ -58,8 +62,8 @@ def _check_http(url: str, token: str) -> int:
     try:
         # The SDK can log attacker-controlled response data, including reflected bearer values. Its
         # diagnostics stay inside a short-lived child; neither output stream is forwarded to our logs.
-        result = subprocess.run(  # noqa: S603 - fixed interpreter/module and validated loopback URL
-            [sys.executable, "-I", "-m", "heinzel.heads.mcp._http_probe", url],
+        result = subprocess.run(  # noqa: S603 - fixed interpreter/probe path and validated loopback URL
+            [sys.executable, "-I", _PROBE, url],
             input=token,
             env={"PATH": os.defpath},
             text=True,

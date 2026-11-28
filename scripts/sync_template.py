@@ -73,6 +73,7 @@ def _without_desktop_recipes(text: str) -> str:
         "desktop-electron-package",
         "test-apple-ci",
         "build-apple-ci",
+        "apple-integration-prepare",  # the core's Mac app, built before the timed sessions
         "test-macos-specific",  # the core's notifier, launchd and Finder tests
         "test-macos-smoke",  # the same tests, as a pull request's macOS check
     }
@@ -185,7 +186,10 @@ def makefile() -> str:
     # Likewise the macOS-specific tests: the notifier, launchd service and Finder code are the core's.
     text = re.sub(r"(?m)^(\.PHONY:.*?) notifier\b", r"\1", text)
     text = re.sub(
-        r"\n(?:notifier|test-apple-ci|build-apple-ci|test-macos-specific|test-macos-smoke):.*?\n(?:\t.*\n)+", "\n", text
+        r"\n(?:notifier|test-apple-ci|build-apple-ci|apple-integration-prepare|test-macos-specific|test-macos-smoke)"
+        r":.*?\n(?:\t.*\n)+",
+        "\n",
+        text,
     )
     # The terminal art is drawn from the web app's drawing: plugins have none.
     text = re.sub(r"(?m)^(\.PHONY:.*?) terminal-art\b", r"\1", text)
@@ -344,6 +348,19 @@ def _without_homepage_routing(text: str) -> str:
     return text.replace(" && needs.changes.outputs.homepage_only != 'true'", "")
 
 
+def _without_core_apple_prepare(text: str) -> str:
+    """Only the core has a Mac app for its integration probes to build before the timed sessions."""
+    text = re.sub(
+        r"\n      - name: Prepare the Debug Mac app outside the timed integration sessions\n.*?(?=\n      - )",
+        "",
+        text,
+        flags=re.DOTALL,
+    )
+    return re.sub(
+        r"\n {10}# The fixture reuses the prepared Debug app[^\n]*\n {10}HZ_TEST_APPLE_DEBUG_BUILD: [^\n]*", "", text
+    )
+
+
 def ci_workflow() -> str:
     """The CI workflow without the template job; the build check looks for the plugin package."""
     text = _without_focused_admission(
@@ -384,7 +401,7 @@ def ci_workflow() -> str:
         "",
         text,
     )
-    text = _without_core_node_selection(_without_core_browser_setup(text))
+    text = _without_core_apple_prepare(_without_core_node_selection(_without_core_browser_setup(text)))
     text = re.sub(r"\n      - run: make managed-backend-[^\n]*(?:\n        if: [^\n]*)?", "", text)
     # Only the core daemon uses the host's user service manager; plugins ship no such probe.
     text = re.sub(

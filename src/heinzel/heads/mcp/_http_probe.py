@@ -1,4 +1,7 @@
-"""Private child process for a bounded MCP HTTP check; diagnostics never leave this process."""
+"""Private child process for a bounded MCP HTTP check; diagnostics never leave this process.
+
+It runs by path under `python -I` and imports only the MCP client stack, never the heinzel package.
+"""
 
 import logging
 import sys

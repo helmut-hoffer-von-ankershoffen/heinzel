@@ -509,8 +509,16 @@ jobs:
           UV_NO_SYNC: "1"
           PROBE_PREFIX: heinzel-probe-${{ github.run_id }}
         run: make linux-user-manager-proof
+      - name: Prepare the Debug Mac app outside the timed integration sessions
+        if: contains(matrix.os, 'macos') && matrix.levels == 'integration'
+        env:
+          UV_NO_SYNC: "1"
+          APPLE_DEBUG_BUILD: ${{ runner.temp }}/heinzel-apple-debug
+        run: make apple-integration-prepare APPLE_DEBUG_BUILD="$APPLE_DEBUG_BUILD"
       - name: Unit and integration tests (unit first, 4 workers, stop at the first failure)
         env:
+          # The fixture reuses the prepared Debug app only after verifying it; empty elsewhere: it builds its own.
+          HZ_TEST_APPLE_DEBUG_BUILD: ${{ contains(matrix.os, 'macos') && matrix.levels == 'integration' && format('{0}/heinzel-apple-debug', runner.temp) || '' }}
           UV_NO_SYNC: "1" # use the test group just installed
           TEST_LEVELS: ${{ matrix.levels || 'unit or integration' }}
           # Reduce contention with subprocesses and test I/O on four-CPU Linux unit runners.
