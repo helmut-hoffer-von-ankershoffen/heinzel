@@ -74,7 +74,7 @@ export function AlbumVisual({ album }: { album: AlbumSnapshot | null }) {
         />
       ) : still ? (
         <img
-          className="h-auto w-full object-contain"
+          className="aspect-video w-full object-cover"
           src={still}
           alt={id ? album?.title : "Dreaming of Electric Snow"}
         />

@@ -34,6 +34,7 @@ export function AlbumProgress({
   onTransfer: (action: TransferAction) => void;
 }) {
   const dragging = useRef(false);
+  const draftValue = useRef<number | undefined>(undefined);
   const [draft, setDraft] = useState<number>();
   const downloading = transfer.phase === "downloading";
   const paused = transfer.phase === "paused";
@@ -75,22 +76,27 @@ export function AlbumProgress({
           step="any"
           value={seekable ? shown : 0}
           disabled={!seekable}
-          onPointerDown={() => {
+          onPointerDown={(event) => {
             dragging.current = true;
+            event.currentTarget.setPointerCapture?.(event.pointerId);
           }}
           onPointerCancel={() => {
             dragging.current = false;
+            draftValue.current = undefined;
             setDraft(undefined);
           }}
           onPointerUp={() => {
             dragging.current = false;
-            if (draft !== undefined) onSeek(draft);
+            if (draftValue.current !== undefined) onSeek(draftValue.current);
+            draftValue.current = undefined;
             setDraft(undefined);
           }}
           onChange={(event) => {
             const target = event.currentTarget.valueAsNumber;
-            if (dragging.current) setDraft(target);
-            else onSeek(target);
+            if (dragging.current) {
+              draftValue.current = target;
+              setDraft(target);
+            } else onSeek(target);
           }}
         />
       </div>

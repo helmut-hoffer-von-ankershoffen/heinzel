@@ -288,7 +288,7 @@ export function PlayerCard({
           className="flex flex-wrap cursor-grab touch-none items-center gap-1 px-3 py-1.5 active:cursor-grabbing"
         >
           <div className="min-w-0 flex-1">
-            <p className="truncate text-ui-sm font-medium">{title}</p>
+            <p className={cn("text-ui-sm font-medium", artwork ? "line-clamp-2" : "truncate")}>{title}</p>
             <div className="truncate text-xs text-muted-foreground">
               {sourceUrl ? (
                 <>
