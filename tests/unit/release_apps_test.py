@@ -142,7 +142,7 @@ def test_publish_builds_on_macos_only_when_promotion_did_not_prove_the_bytes():
         assert jobs[name]["needs"] == "promote"
         assert "needs.promote.outputs.promoted != 'true'" in jobs[name]["if"]
     publish = jobs["publish"]
-    assert publish["needs"] == ["promote", "notifier", "desktop"]
+    assert publish["needs"] == ["promote", "notifier", "desktop", "swift-developer-id"]
     assert "needs.promote.outputs.promoted == 'true'" in publish["if"]
     names = [step.get("with", {}).get("name", "") for step in publish["steps"]]
     assert "${{ needs.promote.outputs.promoted == 'true' && 'promoted-notifier' || 'notifier' }}" in names

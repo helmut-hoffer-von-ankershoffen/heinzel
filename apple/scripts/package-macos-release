@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+# This wrapper is only used on a disposable GitHub-hosted macOS signing runner.
+[[ ${GITHUB_ACTIONS:-} == true && ${RUNNER_ENVIRONMENT:-} == github-hosted && -n ${RUNNER_TEMP:-} ]]
+[[ ${HEINZEL_MAC_SIGNING_TEAM:-} =~ ^[A-Z0-9]{10}$ ]]
+: "${HEINZEL_MAC_CERTIFICATE_B64:?Missing protected Developer ID certificate}"
+: "${HEINZEL_MAC_CERTIFICATE_PASSWORD:?Missing protected Developer ID certificate password}"
+: "${HEINZEL_MAC_NOTARY_KEY_B64:?Missing protected Apple notary key}"
+: "${HEINZEL_MAC_NOTARY_KEY_ID:?Missing Apple notary key ID}"
+: "${HEINZEL_MAC_NOTARY_ISSUER:?Missing Apple notary issuer}"
+
+scratch=$(mktemp -d "$RUNNER_TEMP/heinzel-signing.XXXXXXXX")
+keychain="$scratch/signing.keychain-db"
+cleanup() {
+    /usr/bin/security delete-keychain "$keychain" >/dev/null 2>&1 || true
+    rm -rf -- "$scratch"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+password=$(/usr/bin/openssl rand -hex 24)
+
+printf '%s' "$HEINZEL_MAC_CERTIFICATE_B64" | /usr/bin/base64 -D > "$scratch/identity.p12"
+printf '%s' "$HEINZEL_MAC_NOTARY_KEY_B64" | /usr/bin/base64 -D > "$scratch/notary.p8"
+/usr/bin/security create-keychain -p "$password" "$keychain"
+/usr/bin/security set-keychain-settings -lut 2400 "$keychain"
+/usr/bin/security unlock-keychain -p "$password" "$keychain"
+/usr/bin/security list-keychains -d user -s "$keychain"
+/usr/bin/security import "$scratch/identity.p12" -k "$keychain" -f pkcs12 \
+    -P "$HEINZEL_MAC_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+/usr/bin/security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
+
+export HEINZEL_MAC_DISTRIBUTION=developer-id
+export HEINZEL_MAC_NOTARY_PROFILE=heinzel-release
+export HEINZEL_MAC_NOTARY_KEYCHAIN="$keychain"
+xcrun notarytool store-credentials "$HEINZEL_MAC_NOTARY_PROFILE" --key "$scratch/notary.p8" \
+    --key-id "$HEINZEL_MAC_NOTARY_KEY_ID" --issuer "$HEINZEL_MAC_NOTARY_ISSUER" --keychain "$keychain"
+rm -f -- "$scratch/identity.p12" "$scratch/notary.p8"
+unset HEINZEL_MAC_CERTIFICATE_B64 HEINZEL_MAC_CERTIFICATE_PASSWORD HEINZEL_MAC_NOTARY_KEY_B64
+
+make desktop-swift-package
