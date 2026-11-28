@@ -1,7 +1,7 @@
-// What "Update all" would change, shown in the operation dialog before the person agrees: hz itself, each plugin
+// What "Update all" would change, shown in the optional inline preview: hz itself, each plugin
 // with where it goes or why it stays, and whether the desktop app comes along (the same plan as
 // `hz system update --preview`).
-import { useId, useState } from "react";
+import { useId } from "react";
 import type { SchemaPluginPlan, SchemaUpdatePlan } from "@/api/client";
 import { type MessageKey, t } from "@/i18n";
 import { Switch } from "@/layout/SettingControls";
@@ -26,9 +26,9 @@ function coreLine(plan: SchemaUpdatePlan): string {
 
 export function UpdatePlanDetails({
   plan,
+  desktop,
   onDesktop,
-}: Readonly<{ plan: SchemaUpdatePlan; onDesktop: (on: boolean) => void }>) {
-  const [desktop, setDesktop] = useState(plan.desktop === true);
+}: Readonly<{ plan: SchemaUpdatePlan; desktop: boolean; onDesktop: (on: boolean) => void }>) {
   const labelId = useId();
   return (
     <div className="mt-2 space-y-2 text-sm">
@@ -49,15 +49,7 @@ export function UpdatePlanDetails({
             <p id={labelId}>{t("updates.plan.desktop")}</p>
             <p className="text-xs text-muted-foreground">{t("updates.plan.desktopHelp")}</p>
           </div>
-          <Switch
-            labelledBy={labelId}
-            on={desktop}
-            disabled={false}
-            onToggle={() => {
-              setDesktop(!desktop);
-              onDesktop(!desktop);
-            }}
-          />
+          <Switch labelledBy={labelId} on={desktop} disabled={false} onToggle={() => onDesktop(!desktop)} />
         </div>
       )}
     </div>

@@ -456,6 +456,19 @@ body {
   );
 }
 
+.confirmation-dialog[data-operation="/system/update"] {
+  top: calc(
+    var(--hz-viewport-top, 0px) +
+    (
+      var(--hz-viewport-height, 100dvh) +
+      max(1rem, var(--hz-viewport-safe-top)) -
+      max(1rem, var(--hz-viewport-safe-bottom))
+    ) /
+    2
+  );
+  transform: translate(-50%, -50%);
+}
+
 .viewport-popover {
   max-width: calc(
     var(--hz-viewport-width, 100vw) -
