@@ -50,7 +50,7 @@ test("startup is idle and queued requests recheck renderer provenance", async ()
 function transportFixture() {
   const calls = [], changes = [];
   let windows = 0;
-  const media = { currentTime: 0, paused: true, ended: false, volume: 1, muted: false,
+  const media = { currentTime: 0, duration: 92, paused: true, ended: false, volume: 1, muted: false,
     pause() { this.paused = true; }, load() { this.currentTime = 0; },
     async play() { this.paused = false; } };
   const context = vm.createContext({ document: { querySelector: () => media }, window: {} });
@@ -138,4 +138,32 @@ test("resume and same-track reselection preserve position; selecting another pla
   assert.equal(f.calls.at(-1), "play");
   assert.equal(f.transport.snapshot().media.selectedTrackID, album.tracks[1].id);
   await f.transport.handle("pause");
+});
+
+
+test("seek is bound to the loaded track and moves the actual album audio element", async () => {
+  const f = transportFixture();
+  const trackID = album.tracks[0].id;
+  assert.equal((await f.transport.handle("seek", { trackID, seconds: 65 })).positionSeconds, 0);
+  assert.equal(f.windows(), 0);
+  await f.transport.handle("play");
+  const sought = await f.transport.handle("seek", { trackID, seconds: 65 });
+  assert.equal(f.media.currentTime, 65);
+  assert.equal(sought.positionSeconds, 65);
+  assert.equal(sought.durationSeconds, 92);
+  assert.equal(sought.playing, true);
+  const paused = await f.transport.handle("pause");
+  assert.equal(paused.playing, false);
+  const clamped = await f.transport.handle("seek", { trackID, seconds: 123 });
+  assert.equal(clamped.positionSeconds, 92);
+  assert.equal(clamped.playing, false);
+  await f.transport.handle("select", { trackID: album.tracks[1].id });
+  assert.equal((await f.transport.handle("seek", { trackID, seconds: 35 })).positionSeconds, 0);
+  f.media.duration = Infinity;
+  const unknown = await f.transport.handle("seek", { trackID: album.tracks[1].id, seconds: 41 });
+  assert.equal(unknown.positionSeconds, 0);
+  assert.equal(unknown.durationSeconds, null);
+  for (const seconds of [Infinity, NaN, -1, "12", null])
+    assert.throws(() => albumIntent("seek", { trackID, seconds }));
+  assert.throws(() => albumIntent("seek", { trackID, seconds: 12, url: "anything" }));
 });

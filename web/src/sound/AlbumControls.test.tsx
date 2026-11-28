@@ -19,6 +19,17 @@ const downloading: AlbumSnapshot = {
   title: "Berlin Morning",
   playing: true,
   repeatMode: "Album",
+  positionSeconds: 18,
+  durationSeconds: 180,
+  media: {
+    albumID: "electric",
+    selectedTrackID: "berlin-morning",
+    tracks: [
+      { id: "berlin-morning", title: "Berlin Morning" },
+      { id: "berlin-evening", title: "Berlin Evening" },
+    ],
+    extendedVideo: null,
+  },
 };
 afterEach(() => {
   resetSound();
@@ -134,17 +145,17 @@ it("restores native status in the dock and keeps the reopened picker for sources
   expect(within(dock).getByRole("combobox", { name: "Choose album track" })).toBeInTheDocument();
   expect(within(dock).getAllByText(ALBUM_TITLE)).toHaveLength(1);
   expect(within(dock).queryByText("200 / 800 bytes")).toBeNull();
-  expect(within(dock).getByText(/2\/37 verified/)).toBeInTheDocument();
-  expect(within(dock).getByRole("progressbar", { name: "Album download" })).toHaveAttribute("value", "200");
+  expect(within(dock).getByText("Downloading album · 25%")).toBeInTheDocument();
+  expect(within(dock).getByRole("progressbar", { name: "Album download" })).toHaveAttribute("aria-valuenow", "25");
   expect(within(dock).getByRole("progressbar", { name: "Album download" })).toHaveAttribute(
     "aria-valuetext",
-    "200 / 800 bytes",
+    "200 of 800 bytes",
   );
   status = { ...downloading, playing: false, title: "Berlin Evening", repeatMode: "Track", verified: 7 };
   act(() => window.dispatchEvent(new Event("heinzel-album-change")));
   expect(await within(dock).findByText("Paused · Berlin Evening")).toBeInTheDocument();
   expect(within(dock).getByRole("combobox", { name: "Choose album track" })).toBeInTheDocument();
-  expect(within(dock).getByText(/7\/37 verified/)).toBeInTheDocument();
+  expect(within(dock).getByText("Downloading album · 25%")).toBeInTheDocument();
   expect(within(dock).getByRole("button", { name: "Repeat: Track" })).toHaveAttribute("aria-pressed", "true");
   await user.keyboard("{Escape}");
   await user.click(screen.getByRole("button", { name: /^Choose a soundscape/ }));
@@ -177,7 +188,7 @@ it("connects dock operations and keeps saving independent of playback", async ()
     expect(album).toHaveBeenCalledWith(action);
   }
   await user.click(within(dock).getByRole("button", { name: "Pause Album" }));
-  expect(await within(dock).findByText(/downloading ·/)).toBeInTheDocument();
+  expect(await within(dock).findByText(/Downloading album ·/)).toBeInTheDocument();
   await user.click(within(dock).getByRole("button", { name: "Play Album" }));
   await user.click(within(dock).getByRole("button", { name: "Pause download" }));
   expect(await within(dock).findByText("Playing · Berlin Morning")).toBeInTheDocument();
@@ -186,7 +197,7 @@ it("connects dock operations and keeps saving independent of playback", async ()
   await user.click(await within(dock).findByRole("button", { name: "Cancel download (keep verified files)" }));
   expect(album).toHaveBeenCalledWith("cancelDownload");
   expect(await within(dock).findByText("Playing · Berlin Morning")).toBeInTheDocument();
-  expect(within(dock).getByText(/2\/37 verified/)).toBeInTheDocument();
+  expect(within(dock).getByText("Album download cancelled")).toBeInTheDocument();
 });
 it("leaves ordinary Sound controls alone without the capability", async () => {
   const { dialog } = await open();
@@ -215,7 +226,7 @@ it("uses play for the first track and waits for the actual native pause before o
   expect(album).not.toHaveBeenCalledWith("toggle");
   const dock = await screen.findByRole("region", { name: `${ALBUM_TITLE} player` });
   expect(dock).toHaveAttribute("data-dock", "docked");
-  expect(within(dock).getByText(/downloading ·/)).toBeInTheDocument();
+  expect(within(dock).getByText(/Downloading album ·/)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /^Download$/ })).toBeNull();
   act(() => resume("singularity"));
   expect(soundState()).toMatchObject({ playing: false, albumSelected: true });
@@ -342,4 +353,23 @@ it("routes album volume to the host and keeps transport playing at zero", async 
   fireEvent.change(slider, { target: { value: "65" } });
   await waitFor(() => expect(album).toHaveBeenCalledWith("volume", { gain: 0.65 }));
   expect(await screen.findByRole("button", { name: "Choose a soundscape · Playing" })).toBeInTheDocument();
+});
+
+it("places the track picker between Next and Repeat and seeks the selected track while downloading", async () => {
+  const album = vi.fn(async () => downloading);
+  vi.stubGlobal("heinzelDesktop", { album });
+  await open();
+  const player = await screen.findByRole("region", { name: `${ALBUM_TITLE} player` });
+  const controls = within(player).getByRole("group", { name: "Album playback" });
+  const picker = within(controls).getByRole("combobox", { name: "Choose album track" });
+  expect(picker.parentElement?.previousElementSibling).toBe(
+    within(controls).getByRole("button", { name: "Next track" }),
+  );
+  expect(picker.parentElement?.nextElementSibling).toBe(
+    within(controls).getByRole("button", { name: "Repeat: Album" }),
+  );
+  fireEvent.change(within(player).getByRole("slider", { name: "Seek in track" }), { target: { value: "65" } });
+  expect(album).toHaveBeenCalledWith("seek", { trackID: "berlin-morning", seconds: 65 });
+  fireEvent.change(picker, { target: { value: "berlin-evening" } });
+  expect(album).toHaveBeenCalledWith("select", { trackID: "berlin-evening" });
 });

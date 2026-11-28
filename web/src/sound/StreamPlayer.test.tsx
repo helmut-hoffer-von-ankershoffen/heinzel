@@ -1,11 +1,21 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { act, fireEvent, render as renderBare, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaSoundscapeView } from "@/api/client";
+import { queryClient } from "@/app/providers";
 import { expectPaneStructure } from "@/test/pane";
 import { StreamPlayer } from "./StreamPlayer";
 import { resetSound, soundState, toggle } from "./store";
 import { rememberYouTubeAccount } from "./stream";
+
+function render(element: ReactElement) {
+  const client = queryClient();
+  return renderBare(element, {
+    wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+  });
+}
 
 const ORIGIN = "https://www.youtube-nocookie.com";
 const stream = {

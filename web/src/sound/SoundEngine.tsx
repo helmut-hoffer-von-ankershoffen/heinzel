@@ -137,10 +137,10 @@ export function SoundEngine() {
         title={ALBUM_TITLE}
         host="Latent Heinzels"
         sourceUrl="https://latentheinzels.heinzel.team"
-        onClose={() => void closeAlbum()}
+        artwork={<AlbumVisual album={sound.albumCover ? null : album} />}
+        onClose={closeAlbum}
       >
-        <AlbumVisual album={sound.albumCover ? null : album} />
-        <AlbumControls />
+        <AlbumControls showCover={sound.albumCover} />
       </PlayerCard>
     );
   if (!current || !sound.started) return null;

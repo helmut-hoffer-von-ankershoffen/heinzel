@@ -4,7 +4,7 @@ import Foundation
 /// Run with an isolated, verified fixture library; never uses the product singleton.
 @MainActor
 struct SoundscapeVolumeTests {
-    static func run(library: AlbumLibrary, defaults: UserDefaults) throws {
+    static func run(library: AlbumLibrary, defaults: UserDefaults) async throws {
         let queue = AVQueuePlayer()
         let playback = SoundscapePlayback(library: library, defaults: defaults,
                                           player: queue, publish: { _ in })
@@ -25,6 +25,18 @@ struct SoundscapeVolumeTests {
         try require(queue.rate == 0 && !playback.isPlaying && playback.effectiveGain == 0)
         try playback.playSavedAlbum()
         try require(playback.isPlaying == (queue.rate != 0) && abs(queue.volume - 0.65) < 0.0001)
+        playback.pause()
+        try await SoundscapeAlbumTests.wait("local track duration unavailable") {
+            playback.albumDuration != nil && queue.currentItem?.status == .readyToPlay
+        }
+        guard let selected = playback.selectedID else {
+            throw SoundscapeAlbumTests.Failure(description: "No selected track to seek")
+        }
+        let stale = await playback.seekSelectedTrack("stale-track", to: 0.75)
+        let sought = await playback.seekSelectedTrack(selected, to: 0.75)
+        if stale || !sought || abs(queue.currentTime().seconds - 0.75) > 0.05 || queue.rate != 0 {
+            throw SoundscapeAlbumTests.Failure(description: "Seek did not move the paused queue to the selected track position")
+        }
         for invalid in [Double.nan, .infinity, -0.1, 1.1] {
             do {
                 try playback.setVolume(invalid)

@@ -8,6 +8,9 @@ window.albumAudio = async (action, source) => {
       throw new Error('Invalid album gain.');
     audio.volume = source;
   }
+  const durationSeconds = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : null;
+  if (action === 'seek' && durationSeconds !== null && Number.isFinite(source) && source >= 0)
+    audio.currentTime = Math.min(source, durationSeconds);
   return { playing: !audio.paused && !audio.ended, ended: audio.ended,
-    gain: audio.muted ? 0 : audio.volume, positionSeconds: audio.currentTime };
+    gain: audio.muted ? 0 : audio.volume, positionSeconds: audio.currentTime, durationSeconds };
 };

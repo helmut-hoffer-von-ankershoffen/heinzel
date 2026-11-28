@@ -1,38 +1,40 @@
-import { Pause, Play, Repeat, Repeat1, SkipBack, SkipForward, X } from "lucide-react";
+import { ListMusic, Pause, Play, Repeat, Repeat1, SkipBack, SkipForward } from "lucide-react";
 import { PaneAction } from "@/components/PaneActions";
-import { albumAction, useAlbum } from "./album";
+import { AlbumProgress } from "./AlbumProgress";
+import { ALBUM_TITLE, albumAction, useAlbum, useAlbumPosition } from "./album";
 import { selectAlbum } from "./store";
 
-export function AlbumControls() {
+export function AlbumControls({ showCover }: { showCover: boolean }) {
   const album = useAlbum();
-  const bytes = album ? `${album.receivedBytes ?? album.verifiedBytes} / ${album.totalBytes} bytes` : "";
+  const trackID = album?.media?.selectedTrackID;
+  const duration = album?.durationSeconds;
+  const extended = trackID === "berlin-evening-extended";
+  const trackTitle = extended ? album?.title.replace(/ \(Extended Version\)$/, "") : album?.title;
+  useAlbumPosition(Boolean(trackID && !duration), Boolean(trackID && album?.playing));
   return (
     <section aria-label="Album controls" className="min-w-0 space-y-1 px-3 pb-2">
-      <select
-        aria-label="Choose album track"
-        className="block min-h-11 w-full min-w-0 max-w-full rounded bg-background text-base"
-        value={album?.media?.selectedTrackID ?? ""}
-        onPointerDown={() => void albumAction("catalog")}
-        onKeyDown={() => void albumAction("catalog")}
-        onChange={(event) => {
-          selectAlbum(false);
-          void albumAction("select", { trackID: event.target.value });
-        }}
-      >
-        <option value="" disabled>
-          Choose album track
-        </option>
-        {album?.media?.tracks.map((track) => (
-          <option key={track.id} value={track.id}>
-            {track.title}
-          </option>
-        ))}
-      </select>
+      {trackID && trackTitle && !showCover && (
+        <div>
+          <p className="truncate text-sm font-semibold">{trackTitle}</p>
+          {extended && <p className="text-xs text-muted-foreground">Extended Version</p>}
+        </div>
+      )}
       <span className="sr-only" role="status">
         {album
           ? `${album.playing ? "Playing" : "Paused"} · ${album.title || "No track selected"}`
           : "Reading album status…"}
       </span>
+      {album && (
+        <AlbumProgress
+          key={trackID}
+          transfer={album}
+          position={duration ? { elapsedSeconds: album.positionSeconds ?? 0, durationSeconds: duration } : undefined}
+          onSeek={(seconds) => {
+            if (trackID) void albumAction("seek", { trackID, seconds });
+          }}
+          onTransfer={(action) => void albumAction(action)}
+        />
+      )}
       <fieldset className="flex min-w-0 flex-wrap items-center justify-between gap-1" aria-label="Album playback">
         <PaneAction ghost icon={SkipBack} disabled={!album} onClick={() => void albumAction("previous")}>
           Previous track
@@ -51,6 +53,32 @@ export function AlbumControls() {
         <PaneAction ghost icon={SkipForward} disabled={!album} onClick={() => void albumAction("next")}>
           Next track
         </PaneAction>
+        <label
+          className="relative grid size-8 place-items-center rounded-md hover:bg-accent focus-within:ring-2 focus-within:ring-ring"
+          title="Choose album track"
+        >
+          <ListMusic aria-hidden size={16} />
+          <select
+            aria-label="Choose album track"
+            className="absolute inset-0 size-full cursor-pointer opacity-0 disabled:cursor-default"
+            value={showCover ? "" : (trackID ?? "")}
+            disabled={!album?.media?.tracks.length}
+            onPointerDown={() => void albumAction("catalog")}
+            onKeyDown={() => void albumAction("catalog")}
+            onChange={(event) => {
+              const selected = event.target.value;
+              selectAlbum(!selected);
+              if (selected) void albumAction("select", { trackID: selected });
+            }}
+          >
+            <option value="">{ALBUM_TITLE} · Album</option>
+            {album?.media?.tracks.map((track) => (
+              <option key={track.id} value={track.id}>
+                {track.title}
+              </option>
+            ))}
+          </select>
+        </label>
         <PaneAction
           ghost
           icon={album?.repeatMode === "Track" ? Repeat1 : Repeat}
@@ -63,37 +91,6 @@ export function AlbumControls() {
         </PaneAction>
       </fieldset>
       <span className="sr-only" role="status">{`Repeat: ${album?.repeatMode ?? "Off"}`}</span>
-      {album && (
-        <fieldset className="flex min-w-0 items-center gap-1" aria-label="Album download status">
-          <div className="min-w-0 flex-1" title={bytes}>
-            <p className="text-xs text-muted-foreground tabular-nums" role="status">
-              {album.phase} · {album.verified}/{album.total} verified
-            </p>
-            <progress
-              aria-label="Album download"
-              aria-valuetext={bytes}
-              value={album.receivedBytes ?? album.verifiedBytes}
-              max={Math.max(1, album.totalBytes)}
-              className="block h-1 w-full accent-primary"
-            />
-          </div>
-          {album.phase === "downloading" && (
-            <PaneAction ghost icon={Pause} onClick={() => void albumAction("pauseDownload")}>
-              Pause download
-            </PaneAction>
-          )}
-          {["paused", "cancelled", "failed"].includes(album.phase) && (
-            <PaneAction ghost icon={Play} onClick={() => void albumAction("resumeDownload")}>
-              Resume download
-            </PaneAction>
-          )}
-          {["downloading", "paused"].includes(album.phase) && (
-            <PaneAction ghost icon={X} onClick={() => void albumAction("cancelDownload")}>
-              Cancel download (keep verified files)
-            </PaneAction>
-          )}
-        </fieldset>
-      )}
       {album?.error && (
         <p role="alert" className="text-ui-sm text-bad">
           {album.error}

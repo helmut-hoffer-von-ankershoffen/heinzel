@@ -5,7 +5,15 @@
 // snapped back by letting go near the dock spot. In the collapsed rail the docked card is hidden, with playback
 // controlled by the rail button; the same iframe remains mounted when the full sidebar returns.
 import { ExternalLink, GripHorizontal, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
-import { type KeyboardEvent, type PointerEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { PaneAction } from "@/components/PaneActions";
 import { t } from "@/i18n";
@@ -31,6 +39,7 @@ type Props = {
   /** Where the sound comes from. */
   host: string;
   children: ReactNode;
+  artwork?: ReactNode;
   headerAction?: ReactNode;
   onClose?: () => void;
   chromeIntent?: { action: string; value?: number; x?: number; y?: number };
@@ -43,6 +52,7 @@ export function PlayerCard({
   youtube = false,
   host,
   children,
+  artwork,
   headerAction,
   onClose = stop,
   chromeIntent,
@@ -198,7 +208,7 @@ export function PlayerCard({
     if (!chromeIntent) return;
     if (chromeIntent.action === "close") onClose();
     if (chromeIntent.action === "redock") setDocked(true);
-    if (chromeIntent.action === "resize" && chromeIntent.value !== undefined) setRequestedWidth(chromeIntent.value);
+    if (chromeIntent.action === "resize" && chromeIntent.value !== undefined) setFloatingWidth(chromeIntent.value);
     if (chromeIntent.action === "move") {
       const rect = card.current?.getBoundingClientRect();
       if (rect) {
@@ -265,6 +275,7 @@ export function PlayerCard({
       {/* Keep this wrapper mounted through every mode: moving an iframe would restart playback. Native guests
           outside the viewport are hidden by useNativeSurface; their existing header help remains reachable here. */}
       <div style={subminimum ? { minWidth: 200 } : undefined}>
+        {artwork}
         <header
           onPointerDown={down}
           onPointerMove={move}

@@ -13,6 +13,10 @@ export function albumIntent(action, options = {}) {
       Object.keys(options).length === 1 && Object.hasOwn(options, "gain") &&
       typeof options.gain === "number" && Number.isFinite(options.gain) && options.gain >= 0 && options.gain <= 1)
     return action;
+  if (action === "seek" && options && typeof options === "object" && !Array.isArray(options) &&
+      Object.keys(options).length === 2 && Object.hasOwn(options, "trackID") && Object.hasOwn(options, "seconds") &&
+      album.tracks.some(track => track.id === options.trackID) && Number.isFinite(options.seconds) && options.seconds >= 0)
+    return action;
   const actions = ["status", "catalog", "select", "play", "pause", "pausePlayback", "toggle", "next", "previous", "repeat", "download", "pauseDownload", "resumeDownload", "cancelDownload"];
   if (!actions.includes(action) || !options || typeof options !== "object" || Array.isArray(options) ||
       Object.keys(options).some(key => key !== "trackID") ||
@@ -73,11 +77,12 @@ export function createAlbumTransport({ BrowserWindow, app, publish, fetchObject 
   let window, loaded, index = 0, repeatMode = "Off", playing = false, phase = "idle", error = null;
   let revision = 0, queue = Promise.resolve();
   let pendingBytes = 0, selected = false, sourced = false;
-  let positionSeconds = 0, admission = "remote", controller, downloadJob;
+  let positionSeconds = 0, durationSeconds = null, admission = "remote", controller, downloadJob;
   let gain = 1;
   const observe = state => {
     playing = state.playing === true && state.ended !== true;
     positionSeconds = Number.isFinite(state.positionSeconds) ? state.positionSeconds : 0;
+    durationSeconds = state.durationSeconds ?? null;
     gain = state.gain;
   };
   const saved = new Set();
@@ -86,7 +91,7 @@ export function createAlbumTransport({ BrowserWindow, app, publish, fetchObject 
     verifiedBytes: album.tracks.filter(t => saved.has(t.id)).reduce((n, t) => n + t.media.bytes, 0),
     receivedBytes: pendingBytes + album.tracks.filter(t => saved.has(t.id)).reduce((n, t) => n + t.media.bytes, 0),
     totalBytes: album.tracks.reduce((n, t) => n + t.media.bytes, 0), error,
-    positionSeconds, playing, gain, title: album.tracks[index].title, repeatMode,
+    positionSeconds, durationSeconds, playing, gain, title: album.tracks[index].title, repeatMode,
     media: { albumID: album.id, selectedTrackID: selected ? album.tracks[index].id : null,
       tracks: album.tracks.map(({ id, title }) => ({ id, title })),
       standardMediaID: selected ? album.tracks[index].media.sha256 : null, extendedMediaID: album.tracks[index].media.sha256 === filmDigest ? filmDigest : null,
@@ -166,13 +171,21 @@ export function createAlbumTransport({ BrowserWindow, app, publish, fetchObject 
   }
   async function source() {
     const track = album.tracks[index], bytes = await cached(track);
-    admission = bytes ? "local" : "remote"; positionSeconds = 0;
+    admission = bytes ? "local" : "remote"; positionSeconds = 0; durationSeconds = null;
     await audio("source", bytes ? localURL(track.media) : remoteURL(track.media));
     if (!bytes) startDownload([track]);
   }
   async function run(action, options) {
     if (window && !window.isDestroyed()) observe(await audio("status"));
     if (["status", "catalog"].includes(action)) return snapshot();
+    if (action === "seek") {
+      if (sourced && selected && options.trackID === album.tracks[index].id) {
+        revision++;
+        observe(await audio("seek", options.seconds));
+        emit();
+      }
+      return snapshot();
+    }
     error = null;
     if (action === "volume") observe(await audio("volume", options.gain));
     else if (["pauseDownload", "cancelDownload"].includes(action)) {

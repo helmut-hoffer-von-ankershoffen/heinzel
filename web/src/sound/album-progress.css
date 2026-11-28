@@ -1,0 +1,87 @@
+.album-seek-rail {
+  position: relative;
+  display: grid;
+  align-items: center;
+}
+
+.album-seek-track {
+  position: absolute;
+  inset-inline: 7px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--color-muted);
+  pointer-events: none;
+}
+
+.album-seek-played,
+.album-seek-download {
+  position: absolute;
+  inset-inline-start: 0;
+  display: block;
+}
+
+.album-seek-played {
+  inset-block: 0;
+  width: var(--album-playback);
+  border-radius: inherit;
+  background: var(--color-primary);
+}
+
+.album-seek-download {
+  inset-block-end: -2px;
+  height: 2px;
+  border-radius: 9999px;
+  background: #d98b21;
+}
+
+.album-seek-rail input {
+  position: relative;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.album-seek-rail input:disabled {
+  cursor: default;
+}
+
+.album-seek-rail input:focus-visible {
+  outline: 2px solid var(--color-ring);
+}
+
+.album-seek-rail input::-webkit-slider-runnable-track {
+  background: transparent;
+}
+
+.album-seek-rail input::-moz-range-track {
+  background: transparent;
+}
+
+.album-seek-rail input::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  appearance: none;
+  border: 1px solid var(--color-background);
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+
+.album-seek-rail input::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--color-background);
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+
+.album-seek-rail input:disabled::-webkit-slider-thumb {
+  opacity: 0;
+}
+
+.album-seek-rail input:disabled::-moz-range-thumb {
+  opacity: 0;
+}

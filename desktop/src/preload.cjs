@@ -40,6 +40,9 @@ contextBridge.exposeInMainWorld("heinzelDesktop", Object.freeze({
 // Only trusted native input in this main frame lets the next external link open in the default browser.
 const activate = (event) => { if (event.isTrusted) void ipcRenderer.invoke("hz:user-activation").catch(() => {}); };
 for (const name of ["pointerdown", "keydown", "click"]) document.addEventListener(name, activate, true);
+document.addEventListener("pointerup", event => {
+  if (event.target instanceof HTMLInputElement && event.target.hasAttribute("data-album-seek")) activate(event);
+}, true);
 
 // A trusted native click is required; renderer scripts receive no callable external-opening bridge.
 document.addEventListener("click", (event) => {

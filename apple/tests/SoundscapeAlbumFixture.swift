@@ -47,8 +47,8 @@ func emit(_ event: String, _ library: AlbumLibrary) throws {
         switch args[1] {
         case "volume":
             try await waitCount(2)
-            try SoundscapeVolumeTests.run(library: library, defaults: defaults)
-            try emit("verified-queue-volume", library)
+            try await SoundscapeVolumeTests.run(library: library, defaults: defaults)
+            try emit("verified-queue-volume-and-seek", library)
         case "download":
             let playback = SoundscapePlayback(library: library, defaults: defaults, publish: { states.append($0) })
             playback.player.isMuted = true

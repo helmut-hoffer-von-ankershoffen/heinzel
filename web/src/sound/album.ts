@@ -16,6 +16,7 @@ export type AlbumSnapshot = {
   muted?: boolean;
   effectiveGain?: number;
   positionSeconds?: number;
+  durationSeconds?: number | null;
   phase: "idle" | "downloading" | "paused" | "cancelled" | "ready" | "failed";
   verified: number;
   total: number;
@@ -32,6 +33,7 @@ export type AlbumAction =
   | "volume"
   | "catalog"
   | "select"
+  | "seek"
   | "status"
   | "play"
   | "pausePlayback"
@@ -46,8 +48,11 @@ export type AlbumAction =
   | "openVideo";
 
 export type AlbumWatchGeometry = { width: number; viewportWidth: number };
-export type AlbumOptions = AlbumWatchGeometry | { trackID: string } | { gain: number };
-type AlbumBridge = { album?: (action: AlbumAction, geometry?: AlbumOptions) => Promise<AlbumSnapshot> };
+export type AlbumOptions = AlbumWatchGeometry | { trackID: string; seconds?: number } | { gain: number };
+type AlbumBridge = {
+  album?: (action: AlbumAction, geometry?: AlbumOptions) => Promise<AlbumSnapshot>;
+  clientFlavor?: string;
+};
 const bridge = () => (window as Window & { heinzelDesktop?: AlbumBridge }).heinzelDesktop;
 export const nativeAlbum = (): boolean => typeof bridge()?.album === "function";
 export const ALBUM_TITLE = "Dreaming of Electric Snow";
@@ -79,7 +84,12 @@ export async function albumAction(action: AlbumAction, geometry?: AlbumOptions):
   if (!passive) pendingActions++;
   if (["select", "play", "toggle", "next", "previous"].includes(action)) dismissed = false;
   if (action === "select" && geometry && "trackID" in geometry && snapshot?.media) {
-    snapshot = { ...snapshot, media: { ...snapshot.media, selectedTrackID: geometry.trackID, extendedVideo: null } };
+    snapshot = {
+      ...snapshot,
+      positionSeconds: 0,
+      durationSeconds: null,
+      media: { ...snapshot.media, selectedTrackID: geometry.trackID, extendedVideo: null },
+    };
     emit();
   }
   const request = ++generation;
@@ -135,6 +145,14 @@ const subscribe = (listener: () => void) => {
     }
   };
 };
+export function useAlbumPosition(awaitingDuration: boolean, playing: boolean) {
+  useEffect(() => {
+    if (!awaitingDuration && (!playing || bridge()?.clientFlavor === "electron")) return;
+    const timer = window.setInterval(change, 1000);
+    return () => window.clearInterval(timer);
+  }, [awaitingDuration, playing]);
+}
+
 export function useAlbum() {
   useEffect(() => {
     void albumAction("status");

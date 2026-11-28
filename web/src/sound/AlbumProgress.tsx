@@ -1,6 +1,7 @@
 import { Pause, Play, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { type CSSProperties, useRef, useState } from "react";
 import { PaneAction } from "@/components/PaneActions";
+import "./album-progress.css";
 
 export type AlbumTransfer = {
   phase: "idle" | "downloading" | "paused" | "cancelled" | "ready" | "failed";
@@ -37,80 +38,92 @@ export function AlbumProgress({
   const downloading = transfer.phase === "downloading";
   const paused = transfer.phase === "paused";
   const resumable = paused || transfer.phase === "cancelled" || transfer.phase === "failed";
-  if (transfer.total > transfer.verified && (downloading || resumable)) {
-    const received = Math.min(transfer.totalBytes, Math.max(0, transfer.receivedBytes ?? transfer.verifiedBytes));
-    const label = downloading ? "Saving album" : `Album download ${transfer.phase}`;
-    return (
-      <fieldset className="flex min-w-0 items-center gap-1" aria-label="Album download status">
-        <div className="min-w-0 flex-1">
-          <p className="text-xs text-muted-foreground tabular-nums" role="status">
-            {label} · {transfer.verified}/{transfer.total}
-          </p>
-          <progress
-            aria-label="Album download"
-            aria-valuetext={`${received} of ${transfer.totalBytes} bytes`}
-            value={transfer.totalBytes > 0 ? received : undefined}
-            max={Math.max(1, transfer.totalBytes)}
-            className="block h-1 w-full accent-primary"
-          />
-        </div>
-        {downloading && (
-          <PaneAction ghost icon={Pause} onClick={() => onTransfer("pauseDownload")}>
-            Pause download
-          </PaneAction>
-        )}
-        {resumable && (
-          <PaneAction ghost icon={Play} onClick={() => onTransfer("resumeDownload")}>
-            Resume download
-          </PaneAction>
-        )}
-        {(downloading || paused) && (
-          <PaneAction ghost icon={X} onClick={() => onTransfer("cancelDownload")}>
-            Cancel download (keep verified files)
-          </PaneAction>
-        )}
-      </fieldset>
-    );
-  }
-
-  if (!position || !Number.isFinite(position.durationSeconds) || position.durationSeconds <= 0) return null;
-  const { durationSeconds } = position;
-  const elapsed = Number.isFinite(position.elapsedSeconds)
-    ? Math.min(durationSeconds, Math.max(0, position.elapsedSeconds))
-    : 0;
+  const showTransfer = transfer.total > transfer.verified && (downloading || resumable);
+  const received = Math.min(transfer.totalBytes, Math.max(0, transfer.receivedBytes ?? transfer.verifiedBytes));
+  const fraction = transfer.totalBytes > 0 ? received / transfer.totalBytes : 0;
+  const percent = Math.min(99, Math.floor(fraction * 100));
+  const transferLabel = downloading ? `Downloading album · ${percent}%` : `Album download ${transfer.phase}`;
+  const duration = position?.durationSeconds ?? 0;
+  const seekable = Number.isFinite(duration) && duration > 0;
+  const elapsed =
+    position && Number.isFinite(position.elapsedSeconds) && seekable
+      ? Math.min(duration, Math.max(0, position.elapsedSeconds))
+      : 0;
   const shown = draft ?? elapsed;
+  const fill = {
+    "--album-playback": `${seekable ? (shown / duration) * 100 : 0}%`,
+  } as CSSProperties;
+
   return (
-    <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground tabular-nums">
-      <span aria-hidden>{time(shown)}</span>
-      <input
-        type="range"
-        data-album-seek
-        aria-label="Seek in track"
-        aria-valuetext={`${time(shown)} of ${time(durationSeconds)}`}
-        min={0}
-        max={durationSeconds}
-        step="any"
-        value={shown}
-        className="min-w-0 flex-1 accent-primary"
-        onPointerDown={() => {
-          dragging.current = true;
-        }}
-        onPointerCancel={() => {
-          dragging.current = false;
-          setDraft(undefined);
-        }}
-        onPointerUp={() => {
-          dragging.current = false;
-          if (draft !== undefined) onSeek(draft);
-          setDraft(undefined);
-        }}
-        onChange={(event) => {
-          const target = event.currentTarget.valueAsNumber;
-          if (dragging.current) setDraft(target);
-          else onSeek(target);
-        }}
-      />
-      <span aria-hidden>{time(durationSeconds)}</span>
+    <div className="min-w-0 text-xs text-muted-foreground tabular-nums">
+      <div className="album-seek-rail" style={fill}>
+        <div className="album-seek-track" aria-hidden>
+          <span className="album-seek-played" />
+          {showTransfer && <span className="album-seek-download" style={{ width: `${fraction * 100}%` }} />}
+        </div>
+        <input
+          type="range"
+          data-album-seek
+          aria-label="Seek in track"
+          aria-valuetext={seekable ? `${time(shown)} of ${time(duration)}` : "Duration unavailable"}
+          min={0}
+          max={seekable ? duration : 1}
+          step="any"
+          value={seekable ? shown : 0}
+          disabled={!seekable}
+          onPointerDown={() => {
+            dragging.current = true;
+          }}
+          onPointerCancel={() => {
+            dragging.current = false;
+            setDraft(undefined);
+          }}
+          onPointerUp={() => {
+            dragging.current = false;
+            if (draft !== undefined) onSeek(draft);
+            setDraft(undefined);
+          }}
+          onChange={(event) => {
+            const target = event.currentTarget.valueAsNumber;
+            if (dragging.current) setDraft(target);
+            else onSeek(target);
+          }}
+        />
+      </div>
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <span aria-hidden>{seekable ? time(shown) : "—"}</span>
+        {showTransfer && (
+          <span
+            className="text-center"
+            role="progressbar"
+            aria-label="Album download"
+            aria-valuenow={percent}
+            aria-valuetext={`${received} of ${transfer.totalBytes} bytes`}
+          >
+            {transferLabel}
+          </span>
+        )}
+        <span aria-hidden>{seekable ? time(duration) : "—"}</span>
+      </div>
+      {showTransfer && (
+        <fieldset className="flex min-w-0 items-center justify-center gap-1" aria-label="Album download actions">
+          {downloading && (
+            <PaneAction ghost icon={Pause} onClick={() => onTransfer("pauseDownload")}>
+              Pause download
+            </PaneAction>
+          )}
+          {resumable && (
+            <PaneAction ghost icon={Play} onClick={() => onTransfer("resumeDownload")}>
+              Resume download
+            </PaneAction>
+          )}
+          {(downloading || paused) && (
+            <PaneAction ghost icon={X} onClick={() => onTransfer("cancelDownload")}>
+              Cancel download (keep verified files)
+            </PaneAction>
+          )}
+        </fieldset>
+      )}
     </div>
   );
 }
