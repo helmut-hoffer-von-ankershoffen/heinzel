@@ -50,16 +50,18 @@ def kernel(make_kernel):
     return make_kernel(builtins=True, example=example())
 
 
+@pytest.mark.parametrize("head", HEADS)
 @pytest.mark.parametrize("arguments", [{}, {"name": "Ada"}], ids=["default", "explicit"])
-def test_typed_result_across_real_heads(settings, hz_head, arguments):
-    kernel = FakeKernel(settings=settings, records=[ModuleRecord("example", example(), ORIGIN)])
+def test_typed_result_across_real_heads(kernel, head, arguments):
     expected = {"text": f"Hello, {arguments.get('name', 'world')}!"}
-    result = hz_head(kernel, "example.greet", **arguments)
+    result = operate(head, kernel, "example.greet", **arguments)
+    assert result.status == (200 if head in {"api", "web"} else 0), result.detail
     assert result.error_kind is None, result.detail
     assert result.payload == expected
 
 
-def test_declared_process_fake_is_used_by_every_head(settings, make_kernel, hz_head):
+@pytest.mark.parametrize("head", HEADS)
+def test_declared_process_fake_is_used_by_every_head(settings, make_kernel, head):
     module = Module("probe", "An isolated process call.")
 
     @module.operation
@@ -78,7 +80,8 @@ def test_declared_process_fake_is_used_by_every_head(settings, make_kernel, hz_h
     real.bind(ProcessRunner, real_runner)
     outcomes = []
     for kernel, runner in ((fake, fake_runner), (real, real_runner)):
-        result = hz_head(kernel, "probe.echo", text="Ada", upper=True)
+        result = operate(head, kernel, "probe.echo", text="Ada", upper=True)
+        assert result.status == (200 if head in {"api", "web"} else 0), result.detail
         assert result.error_kind is None, result.detail
         assert runner.calls == [("synthetic-probe", "ADA")]
         outcomes.append(result.payload)

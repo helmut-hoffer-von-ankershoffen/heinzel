@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, expect, it, vi } from "vitest";
+import { assert, beforeEach, expect, it, vi } from "vitest";
 import { requestMenuAction } from "@/about/menu";
 import { Providers, queryClient } from "@/app/providers";
 import { KEY } from "@/features/runtime/updates/autoUpdateApi";
@@ -546,15 +546,41 @@ it("shows the optional preview and honors the desktop preference on a single ins
   const user = await openUpdates();
   await user.click(screen.getByText("Review update details"));
   expect(await screen.findByText("Heinzel: 0.1.0 → 0.2.0")).toBeInTheDocument();
-  expect(screen.getByRole("list", { name: "Plugins" })).toHaveTextContent("heinzel-acme: stays at 0.2.0");
+  const plugins = screen.getByRole("list", { name: "Plugins" });
+  const [weather, clock, kept] = within(plugins).getAllByRole("listitem");
+  expect(weather).toHaveTextContent("heinzel-weather: 0.5.3 → 0.5.4");
+  expect(weather).toHaveTextContent("Pinned to d71fdfd90152; moves to release 0.5.4");
+  expect(clock).toHaveTextContent("heinzel-clock: already newest (0.9.7)");
+  expect(kept).toHaveTextContent("heinzel-acme: stays at 0.2.0");
+  expect(kept).toHaveTextContent("Pinned to e6315377ced6, which names no release to follow");
   const desktop = screen.getByRole("switch", { name: "Also update the desktop app" });
   expect(desktop).toBeChecked();
+  const details = plugins.closest("details");
+  assert(details);
+  await expectAccessible(details);
   await user.click(desktop);
   expect(startUpdate).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Update now" }));
   await waitFor(() => expect(startUpdate).toHaveBeenCalledTimes(1));
   expect(readUpdatePlan).toHaveBeenCalledTimes(2);
   expect(vi.mocked(startUpdate).mock.calls[0]?.[4]).toEqual({ plan: "shown-plan", desktop: false });
+});
+
+it("reads the optional preview again after a failed request without installing", async () => {
+  const user = await openUpdates();
+  vi.mocked(readUpdatePlan).mockRejectedValueOnce(new Error("GitHub could not be reached."));
+  const summary = screen.getByText("Review update details");
+  await user.click(summary);
+  const details = summary.closest("details");
+  assert(details);
+  expect(await within(details).findByRole("alert")).toBeVisible();
+  await user.click(summary);
+  await waitFor(() => expect(details).not.toHaveAttribute("open"));
+  await user.click(summary);
+  expect(await within(details).findByText("Heinzel: 0.1.0 → 0.2.0")).toBeVisible();
+  expect(within(details).queryByRole("alert")).not.toBeInTheDocument();
+  expect(readUpdatePlan).toHaveBeenCalledTimes(2);
+  expect(startUpdate).not.toHaveBeenCalled();
 });
 
 it("shows a changed preview and waits for a fresh install click", async () => {
