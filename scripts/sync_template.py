@@ -59,6 +59,36 @@ def _without_upgrade_lane(text: str) -> str:
     return text.replace(" && needs.changes.outputs.upgrade != 'true'", "")
 
 
+def _without_desktop_recipes(text: str) -> str:
+    """Drop Core desktop recipes and their phony declarations from the plugin template."""
+    desktop_targets = {
+        "desktop-bind-release-assets",
+        "desktop-swift-admit-release",
+        "desktop-swift-sign-release",
+        "desktop-bind-signed-release-assets",
+        "desktop-swift-package",
+        "desktop-electron-test",
+        "desktop-electron-sandbox",
+        "desktop-electron-native",
+        "desktop-electron-package",
+        "test-apple-ci",
+        "build-apple-ci",
+        "test-macos-specific",  # the core's notifier, launchd and Finder tests
+        "test-macos-smoke",  # the same tests, as a pull request's macOS check
+    }
+    text = re.sub(
+        r"(?m)^\.PHONY:.*$",
+        lambda match: " ".join(name for name in match.group(0).split() if name not in desktop_targets),
+        text,
+    )
+    desktop_recipes = "|".join(re.escape(name) for name in sorted(desktop_targets) if name.startswith("desktop-"))
+    return re.sub(
+        rf"(?m)^(?:{desktop_recipes}):[^\n]*\n(?:\t[^\n]*\n)*\n?",
+        "",
+        text,
+    )
+
+
 def makefile() -> str:
     """The Makefile without Heinzelmännchen-only targets, plus `update-template`."""
     text = (
@@ -150,29 +180,7 @@ def makefile() -> str:
     text = re.sub(
         r"\n(managed-backend-setup|managed-backend-static|managed-backend-check):.*?\n(?:\t.*\n)+", "\n", text
     )
-    # Desktop apps and their release recipes belong to Core.
-    desktop_targets = {
-        "desktop-bind-release-assets",
-        "desktop-swift-package",
-        "desktop-electron-test",
-        "desktop-electron-sandbox",
-        "desktop-electron-native",
-        "desktop-electron-package",
-        "test-apple-ci",
-        "build-apple-ci",
-        "test-macos-specific",  # the core's notifier, launchd and Finder tests
-        "test-macos-smoke",  # the same tests, as a pull request's macOS check
-    }
-    text = re.sub(
-        r"(?m)^\.PHONY:.*$",
-        lambda match: " ".join(name for name in match.group(0).split() if name not in desktop_targets),
-        text,
-    )
-    text = re.sub(
-        r"(?m)^desktop-(?:electron-(?:test|sandbox|native|package)|swift-package|bind-release-assets):[^\n]*\n(?:\t[^\n]*\n)*\n?",
-        "",
-        text,
-    )
+    text = _without_desktop_recipes(text)
     # Heinzel Notifier, the core's macOS notifier app (ADR 0043): plugins have none.
     # Likewise the macOS-specific tests: the notifier, launchd service and Finder code are the core's.
     text = re.sub(r"(?m)^(\.PHONY:.*?) notifier\b", r"\1", text)

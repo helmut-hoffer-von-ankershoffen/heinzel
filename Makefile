@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: ci-macos-arm help pyyaml install setup release-local doctor tools-verify check check-fast check-push linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-apple-ci build-apple-ci test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e test-upgrade e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-static managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package desktop-swift-package desktop-bind-release-assets build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-stage-apple-association docs-catalog docs-site-check docs-publish-check design-check release clean
+.PHONY: desktop-swift-admit-release desktop-swift-sign-release desktop-bind-signed-release-assets ci-macos-arm help pyyaml install setup release-local doctor tools-verify check check-fast check-push linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-apple-ci build-apple-ci test-macos-smoke test-notifier test-quarantine quarantine-check quarantine-plan test-e2e test-upgrade e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-static managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package desktop-swift-package desktop-bind-release-assets build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-stage-apple-association docs-catalog docs-site-check docs-publish-check design-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -173,14 +173,13 @@ desktop-electron-package: ## Build and verify an unsigned Electron artifact for 
 	pnpm --dir desktop build
 	pnpm --dir desktop verify:package
 
-.PHONY: desktop-swift-admit-release desktop-swift-sign-release desktop-bind-signed-release-assets
-desktop-swift-admit-release:
+desktop-swift-admit-release: ## Admit the reviewed original candidate on the protected Mac signing path
 	@bash apple/scripts/admit-macos-release
 
-desktop-swift-sign-release:
+desktop-swift-sign-release: ## Sign and notarize the Swift desktop app on the authorized Mac runner
 	@bash apple/scripts/package-macos-release
 
-desktop-bind-signed-release-assets:
+desktop-bind-signed-release-assets: ## Bind the signed Swift archive and verified Electron release assets
 	@set -eu; archive="heinzel-desktop-swift-$${TAG#v}-darwin-arm64.tar.gz"; \
 	mv -- "signed-desktop/$$archive" signed-desktop/desktop-swift-artifact-manifest.json desktop-release/
 	@$(MAKE) desktop-bind-release-assets
