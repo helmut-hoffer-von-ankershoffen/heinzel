@@ -1173,14 +1173,16 @@ private struct SoundscapeWidgetView: View {
         VStack(spacing: 2) {
             ZStack(alignment: .bottomLeading) {
                 Capsule().fill(.primary.opacity(0.12))
-                playbackProgress
-                    .frame(maxHeight: .infinity, alignment: .center)
+                    .frame(height: 4)
+                    .overlay { playbackProgress }
+                    .frame(maxHeight: .infinity, alignment: .top)
                 if let downloadFraction {
                     GeometryReader { geometry in
-                        Rectangle().fill(.yellow)
+                        Capsule().fill(.yellow)
                             .frame(width: geometry.size.width * downloadFraction, height: 2)
                             .frame(maxHeight: .infinity, alignment: .bottom)
                     }
+                    .padding(.horizontal, 3)
                 }
             }
             .frame(height: 6)
