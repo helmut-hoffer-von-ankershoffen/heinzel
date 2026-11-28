@@ -48,7 +48,7 @@ function loadPreload(platform) {
     globalThis: { navigator: { platform } },
     document,
   });
-  assert.deepEqual(documentListeners, ["pointerdown", "keydown", "click", "click"]);
+  assert.deepEqual(documentListeners, ["pointerdown", "keydown", "click", "pointerup", "click"]);
   return { bridge: exposed.heinzelDesktop, listeners, invoked };
 }
 

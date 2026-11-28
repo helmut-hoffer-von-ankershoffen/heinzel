@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
+import { createAlbumTransport } from "../src/album-transport.js";
 import { hideWindows, quitLogLine, shouldRefresh, showWindows, stopWithReport } from "../src/shutdown.js";
 import { createPublicMediaHandler } from "../src/public-media.js";
 import { installSignalQuit } from "../src/signal-quit.js";
@@ -48,6 +49,7 @@ function quitHarness(result, rejects = false) {
   const proc = Object.assign(new EventEmitter(), { argv: ["node", "fixture"], env: {}, platform: "darwin" });
   const app = Object.assign(new EventEmitter(), {
     isPackaged: false,
+    getPath: () => "/fixture",
     whenReady: () => new Promise(() => {}),
     quit: () => {
       let prevented = false;
@@ -56,7 +58,7 @@ function quitHarness(result, rejects = false) {
     },
     exit: (code) => exits.push(code),
   });
-  const exits = [], dialogs = [], events = [], warnings = [];
+  const exits = [], dialogs = [], events = [], warnings = [], schemes = [];
   let stops = 0;
   const window = {
     visible: true,
@@ -77,6 +79,8 @@ function quitHarness(result, rejects = false) {
   runInNewContext(mainScript(), {
     moduleUrl: new URL("../src/main.js", import.meta.url).href, URL,
     process: proc, app,
+    protocol: { registerSchemesAsPrivileged: (registered) => schemes.push(...registered) },
+    createAlbumTransport,
     console: { ...console, warn: (line) => warnings.push(line) },
     BrowserWindow: { getAllWindows: () => [window] },
     dialog: { showErrorBox: (...args) => dialogs.push(args) },
@@ -91,6 +95,7 @@ function quitHarness(result, rejects = false) {
     createPublicMediaHandler, stopWithReport, shouldRefresh, hideWindows, showWindows, quitLogLine,
     installSignalQuit: (options) => installSignalQuit({ ...options, setTimer: () => ({ unref() {} }) }),
   });
+  assert.deepEqual(schemes.map(({ scheme }) => scheme), ["heinzel-album"]);
   return { proc, app, exits, dialogs, events, warnings, stops: () => stops };
 }
 
