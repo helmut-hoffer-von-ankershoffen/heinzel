@@ -109,7 +109,7 @@ function Full({ drawer, titlebar, onToggle, onSearch, onNotifications }: Omit<Pr
   );
   const theme = useSelectedTheme();
   const dark = useDark();
-  const brand = theme && theme.name !== "default" && (
+  const brand = theme && theme.name !== "default" && theme.name !== "heinzelmaennchen" && (
     <Link
       to="/"
       aria-label={t("nav.brand")}
