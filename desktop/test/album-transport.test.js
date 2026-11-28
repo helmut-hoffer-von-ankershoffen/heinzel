@@ -49,6 +49,7 @@ test("startup is idle and queued requests recheck renderer provenance", async ()
 
 function transportFixture() {
   const calls = [], changes = [];
+  let privateRequest, filterRequests;
   let windows = 0;
   const media = { currentTime: 0, duration: 92, paused: true, ended: false, volume: 1, muted: false,
     pause() { this.paused = true; }, load() { this.currentTime = 0; },
@@ -61,7 +62,12 @@ function transportFixture() {
     isDestroyed() { return false; }
     loadFile() { return Promise.resolve(); }
     webContents = {
-      session: { protocol: { handle() {} }, webRequest: { onBeforeRequest() {} } },
+      session: {
+        protocol: { handle(_scheme, handler) { privateRequest = handler; } },
+        webRequest: { onBeforeRequest(handler) { filterRequests = handler; } },
+      },
+      id: 7, mainFrame: { url: new URL("../src/album-audio.html", import.meta.url).href },
+      isDestroyed() { return false; }, getURL() { return this.mainFrame.url; },
       setWindowOpenHandler() {}, on() {},
       async executeJavaScript(script) {
         const [action] = JSON.parse("[" + script.slice(script.indexOf("(") + 1, -1) + "]");
@@ -75,9 +81,25 @@ function transportFixture() {
     app: { getPath: () => "/missing-album-fixture" }, publish: state => changes.push(state),
     fetchObject: async () => { throw new Error("offline fixture"); },
   });
-  return { transport, calls, changes, media, windows: () => windows,
+  return {
+    transport, calls, changes, media, windows: () => windows,
+    get privateRequest() { return privateRequest; }, get filterRequests() { return filterRequests; },
     advance: value => { media.currentTime = value; } };
 }
+test("an isolated audio document accepts a referrerless catalog media request", async () => {
+  const fixture = transportFixture();
+  await fixture.transport.handle("play");
+  const request = new Request(`heinzel-album://film/${album.tracks[0].media.sha256}.mp4`);
+  // With no cache in this fixture, 404 shows the request reached catalog verification.
+  assert.equal((await fixture.privateRequest(request)).status, 404);
+  for (const details of [
+    { webContentsId: 42, resourceType: "media", url: request.url },
+    { webContentsId: 7, resourceType: "subFrame", url: request.url },
+    { webContentsId: 7, resourceType: "xhr", url: request.url },
+  ]) fixture.filterRequests(details, decision => assert.equal(decision.cancel, true));
+  await fixture.transport.handle("pause");
+});
+
 test("real audio script reads gain through playing, silent, restored, paused and resumed transport", async () => {
   const f = transportFixture();
   await f.transport.handle("play");

@@ -1,5 +1,5 @@
 // Fixed catalog transport. The product page never supplies a URL or a filesystem path.
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile, mkdir, writeFile, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import { createReadStream } from "node:fs";
@@ -127,18 +127,25 @@ export function createAlbumTransport({ BrowserWindow, app, publish, fetchObject 
     if (!window || window.isDestroyed()) {
       window = new BrowserWindow({ show: false, webPreferences: {
         sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false,
-        partition: "album-audio",
+        partition: `album-audio-${randomUUID()}`,
       } });
       const allowed = new Set(album.tracks.flatMap(track => [remoteURL(track.media), localURL(track.media)]));
-      window.webContents.session.protocol.handle("heinzel-album", request => {
-        const document = new URL("./album-audio.html", import.meta.url).href;
-        if (request.referrer !== document) return new Response(null, { status: 403 });
+      const contents = window.webContents;
+      const documentURL = new URL("./album-audio.html", import.meta.url).href;
+      const scriptURL = new URL("./album-audio.js", import.meta.url).href;
+      // File documents can omit their referrer on custom-scheme media requests.
+      contents.session.protocol.handle("heinzel-album", request => {
+        if (contents.isDestroyed() || contents.getURL() !== documentURL)
+          return new Response(null, { status: 403 });
         return catalogMediaResponse(request, root);
       });
-      window.webContents.session.webRequest.onBeforeRequest((details, callback) => {
-        const local = new URL("./album-audio.html", import.meta.url).href;
-        const script = new URL("./album-audio.js", import.meta.url).href;
-        callback({ cancel: !(allowed.has(details.url) || details.url === local || details.url === script) });
+      contents.session.webRequest.onBeforeRequest((details, callback) => {
+        const fromAudioDocument = details.frame === contents.mainFrame && details.frame?.url === documentURL;
+        const permitted = details.webContentsId === contents.id &&
+          ((details.resourceType === "mainFrame" && details.url === documentURL) ||
+           (fromAudioDocument && ((details.resourceType === "script" && details.url === scriptURL) ||
+             (details.resourceType === "media" && allowed.has(details.url)))));
+        callback({ cancel: !permitted });
       });
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
       window.webContents.on("will-navigate", event => event.preventDefault());
