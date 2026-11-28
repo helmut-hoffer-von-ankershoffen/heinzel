@@ -17,6 +17,7 @@ import { workspaceName } from "../src/workspace-directory.js";
 import { isOwnedMainFrame } from "../src/public-media.js";
 import { createMiniBrowser } from "../src/mini-browser.js";
 import { createMediaPlayer } from "../src/media-player.js";
+import { createAlbumTransport, filmResponse } from "../src/album-transport.js";
 
 const moduleUrl = new URL("../src/main.js", import.meta.url).href;
 const source = mainScript();
@@ -36,6 +37,7 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
       const session = options.webPreferences.session ?? makeSession(options.webPreferences.partition);
       const contents = Object.assign(new EventEmitter(), {
         session, mainFrame: { url: "", isDestroyed: () => this.destroyed, detached: false },
+        userAgent: "Electron/fixture", getUserAgent() { return this.userAgent; }, setUserAgent(value) { this.userAgent = value; },
         isDestroyed: () => this.destroyed, setWindowOpenHandler() {}, send() {}, getZoomFactor: () => 1,
       });
       this.webContents = contents; this.contentView = { addChildView() {}, removeChildView() {} }; windows.push(this);
@@ -117,6 +119,7 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
     };
   };
   runInNewContext(source, {
+    protocol: { registerSchemesAsPrivileged() {} }, createAlbumTransport, filmResponse,
     probeWorkspaceRenderer: async (_window, connection) => {
       events.push(["renderer-verify", connection.origin]);
       if (outage) throw new Error("unreachable");
@@ -174,6 +177,7 @@ test("main switches local to remote and back with fresh sessions and no remote n
   const f = await fixture();
   const first = f.windows[0];
   assert.equal(first.webContents.session.proxy.mode, "direct");
+  assert.equal(first.webContents.getUserAgent(), "Electron/fixture HeinzelAlbum/1");
   let headers;
   first.webContents.session.clientHeader.handler({ url: `${local.origin}/api/workspace-version`,
     requestHeaders: { Authorization: "Bearer fixture" } }, (result) => { headers = result.requestHeaders; });
@@ -183,6 +187,7 @@ test("main switches local to remote and back with fresh sessions and no remote n
   assert.deepEqual({ ...application }, { type: "Electron", version: "1.0.0", path: "/fixture/application", operatingSystem: "macOS 26.1" });
   assert.equal((await f.request(picker, remote)).message, "Connected");
   const remoteWindow = f.windows.at(-1);
+  assert.equal(remoteWindow.webContents.getUserAgent(), "Electron/fixture");
   assert.equal(first.isDestroyed(), true);
   assert.equal(first.webContents.session.cleared, true);
   assert.match(remoteWindow.options.webPreferences.preload, /workspace-remote-preload/);
