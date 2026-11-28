@@ -552,13 +552,14 @@ class SessionStore:
 
     @staticmethod
     def _head(row: sqlite3.Row) -> SessionHead:
+        fields = dict(row)
         return SessionHead(
-            session=str(row["session"]),
-            seq=int(row["seq"]),
-            hash=row["hash"],
-            updated=datetime.fromisoformat(row["updated"]) if row["updated"] else None,
-            projection=json.loads(row["projection"]),
-            problem=row["problem"],
+            session=str(fields["session"]),
+            seq=int(fields["seq"]),
+            hash=fields["hash"],
+            updated=datetime.fromisoformat(fields["updated"]) if fields["updated"] else None,
+            projection=json.loads(fields["projection"]),
+            problem=fields["problem"],
         )
 
     @staticmethod

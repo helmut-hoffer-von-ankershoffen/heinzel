@@ -43,6 +43,23 @@ def test_session_facades_keep_sdk_types_and_published_module_names():
         assert storage.__module__ == "heinzel.kernel.session._session_store"
 
 
+def test_session_head_reads_named_columns_and_historic_sqlite_values():
+    index = sqlite3.connect(":memory:")
+    index.row_factory = sqlite3.Row
+    try:
+        row = index.execute(
+            "SELECT ? AS projection, ? AS problem, ? AS updated, ? AS hash, ? AS seq, ? AS session",
+            ('{"legacy": [1, null]}', "old problem", None, None, "7", 42),
+        ).fetchone()
+        assert row is not None
+        head = _session_store.SessionStore._head(row)  # pyright: ignore[reportPrivateUsage]
+        assert (head.session, head.seq, head.hash, head.updated) == ("42", 7, None, None)
+        assert head.projection == {"legacy": [1, None]}
+        assert head.problem == "old problem"
+    finally:
+        index.close()
+
+
 def test_session_index_schema_leaves_no_partial_tables_on_failure(tmp_path):
     path = tmp_path / "index.sqlite"
 

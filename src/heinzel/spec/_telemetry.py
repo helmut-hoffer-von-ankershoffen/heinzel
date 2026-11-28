@@ -33,7 +33,9 @@ _CHANNEL = re.compile(r"^chat:[#@]?[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 _TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+-]{0,127}$")
 _SLUG = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 _CONTROLS = re.compile(r"[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]")
-_ADDRESS = re.compile(r"[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+\.[A-Za-z0-9.-]+")
+_ADDRESS_LOCAL = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._%+'-")
+_ADDRESS_DOMAIN = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-")
+_ADDRESS_SUFFIX = _ADDRESS_DOMAIN | {"."}
 _SECRETS = re.compile(
     r"gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|sk-[A-Za-z0-9_-]{20,}"
     r"|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|-----BEGIN"
@@ -67,6 +69,19 @@ def looks_like_credential(text: str, *, free_text: bool = False) -> bool:
         any(c.isupper() for c in r) and any(c.islower() for c in r) and any(c.isdigit() for c in r) for r in runs
     )
     return mixed or _SECRETS.search(text) is not None
+
+
+def _has_address(text: str) -> bool:
+    """Recognize address-shaped text in one pass, including malformed domains."""
+    for at, char in enumerate(text):
+        if char != "@" or at == 0 or text[at - 1] not in _ADDRESS_LOCAL:
+            continue
+        end = at + 1
+        while end < len(text) and text[end] in _ADDRESS_DOMAIN:
+            end += 1
+        if end > at + 1 and end + 1 < len(text) and text[end] == "." and text[end + 1] in _ADDRESS_SUFFIX:
+            return True
+    return False
 
 
 def _secret_problem(text: str, what: str, *, free_text: bool = False) -> None:
@@ -180,7 +195,7 @@ class TelemetryEntry(BaseModel):
         if _CONTROLS.search(value):
             msg = "description must be one line of plain text"
             raise ValueError(msg)
-        if _ADDRESS.search(value):
+        if _has_address(value):
             msg = "description must not hold an email address; name people by their handle"
             raise ValueError(msg)
         _secret_problem(value, "description", free_text=True)

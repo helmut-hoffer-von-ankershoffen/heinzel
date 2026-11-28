@@ -4,6 +4,7 @@ import inspect
 from collections.abc import Callable, Coroutine
 from typing import Annotated, Any, get_args, get_origin
 
+from anyio.lowlevel import checkpoint_if_cancelled
 from fastapi import Body, HTTPException, Query, Request, Response
 from fastapi.routing import APIRoute
 from pydantic import ConfigDict, create_model
@@ -79,6 +80,8 @@ def stream_endpoint(
     """Like `endpoint`, but the answer is the operation's events as a server-sent event stream."""
 
     async def run(**kwargs: Any) -> Any:  # noqa: ANN401 - a streaming response
+        # Once launched, the operation can outlive the HTTP stream. Respect cancellation before launching it.
+        await checkpoint_if_cancelled()
         return streamed(
             kernel, item.operation, arguments(item, kwargs, body=item.operation.private), module=item.record.qualname
         )
