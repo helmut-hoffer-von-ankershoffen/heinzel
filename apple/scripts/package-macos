@@ -67,7 +67,9 @@ if [[ "$distribution" == developer-id ]]; then
         printf '%s\n' 'Developer ID requires a signing Team and notary profile, using only the Mac local widget group.' >&2
         exit 2
     fi
-    signing+=("CODE_SIGN_STYLE=Manual" "CODE_SIGN_IDENTITY=Developer ID Application" "OTHER_CODE_SIGN_FLAGS=--timestamp")
+    # Use the explicit app and widget entitlements without Xcode adding debugger access.
+    signing+=("CODE_SIGN_STYLE=Manual" "CODE_SIGN_IDENTITY=Developer ID Application"
+        "CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO" "OTHER_CODE_SIGN_FLAGS=--timestamp")
     notary_keychain=()
     if [[ -n ${HEINZEL_MAC_NOTARY_KEYCHAIN:-} ]]; then
         notary_keychain+=(--keychain "$HEINZEL_MAC_NOTARY_KEYCHAIN")
