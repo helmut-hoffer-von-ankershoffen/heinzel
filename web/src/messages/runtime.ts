@@ -96,6 +96,7 @@ export const runtime = {
   "updates.plan.kept": "{name}: stays at {installed}",
   "updates.plan.unknownVersion": "version unknown",
   "updates.plan.unread": "The update plan couldn't be read, so nothing was changed.",
+  "updates.plan.changed": "The update plan changed. Review the new details before updating.",
   "updates.plan.desktop": "Also update the desktop app",
   "updates.plan.desktopHelp": "An open app can't be replaced; the result says what to do.",
   "updates.retry": "Check again",

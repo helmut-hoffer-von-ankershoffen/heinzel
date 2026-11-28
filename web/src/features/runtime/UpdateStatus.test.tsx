@@ -557,6 +557,20 @@ it("shows the optional preview and honors the desktop preference on a single ins
   expect(vi.mocked(startUpdate).mock.calls[0]?.[4]).toEqual({ plan: "shown-plan", desktop: false });
 });
 
+it("shows a changed preview and waits for a fresh install click", async () => {
+  const user = await openUpdates();
+  const changed = { ...updatePlan, latest: "0.3.0", core: "hz 0.1.0 → 0.3.0.", token: "new-plan" };
+  vi.mocked(readUpdatePlan).mockResolvedValueOnce(updatePlan).mockResolvedValue(changed);
+  await user.click(screen.getByText("Review update details"));
+  await screen.findByText("Heinzel: 0.1.0 → 0.2.0");
+  await user.click(screen.getByRole("button", { name: "Update now" }));
+  expect(await screen.findByText("Heinzel: 0.1.0 → 0.3.0")).toBeVisible();
+  expect(startUpdate).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Update now" }));
+  await waitFor(() => expect(startUpdate).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(startUpdate).mock.calls[0]?.[4]).toEqual({ plan: "new-plan", desktop: true });
+});
+
 it("shows a failed plan in the update dialog without installing", async () => {
   const user = await openUpdates();
   vi.mocked(readUpdatePlan).mockRejectedValueOnce(new Error("GitHub could not be reached."));
@@ -611,6 +625,69 @@ it("offers no desktop update when the desktop app is current", async () => {
   await userEvent.setup().click(await screen.findByRole("button", { name: "Updates, off" }));
   expect(screen.queryByRole("button", { name: "Update desktop app" })).not.toBeInTheDocument();
   expect(screen.queryByText(/is older than Heinzel/)).not.toBeInTheDocument();
+});
+
+it.each(["native", "electron"])(
+  "leaves the %s restart countdown reachable after the update dialog closes",
+  async (variant) => {
+    vi.stubGlobal("heinzelDesktop", { clientOS: "macOS", clientFlavor: variant });
+    const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    localStorage.removeItem("hz.update.desktopCountdown");
+    mockApi({
+      ...shell,
+      "/api/auto-update": { enabled: true, phase: "idle", version: status.current },
+      "/api/update-status": { ...status, idle: true, desktop: { version: "0.0.9", variant, behind: true } },
+    });
+    try {
+      const user = userEvent.setup();
+      renderAt("/");
+      await user.click(await screen.findByRole("button", { name: /Updates available/ }));
+      await user.click(screen.getByRole("button", { name: "Update now" }));
+      const result = await screen.findByRole("dialog", { name: "Updated Heinzel and its plugins" });
+      expect(screen.queryByRole("timer")).not.toBeInTheDocument();
+      await user.click(within(result).getByRole("button", { name: "Done" }));
+      expect(await screen.findByRole("timer")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Cancel restart" }));
+      expect(updateDesktopApp).not.toHaveBeenCalled();
+    } finally {
+      localStorage.removeItem("hz.update.desktopCountdown");
+      platform.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
+it.each(["native", "electron"])("suppresses the %s restart while the update outcome is uncertain", async (variant) => {
+  vi.stubGlobal("heinzelDesktop", { clientOS: "macOS", clientFlavor: variant });
+  const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+  localStorage.removeItem("hz.update.desktopCountdown");
+  mockApi({
+    ...shell,
+    "/api/auto-update": { enabled: true, phase: "idle", version: status.current },
+    "/api/update-status": { ...status, idle: true, desktop: { version: "0.0.9", variant, behind: true } },
+  });
+  vi.mocked(startUpdate).mockImplementationOnce(async () => {
+    sessionStorage.setItem("hz.update.receipt", JSON.stringify({ stage: "uncertain" }));
+    throw new Error("Update outcome is uncertain.");
+  });
+  try {
+    const user = userEvent.setup();
+    renderAt("/");
+    await user.click(await screen.findByRole("button", { name: /Updates available/ }));
+    await user.click(screen.getByRole("button", { name: "Update now" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Update outcome is uncertain.");
+    await user.click(
+      within(within(dialog).getByRole("group", { name: "Actions" })).getByRole("button", { name: "Close" }),
+    );
+    expect(screen.queryByRole("timer")).not.toBeInTheDocument();
+    expect(updateDesktopApp).not.toHaveBeenCalled();
+  } finally {
+    sessionStorage.removeItem("hz.update.receipt");
+    localStorage.removeItem("hz.update.desktopCountdown");
+    platform.mockRestore();
+    vi.unstubAllGlobals();
+  }
 });
 
 it.each(["native", "electron"])("offers a manual restart in the %s footer after cancel", async (clientFlavor) => {

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, LoaderCircle, RefreshCw, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { onMenuAction } from "@/about/menu";
+import type { SchemaUpdatePlan } from "@/api/client";
 import { FooterItem } from "@/components/FooterItem";
 import { PaneAction } from "@/components/PaneActions";
 import { Progress, type ProgressSegment } from "@/components/Progress";
@@ -26,7 +27,13 @@ import { UpdatePlanDetails } from "@/features/runtime/updates/UpdatePlanDetails"
 import { describe, partSegments } from "@/features/runtime/updates/updateState";
 import { reloadHeld, saveOpenWork, workOnScreen } from "@/features/runtime/updates/work";
 import { t } from "@/i18n";
-import { type Phase, requestDrivenOperation, startOperation } from "@/lib/operationRun";
+import {
+  OperationCancelled,
+  type Phase,
+  requestDrivenOperation,
+  startOperation,
+  useOperationRun,
+} from "@/lib/operationRun";
 import { zoneDateTime } from "@/lib/zoneTime";
 
 /** The explicit update action and its progress dialog share the same operation. */
@@ -39,7 +46,12 @@ const updateCall = () => ({
   read_only: false,
 });
 
-type ManualUpdate = { report: (phases: Phase[]) => void; desktop: boolean };
+type ManualUpdate = {
+  report: (phases: Phase[]) => void;
+  desktop: boolean;
+  reviewedToken?: string;
+  showChangedPlan: (plan: SchemaUpdatePlan) => void;
+};
 
 function updateRecoveryState(): "none" | "inspect" | "verify" {
   const receipt = pendingUpdate();
@@ -59,6 +71,8 @@ export function UpdateStatus() {
     retry: false,
   });
   const queryClient = useQueryClient();
+  const operation = useOperationRun();
+  const updateDialogOpen = operation.stage !== "idle" && operation.call.path === "/system/update";
   const active = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   const [busy, setBusy] = useState(false);
@@ -113,7 +127,12 @@ export function UpdateStatus() {
     [runCheck],
   );
   const [includeDesktop, setIncludeDesktop] = useState(true);
-  const preview = useMutation({ mutationFn: () => readUpdatePlan(AbortSignal.timeout(30_000)) });
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewPlan, setPreviewPlan] = useState<SchemaUpdatePlan>();
+  const preview = useMutation({
+    mutationFn: () => readUpdatePlan(AbortSignal.timeout(30_000)),
+    onSuccess: setPreviewPlan,
+  });
   /**
    * `installed`: load that already installed core with a verified restart instead of installing anything.
    * `manual`: an explicit update whose preparation and result appear in one dialog.
@@ -130,13 +149,18 @@ export function UpdateStatus() {
       if (manual) {
         const reading: Phase = { id: "plan", label: t("updates.planning"), state: "running" };
         manual.report([reading]);
+        let plan: SchemaUpdatePlan;
         try {
-          const plan = await readUpdatePlan(AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]));
-          answers = { plan: plan.token ?? "", desktop: manual.desktop && plan.desktop === true };
+          plan = await readUpdatePlan(AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]));
         } catch (error) {
           manual.report([{ ...reading, state: "failed" }]);
           throw new Error(`${t("updates.plan.unread")} ${error instanceof Error ? error.message : ""}`.trim());
         }
+        if (manual.reviewedToken && plan.token !== manual.reviewedToken) {
+          if (mounted.current) manual.showChangedPlan(plan);
+          throw new OperationCancelled(t("updates.plan.changed"));
+        }
+        answers = { plan: manual.reviewedToken ?? plan.token ?? "", desktop: manual.desktop && plan.desktop === true };
         manual.report([{ ...reading, state: "done" }]);
       }
       const onPhase = (phase: string) => {
@@ -162,6 +186,10 @@ export function UpdateStatus() {
         setSteps([]);
         setMessage(answer);
         setRecovery(updateRecoveryState());
+        if (manual) {
+          setPreviewPlan(undefined);
+          setPreviewOpen(false);
+        }
       }
       return answer;
     } catch (error) {
@@ -183,14 +211,23 @@ export function UpdateStatus() {
     }
   }, []);
   const install = () => {
-    if (active.current) return;
+    if (active.current || preview.isPending) return;
     const requested = requestDrivenOperation(updateCall(), {
       consent: [],
       action: t("updates.action"),
       runningTitle: t("updates.dialogTitle"),
       doneTitle: t("updates.confirm.done"),
       running: t("updates.confirm.running"),
-      run: (report) => run(false, undefined, { report, desktop: includeDesktop }),
+      run: (report) =>
+        run(false, undefined, {
+          report,
+          desktop: includeDesktop,
+          reviewedToken: previewPlan?.token ?? undefined,
+          showChangedPlan: (plan) => {
+            setPreviewPlan(plan);
+            setPreviewOpen(true);
+          },
+        }),
     });
     if (requested)
       void startOperation(() => void queryClient.invalidateQueries({ queryKey: ["web", "update-status"] }));
@@ -224,6 +261,9 @@ export function UpdateStatus() {
       status?.current === plan.version &&
       plan.phase === "idle" &&
       !busy &&
+      !updateDialogOpen &&
+      problem === null &&
+      recovery === "none" &&
       !desktopUpdate.isPending &&
       !desktopUpdate.isSuccess,
     status?.idle !== false,
@@ -327,7 +367,7 @@ export function UpdateStatus() {
             </PaneAction>
           )}
           {canUpdate && (
-            <PaneAction icon={Download} primary={view.count > 0} onClick={install}>
+            <PaneAction icon={Download} primary={view.count > 0} disabled={preview.isPending} onClick={install}>
               {view.count > 1
                 ? t("updates.allAction")
                 : view.count === 1
@@ -393,8 +433,11 @@ export function UpdateStatus() {
         )}
         {canUpdate && (
           <details
+            open={previewOpen}
             onToggle={(event) => {
-              if (event.currentTarget.open && !preview.isPending && !preview.data) preview.mutate();
+              const { open } = event.currentTarget;
+              setPreviewOpen(open);
+              if (open && !preview.isPending && !previewPlan) preview.mutate();
             }}
           >
             <summary className="cursor-pointer">{t("updates.plan.details")}</summary>
@@ -402,8 +445,8 @@ export function UpdateStatus() {
             <p className="text-xs text-muted-foreground">{t("updates.confirm.pins")}</p>
             {preview.isPending && <p role="status">{t("updates.planning")}</p>}
             {preview.isError && <p role="alert">{t("updates.plan.unread")}</p>}
-            {preview.data && (
-              <UpdatePlanDetails plan={preview.data} desktop={includeDesktop} onDesktop={setIncludeDesktop} />
+            {previewPlan && (
+              <UpdatePlanDetails plan={previewPlan} desktop={includeDesktop} onDesktop={setIncludeDesktop} />
             )}
           </details>
         )}
