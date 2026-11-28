@@ -14,7 +14,7 @@ const token = randomBytes(32).toString("base64url");
 const paired = randomBytes(32).toString("base64url");
 const key = join(root, "fixture.key"), cert = join(root, "fixture.pem");
 await writeFile(join(root, "cert.cnf"), "[req]\ndistinguished_name=subject\nx509_extensions=ext\nprompt=no\n[subject]\nCN=127.0.0.1\n[ext]\nsubjectAltName=IP:127.0.0.1\nbasicConstraints=critical,CA:TRUE\n");
-execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+execFileSync("/usr/bin/openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
   "-config", join(root, "cert.cnf"), "-keyout", key, "-out", cert], { stdio: "ignore" });
 let outage = false, expired = false, pairedReads = 0, installs = "0.9.58", probes = 0, writes = 0;
 let metadataUnavailable = false, pairedFacts = 0;
@@ -59,8 +59,9 @@ let app;
 try {
   for (const dir of ["home", "bin", "config", "cache", "data", "state", "tmp", "logs", "electron-profile", "electron-session", "electron-logs"])
     await mkdir(join(root, dir), { mode: 0o700 });
-  await writeFile(join(root, "bin/hz"), `#!${process.execPath}\nif(JSON.stringify(process.argv.slice(2))!==JSON.stringify(["ui","attach","--bridge-token-stdin"]))process.exit(64);\nprocess.stdin.resume();process.stdin.on("end",()=>console.log(process.env.HZ_TEST_URL));\n`, { mode: 0o700 });
-  const env = { HOME: join(root, "home"), PATH: join(root, "bin") + ":/usr/bin:/bin", TMPDIR: join(root, "tmp"),
+  const fixtureCli = join(root, "bin/hz");
+  await writeFile(fixtureCli, `#!${process.execPath}\nif(JSON.stringify(process.argv.slice(2))!==JSON.stringify(["ui","attach","--bridge-token-stdin"]))process.exit(64);\nprocess.stdin.resume();process.stdin.on("end",()=>console.log(process.env.HZ_TEST_URL));\n`, { mode: 0o700 });
+  const env = { HOME: join(root, "home"), PATH: "/usr/bin:/bin", HZ_DESKTOP_DEV_CLI: fixtureCli, TMPDIR: join(root, "tmp"),
     XDG_CONFIG_HOME: join(root, "config"), XDG_CACHE_HOME: join(root, "cache"), XDG_DATA_HOME: join(root, "data"),
     HZ_CONFIG_HOME: join(root, "config"), HZ_DATA_DIR: join(root, "data"), HZ_STATE_DIR: join(root, "state"),
     HZ_CACHE_DIR: join(root, "cache"), HZ_LOG_DIR: join(root, "logs"), HZ_NATIVE_TEST_ROOT: root,

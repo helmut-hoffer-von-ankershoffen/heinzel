@@ -57,21 +57,27 @@ def verify_metadata(  # noqa: PLR0913 - independent release and bundle inputs
     return build
 
 
-def codesign(*args: str) -> subprocess.CompletedProcess[bytes]:
-    """Run the system verifier without using the shell."""
-    return subprocess.run(("/usr/bin/codesign", *args), capture_output=True, check=True, timeout=30)  # noqa: S603
-
-
 def verify_bundle(bundle: Path, bundle_id: str, team: str, version: str, revision: str) -> str:
     """Verify the certificate class, signing Team, hardened runtime, and bundle metadata."""
+    bundle = bundle.resolve(strict=True)
     # This Apple leaf marker denotes a Developer ID Application certificate.
     requirement = (
         f'anchor apple generic and identifier "{bundle_id}" and certificate leaf[subject.OU] = "{team}"'
         " and certificate 1[field.1.2.840.113635.100.6.2.6] exists"
         " and certificate leaf[field.1.2.840.113635.100.6.1.13] exists"
     )
-    codesign("--verify", "--strict", f"-R={requirement}", str(bundle))
-    details = codesign("--display", "--verbose=4", str(bundle)).stderr
+    subprocess.run(  # noqa: S603 - fixed verifier and options, absolute bundle path
+        ("/usr/bin/codesign", "--verify", "--strict", f"-R={requirement}", "--", str(bundle)),
+        capture_output=True,
+        check=True,
+        timeout=30,
+    )
+    details = subprocess.run(  # noqa: S603 - fixed verifier and options, absolute bundle path
+        ("/usr/bin/codesign", "--display", "--verbose=4", "--", str(bundle)),
+        capture_output=True,
+        check=True,
+        timeout=30,
+    ).stderr
     require(re.search(rb"\bflags=0x[0-9a-f]+\([^\n)]*\bruntime\b", details), "hardened runtime is missing")
     info_path = bundle / "Contents/Info.plist"
     require(
@@ -79,7 +85,13 @@ def verify_bundle(bundle: Path, bundle_id: str, team: str, version: str, revisio
         "bundle metadata escapes the app",
     )
     info = plistlib.loads(info_path.read_bytes())
-    signed = plistlib.loads(codesign("--display", "--entitlements", "-", "--xml", str(bundle)).stdout)
+    entitlements = subprocess.run(  # noqa: S603 - fixed verifier and options, absolute bundle path
+        ("/usr/bin/codesign", "--display", "--entitlements", "-", "--xml", "--", str(bundle)),
+        capture_output=True,
+        check=True,
+        timeout=30,
+    ).stdout
+    signed = plistlib.loads(entitlements)
     require(isinstance(info, dict) and isinstance(signed, dict), "invalid bundle or entitlement metadata")
     return verify_metadata(bundle_id, team, version, revision, info=info, signed=signed)
 

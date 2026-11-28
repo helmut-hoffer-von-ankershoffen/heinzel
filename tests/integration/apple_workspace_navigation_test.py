@@ -164,6 +164,7 @@ def test_established_workspace_keeps_draft_and_opens_mac_profile_chooser(
             )
             pin.write_bytes(ssl.PEM_cert_to_DER_cert(cert.read_text()))
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
             context.load_cert_chain(cert, key)
             server.socket = context.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
         Thread(target=server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True).start()

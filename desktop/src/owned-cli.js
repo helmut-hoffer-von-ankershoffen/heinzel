@@ -145,7 +145,8 @@ export function createOwnedCli({
   bridgeToken = null,
   // Asks the attached service whether it still answers this connection (its lifecycle); rejects when it does not.
   probe = null,
-  probeContext = () => 0,
+  // The live caller returns its connection epoch, or null while the app is in the background.
+  probeContext,
   probeIntervalMs = PROBE_INTERVAL_MS,
   // Consecutive failed probes before the service counts as lost: one slow answer during a restart is not a loss.
   lostAfter = LOST_AFTER,
@@ -241,7 +242,7 @@ export function createOwnedCli({
     let probing = false;
     let failures = 0, previousContext;
     watcher = every(async () => {
-      const context = probeContext();
+      const context = probeContext ? probeContext() : 0;
       if (context !== previousContext) failures = 0;
       previousContext = context;
       if (context === null || probing || !attached || detached) return;
@@ -251,7 +252,7 @@ export function createOwnedCli({
         failures = 0;
       } catch (error) {
         if (error?.code === "SESSION_CHANGED") { failures = 0; return; }
-        if (context !== probeContext()) return;
+        if (probeContext && context !== probeContext()) return;
         failures += 1;
         if (!attached || detached || failures < lostAfter) return;
         attached = false;
