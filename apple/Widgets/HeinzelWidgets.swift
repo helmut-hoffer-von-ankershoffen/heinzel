@@ -917,6 +917,11 @@ private struct SoundscapeWidgetView: View {
 
     private var repeatActive: Bool { repeatMode == "Album" || repeatMode == "Track" }
 
+    private var canControlPlayback: Bool {
+        guard let state else { return false }
+        return state.playing || state.canPlaySaved || (state.selectedID != nil && state.origin != "none")
+    }
+
     var body: some View {
         Group {
             if showingInfo { information } else { player }
@@ -1252,7 +1257,7 @@ private struct SoundscapeWidgetView: View {
                     .frame(height: 44)
                     .contentShape(Rectangle())
             }
-            .disabled(state?.playing != true && state?.canPlaySaved != true)
+            .disabled(!canControlPlayback)
             .accessibilityLabel(state?.playing == true ? "Pause Soundscape" : "Play Soundscape")
             Button(intent: NextSoundscapeIntent()) {
                 Image(systemName: "forward.end.fill").font(.system(size: 14))
@@ -1276,7 +1281,7 @@ private struct SoundscapeWidgetView: View {
                 .frame(height: 44)
                 .contentShape(Rectangle())
         }
-        .disabled(state?.canPlaySaved != true && state?.playing != true)
+        .disabled(!canControlPlayback)
         .accessibilityLabel("Repeat")
         .accessibilityValue(repeatMode == "—" ? "Unavailable" : repeatMode)
         .accessibilityHint("Cycles Off, Album, Track")

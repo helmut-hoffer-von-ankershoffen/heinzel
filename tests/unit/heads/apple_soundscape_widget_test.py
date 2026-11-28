@@ -29,6 +29,14 @@ def test_album_cover_opens_picker_while_progress_still_targets_the_selected_trac
     assert "albumArtwork" not in view("progressControl")
 
 
+def test_play_and_repeat_accept_a_loaded_selection_or_saved_playback() -> None:
+    availability = view("canControlPlayback")
+    assert "guard let state else { return false }" in availability
+    assert 'state.playing || state.canPlaySaved || (state.selectedID != nil && state.origin != "none")' in availability
+    assert ".disabled(!canControlPlayback)" in view("transport")
+    assert ".disabled(!canControlPlayback)" in view("repeatControl")
+
+
 def test_download_edge_is_attached_to_the_playback_rail_only_during_an_active_download() -> None:
     fraction = view("downloadFraction")
     assert 'state.phase == "downloading"' in fraction
