@@ -53,6 +53,27 @@ async function verifiedFile(root, media) {
   } catch { return null; }
 }
 export async function filmResponse(request, root) {
+  if (request.url !== filmURL) return new Response(null, { status: 404 });
+  return catalogMediaResponse(request, root);
+}
+// Install before the workspace navigates so its document receives the custom URL loader.
+export function installWorkspaceFilm(session, current, admitted, root) {
+  session.webRequest.onBeforeRequest((details, callback) => {
+    if (!details.url.startsWith("heinzel-album:")) return callback({ cancel: false });
+    const contents = current();
+    const allowed = contents && details.webContentsId === contents.id &&
+      details.url === filmURL && details.resourceType === "media" &&
+      ["GET", "HEAD"].includes(details.method) && admitted(contents, details.frame);
+    callback({ cancel: !allowed });
+  });
+  session.protocol.handle("heinzel-album", request => {
+    const contents = current();
+    if (!contents || contents.isDestroyed() || !admitted(contents, contents.mainFrame))
+      return new Response(null, { status: 403 });
+    return filmResponse(request, root);
+  });
+}
+async function catalogMediaResponse(request, root) {
   const media = album.tracks.find(t => localURL(t.media) === request.url)?.media;
   if (!media || !["GET", "HEAD"].includes(request.method)) return new Response(null, { status: 404 });
   const filename = await verifiedFile(root, media);
@@ -112,7 +133,7 @@ export function createAlbumTransport({ BrowserWindow, app, publish, fetchObject 
       window.webContents.session.protocol.handle("heinzel-album", request => {
         const document = new URL("./album-audio.html", import.meta.url).href;
         if (request.referrer !== document) return new Response(null, { status: 403 });
-        return filmResponse(request, root);
+        return catalogMediaResponse(request, root);
       });
       window.webContents.session.webRequest.onBeforeRequest((details, callback) => {
         const local = new URL("./album-audio.html", import.meta.url).href;

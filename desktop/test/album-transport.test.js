@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import { album, albumIntent, verified, remoteURL, filmResponse, createAlbumTransport } from "../src/album-transport.js";
+import { album, albumIntent, verified, remoteURL, filmResponse, filmURL, installWorkspaceFilm, createAlbumTransport } from "../src/album-transport.js";
 
 test("catalog pins all 37 identities and the approved extended digest", () => {
   assert.equal(album.tracks.length, 37);
@@ -166,4 +166,23 @@ test("seek is bound to the loaded track and moves the actual album audio element
   for (const seconds of [Infinity, NaN, -1, "12", null])
     assert.throws(() => albumIntent("seek", { trackID, seconds }));
   assert.throws(() => albumIntent("seek", { trackID, seconds: 12, url: "anything" }));
+});
+
+test("workspace film registration accepts only media for its current owned main frame", async () => {
+  let filter, handle;
+  const session = { webRequest: { onBeforeRequest(f) { filter = f; } },
+    protocol: { handle(_scheme, f) { handle = f; } } };
+  const frame = {};
+  const current = { id: 19, isDestroyed: () => false, mainFrame: frame };
+  let connected = true;
+  installWorkspaceFilm(session, () => current, (contents, f) => connected && contents === current && f === frame, "/missing");
+  const media = { webContentsId: current.id, url: filmURL, resourceType: "media", method: "GET", frame };
+  const accepts = request => { let ok; filter(request, result => { ok = !result.cancel; }); return ok; };
+  assert.equal(accepts(media), true);
+  for (const edit of [{ webContentsId: 20 }, { frame: {} }, { method: "POST" },
+    { url: "heinzel-album://film/other" }, { resourceType: "xhr" }])
+    assert.equal(accepts({ ...media, ...edit }), false);
+  connected = false;
+  assert.equal(accepts(media), false);
+  assert.equal((await handle(new Request(filmURL))).status, 403);
 });

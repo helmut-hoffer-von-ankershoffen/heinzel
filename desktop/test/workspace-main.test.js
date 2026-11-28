@@ -17,7 +17,7 @@ import { workspaceName } from "../src/workspace-directory.js";
 import { isOwnedMainFrame } from "../src/public-media.js";
 import { createMiniBrowser } from "../src/mini-browser.js";
 import { createMediaPlayer } from "../src/media-player.js";
-import { createAlbumTransport, filmResponse } from "../src/album-transport.js";
+import { createAlbumTransport, filmURL, installWorkspaceFilm } from "../src/album-transport.js";
 
 const moduleUrl = new URL("../src/main.js", import.meta.url).href;
 const source = mainScript();
@@ -36,13 +36,15 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
       super(); this.options = options; this.destroyed = false; this.visible = false;
       const session = options.webPreferences.session ?? makeSession(options.webPreferences.partition);
       const contents = Object.assign(new EventEmitter(), {
-        session, mainFrame: { url: "", isDestroyed: () => this.destroyed, detached: false },
+        id: windows.length + 1, session,
+        mainFrame: { processId: 1, frameToken: String(windows.length + 1), url: "", isDestroyed: () => this.destroyed, detached: false },
         userAgent: "Electron/fixture", getUserAgent() { return this.userAgent; }, setUserAgent(value) { this.userAgent = value; },
         isDestroyed: () => this.destroyed, setWindowOpenHandler() {}, send() {}, getZoomFactor: () => 1,
       });
       this.webContents = contents; this.contentView = { addChildView() {}, removeChildView() {} }; windows.push(this);
     }
     async loadURL(url) {
+      this.filmRegisteredAtLoad = this.webContents.session.protocolHandlers.has("heinzel-album");
       this.webContents.mainFrame.url = url;
       if (deferredLoad && this === windows[0]) await load;
       if (initialLoadFails && this === windows[0]) throw new Error("load failed");
@@ -69,12 +71,14 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
   }
   function makeSession(partition) {
     const session = { partition,
+      protocolHandlers: new Map(),
+      protocol: { handle: (scheme, handler) => session.protocolHandlers.set(scheme, handler) },
       setProxy: async (value) => { session.proxy = value; },
       setPermissionCheckHandler: (value) => { session.permission = value; },
       setPermissionRequestHandler: (value) => { session.requestPermission = value; },
       setDisplayMediaRequestHandler() {},
       setDevicePermissionHandler() {}, setBluetoothPairingHandler() {},
-      webRequest: { onBeforeRequest() {}, onBeforeSendHeaders(filter, handler) { session.clientHeader = { filter, handler }; } }, on() {},
+      webRequest: { onBeforeRequest(handler) { session.beforeRequest = handler; }, onBeforeSendHeaders(filter, handler) { session.clientHeader = { filter, handler }; } }, on() {},
       clearStorageData: async () => { session.cleared = true; }, clearCache: async () => {},
     };
     sessions.push(session); return session;
@@ -119,7 +123,7 @@ async function fixture({ startupFails = false, failSecondProbe = false, initialL
     };
   };
   runInNewContext(source, {
-    protocol: { registerSchemesAsPrivileged() {} }, createAlbumTransport, filmResponse,
+    protocol: { registerSchemesAsPrivileged() {} }, createAlbumTransport, installWorkspaceFilm,
     probeWorkspaceRenderer: async (_window, connection) => {
       events.push(["renderer-verify", connection.origin]);
       if (outage) throw new Error("unreachable");
@@ -208,6 +212,27 @@ test("main switches local to remote and back with fresh sessions and no remote n
   assert.equal(f.events.filter((event) => event === "bridge-start").length, 2);
   assert.equal(f.events.includes("quit"), false);
   assert.notEqual(f.windows.at(-1).webContents.session, first.webContents.session);
+});
+
+test("the local film loader exists at navigation and loses authority on workspace switch", async () => {
+  const f = await fixture();
+  const localWindow = f.windows[0];
+  const { id, mainFrame, session } = localWindow.webContents;
+  assert.equal(localWindow.filmRegisteredAtLoad, true);
+  const details = { webContentsId: id, frame: mainFrame, url: filmURL, method: "GET", resourceType: "media" };
+  const cancelled = () => {
+    let cancel;
+    session.beforeRequest(details, result => { cancel = result.cancel; });
+    return cancel;
+  };
+  assert.equal(cancelled(), false);
+  const picker = await f.openPicker();
+  assert.equal(picker.filmRegisteredAtLoad, false);
+  assert.equal((await f.request(picker, remote)).message, "Connected");
+  assert.equal(f.windows.at(-1).filmRegisteredAtLoad, false);
+  assert.equal(cancelled(), true);
+  const response = await session.protocolHandlers.get("heinzel-album")(new Request(filmURL));
+  assert.equal(response.status, 403);
 });
 
 test("main preserves the working window when remote authentication fails", async () => {

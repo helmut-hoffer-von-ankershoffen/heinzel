@@ -1,5 +1,8 @@
 // The product window: its session, permissions, audio, link guards and what happens when it closes.
 import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { installWorkspaceFilm } from "./album-transport.js";
+import { isOwnedMainFrame } from "./public-media.js";
 import { release } from "node:os";
 import { fileURLToPath } from "node:url";
 import { BrowserWindow, app, dialog, session, shell, webContents } from "electron";
@@ -39,6 +42,15 @@ export function createWindowLifecycle() {
         attachClientHeader(workspaceSession, connection.origin, () => ({
           appVersion: app.getVersion(), backendVersion: ctx.localBackendVersion, machine: machineName(),
         }));
+        if (!connection.remote) {
+          const current = () => ctx.instance.currentWindow()?.webContents;
+          const admitted = (sender, senderFrame) => sender?.session === workspaceSession &&
+            !ctx.stopping && !ctx.quitting && isOwnedMainFrame({ sender, senderFrame }, {
+              windows: productWindows, fromWebContents: contents => BrowserWindow.fromWebContents(contents),
+              connection: () => ctx.instance.currentConnection(),
+            });
+          installWorkspaceFilm(workspaceSession, current, admitted, path.join(app.getPath("userData"), "album-cache"));
+        }
         return new BrowserWindow({
         ...windowOptions(process.platform),
         webPreferences: {

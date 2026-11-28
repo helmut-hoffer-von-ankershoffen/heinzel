@@ -1,5 +1,4 @@
-import path from "node:path";
-import { createAlbumTransport, filmResponse } from "./album-transport.js";
+import { createAlbumTransport } from "./album-transport.js";
 // The IPC handlers of the product windows and of the Connection window.
 import { app, BrowserWindow, clipboard, ipcMain, shell } from "electron";
 import { lifecycle } from "./connection.js";
@@ -12,7 +11,6 @@ import { workspaceName } from "./workspace-directory.js";
 import { activations, ctx, pickerURL, productWindows, windows } from "./main-state.js";
 
 export function registerIpc() {
-  const albumSessions = new WeakSet();
   const ownsAlbum = (event) => isOwnedMainFrame(event, {
     windows: productWindows, fromWebContents: contents => BrowserWindow.fromWebContents(contents),
     connection: () => ctx.stopping || ctx.quitting ? null : ctx.instance.currentConnection(),
@@ -26,17 +24,6 @@ export function registerIpc() {
     if (!ownsAlbum(event)) throw new Error("Unknown album frame.");
     if (!["status", "catalog"].includes(action) && !activations.get(event.sender)?.consume())
       throw new Error("Use an album control.");
-    const session = event.sender.session;
-    if (!albumSessions.has(session)) {
-      session.protocol.handle("heinzel-album", request => {
-        const contents = ctx.instance.currentWindow()?.webContents;
-        if (!contents || contents.session !== session ||
-            !ownsAlbum({ sender: contents, senderFrame: contents.mainFrame }) ||
-            request.referrer !== contents.getURL()) return new Response(null, { status: 403 });
-        return filmResponse(request, path.join(app.getPath("userData"), "album-cache"));
-      });
-      albumSessions.add(session);
-    }
     const frame = event.senderFrame;
     const result = await albumTransport.handle(action, options, () => ownsAlbum(event) && event.sender.mainFrame === frame);
     if (!ownsAlbum(event) || event.sender.mainFrame !== frame) throw new Error("Album document changed.");
