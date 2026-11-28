@@ -156,7 +156,9 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
       onKeyDown={(event) => event.key === "Escape" && onClose()}
       className={cn(
         "absolute top-[calc(var(--hz-safe-area-top,env(safe-area-inset-top,0px))+var(--titlebar-height,0px))] bottom-[var(--hz-safe-area-bottom,env(safe-area-inset-bottom,0px))] z-(--layer-popover) flex w-[min(26rem,calc(100%-3.5rem))] flex-col border-r border-border bg-popover shadow-2xl",
-        navOpen ? "left-14 sm:left-64 sm:max-w-[calc(100%-16rem)]" : "left-14",
+        navOpen
+          ? "left-14 sm:left-(--nav-expanded-width) sm:max-w-[calc(100%-var(--nav-expanded-width,16rem))]"
+          : "left-14",
       )}
     >
       <header className="flex h-12 shrink-0 items-center pr-2 pl-4">

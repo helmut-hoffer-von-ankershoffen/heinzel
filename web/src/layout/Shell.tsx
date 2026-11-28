@@ -1,6 +1,6 @@
 // Navigation on the left, the screen in the middle, and one panel with the chat and the terminal (ADR 0039, 0045):
 // beside the screen when the window leaves it at least 30rem, below it otherwise; never both at once.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router";
 import { AboutDialog } from "@/about/AboutDialog";
@@ -24,7 +24,7 @@ import { anchorWorkspace } from "@/lib/workspaceAnchor";
 import { useNoticeStream } from "@/notifications/useNoticeStream";
 import { Onboarding } from "@/onboarding/OnboardingWizard";
 import { InstalledView, useViews, ViewSlot } from "@/plugins/Views";
-import { registerSlot } from "@/sound/dock";
+import { registerSlot, useYoutubeDock } from "@/sound/dock";
 import { SoundEngine } from "@/sound/SoundEngine";
 import { BrowserPanel, desktopBrowserAvailable } from "./BrowserPanel";
 import { useBrowserAgents, useCommitAttention } from "./browserAgents";
@@ -202,6 +202,9 @@ function Layout() {
   const windowWidth = useWidth(WINDOW);
   // Window width covers phone rotation and iPad multitasking without reacting to the keyboard.
   const compact = mobile && windowWidth < 960;
+  const youtubeDock = useYoutubeDock();
+  // A 356px frame fits YouTube's 200px minimum height at 16:9. The sidebar border takes one more pixel.
+  const wideNavigation = !mobile && navOpen && youtubeDock && windowWidth >= 768;
   const beside = !compact && fitsBeside(areaWidth, rem);
   const navDrawer = useRef<HTMLDialogElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -631,6 +634,7 @@ function Layout() {
   return (
     <div
       data-testid="app-shell"
+      style={{ "--nav-expanded-width": wideNavigation ? "357px" : "16rem" } as CSSProperties}
       className={cn(
         "relative box-border flex h-[min(100dvh,var(--hz-layout-height,100dvh))] overflow-clip pt-[var(--hz-safe-area-top,env(safe-area-inset-top,0px))] pr-[var(--hz-safe-area-right,env(safe-area-inset-right,0px))] pl-[var(--hz-safe-area-left,env(safe-area-inset-left,0px))]",
         !nativeFooter && "pb-[var(--hz-safe-area-bottom,env(safe-area-inset-bottom,0px))]",
@@ -676,7 +680,7 @@ function Layout() {
           aria-label={t("nav.label")}
           className={cn(
             "shrink-0 border-r border-border bg-sidebar transition-[width] duration-200",
-            navOpen ? "w-64" : "w-14",
+            navOpen ? "w-(--nav-expanded-width)" : "w-14",
           )}
         >
           {sidebar}

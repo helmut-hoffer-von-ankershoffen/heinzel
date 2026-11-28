@@ -12,7 +12,7 @@ import { t } from "@/i18n";
 import { clampToWindow } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { viewportBounds, watchViewport } from "@/lib/viewport";
-import { nearSlot, setDocked, setFloating, useDockPref, useDockSlot } from "./dock";
+import { nearSlot, setDocked, setFloating, setYoutubeCard, useDockPref, useDockSlot } from "./dock";
 import { stop } from "./store";
 
 // 480px of video plus the floating card's borders: 16:9 clears YouTube's 200px minimum height.
@@ -26,6 +26,7 @@ type Props = {
   title: string;
   /** The video on YouTube, the one host with a page to open. */
   watchUrl?: string;
+  youtube?: boolean;
   /** Where the sound comes from. */
   host: string;
   children: ReactNode;
@@ -33,7 +34,12 @@ type Props = {
   onClose?: () => void;
 };
 
-export function PlayerCard({ title, watchUrl, host, children, headerAction, onClose = stop }: Props) {
+export function PlayerCard({ title, watchUrl, youtube = false, host, children, headerAction, onClose = stop }: Props) {
+  useLayoutEffect(() => {
+    if (!youtube) return;
+    setYoutubeCard(true);
+    return () => setYoutubeCard(false);
+  }, [youtube]);
   const [viewport, setViewport] = useState(viewportBounds);
   useLayoutEffect(() => watchViewport(() => setViewport(viewportBounds())), []);
   const [requestedWidth, setRequestedWidth] = useState(WIDTH);

@@ -331,6 +331,7 @@ function Player({
   return (
     <PlayerCard
       title={soundscape.title}
+      youtube
       watchUrl={desktop ? undefined : stream.watch_url}
       host="YouTube"
       headerAction={guest ? helpPane : undefined}

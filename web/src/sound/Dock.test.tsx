@@ -103,6 +103,22 @@ describe("the mini-player docked in the sidebar", () => {
     expect(screen.getByRole("contentinfo").className).toContain("h-12");
   });
 
+  it("widens only for a docked YouTube card and restores the width on pop-out and close", async () => {
+    api();
+    const { user, card } = await play();
+    const shell = screen.getByTestId("app-shell");
+    const frame = card.querySelector("iframe");
+    expect(shell.style.getPropertyValue("--nav-expanded-width")).toBe("357px");
+    await user.click(within(card).getByRole("button", { name: "Pop the player out of the sidebar" }));
+    expect(shell.style.getPropertyValue("--nav-expanded-width")).toBe("16rem");
+    expect(card.querySelector("iframe")).toBe(frame);
+    await user.click(within(card).getByRole("button", { name: "Dock the player in the sidebar" }));
+    expect(shell.style.getPropertyValue("--nav-expanded-width")).toBe("357px");
+    expect(card.querySelector("iframe")).toBe(frame);
+    await user.click(within(card).getByRole("button", { name: "Stop and close the player" }));
+    expect(shell.style.getPropertyValue("--nav-expanded-width")).toBe("16rem");
+  });
+
   it("pops out with its button, docks again with its button, and remembers both", async () => {
     api();
     const { user, card } = await play();

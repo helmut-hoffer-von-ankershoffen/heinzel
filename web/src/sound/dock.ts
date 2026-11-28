@@ -22,6 +22,7 @@ function load(): DockPref {
 
 let pref = load();
 let slot: HTMLElement | null = null;
+let youtubeCard = false;
 const listeners = new Set<() => void>();
 const emit = () => {
   for (const listener of listeners) listener();
@@ -47,6 +48,14 @@ export const setDocked = (docked: boolean): void => save({ ...pref, docked });
 /** Float at `x`, `y` (the card's left and top, in the window's pixels). */
 export const setFloating = (x: number, y: number): void => save({ docked: false, x, y });
 
+/** A mounted YouTube card requests room only while docked. */
+export function setYoutubeCard(active: boolean): void {
+  if (youtubeCard === active) return;
+  youtubeCard = active;
+  emit();
+}
+export const useYoutubeDock = (): boolean => useSyncExternalStore(subscribe, () => youtubeCard && pref.docked);
+
 /** The sidebar's slot, handed over by a ref; the rail marks its slot as compact. */
 export function registerSlot(element: HTMLElement | null): void {
   if (slot === element) return;
@@ -59,6 +68,7 @@ export const useDockSlot = (): HTMLElement | null => useSyncExternalStore(subscr
 export function resetDock(): void {
   pref = DEFAULT;
   slot = null;
+  youtubeCard = false;
   try {
     localStorage.removeItem(KEY);
   } catch {
