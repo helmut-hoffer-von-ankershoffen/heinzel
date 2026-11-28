@@ -204,7 +204,7 @@ function Layout() {
   const compact = mobile && windowWidth < 960;
   const youtubeDock = useYoutubeDock();
   // A 356px frame fits YouTube's 200px minimum height at 16:9. The sidebar border takes one more pixel.
-  const wideNavigation = !mobile && navOpen && youtubeDock && windowWidth >= 768;
+  const wideNavigation = !mobile && navOpen && youtubeDock && windowWidth >= 640;
   const beside = !compact && fitsBeside(areaWidth, rem);
   const navDrawer = useRef<HTMLDialogElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);

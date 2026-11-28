@@ -119,6 +119,23 @@ describe("the mini-player docked in the sidebar", () => {
     expect(shell.style.getPropertyValue("--nav-expanded-width")).toBe("16rem");
   });
 
+  it.each([
+    [720, "357px"],
+    [600, "16rem"],
+  ])("sizes the expanded YouTube sidebar in a %ipx window", async (width, expected) => {
+    const original = window.innerWidth;
+    localStorage.setItem("hz.nav.open", "true");
+    try {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+      api();
+      await play();
+      expect(screen.getByTestId("app-shell").style.getPropertyValue("--nav-expanded-width")).toBe(expected);
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: original });
+      localStorage.removeItem("hz.nav.open");
+    }
+  });
+
   it("pops out with its button, docks again with its button, and remembers both", async () => {
     api();
     const { user, card } = await play();
