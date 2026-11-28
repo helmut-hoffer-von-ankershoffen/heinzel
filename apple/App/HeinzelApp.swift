@@ -1955,7 +1955,7 @@ struct ConnectionView: View {
 
     private func linkField(_ title: String, submit: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
-            SecureField(title, text: Binding(get: { link }, set: changeLink))
+            SecureField(title, text: Binding(get: { link }, set: { value in changeLink(value) }))
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled()
                 #if os(iOS)
