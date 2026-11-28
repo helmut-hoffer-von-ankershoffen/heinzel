@@ -134,15 +134,24 @@ export function leaveAlbum(): void {
 const change = () => {
   void albumAction("status");
 };
+export function restoreAlbumFromHost() {
+  dismissed = false;
+  change();
+}
+
 const subscribe = (listener: () => void) => {
   listeners.add(listener);
-  if (listeners.size === 1) window.addEventListener("heinzel-album-change", change);
+  if (listeners.size === 1) {
+    window.addEventListener("heinzel-album-change", change);
+    window.addEventListener("heinzel-album-widget-playback", restoreAlbumFromHost);
+  }
   // Each subscriber has a stable listener; remove the event with the last subscription.
   return () => {
     listeners.delete(listener);
     if (!listeners.size) {
       ++generation;
       window.removeEventListener("heinzel-album-change", change);
+      window.removeEventListener("heinzel-album-widget-playback", restoreAlbumFromHost);
     }
   };
 };

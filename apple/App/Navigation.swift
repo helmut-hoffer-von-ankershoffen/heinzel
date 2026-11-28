@@ -279,6 +279,8 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         super.init()
         NotificationCenter.default.addObserver(self, selector: #selector(openSoundDock),
                                                name: SoundscapePlayback.dockRequested, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(widgetAlbumPlaybackRequested),
+                                               name: SoundscapePlayback.widgetPlaybackRequested, object: nil)
         for name in [AlbumLibrary.changed, AlbumLibrary.progress, SoundscapePlayback.changed] {
             NotificationCenter.default.addObserver(self, selector: #selector(albumChanged), name: name, object: nil)
         }
@@ -513,6 +515,12 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         workspace.evaluateJavaScript("window.dispatchEvent(new Event('heinzel-album-change'))")
     }
 
+    @objc private func widgetAlbumPlaybackRequested() {
+        guard isSelected(), hasCommittedWorkspace, case .idle = provisionalLoad,
+              let workspace, workspace.url.map(endpoint.owns) == true else { return }
+        workspace.evaluateJavaScript("window.dispatchEvent(new Event('heinzel-album-widget-playback'))")
+    }
+
     @objc private func openSoundDock() {
         guard isSelected(), hasCommittedWorkspace, case .idle = provisionalLoad,
               let workspace, workspace.url.map(endpoint.owns) == true else { return }
@@ -523,9 +531,11 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             !window.dispatchEvent(new CustomEvent('heinzel-album-dock', {
                 detail: { picker: \(request.destination == .picker ? "true" : "false") }, cancelable: true
             }))
-            """) { [weak self] result, _ in
-                guard result as? Bool == true, self?.documentRevision == revision, playback.dockRequest == request else { return }
-                playback.dockRequest = nil
+            """) { [weak self, weak workspace] result, _ in
+                guard result as? Bool == true, let self, let workspace, isSelected(),
+                      workspace === self.workspace, workspace.url.map(endpoint.owns) == true,
+                      documentRevision == revision, case .idle = provisionalLoad else { return }
+                playback.acknowledgeDockRequest(request)
             }
     }
 
@@ -853,6 +863,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
 
     func close(_ view: WKWebView) {
         NotificationCenter.default.removeObserver(self, name: SoundscapePlayback.dockRequested, object: nil)
+        NotificationCenter.default.removeObserver(self, name: SoundscapePlayback.widgetPlaybackRequested, object: nil)
         if workspace === view { workspace = nil }
         documentRevision &+= 1
         versionRefresh.cancel()

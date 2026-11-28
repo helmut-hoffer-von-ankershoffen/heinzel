@@ -118,7 +118,9 @@ struct PlaySoundscapeIntent: AudioPlaybackIntent {
     static let openAppWhenRun = false
     @MainActor func perform() async throws -> some IntentResult {
         #if HEINZEL_APP_INTENTS
-        try SoundscapePlayback.shared.playSavedAlbum()
+        let playback = SoundscapePlayback.shared
+        try playback.playSavedAlbum()
+        playback.reportWidgetPlaybackRequest()
         #else
         throw CocoaError(.featureUnsupported)
         #endif
@@ -170,7 +172,9 @@ struct PreviousSoundscapeIntent: AudioPlaybackIntent {
     static let openAppWhenRun = false
     @MainActor func perform() async throws -> some IntentResult {
         #if HEINZEL_APP_INTENTS
-        try SoundscapePlayback.shared.previous()
+        let playback = SoundscapePlayback.shared
+        try playback.previous()
+        playback.reportWidgetPlaybackRequest()
         #else
         throw CocoaError(.featureUnsupported)
         #endif
@@ -183,7 +187,9 @@ struct NextSoundscapeIntent: AudioPlaybackIntent {
     static let openAppWhenRun = false
     @MainActor func perform() async throws -> some IntentResult {
         #if HEINZEL_APP_INTENTS
-        try SoundscapePlayback.shared.next()
+        let playback = SoundscapePlayback.shared
+        try playback.next()
+        playback.reportWidgetPlaybackRequest()
         #else
         throw CocoaError(.featureUnsupported)
         #endif
@@ -196,7 +202,10 @@ struct ToggleSoundscapeIntent: AudioPlaybackIntent {
     static let openAppWhenRun = false
     @MainActor func perform() async throws -> some IntentResult {
         #if HEINZEL_APP_INTENTS
-        try SoundscapePlayback.shared.toggle()
+        let playback = SoundscapePlayback.shared
+        let wasPlaying = playback.isPlaying
+        try playback.toggle()
+        if !wasPlaying { playback.reportWidgetPlaybackRequest() }
         #else
         throw CocoaError(.featureUnsupported)
         #endif

@@ -45,8 +45,18 @@ struct SoundscapeVolumeTests {
         let cold = SoundscapePlayback(library: library, defaults: defaults, player: coldQueue, publish: { _ in })
         await cold.openWidgetTrack(other.id)
         try require(cold.selectedID == other.id && cold.showingDock && !cold.showingPicker && coldQueue.rate == 0)
+        let trackRequest = cold.dockRequest
         await cold.openWidgetTrack("missing-fixture-track")
         try require(cold.selectedID == other.id && cold.showingPicker && coldQueue.rate == 0)
+        #if os(macOS)
+        guard let trackRequest, let pickerRequest = cold.dockRequest else {
+            throw SoundscapeAlbumTests.Failure(description: "Missing Mac Soundscape dock request")
+        }
+        cold.acknowledgeDockRequest(trackRequest)
+        try require(cold.dockRequest == pickerRequest && cold.showingDock && cold.showingPicker)
+        cold.acknowledgeDockRequest(pickerRequest)
+        try require(cold.dockRequest == nil && !cold.showingDock && !cold.showingPicker)
+        #endif
 
         for invalid in [Double.nan, .infinity, -0.1, 1.1] {
             do {

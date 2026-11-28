@@ -120,6 +120,7 @@ final class SoundscapePlayback {
     }
     var dockRequest: DockRequest?
     static let dockRequested = Notification.Name("SoundscapePlayback.dockRequested")
+    static let widgetPlaybackRequested = Notification.Name("SoundscapePlayback.widgetPlaybackRequested")
     typealias ResumeSeek = @MainActor (AVQueuePlayer, CMTime, @escaping @Sendable (Bool) -> Void) -> Void
 
     private let library: AlbumLibrary
@@ -151,7 +152,11 @@ final class SoundscapePlayback {
     private(set) var currentTitle: String
     private var watchGeneration = UUID()
     var dockWidth: CGFloat?
+    #if os(macOS)
+    var showingDock = false
+    #else
     var showingDock = false { didSet { if !showingDock { watchGeneration = UUID() } } }
+    #endif
     var showingPicker = false { didSet { if showingPicker { watchGeneration = UUID() } } }
     private(set) var videoURL: URL?
     private var tracks: [AlbumPlayableTrack] = []
@@ -485,6 +490,17 @@ final class SoundscapePlayback {
         #endif
     }
 
+    func reportWidgetPlaybackRequest() {
+        NotificationCenter.default.post(name: Self.widgetPlaybackRequested, object: self)
+    }
+
+    func acknowledgeDockRequest(_ request: DockRequest) {
+        guard dockRequest == request else { return }
+        dockRequest = nil
+        showingPicker = false
+        showingDock = false
+    }
+
     func chooseAlbumArtwork() {
         showsAlbumArtwork = true
         publishWidgetState()
@@ -504,6 +520,7 @@ final class SoundscapePlayback {
     /// Open exactly the track shown by the widget. A warm view keeps its current
     /// transport and position. A cold view prepares a paused item for seeking.
     func openWidgetTrack(_ id: String) async {
+        dockRequest = nil
         let generation = UUID()
         watchGeneration = generation
         do {
@@ -543,6 +560,7 @@ final class SoundscapePlayback {
     /// A supplied ID is exact: only verified files or catalog entries may resolve it.
     /// Each foreground action owns a generation so late catalog results cannot reopen video.
     func openVideo(trackID requested: String?) {
+        dockRequest = nil
         showingPicker = false
         showingDock = true
         watchGeneration = UUID()

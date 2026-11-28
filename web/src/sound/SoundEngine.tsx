@@ -12,7 +12,7 @@ import { t } from "@/i18n";
 import { isIOS } from "@/lib/browser";
 import { AlbumControls } from "./AlbumControls";
 import { AlbumVisual } from "./AlbumVisual";
-import { ALBUM_TITLE, albumAction, nativeAlbum, useAlbum } from "./album";
+import { ALBUM_TITLE, nativeAlbum, restoreAlbumFromHost, useAlbum } from "./album";
 import { setDocked } from "./dock";
 import { type Inputs, rampSeconds, type Signals, targetGain, type Why, why } from "./machine";
 import { type EarconView, type LayerView, Mixer } from "./mixer";
@@ -65,7 +65,7 @@ export function SoundEngine() {
       setDocked(true);
       selectAlbum(picker);
       setShowTrackPicker(picker);
-      void albumAction("status");
+      restoreAlbumFromHost();
     };
     window.addEventListener("heinzel-album-dock", openDock);
     return () => window.removeEventListener("heinzel-album-dock", openDock);

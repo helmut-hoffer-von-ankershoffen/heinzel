@@ -804,7 +804,7 @@ struct ConnectionView: View {
     private var canSwitchWorkspaceFromMenu: Bool {
         !connecting && !deviceCheckInteracting && !showingColdStart && !loadingWorkspace &&
             !MacWorkspaceSwitchState.protectsEditor(link: link, focused: editingLink) &&
-            !soundscape.showingDock && !showPromptComposer && !showHeinzelPicker && removalCandidate == nil &&
+            !showPromptComposer && !showHeinzelPicker && removalCandidate == nil &&
             !showConnectionHelp && !helpAfterConnection && sharedWorkspace == nil
     }
 

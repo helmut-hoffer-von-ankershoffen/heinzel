@@ -392,3 +392,27 @@ it("opens the inline picker from a widget and displays a routed track without st
   expect(within(player).getByText("Berlin Morning", { selector: "p" })).toBeInTheDocument();
   expect(album.mock.calls.every(([action]) => action === "status" || action === "catalog")).toBe(true);
 });
+
+it("uses actual widget playback after the web player was closed", async () => {
+  let status = downloading;
+  const album = vi.fn(async (action: AlbumAction) => {
+    if (action === "pausePlayback") status = { ...status, playing: false };
+    return status;
+  });
+  vi.stubGlobal("heinzelDesktop", { album });
+  const { user } = await open();
+  const player = () => screen.queryByRole("region", { name: `${ALBUM_TITLE} player` });
+  const original = await screen.findByRole("region", { name: `${ALBUM_TITLE} player` });
+  await user.click(within(original).getByRole("button", { name: "Stop and close the player" }));
+  expect(player()).toBeNull();
+  status = { ...status, playing: true, positionSeconds: 27 };
+  act(() => window.dispatchEvent(new Event("heinzel-album-change")));
+  await waitFor(() => expect(album).toHaveBeenCalledWith("status"));
+  expect(player()).toBeNull();
+  act(() => window.dispatchEvent(new Event("heinzel-album-widget-playback")));
+  const reopened = await screen.findByRole("region", { name: `${ALBUM_TITLE} player` });
+  expect(within(reopened).getByRole("button", { name: "Pause Album" })).toBeInTheDocument();
+  expect(within(reopened).getByRole("slider", { name: "Seek in track" })).toHaveValue("27");
+  expect(album).not.toHaveBeenCalledWith("play");
+  expect(album).not.toHaveBeenCalledWith("toggle");
+});
