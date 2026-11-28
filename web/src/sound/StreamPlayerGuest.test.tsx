@@ -40,6 +40,13 @@ afterEach(() => {
 });
 
 describe("desktop player guest", () => {
+  it("resizes a floating player when the sidebar has no slot", () => {
+    render(<StreamPlayer soundscape={soundscape} stream={stream} level={{ gain: 0.5, seconds: 0, playing: true }} />);
+    const slider = screen.getByRole("slider", { name: "Player width" });
+    fireEvent.change(slider, { target: { value: "371" } });
+    expect(slider.closest("section")).toHaveStyle({ width: "371px" });
+  });
+
   it.each([false, true])(
     "keeps the sub-200 floating provider and fallback keyboard reachable (guest=%s)",
     async (native) => {

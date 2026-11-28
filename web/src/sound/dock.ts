@@ -58,7 +58,7 @@ function floatingWidth(): number | null {
 export const setDocked = (docked: boolean): void =>
   save({ ...pref, docked, width: docked ? pref.width : floatingWidth() });
 export function setFloatingWidth(width: number): void {
-  if (!pref.docked && Number.isFinite(width) && width > 0 && width !== pref.width) save({ ...pref, width });
+  if ((!pref.docked || !slot) && Number.isFinite(width) && width > 0 && width !== pref.width) save({ ...pref, width });
 }
 /** Float at `x`, `y` (the card's left and top, in the window's pixels). */
 export const setFloating = (x: number, y: number): void => save({ docked: false, x, y, width: floatingWidth() });
