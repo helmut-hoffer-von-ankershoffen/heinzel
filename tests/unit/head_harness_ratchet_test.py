@@ -9,6 +9,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 BASELINE = ROOT / "tests/fixtures/head-build-callers.txt"
 HEADS = {"cli", "api", "mcp", "web"}
+BINDINGS = {ast.Import, ast.ImportFrom, ast.Assign, ast.AnnAssign}
 
 pytestmark = pytest.mark.unit
 
@@ -55,13 +56,32 @@ def _aliases(nodes):
     return aliases
 
 
+def _literal_build(node):
+    return (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and (node.value == "build" or node.value.endswith(".build"))
+    )
+
+
 def _direct_heads(text):
-    nodes = sorted(ast.walk(ast.parse(text)), key=lambda node: getattr(node, "lineno", 0))
-    aliases = _aliases(nodes)
+    bindings = []
+    candidates = []
+    for node in ast.walk(ast.parse(text)):
+        kind = type(node)
+        if kind in BINDINGS:
+            bindings.append(node)
+        elif kind is ast.Attribute and node.attr == "build":
+            candidates.append(node)
+        elif kind is ast.Call:
+            args = node.args
+            if args and (_literal_build(args[0]) or (len(args) > 1 and _literal_build(args[1]))):
+                # Dynamic imports and getattr can return a qualified name ending in build.
+                candidates.append(node)
+    aliases = _aliases(sorted(bindings, key=lambda node: node.lineno))
     names = set().union(*aliases.values())
-    for node in nodes:
-        if isinstance(node, ast.Attribute | ast.Call):
-            names.update(_qualified(node, aliases))
+    for node in candidates:
+        names.update(_qualified(node, aliases))
     return {
         parts[2]
         for name in names
@@ -100,6 +120,14 @@ def test_direct_head_factory_callers_only_get_fewer():
             {"mcp"},
         ),
         ('from heinzel import heads as gateways\ngetattr(gateways.api, "build")(kernel)', {"api"}),
+        (
+            (
+                "import builtins as b\nfrom importlib import import_module as load\n"
+                r'b.getattr(load("heinzel.heads.web"), "\x62uild")(kernel)'
+            ),
+            {"web"},
+        ),
+        ('from importlib import import_module as load\nload("heinzel.heads.mcp.build")', {"mcp"}),
         ("from heinzel.testing.heads import operate\noperate('cli', kernel, 'clock.now')", set()),
     ],
 )
