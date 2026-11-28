@@ -952,12 +952,12 @@ def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment,
 
 
 @pytest.mark.timeout(600)
-def test_sound_picker_stays_open_and_plays_the_pick_in_mounted_chromium(environment, tmp_path):
-    """Open the picker, pick a soundscape: it plays at once and the picker stays; the old flow closed it silent."""
+def test_sound_picker_closes_and_plays_the_pick_in_mounted_chromium(environment, tmp_path):
+    """Selecting a soundscape closes the picker and starts the selected stream in the mounted player."""
     env, _recorded = environment
     result = drive_ui_script(env, tmp_path, "sound-picker.mjs")
 
-    assert result == {"stayedOpen": True, "played": True, "switched": True, "closes": ["Escape", "outside"]}
+    assert result == {"closedAfterPick": True, "played": True, "switched": True, "closes": ["Escape", "outside"]}
 
 
 def gallery_profile_preflight(backend_env, tmp_path, denied):
