@@ -11,12 +11,14 @@ html[data-paper-theme] {
   --paper-wash:
     radial-gradient(ellipse at 0 100%, #98652a19, transparent 54%),
     radial-gradient(ellipse at 100% 0, #c28b4233, transparent 62%);
+  --paper-heading-impression: 0 -1px 0 #4f32185c, 0 1px 0 #fffaf1;
 }
 
 html.dark[data-paper-theme] {
   --paper-wash:
     radial-gradient(ellipse at 0 100%, #eab77312, transparent 54%),
     radial-gradient(ellipse at 100% 0, #ddaa681f, transparent 62%);
+  --paper-heading-impression: 0 -1px 0 #120e09, 0 1px 0 #f4cd8e60;
 }
 
 html[data-paper-theme] :is([data-widget], .bg-card, [class~="bg-card/40"], .bg-sidebar, .bg-popover) {
@@ -28,5 +30,5 @@ html[data-paper-theme] [data-widget] {
 }
 
 html[data-paper-theme] :is(main, [data-pane], [data-widget]) :is(h1, h2, h3):not(.sr-only) {
-  padding-inline-start: 0.5rem;
+  text-shadow: var(--paper-heading-impression);
 }
