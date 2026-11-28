@@ -6,7 +6,7 @@
 "src/heinzel/kernel/_bindings.py" = 1261
 "src/heinzel/kernel/_kernel.py" = 1029
 "src/heinzel/kernel/_module.py" = 1014
-"src/heinzel/kernel/_protocols.py" = 1042
+"src/heinzel/kernel/_protocols.py" = 1039
 "src/heinzel/kernel/_source_loading.py" = 912
 "src/heinzel/kernel/install/_installation.py" = 1557
 "src/heinzel/kernel/install/_uninstall_recovery.py" = 879
@@ -19,7 +19,7 @@
 "src/heinzel/modules/heinzel/_session_operations.py" = 1308
 "src/heinzel/modules/heinzel/_user_chat.py" = 894
 "src/heinzel/modules/system/daemon/_legacy_retirement.py" = 892
-"src/heinzel/modules/system/daemon/_service.py" = 1788
+"src/heinzel/modules/system/daemon/_service.py" = 1775
 "src/heinzel/modules/system/lifecycle/_service.py" = 1159
 "src/heinzel/modules/system/notify/_service.py" = 1046
 "src/heinzel/modules/system/plugin/_service.py" = 2691

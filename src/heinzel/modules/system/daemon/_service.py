@@ -136,7 +136,6 @@ from heinzel.modules.system.daemon._runtime import (
     within,
     write_private,
 )
-from heinzel.modules.system.daemon._uninstall_history import UninstallHistory
 from heinzel.modules.system.daemon._units import (
     LABEL,
     LOGIN_ITEM_HINT,
@@ -911,40 +910,6 @@ class DaemonService(_Quiescence, _HandoverRequest, _Removal):
         pending.unlink()
         fsync_dir(pending.parent)
         return Uninstalled(removed=removed, commands=commands)
-
-    def _capture_uninstall_history(self, before: dict[Path, bytes | None]) -> UninstallHistory | None:
-        history = None
-        if not _safely_absent(self.state_dir / "handover-request.json"):
-            history = UninstallHistory.capture(self.state_dir, before)
-        if not self._handover_marker_valid(self._read_state("install.json")):
-            msg = "The previous handover cannot be verified; its files were retained before uninstalling."
-            raise HeinzelError(msg)
-        return history
-
-    def _archive_uninstall_history(self, history: UninstallHistory | None, token: str) -> None:
-        if not self._mutation_token_matches(token, "handover-pending.json"):
-            msg = "The daemon removal writer changed; its files and pending gate were retained."
-            raise HeinzelError(msg)
-        if history is not None:
-            history.archive(self.state_dir / f"uninstall-{token}")
-        elif not _safely_absent(self.state_dir / "handover-request.json"):
-            msg = "A handover appeared during uninstall; its files and pending gate were retained."
-            raise HeinzelError(msg)
-
-    def _remove_install_files(self, before: dict[Path, bytes | None]) -> list[Path]:
-        removed: list[Path] = []
-        expected = dict(before)
-        for path, payload in before.items():
-            if self._capture_install_files() != expected:
-                msg = "The owned daemon files changed during removal; explicit recovery is required."
-                raise HeinzelError(msg)
-            if payload is not None:
-                path.unlink()
-                fsync_dir(path.parent)
-                if path.name != "install.json":
-                    removed.append(path)
-            expected[path] = None
-        return removed
 
     # Inspecting ------------------------------------------------------------------------------------------------------
 
