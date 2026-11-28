@@ -19830,6 +19830,18 @@
             "title": "Row Height",
             "type": "string"
           },
+          "show_branding_bar": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Show the expanded sidebar branding row. Omit to use the host default.",
+            "title": "Show Branding Bar"
+          },
           "spacing": {
             "default": "0.25rem",
             "description": "The base step of gaps and padding, e.g. `0.25rem`.",
@@ -21017,6 +21029,18 @@
             },
             "title": "Shadows",
             "type": "array"
+          },
+          "show_branding_bar": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether to show the branding row in the expanded sidebar.",
+            "title": "Show Branding Bar"
           },
           "spacing": {
             "description": "The base step of gaps and padding (`--spacing`), e.g. `0.25rem`.",

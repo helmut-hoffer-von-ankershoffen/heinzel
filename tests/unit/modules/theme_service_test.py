@@ -43,7 +43,7 @@ def test_theme_provider_priority_selects_one_default_without_a_duplicate_fallbac
     )
     listed = service.listing()
     assert listed.selected == "beta"
-    assert [item.name for item in listed.themes] == ["alpha", "beta"]
+    assert [item.name for item in listed.themes] == ["alpha", "beta", "paper"]
     assert [item.name for item in listed.themes if item.selected] == ["beta"]
     assert not (user_config_dir() / "config.toml").exists()
 
@@ -55,7 +55,7 @@ def test_equal_default_priorities_are_stable_by_module_identity(make_kernel):
     assert service.selected() == "alpha"
 
 
-@pytest.mark.parametrize("name", ["alpha", "default"])
+@pytest.mark.parametrize("name", ["alpha", "default", "paper"])
 def test_available_explicit_choices_win_over_provider_preferences(make_kernel, name):
     user_file(f'[system.theme]\nname = "{name}"\n')
     service = make_kernel(builtins=True, alpha=offering("alpha", 1), beta=offering("beta", 100)).resolve(
@@ -77,7 +77,7 @@ def test_missing_theme_uses_the_provider_recommendation_without_rewriting_the_ch
     assert listed.selected == "alpha"
     assert "missing-brand" in listed.note
     assert "Alpha is in effect" in listed.note
-    assert [item.name for item in listed.themes] == ["alpha"]
+    assert [item.name for item in listed.themes] == ["alpha", "paper"]
     if where == "file":
         assert 'name = "missing-brand"' in (user_config_dir() / "config.toml").read_text()
     else:
@@ -89,6 +89,15 @@ def test_no_recommended_provider_keeps_core_independently_usable(make_kernel):
     listed = service.listing()
     assert listed.selected == "default"
     assert listed.themes[0].title == "Built-in fallback"
+    assert listed.themes[0].show_branding_bar is False
+    paper = next(item for item in listed.themes if item.name == "paper")
+    assert paper.title == "Paper"
+    assert (paper.radius, paper.radius_control) == ("0", "0")
+    assert paper.light != listed.themes[0].light
+    assert paper.dark != listed.themes[0].dark
+    assert paper.logo is not None
+    assert "/paper/" in paper.logo.light
+    assert service.logo("paper", "light")
 
 
 def test_disabled_provider_cannot_recommend_a_theme(make_kernel, settings):

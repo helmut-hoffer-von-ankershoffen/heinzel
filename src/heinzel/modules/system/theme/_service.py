@@ -4,7 +4,7 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 from threading import Lock
@@ -43,6 +43,7 @@ from heinzel.modules.system.theme._models import (
     ThemeSignalsView,
     ThemeView,
 )
+from heinzel.modules.system.theme._paper import PAPER_THEME
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +173,11 @@ class ThemeService(ThemeFonts, ThemeChoice):
         for record, let in sorted(self._kernel.lets(ThemeLet), key=order):
             by_name.setdefault(let.name, []).append(record)
             lets[record.qualname, let.name] = let
-        themes = {DEFAULT_THEME.name: Offered(DEFAULT_THEME, None, logos=DEFAULT_LOGO)}
+        themes = {
+            DEFAULT_THEME.name: Offered(
+                DEFAULT_THEME.model_copy(update={"show_branding_bar": False}), None, logos=DEFAULT_LOGO
+            ),
+        }
         conflicts: list[str] = []
         for name, records in by_name.items():
             winner, *others = records
@@ -188,6 +193,9 @@ class ThemeService(ThemeFonts, ThemeChoice):
                 continue
             let = lets[winner.qualname, name]
             themes[name] = Offered(let.theme, winner, [r.qualname for r in others], let, let.logos())
+        themes.setdefault(
+            PAPER_THEME.name, Offered(PAPER_THEME, None, logos=replace(DEFAULT_LOGO, theme=PAPER_THEME.name))
+        )
         return Available(themes, conflicts)
 
     def listing(self) -> ThemeList:
@@ -236,7 +244,9 @@ class ThemeService(ThemeFonts, ThemeChoice):
             themes=[
                 ThemeView(
                     name=name,
-                    title=offered.theme.title if offered.record else "Built-in fallback",
+                    title="Built-in fallback"
+                    if offered.record is None and name == DEFAULT_THEME.name
+                    else offered.theme.title,
                     module=offered.record.qualname if offered.record else None,
                     plugin=offered.record.origin.distribution if offered.record else None,
                     selected=name == selected,
@@ -256,13 +266,17 @@ class ThemeService(ThemeFonts, ThemeChoice):
                     spacing=offered.theme.spacing,
                     fonts=_fonts(offered),
                     logo=_logo(offered.logos),
+                    show_branding_bar=offered.theme.show_branding_bar,
                     variant=list(offered.theme.variant),
                     heinzel=offered.theme.heinzel.model_copy(update={"assets": {}}) if offered.theme.heinzel else None,
                     heinzel_assets=offered.let.avatar_urls() if offered.let else {},
                     shadows=offered.shadows,
                 )
                 for name, offered in available.themes.items()
-                if offered.record is not None or name == selected or recommended == DEFAULT_THEME.name
+                if offered.record is not None
+                or name != DEFAULT_THEME.name
+                or name == selected
+                or recommended == DEFAULT_THEME.name
             ],
             conflicts=available.conflicts,
             note=note,

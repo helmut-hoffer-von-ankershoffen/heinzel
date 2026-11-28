@@ -1,7 +1,7 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import { acmeTheme, everyday, shell, theme, themeList } from "@/test/fixtures";
+import { acmeTheme, config, everyday, shell, theme, themeList } from "@/test/fixtures";
 import { expectAccessible, mockApi } from "@/test/render";
 import { renderAt } from "@/test/renderApp";
 
@@ -117,5 +117,45 @@ describe("Integrated title bar", () => {
     expect(brand).toHaveAccessibleName("Heinzelmännchen home");
     expect(brand).toHaveAttribute("href", "/");
     expect(navigation.querySelector("[data-titlebar]")?.nextElementSibling).toContainElement(brand);
+  });
+
+  it.each([
+    ["default", true, "Test Team"],
+    ["default", false, null],
+    ["acme", true, "Test Team"],
+    ["acme", false, "Acme"],
+    ["sf", true, "Test Team"],
+    ["sf", false, "Soundflake"],
+    ["heinzelmaennchen", true, "Test Team"],
+    ["heinzelmaennchen", false, null],
+    ["quiet", false, null],
+  ])("uses the team-name preference and the %s theme fallback (%s)", async (selected, enabled, expected) => {
+    desktop();
+    const pluginTheme = {
+      ...acmeTheme,
+      name: selected,
+      plugin: selected === "heinzelmaennchen" ? "heinzel-theme" : acmeTheme.plugin,
+      logo: acmeTheme.logo ? { ...acmeTheme.logo, alt: selected === "sf" ? "Soundflake" : "Acme" } : null,
+      ...(selected === "quiet" ? { show_branding_bar: false } : {}),
+    };
+    mockApi({
+      ...shell,
+      "/api/system/theme/list": themeList(selected, [theme(), ...(selected === "default" ? [] : [pluginTheme])]),
+      "/api/system/config/show": {
+        ...config,
+        settings: [
+          { section: "team", key: "name", value: "Test Team" },
+          ...(!enabled ? [{ section: "system.theme", key: "show_team_name", value: false }] : []),
+        ],
+      },
+    });
+    renderAt("/doctor");
+    const navigation = screen.getByRole("complementary", { name: "Main" });
+    await within(navigation).findByRole("link", { name: "Heinzelmännchen" });
+    const row = navigation.querySelector("[data-titlebar]")?.nextElementSibling;
+    if (expected === "Test Team")
+      expect(row).toContainElement(await within(navigation).findByRole("link", { name: expected }));
+    else if (expected) expect(row).toContainElement(await within(navigation).findByRole("img", { name: expected }));
+    else expect(row).toBe(navigation.querySelector("nav"));
   });
 });

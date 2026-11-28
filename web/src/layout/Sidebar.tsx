@@ -27,7 +27,16 @@ import {
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, matchPath, NavLink, useLocation } from "react-router";
-import { useContracts, useExpert, useNavigation, usePlayful, useProfile, useSetExpert } from "@/api/queries";
+import {
+  useConfig,
+  useContracts,
+  useExpert,
+  useNavigation,
+  usePlayful,
+  useProfile,
+  useSetExpert,
+  useTeam,
+} from "@/api/queries";
 import { setVizStage } from "@/audio/viz/stage";
 import { BookmarkNavigation } from "@/bookmarks/BookmarkNavigation";
 import { ICONS, StatusItems, useEffectRunner } from "@/components/Contributions";
@@ -109,13 +118,29 @@ function Full({ drawer, titlebar, onToggle, onSearch, onNotifications }: Omit<Pr
   );
   const theme = useSelectedTheme();
   const dark = useDark();
-  const brand = theme && theme.name !== "default" && theme.name !== "heinzelmaennchen" && (
+  const settings = useConfig().data?.settings ?? [];
+  const showTeamName =
+    settings.find(({ section, key }) => section === "system.theme" && key === "show_team_name")?.value !== false;
+  const configured = settings.find(({ section, key }) => section === "team" && key === "name")?.value;
+  const configuredName = typeof configured === "string" ? configured.trim() : "";
+  const checkout = settings.find(({ section, key }) => section === "team" && key === "checkout")?.value;
+  const joinedName = useTeam(showTeamName && !configuredName && Boolean(checkout)).data?.name?.trim();
+  const teamName = showTeamName ? configuredName || joinedName : undefined;
+  // Older servers and the bundled Heinzel plugin don't declare this preference.
+  const legacyHeinzel =
+    theme?.name === "default" || (theme?.name === "heinzelmaennchen" && theme.plugin === "heinzel-theme");
+  const showThemeBrand = theme && (theme.show_branding_bar ?? !legacyHeinzel);
+  const brand = (teamName || showThemeBrand) && (
     <Link
       to="/"
-      aria-label={t("nav.brand")}
+      aria-label={teamName || t("nav.brand")}
       className="ml-0.5 flex min-w-0 items-center rounded-lg px-1 py-1 transition-colors hover:bg-accent/70"
     >
-      <Branding theme={theme} dark={dark} />
+      {teamName ? (
+        <span className="truncate px-1 text-ui font-medium">{teamName}</span>
+      ) : (
+        <Branding theme={theme} dark={dark} />
+      )}
     </Link>
   );
   const toggleButton = (

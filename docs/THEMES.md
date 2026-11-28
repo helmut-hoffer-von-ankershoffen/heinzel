@@ -5,6 +5,10 @@ colours of the web app's tokens for light and dark, fonts, sizes and an optional
 `module.theme(Path(__file__).parent / "themes")`. `hz system theme list` shows the installed ones, `hz system theme
 use <name>` picks one. Every value passes a grammar at import, so a theme can't load or run anything.
 
+**Paper** is a built-in theme with warm paper colours, serif text and square corners. Choose it in **Settings → Appearance**
+or run `hz system theme use paper`. A theme can set `show_branding_bar = false` in its TOML to hide its
+branding row. **Show team name in sidebar**, on by default, uses the configured team name in that row.
+
 Soundscapes work the same way ([ADR 0058](adr/0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md)): a plugin
 offers its own with `module.soundscape(Path(__file__).parent / "soundscapes")`, and they appear in `hz system sound
 list` and the web app's picker. The standard app automatically installs and enables the Heinzelmännchen theme

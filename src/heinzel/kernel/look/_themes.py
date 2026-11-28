@@ -576,6 +576,9 @@ class Theme(BaseModel):
     logo: ThemeLogo | None = Field(
         default=None, description="The logo the theme ships (`[logo]` in its file), SVG files beside it; none if not."
     )
+    show_branding_bar: bool | None = Field(
+        default=None, description="Show the expanded sidebar branding row. Omit to use the host default."
+    )
     variant: tuple[ThemeVariant, ...] = Field(
         default=(),
         max_length=MAX_VARIANTS,
