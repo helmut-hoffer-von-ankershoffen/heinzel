@@ -425,6 +425,9 @@ it("shows the tabs the desktop holds when the panel opens again, and switches an
 
 it("keeps the remaining tab ready when the closed tab's reload rejects", async () => {
   const [first, second] = TABS;
+  if (!first || !second) {
+    throw new Error("The reload fixture requires two tabs");
+  }
   let rejectReload!: (error: Error) => void;
   let tabs = TABS;
   let selected = first;
