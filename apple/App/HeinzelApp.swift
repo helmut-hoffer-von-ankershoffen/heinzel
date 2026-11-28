@@ -1290,10 +1290,12 @@ struct ConnectionView: View {
     private var presentedContent: some View {
         menuContent
         .onGeometryChange(for: CGSize.self) { $0.size } action: { soundDockAvailableSize = $0 }
+        #if !os(macOS)
         .sheet(isPresented: $soundscape.showingDock) {
             SoundDock(playback: soundscape, availableSize: soundDockAvailableSize)
                 .presentationSizing(.fitted)
         }
+        #endif
         .sheet(isPresented: Binding(get: { workspaceEntry != nil && !showConnection }, set: { showing in
             if !showing && !showConnection && workspaceEntry != nil { dismissWorkspaceEntry() }
         }), onDismiss: { shortcutSheetDidDismiss(.entry) }) { linkEntrySheet }

@@ -59,6 +59,10 @@ struct WorkspaceView: WebRepresentable {
     private func makeWebView(_ context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlaybackIfSupported()
+        #if os(macOS)
+        configuration.applicationNameForUserAgent = [configuration.applicationNameForUserAgent, "HeinzelAlbum/1"].compactMap { $0 }.joined(separator: " ")
+        #endif
+        configuration.setURLSchemeHandler(ApprovedAlbumFilmHandler(origin: endpoint.origin), forURLScheme: "heinzel-album")
         configuration.userContentController.addScriptMessageHandler(
             context.coordinator, contentWorld: .defaultClient, name: "heinzelExternalLink"
         )
@@ -151,8 +155,10 @@ struct WorkspaceView: WebRepresentable {
                     return window.webkit.messageHandlers.heinzelAudio.postMessage(action);
                 };
                 const album = (action, options) => window.webkit.messageHandlers.heinzelAlbum.postMessage(
-                    action === "seek" ? { action, trackID: options?.trackID, seconds: options?.seconds }
-                    : options ? { action, geometry: options } : action);
+                    action === "seek" ? { action, trackID: options?.trackID, seconds: options?.seconds } :
+                    action === "volume" ? { action, gain: options?.gain } :
+                    ["select", "openVideo"].includes(action) ? { action, trackID: typeof options === "string" ? options : options?.trackID, ...(action === "openVideo" ? { geometry: options } : {}) } :
+                        options ? { action, geometry: options } : action);
                 const browser = request => window.webkit.messageHandlers.heinzelBrowser.postMessage(request);
                 const notices = request => window.webkit.messageHandlers.heinzelNotices.postMessage(request);
                 Object.defineProperty(window, "heinzelDesktop", {
@@ -311,5 +317,65 @@ private extension WKWebViewConfiguration {
         #if os(iOS)
         allowsInlineMediaPlayback = true
         #endif
+    }
+}
+
+/// Installed only on the trusted workspace configuration, never guest browser views.
+@MainActor
+final class ApprovedAlbumFilmHandler: NSObject, WKURLSchemeHandler {
+    private let origin: URL
+    private var deliveries: [ObjectIdentifier: Task<Void, Never>] = [:]
+    init(origin: URL) { self.origin = origin }
+
+    func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
+        let request = task.request
+        guard request.url?.absoluteString == AlbumLibrary.approvedFilmWebURL.absoluteString,
+              request.httpMethod == "GET" || request.httpMethod == "HEAD",
+              let document = webView.url,
+              document.scheme == origin.scheme, document.host == origin.host, document.port == origin.port,
+              let file = AlbumLibrary.shared.availableApprovedFilm(),
+              let bytes = try? Data(contentsOf: file, options: .mappedIfSafe) else {
+            task.didFailWithError(URLError(.resourceUnavailable)); return
+        }
+        let requestedRange = request.value(forHTTPHeaderField: "Range")
+        let range = AlbumLibrary.byteRange(requestedRange, count: bytes.count)
+        var headers = ["Content-Type": "video/mp4", "Accept-Ranges": "bytes", "Cache-Control": "no-store"]
+        let status: Int
+        if let range {
+            status = requestedRange == nil ? 200 : 206
+            headers["Content-Length"] = String(range.count)
+            if status == 206 { headers["Content-Range"] = "bytes \(range.lowerBound)-\(range.upperBound - 1)/\(bytes.count)" }
+        } else {
+            status = 416
+            headers["Content-Range"] = "bytes */\(bytes.count)"
+            headers["Content-Length"] = "0"
+        }
+        guard let response = HTTPURLResponse(url: AlbumLibrary.approvedFilmWebURL, statusCode: status,
+                                             httpVersion: "HTTP/1.1", headerFields: headers) else {
+            task.didFailWithError(URLError(.badServerResponse)); return
+        }
+        let key = ObjectIdentifier(task)
+        deliveries[key] = Task { @MainActor [weak self] in
+            defer { self?.deliveries.removeValue(forKey: key) }
+            guard !Task.isCancelled else { return }
+            task.didReceive(response)
+            if request.httpMethod != "HEAD", let range {
+                // Bounded callback chunks; no network fallback or forwarded request headers.
+                var offset = range.lowerBound
+                while offset < range.upperBound {
+                    guard !Task.isCancelled else { return }
+                    let end = min(offset + 256 * 1024, range.upperBound)
+                    task.didReceive(bytes.subdata(in: offset..<end))
+                    offset = end
+                    await Task.yield()
+                }
+            }
+            guard !Task.isCancelled else { return }
+            task.didFinish()
+        }
+    }
+
+    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {
+        deliveries.removeValue(forKey: ObjectIdentifier(task))?.cancel()
     }
 }

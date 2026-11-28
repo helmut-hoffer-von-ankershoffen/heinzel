@@ -19,7 +19,7 @@ struct SoundDock: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    if playback.videoURL != nil {
+                    if playback.videoURL != nil, AlbumLibrary.shared.approvedFilm(for: playback.selectedID) {
                         let videoSize = SoundDockGeometry.videoSize(
                             width: SoundDockGeometry.width(requested: playback.dockWidth, available: availableSize.width) - 32,
                             height: availableSize.height, aspect: videoAspect
@@ -34,6 +34,12 @@ struct SoundDock: View {
                         }
                         .frame(width: videoSize.width, height: videoSize.height)
                         .frame(maxWidth: .infinity)
+                    }
+                    if !AlbumLibrary.shared.approvedFilm(for: playback.selectedID),
+                       let poster = AlbumLibrary.shared.approvedSavedPoster(for: playback.selectedID) {
+                        AsyncImage(url: poster) { image in
+                            image.resizable().scaledToFit()
+                        } placeholder: { Color.clear }
                     }
                     Link("Latent Heinzels", destination: SoundscapeLink.artist)
                     Button { playback.showingPicker.toggle() } label: {

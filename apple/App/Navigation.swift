@@ -277,6 +277,8 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         self.selectedWorkspaceName = selectedWorkspaceName
         self.isEnrollmentViewCurrent = isEnrollmentViewCurrent
         super.init()
+        NotificationCenter.default.addObserver(self, selector: #selector(openSoundDock),
+                                               name: SoundscapePlayback.dockRequested, object: nil)
         for name in [AlbumLibrary.changed, AlbumLibrary.progress, SoundscapePlayback.changed] {
             NotificationCenter.default.addObserver(self, selector: #selector(albumChanged), name: name, object: nil)
         }
@@ -511,6 +513,13 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
         workspace.evaluateJavaScript("window.dispatchEvent(new Event('heinzel-album-change'))")
     }
 
+    @objc private func openSoundDock() {
+        guard isSelected(), hasCommittedWorkspace, case .idle = provisionalLoad,
+              let workspace, workspace.url.map(endpoint.owns) == true else { return }
+        guard SoundscapePlayback.shared.dockRequestPending else { return }
+        workspace.evaluateJavaScript("window.dispatchEvent(new CustomEvent('heinzel-album-dock', { detail: { picker: true } }))")
+    }
+
     private func verifiedWorkspace(for message: WKScriptMessage) -> WKWebView? {
         guard isSelected(), message.frameInfo.isMainFrame, message.frameInfo.request.url.map(endpoint.owns) == true,
               let workspace, message.webView === workspace,
@@ -527,7 +536,27 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
             let playback = SoundscapePlayback.shared
             do {
                 switch action {
-                case "status": break
+                case "status":
+                    if playback.dockRequestPending {
+                        openSoundDock()
+                        playback.dockRequestPending = false
+                    }
+                case "catalog": _ = try await library.catalogTracks()
+                case "select":
+                    guard let body = message.body as? [String: Any],
+                          Set(body.keys) == Set(["action", "trackID"]),
+                          let id = body["trackID"] as? String, !id.isEmpty, id.utf8.count <= 256 else {
+                        return (nil, "Choose a catalog track")
+                    }
+                    try await playback.selectApp(id)
+                case "volume":
+                    guard let body = message.body as? [String: Any],
+                          Set(body.keys) == Set(["action", "gain"]),
+                          let gain = body["gain"] as? NSNumber,
+                          CFGetTypeID(gain) != CFBooleanGetTypeID() else {
+                        return (nil, "Volume must be a number from 0 to 1")
+                    }
+                    try playback.setVolume(gain.doubleValue)
                 case "play": try await playback.playAlbum()
                 case "pausePlayback": playback.pause()
                 case "toggle": try await playback.toggleApp()
@@ -545,7 +574,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                 case "openVideo":
                     let geometry = (message.body as? [String: Any])?["geometry"] as? [String: NSNumber]
                     playback.dockWidth = SoundDockGeometry.requestedWidth(geometry, viewport: workspace.bounds.width)
-                    playback.openVideo()
+                    playback.openVideo(trackID: (message.body as? [String: Any])?["trackID"] as? String ?? playback.selectedID)
                 case "pauseDownload": try library.pauseDownloads()
                 case "resumeDownload": try library.resumeDownloads()
                 case "cancelDownload": try library.cancelDownloads()
@@ -555,9 +584,13 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
                 guard revision == documentRevision, verifiedWorkspace(for: message) != nil else {
                     return (nil, "Workspace command unavailable")
                 }
+                snapshot["media"] = library.mediaSnapshot(selectedID: playback.selectedID)
                 snapshot["positionSeconds"] = playback.playbackPosition
                 snapshot["durationSeconds"] = playback.albumDuration
                 snapshot["playing"] = playback.isPlaying
+                snapshot["volume"] = playback.volume
+                snapshot["muted"] = playback.muted
+                snapshot["effectiveGain"] = playback.effectiveGain
                 snapshot["title"] = playback.currentTitle
                 snapshot["repeatMode"] = playback.repeatMode
                 return (snapshot, nil)
@@ -810,6 +843,7 @@ final class Navigation: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMe
     #endif
 
     func close(_ view: WKWebView) {
+        NotificationCenter.default.removeObserver(self, name: SoundscapePlayback.dockRequested, object: nil)
         if workspace === view { workspace = nil }
         documentRevision &+= 1
         versionRefresh.cancel()

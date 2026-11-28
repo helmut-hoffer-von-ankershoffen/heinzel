@@ -107,6 +107,8 @@ struct SoundscapeWidgetState: Codable {
 final class SoundscapePlayback {
     static let shared = SoundscapePlayback()
     static let changed = Notification.Name("SoundscapePlayback.changed")
+    var dockRequestPending = false
+    static let dockRequested = Notification.Name("SoundscapePlayback.dockRequested")
     typealias ResumeSeek = @MainActor (AVQueuePlayer, CMTime, @escaping @Sendable (Bool) -> Void) -> Void
 
     private let library: AlbumLibrary
@@ -120,7 +122,18 @@ final class SoundscapePlayback {
     var isResuming: Bool { pendingResumePosition != nil }
     private var loadedURL: URL?
     private var albumEnded = false
-    let player = AVQueuePlayer()
+    let player: AVQueuePlayer
+    var volume: Double { Double(player.volume) }
+    var muted: Bool { player.isMuted || player.volume == 0 }
+    var effectiveGain: Double { muted || !isPlaying ? 0 : volume }
+
+    func setVolume(_ gain: Double) throws {
+        guard gain.isFinite, (0...1).contains(gain) else { throw PlaybackError.invalidGain }
+        player.volume = Float(gain)
+        player.isMuted = gain == 0
+        defaults.set(gain, forKey: "soundscapeVolume")
+        publishWidgetState()
+    }
     private(set) var errorMessage: String?
     private(set) var isPlaying = false
     private(set) var repeatMode: String
@@ -131,7 +144,7 @@ final class SoundscapePlayback {
     var showingPicker = false { didSet { if showingPicker { watchGeneration = UUID() } } }
     private(set) var videoURL: URL?
     private var tracks: [AlbumPlayableTrack] = []
-    private var selectedID: String?
+    private(set) var selectedID: String?
     private var videoSelected: Bool
     private var rateObservation: NSKeyValueObservation?
     private var itemObservation: NSKeyValueObservation?
@@ -153,17 +166,22 @@ final class SoundscapePlayback {
 
     /// Fixture dependencies isolate playback, publishing and the outcome of a resume seek.
     init(library: AlbumLibrary = .shared, defaults: UserDefaults = .standard,
+         player: AVQueuePlayer = AVQueuePlayer(),
          resumeSeek: @escaping ResumeSeek = { player, time, completion in
              player.seek(to: time, completionHandler: completion)
          },
          publish: @escaping @MainActor (SoundscapeWidgetState) -> Void = { state in
-             state.write(poster: AlbumLibrary.shared.savedPoster(for: state.selectedID))
+             state.write(poster: AlbumLibrary.shared.approvedSavedPoster(for: state.selectedID))
              WidgetCenter.shared.reloadTimelines(ofKind: "HeinzelSoundscape")
          }) {
+        self.player = player
         self.library = library
         self.resumeSeek = resumeSeek
         self.defaults = defaults
         self.publish = publish
+        let gain = defaults.object(forKey: "soundscapeVolume") as? Double ?? 1
+        player.volume = Float(gain.isFinite && (0...1).contains(gain) ? gain : 1)
+        player.isMuted = player.volume == 0
         let saved = defaults.data(forKey: "soundscapePlayback")
             .flatMap { try? JSONDecoder().decode(Selection.self, from: $0) }
         selectedID = saved?.selectedID
@@ -193,7 +211,7 @@ final class SoundscapePlayback {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let playing = self.loadedURL != nil && self.player.rate != 0
-                if self.isPlaying != playing { self.setPlaying(playing) }
+                self.setPlaying(playing)
             }
         }
         timeControlObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
@@ -393,7 +411,7 @@ final class SoundscapePlayback {
             videoURL = videoSelected ? track.url : nil
             errorMessage = nil
             player.play()
-            setPlaying(true)
+            setPlaying(player.rate != 0)
             return
         }
         let position = albumEnded ? 0 : playbackPosition
@@ -437,12 +455,18 @@ final class SoundscapePlayback {
         videoURL = videoSelected ? track.url : nil
         errorMessage = nil
         player.play()
-        setPlaying(true)
+        setPlaying(player.rate != 0)
     }
 
     func pause() { watchGeneration = UUID(); player.pause(); setPlaying(false) }
 
-    func openPicker() { dockWidth = nil; showingPicker = true; showingDock = true }
+    func openPicker() {
+        dockWidth = nil; showingPicker = true; showingDock = true
+        #if os(macOS)
+        dockRequestPending = true
+        NotificationCenter.default.post(name: Self.dockRequested, object: nil)
+        #endif
+    }
 
     /// The app's legacy unparameterized route may choose the normal current/first track.
     func openVideo() { openVideo(trackID: selectedID) }
@@ -450,6 +474,10 @@ final class SoundscapePlayback {
     /// A supplied ID is exact: only verified files or catalog entries may resolve it.
     /// Each foreground action owns a generation so late catalog results cannot reopen video.
     func openVideo(trackID requested: String?) {
+        #if os(macOS)
+        dockRequestPending = true
+        NotificationCenter.default.post(name: Self.dockRequested, object: nil)
+        #endif
         showingPicker = false
         showingDock = true
         watchGeneration = UUID()
@@ -591,10 +619,12 @@ final class SoundscapePlayback {
     private func setPlaying(_ value: Bool) { isPlaying = value; publishWidgetState() }
 
     enum PlaybackError: LocalizedError {
+        case invalidGain
         case noSavedTracks
         case watchUnavailable
         var errorDescription: String? {
             switch self {
+            case .invalidGain: "Volume must be a finite number from 0 to 1."
             case .watchUnavailable: "This video is unavailable. Open Sound and choose a track."
             case .noSavedTracks: "No saved tracks are available. Save the album in Sound first."
             }
