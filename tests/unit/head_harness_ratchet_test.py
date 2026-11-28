@@ -3,6 +3,7 @@
 import ast
 from collections import defaultdict
 from pathlib import Path
+from zlib import crc32
 
 import pytest
 
@@ -10,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BASELINE = ROOT / "tests/fixtures/head-build-callers.txt"
 HEADS = {"cli", "api", "mcp", "web"}
 BINDINGS = {ast.Import, ast.ImportFrom, ast.Assign, ast.AnnAssign}
+SHARD_COUNT = 4
 
 pytestmark = pytest.mark.unit
 
@@ -92,17 +94,28 @@ def _direct_heads(text):
     }
 
 
-def _current_callers():
-    return {
-        f"{head} {path.relative_to(ROOT).as_posix()}"
-        for path in (ROOT / "tests").rglob("*.py")
-        for head in _direct_heads(path.read_text(encoding="utf-8"))
+def _path_shard(relative_path: str) -> int:
+    return crc32(relative_path.encode("utf-8")) % SHARD_COUNT
+
+
+def _current_callers(shard: int) -> set[str]:
+    callers = set()
+    for path in (ROOT / "tests").rglob("*.py"):
+        relative_path = path.relative_to(ROOT).as_posix()
+        if _path_shard(relative_path) == shard:
+            callers.update(f"{head} {relative_path}" for head in _direct_heads(path.read_text(encoding="utf-8")))
+    return callers
+
+
+@pytest.mark.parametrize("shard", range(SHARD_COUNT))
+def test_direct_head_factory_callers_only_get_fewer(shard):
+    # Partition pins independently so entries for deleted files still fail their shard.
+    pinned = {
+        line
+        for line in BASELINE.read_text(encoding="utf-8").splitlines()
+        if line and not line.startswith("#") and _path_shard(line.partition(" ")[2]) == shard
     }
-
-
-def test_direct_head_factory_callers_only_get_fewer():
-    pinned = {line for line in BASELINE.read_text(encoding="utf-8").splitlines() if line and not line.startswith("#")}
-    current = _current_callers()
+    current = _current_callers(shard)
     added, removed = sorted(current - pinned), sorted(pinned - current)
     assert not added, f"New direct factory callers must use heinzel.testing.heads: {added}"
     assert not removed, f"Delete retired entries from the baseline: {removed}"
