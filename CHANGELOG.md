@@ -10,6 +10,11 @@ Find, switch and reconnect to workspaces from one list on desktop. Your current 
 
 - Integrate Heinzel 0.9.58 ([#997](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/997)) ([d1fd052](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/d1fd0521572f06f0cb7d250b6c591656b96c6a6c))
 
+### 🐛 Fixes
+
+- Use release entitlements for the signed Mac app and its bundled widget ([#999](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/999)).
+- Keep the macOS release checks inside their time limits ([#1001](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/1001)).
+
 ## [0.9.57](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.57) - 2026-11-27 23:53 UTC
 
 Soundscape adds Dreaming of Electric Snow by Latent Heinzels. Open Sound to play the album and save it for offline listening, or use the album widgets on iPhone and Mac to control playback. The Mac menu adds Quick Chat, and Today widgets refresh their displayed information more reliably. This release also improves workspace client visibility and recovery after interrupted updates.
