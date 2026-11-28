@@ -19,6 +19,8 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.integration
 BROKER = Path(__file__).parents[2] / "desktop" / "managed" / "runtime" / "broker.py"
 HTML = (
@@ -300,7 +302,7 @@ def test_killed_controller_broker_does_not_leave_its_worker_listening(tmp_path):
             process.kill()
             process.wait(timeout=3)
             # Drain through EOF even when the worker writes diagnostics as its lease closes.
-            _, diagnostics = process.communicate(timeout=5)
+            _, diagnostics = process.communicate(timeout=scaled(5))
             assert b"Broker lease closed\n" in diagnostics
             # Closed descriptors do not prove the exact worker has exited.
             assert exited(5), f"Worker stayed alive after losing its broker lease: {diagnostics!r}"
