@@ -3,6 +3,7 @@
 import importlib
 import logging
 import subprocess
+import sys
 
 import pytest
 from typer.testing import CliRunner
@@ -10,7 +11,7 @@ from typer.testing import CliRunner
 from heinzel import HeinzelError
 from heinzel.heads import mcp
 from heinzel.heads.cli import build
-from heinzel.heads.mcp._http_check import check_http
+from heinzel.heads.mcp._http_check import _PROBE, check_http
 
 pytestmark = pytest.mark.unit
 
@@ -77,3 +78,29 @@ def test_probe_launch_failure_is_reported_without_child_diagnostics(monkeypatch,
     monkeypatch.setattr(subprocess, "run", fail)
     with pytest.raises(HeinzelError, match="could not be authenticated"):
         check_http("http://127.0.0.1:1234/mcp", "hzmcp_fictional")
+
+
+def test_probe_child_runs_isolated_without_importing_the_heinzel_package(monkeypatch):
+    launched = []
+
+    def fake_probe(*args, **kwargs):
+        launched.append(args[0])
+        return subprocess.CompletedProcess(args[0], 0, stdout="3")
+
+    monkeypatch.setattr(subprocess, "run", fake_probe)
+    assert check_http("http://127.0.0.1:1234/mcp", "hzmcp_fictional") == 3
+    assert launched == [[sys.executable, "-I", _PROBE, "http://127.0.0.1:1234/mcp"]]
+    monkeypatch.undo()
+    # The real child, stopped at its argument check: its module-level imports ran, the heinzel package did not.
+    observe = (
+        "import runpy, sys\n"
+        "sys.argv = [sys.argv[1]]\n"
+        "try:\n"
+        "    runpy.run_path(sys.argv[0], run_name='__main__')\n"
+        "except SystemExit as stop:\n"
+        "    print(stop.code, 'mcp' in sys.modules, sorted(m for m in sys.modules if m.split('.')[0] == 'heinzel'))\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", observe, _PROBE], capture_output=True, text=True, timeout=30, check=True
+    )
+    assert result.stdout.strip().split(maxsplit=2) == ["2", "True", "[]"]

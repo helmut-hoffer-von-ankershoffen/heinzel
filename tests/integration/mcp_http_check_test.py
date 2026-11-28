@@ -17,7 +17,7 @@ from typer.testing import CliRunner
 from heinzel import HeinzelError
 from heinzel.heads import mcp
 from heinzel.heads.cli import build
-from heinzel.heads.mcp._http_check import check_http
+from heinzel.heads.mcp._http_check import _PROBE, check_http
 from heinzel.kernel._logging import record_fields
 from heinzel.modules.system.client._mcp_tokens import McpTokens
 from tests.fixtures.local_http import LoopbackThreadingHTTPServer
@@ -71,7 +71,7 @@ def probe_exit_codes(monkeypatch):
     def tracked_run(*args, **kwargs):
         result = original_run(*args, **kwargs)
         command = args[0]
-        if isinstance(command, (tuple, list)) and command[1:4] == ["-I", "-m", "heinzel.heads.mcp._http_probe"]:
+        if isinstance(command, (tuple, list)) and command[1:3] == ["-I", _PROBE]:
             codes.append(result.returncode)
         return result
 
