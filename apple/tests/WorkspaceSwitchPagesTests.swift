@@ -20,14 +20,28 @@ import WebKit
     final class Loading: NSObject, WKNavigationDelegate {
         let fixture: SwitchFixture
         let id: Int
-        init(_ fixture: SwitchFixture, id: Int) { self.fixture = fixture; self.id = id }
+        let origin: URL
+        init(_ fixture: SwitchFixture, id: Int, origin: URL) {
+            self.fixture = fixture; self.id = id; self.origin = origin
+        }
+        private func permits(_ url: URL?) -> Bool {
+            guard let url else { return false }
+            return url.scheme == origin.scheme && url.host == origin.host && url.port == origin.port &&
+                url.user == nil && url.password == nil
+        }
+        func webView(_: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
+            permits(action.request.url) ? .allow : .cancel
+        }
+        func webView(_: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
+            permits(response.response.url) ? .allow : .cancel
+        }
         func webView(_ view: WKWebView, didFinish navigation: WKNavigation!) { fixture.loaded.insert(id) }
         func webView(_ view: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             fixture.failed.insert(id)
         }
     }
 
-    func makeCoordinator() -> Loading { Loading(fixture, id: page.id) }
+    func makeCoordinator() -> Loading { Loading(fixture, id: page.id, origin: page.endpoint.origin) }
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = fixture.store
@@ -47,6 +61,12 @@ import WebKit
         WorkspaceSwitchPages(current: fixture.current, pending: fixture.pending, obscured: false) { page, _ in
             FixtureTab(page: page, fixture: fixture)
         }
+    }
+}
+
+@MainActor private final class ScriptOnlyNavigation: NSObject, WKNavigationDelegate {
+    func webView(_: WKWebView, decidePolicyFor _: WKNavigationAction) async -> WKNavigationActionPolicy {
+        .cancel
     }
 }
 
@@ -101,7 +121,12 @@ import WebKit
     }
 
     @MainActor static func verifyLegacyProfileMenu() async throws {
-        let view = WKWebView(frame: .zero)
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let view = WKWebView(frame: .zero, configuration: configuration)
+        let navigation = ScriptOnlyNavigation()
+        view.navigationDelegate = navigation
+        defer { withExtendedLifetime(navigation) {} }
         _ = try await view.evaluateJavaScript("""
             window.calls = 0;
             window.allowOpen = false;

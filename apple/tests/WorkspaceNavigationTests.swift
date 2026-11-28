@@ -14,11 +14,32 @@ private final class FixtureWindow: NSWindow {
     let navigation: Navigation
     let port: Int
     let certificate: Data
+    let endpoint: Endpoint
 
-    init(_ navigation: Navigation, port: Int, certificate: Data) {
+    init(_ navigation: Navigation, endpoint: Endpoint, certificate: Data) {
         self.navigation = navigation
-        self.port = port
+        self.endpoint = endpoint
+        self.port = endpoint.origin.port!
         self.certificate = certificate
+    }
+
+    private func permits(_ url: URL?, inMainFrame: Bool) -> Bool {
+        guard let url else { return false }
+        return endpoint.permitsNavigation(to: url, inMainFrame: inMainFrame)
+    }
+
+    func webView(_ view: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+        guard permits(action.request.url, inMainFrame: action.targetFrame?.isMainFrame ?? true) else {
+            decisionHandler(.cancel)
+            return
+        }
+        navigation.webView(view, decidePolicyFor: action, decisionHandler: decisionHandler)
+    }
+
+    func webView(_ view: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
+        guard permits(response.response.url, inMainFrame: response.isForMainFrame) else { return .cancel }
+        return await navigation.webView(view, decidePolicyFor: response)
     }
 
     nonisolated override func responds(to selector: Selector!) -> Bool {
@@ -72,7 +93,7 @@ private final class FixtureWindow: NSWindow {
         window.contentView = host
         host.layoutSubtreeIfNeeded()
         let tab = view!
-        let trust = FixtureTrust(tab.navigationDelegate as! Navigation, port: endpoint.origin.port!, certificate: certificate)
+        let trust = FixtureTrust(tab.navigationDelegate as! Navigation, endpoint: endpoint, certificate: certificate)
         if endpoint.origin.scheme == "https" { tab.navigationDelegate = trust }
         defer { withExtendedLifetime((window, trust)) {} }
         try await wait("Workspace failed to authenticate") { established }

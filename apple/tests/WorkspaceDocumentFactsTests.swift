@@ -1,6 +1,25 @@
 import AppKit
 import WebKit
 
+@MainActor private final class FactsNavigation: NSObject, WKNavigationDelegate {
+    let origin: URL
+    init(origin: URL) { self.origin = origin }
+
+    private func permits(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        return url.scheme == origin.scheme && url.host == origin.host && url.port == origin.port &&
+            url.user == nil && url.password == nil
+    }
+
+    func webView(_: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
+        permits(action.request.url) ? .allow : .cancel
+    }
+
+    func webView(_: WKWebView, decidePolicyFor response: WKNavigationResponse) async -> WKNavigationResponsePolicy {
+        permits(response.response.url) ? .allow : .cancel
+    }
+}
+
 @main @MainActor struct WorkspaceDocumentFactsTests {
     static func wait(line: UInt = #line, _ ready: () async throws -> Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(8)
@@ -17,6 +36,9 @@ import WebKit
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         let view = WKWebView(frame: .zero, configuration: configuration)
+        let navigation = FactsNavigation(origin: origin)
+        view.navigationDelegate = navigation
+        defer { withExtendedLifetime(navigation) {} }
         view.load(URLRequest(url: origin))
         try await wait { view.url?.port == origin.port && !view.isLoading }
         func script(_ source: String) async throws -> Any? {
