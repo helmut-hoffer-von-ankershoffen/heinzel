@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.integration
 
 
@@ -47,7 +49,7 @@ def test_xdist_timing_is_emitted_for_a_failed_session_without_replacing_its_resu
         env={"HOME": str(tmp_path), "PATH": os.defpath, "LANG": "C", "PYTHONDONTWRITEBYTECODE": "1"},
         capture_output=True,
         text=True,
-        timeout=12,
+        timeout=scaled(12),
         check=False,
     )
     assert result.returncode == 2, result.stdout + result.stderr  # xdist reports fail-fast as Interrupted.

@@ -10,15 +10,15 @@ export function parseConnection(args) {
   return Object.freeze({ origin: url.origin, token });
 }
 
-export async function lifecycle(connection, fetchImpl = fetch) {
+export async function lifecycle(connection, fetchImpl = fetch, signal) {
   const response = await fetchImpl(`${connection.origin}/api/lifecycle`, {
     headers: { Authorization: `Bearer ${connection.token}`, Accept: "application/json" },
     redirect: "error",
-    signal: AbortSignal.timeout(5000),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000),
   });
   if (!response.ok) throw Object.assign(new Error("The workspace refused authentication or is unavailable."), { status: response.status });
   const value = await response.json();
-  if (!value || typeof value !== "object" || typeof value.instance !== "string" || typeof value.version !== "string")
-    throw new Error("The local service returned an invalid lifecycle response.");
+  if (!value || typeof value !== "object" || typeof value.instance !== "string" || !value.instance.trim() || typeof value.version !== "string" || !value.version.trim())
+    throw Object.assign(new Error("The workspace returned an invalid lifecycle response."), { code: "INVALID_LIFECYCLE" });
   return Object.freeze({ instance: value.instance, version: value.version, restartable: value.restartable === true });
 }

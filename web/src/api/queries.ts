@@ -80,7 +80,8 @@ export function usePlayful(): boolean {
   return config.data !== undefined && value !== false;
 }
 export const useProfile = () => useQuery({ queryKey: keys.profile, queryFn: () => unwrap(api.GET("/org/show")) });
-export const useTeam = () => useQuery({ queryKey: keys.team, queryFn: () => unwrap(api.GET("/team/show")) });
+export const useTeam = (enabled = true) =>
+  useQuery({ queryKey: keys.team, queryFn: () => unwrap(api.GET("/team/show")), enabled });
 /** `hz heinzel list`: your Heinzelmännchen, one per contract; the sidebar and search read the same list. */
 export const useHeinzelmaennchen = () =>
   useQuery({ queryKey: keys.contracts, queryFn: () => unwrap(api.GET("/heinzel/list")) });
@@ -189,6 +190,14 @@ export const useReleased = (version: string) =>
     queryKey: ["system", "changelog", "released", version],
     queryFn: () => unwrap(api.GET("/system/changelog/released")),
     staleTime: 60 * 60 * 1000,
+  });
+
+export const useWorkspaceVersion = (enabled: boolean) =>
+  useQuery({
+    queryKey: ["workspace-version"],
+    queryFn: () => unwrap(api.GET("/workspace-version")),
+    enabled,
+    retry: false,
   });
 
 export const useInfo = () =>

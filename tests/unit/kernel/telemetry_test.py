@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from heinzel import TeamPromises, TelemetryEntry, TelemetryLog
 from heinzel.kernel import check_target
+from heinzel.spec._telemetry import _has_address  # pyright: ignore[reportPrivateUsage]
 
 pytestmark = pytest.mark.unit
 
@@ -100,6 +101,14 @@ def test_an_address_is_a_publish_target():
 
 def test_a_hex_hash_in_a_description_is_not_taken_for_a_key():
     assert entry(description="published the revision " + "ab12" * 10).description.endswith("ab12")
+
+
+def test_address_detection_rejects_odd_addresses_and_long_malformed_input():
+    assert _has_address("sent to a@b..")
+    assert _has_address("sent to name+tag@domain.example")
+    assert not _has_address("a" * 100_000 + "@" + "b" * 100_000)
+    assert not _has_address("a@" * 50_000)
+    assert _has_address("a" * 100_000 + " name@domain.example")
 
 
 def test_a_heartbeat_has_no_target():

@@ -178,6 +178,21 @@ describe("the splash", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("leaves a mounted workspace and its recovery probes under host control", async () => {
+    vi.stubGlobal("heinzelDesktop", { workspaces: { open: vi.fn() } });
+    try {
+      const probe = vi.fn(async () => gone);
+      const store = ready();
+      mount(probe, store);
+      await act(async () => store.send({ type: "suspect" }));
+      await passes(60_000);
+      expect(probe).not.toHaveBeenCalled();
+      expect(store.get().phase).toBe("ready");
+    } finally {
+      Reflect.deleteProperty(window, "heinzelDesktop");
+    }
+  });
+
   it("loads the new app when hz comes back as another version than this page last knew", async () => {
     localStorage.setItem("hz.splash", JSON.stringify({ version: "0.9.21" }));
     const reload = vi.fn();

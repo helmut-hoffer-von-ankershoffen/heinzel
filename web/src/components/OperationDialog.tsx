@@ -214,8 +214,9 @@ export function OperationDialog() {
   const expert = useExpert(true).data?.expert === true;
   const driven = run.stage !== "idle" && run.driven !== undefined;
   const pluginInstall = run.stage !== "idle" && run.call.path === "/system/plugin/add";
+  const update = run.stage !== "idle" && run.call.path === "/system/update";
   const hidden = pluginInstall && isOperationProgressHidden(run);
-  const modal = primary && pluginInstall && !hidden;
+  const modal = primary && (pluginInstall || update) && !hidden;
   const showProgress = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
     const element = box.current;
@@ -389,10 +390,12 @@ export function OperationDialog() {
           )}
           <Steps phases={run.phases} active />
           {!cancel && (
-            <p className="mt-3 text-xs text-muted-foreground">{t(modal ? "plugins.installInProgress" : "op.noStop")}</p>
+            <p className="mt-3 text-xs text-muted-foreground">
+              {t(pluginInstall ? "plugins.installInProgress" : update ? "updates.keepOpen" : "op.noStop")}
+            </p>
           )}
           <PaneActions align="end" words="all">
-            {modal && (
+            {pluginInstall && (
               <PaneAction icon={EyeOff} onClick={() => setOperationProgressHidden(run, true)}>
                 {t("plugins.hideProgress")}
               </PaneAction>

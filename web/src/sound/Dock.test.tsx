@@ -103,6 +103,39 @@ describe("the mini-player docked in the sidebar", () => {
     expect(screen.getByRole("contentinfo").className).toContain("h-12");
   });
 
+  it("widens only for a docked YouTube card and restores the width on pop-out and close", async () => {
+    api();
+    const { user, card } = await play();
+    const shell = screen.getByTestId("app-shell");
+    const frame = card.querySelector("iframe");
+    expect(shell.style.getPropertyValue("--nav-expanded-width")).toBe("357px");
+    await user.click(within(card).getByRole("button", { name: "Pop the player out of the sidebar" }));
+    expect(shell.style.getPropertyValue("--nav-expanded-width")).toBe("16rem");
+    expect(card.querySelector("iframe")).toBe(frame);
+    await user.click(within(card).getByRole("button", { name: "Dock the player in the sidebar" }));
+    expect(shell.style.getPropertyValue("--nav-expanded-width")).toBe("357px");
+    expect(card.querySelector("iframe")).toBe(frame);
+    await user.click(within(card).getByRole("button", { name: "Stop and close the player" }));
+    expect(shell.style.getPropertyValue("--nav-expanded-width")).toBe("16rem");
+  });
+
+  it.each([
+    [720, "357px"],
+    [600, "16rem"],
+  ])("sizes the expanded YouTube sidebar in a %ipx window", async (width, expected) => {
+    const original = window.innerWidth;
+    localStorage.setItem("hz.nav.open", "true");
+    try {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+      api();
+      await play();
+      expect(screen.getByTestId("app-shell").style.getPropertyValue("--nav-expanded-width")).toBe(expected);
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: original });
+      localStorage.removeItem("hz.nav.open");
+    }
+  });
+
   it("pops out with its button, docks again with its button, and remembers both", async () => {
     api();
     const { user, card } = await play();
@@ -117,6 +150,35 @@ describe("the mini-player docked in the sidebar", () => {
     await user.click(within(floating).getByRole("button", { name: "Dock the player in the sidebar" }));
     expect(await player()).toHaveAttribute("data-dock", "docked");
     expect(JSON.parse(localStorage.getItem("hz.sound.player") ?? "{}").docked).toBe(true);
+  });
+
+  it.each([178, 256, 357, 430])("retains the %ipx dock width until manually resized", async (width) => {
+    api();
+    const { user, card } = await play();
+    const media = card.querySelector("iframe");
+    vi.spyOn(dockSlot(), "getBoundingClientRect").mockReturnValue(new DOMRect(0, 40, width, 200));
+    fireEvent(window, new Event("resize"));
+    expect(card.style.width).toBe(`${width}px`);
+    await user.click(within(card).getByRole("button", { name: "Pop the player out of the sidebar" }));
+    expect(card.style.width).toBe(`${width}px`);
+    fireEvent.change(within(card).getByRole("slider", { name: "Player width" }), { target: { value: "450" } });
+    expect(card.style.width).toBe("450px");
+    expect(card.querySelector("iframe")).toBe(media);
+  });
+
+  it("resizes a floating card without replacing its media element", async () => {
+    api();
+    const { user, card } = await play();
+    const frame = card.querySelector("iframe");
+    expect(frame).not.toBeNull();
+    await user.click(within(card).getByRole("button", { name: "Pop the player out of the sidebar" }));
+    const width = within(card).getByRole("slider", { name: "Player width" });
+    fireEvent.change(width, { target: { value: "360" } });
+    expect(card.style.width).toBe("360px");
+    expect(card.querySelector("iframe")).toBe(frame);
+    await user.click(within(card).getByRole("button", { name: "Dock the player in the sidebar" }));
+    expect(within(card).queryByRole("slider", { name: "Player width" })).toBeNull();
+    expect(card.querySelector("iframe")).toBe(frame);
   });
 
   it("follows the dock's measured bounds and releases its reserved height when floating", async () => {

@@ -4,9 +4,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { type SurfaceBridge, useNativeSurface } from "./nativeSurface";
 import { loadedFrontend, recordSurface, surfaceDetails } from "./surfaceDiagnostics";
 
-function Surface({ send }: { send: SurfaceBridge }) {
+function Surface({ send, cutout = false }: { send: SurfaceBridge; cutout?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
-  const failed = useNativeSurface(ref, true, send, undefined, "browser");
+  const failed = useNativeSurface(ref, true, send, undefined, "browser", cutout);
   return (
     <>
       <div ref={ref} data-testid="surface" />
@@ -51,6 +51,45 @@ it("shows a surface inside its player card and hides it only for an intersecting
   } finally {
     view.unmount();
     card.remove();
+  }
+});
+
+it("clips only the floating player footprint on capable hosts and hides for trusted overlays", async () => {
+  const box = new DOMRect(10, 10, 100, 100);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(box);
+  const card = document.createElement("section");
+  card.className = "viewport-popover";
+  card.dataset.nativeSurfaceContainer = "";
+  card.dataset.dock = "floating";
+  Object.defineProperty(card, "getClientRects", { value: () => [new DOMRect(80, 83, 70, 70)] });
+  const dialog = document.createElement("dialog");
+  Object.defineProperty(dialog, "getClientRects", { value: () => [box] });
+  const send = vi.fn(async () => undefined);
+  document.body.append(card);
+  const view = render(<Surface send={send} cutout />);
+  try {
+    await waitFor(() =>
+      expect(send).toHaveBeenLastCalledWith({
+        action: "layout",
+        bounds: { x: 10, y: 10, width: 100, height: 100 },
+        playerCutout: { x: 80, y: 83, width: 30, height: 27 },
+      }),
+    );
+    dialog.open = true;
+    document.body.append(dialog);
+    await waitFor(() => expect(send).toHaveBeenLastCalledWith({ action: "hide" }));
+    dialog.remove();
+    card.remove();
+    await waitFor(() =>
+      expect(send).toHaveBeenLastCalledWith({
+        action: "layout",
+        bounds: { x: 10, y: 10, width: 100, height: 100 },
+      }),
+    );
+  } finally {
+    dialog.remove();
+    card.remove();
+    view.unmount();
   }
 });
 

@@ -36,7 +36,7 @@ try {
   assert.equal(await wizard.getByLabel("Team name").inputValue(), "Payments");
 
   await page.goto(new URL("/profile", url).href);
-  await page.getByText("Payments", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Edit Team, currently Payments", exact: true }).waitFor();
   console.log(JSON.stringify({ team: "Payments" }));
 } finally {
   await browser.close();

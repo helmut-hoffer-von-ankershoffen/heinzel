@@ -10,19 +10,21 @@ const figures = (root: HTMLElement) =>
   within(root).getByTestId("heinzel-swarm").querySelectorAll(":scope > g[transform]").length;
 
 describe("Sidebar header", () => {
-  it("puts the mobile close control beside the brand without a desktop collapse control", async () => {
+  it("keeps Close next to the navigation controls in the built-in mobile drawer", async () => {
     const width = window.innerWidth;
     vi.stubGlobal("heinzelDesktop", { mobileWorkspace: true });
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
     try {
-      mockApi({ ...shell, "/api/system/expert": everyday });
+      mockApi({ ...shell, "/api/system/expert": everyday, "/api/system/theme/list": themeList("default") });
       const user = userEvent.setup();
       renderAt("/doctor");
       await user.click(screen.getByRole("button", { name: "Open navigation" }));
       const drawer = await screen.findByRole("dialog", { name: "Main" });
-      const brand = await within(drawer).findByRole("link", { name: "Heinzelmännchen home" });
+      const home = await within(drawer).findByRole("link", { name: "Today" });
       const close = within(drawer).getByRole("button", { name: "Close" });
-      expect(close.parentElement).toBe(brand.parentElement);
+      expect(home).toHaveAttribute("href", "/");
+      expect(close.parentElement).toBe(home.parentElement);
+      expect(within(drawer).queryByRole("link", { name: "Heinzelmännchen home" })).toBeNull();
       expect(within(drawer).queryByRole("button", { name: "Collapse navigation" })).toBeNull();
       await user.click(close);
       expect(screen.queryByRole("dialog", { name: "Main" })).toBeNull();
@@ -33,7 +35,7 @@ describe("Sidebar header", () => {
     }
   });
 
-  it("is the product lockup, the way home, beside the top bar's collapse button; the rail keeps the mark", async () => {
+  it("omits the built-in brand row, keeps the team link and preserves the collapsed rail mark", async () => {
     mockApi({
       ...shell,
       "/api/system/expert": everyday,
@@ -42,22 +44,16 @@ describe("Sidebar header", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     const navigation = screen.getByRole("complementary", { name: "Main" });
-    const lockup = await within(navigation).findByTestId("heinzel-wordmark");
-    // The swarm mark (the product's logo, five figures), never one Heinzel's bust, and the name as text beside it.
-    expect(figures(lockup)).toBe(5);
-    expect(within(lockup).queryByTestId("heinzel-icon")).not.toBeInTheDocument();
-    expect(lockup).toHaveTextContent("Heinzelmännchen");
-    expect(lockup.querySelector("span.truncate")).toHaveClass("font-semibold");
-    // The lockup links home, named apart from the Heinzels screen's link, which carries the plain name.
-    const home = lockup.closest("a");
+    const home = await within(navigation).findByRole("link", { name: "Today" });
     expect(home).toHaveAttribute("href", "/");
-    expect(home).toHaveAccessibleName("Heinzelmännchen home");
+    expect(within(navigation).queryByTestId("heinzel-wordmark")).toBeNull();
     // The Heinzels screen is several Heinzels too: its navigation icon is the team glyph, not one face.
     const heinzels = await within(navigation).findByRole("link", { name: "Heinzelmännchen" });
     expect(heinzels).toHaveAttribute("href", "/heinzel");
     expect(within(heinzels).getByTestId("heinzel-team")).toBeInTheDocument();
     // The collapse button is the top bar's icon button (36 px) with a 44 px hit area around it.
     const collapse = within(navigation).getByRole("button", { name: "Collapse navigation" });
+    expect(collapse.parentElement).toBe(home.parentElement);
     expect(collapse).toHaveClass("size-9", "before:-inset-1");
     await expectAccessible(navigation);
     await user.click(collapse);

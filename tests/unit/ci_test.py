@@ -16,7 +16,7 @@ import time
 import tomllib
 import zipfile
 from copy import deepcopy
-from functools import lru_cache
+from functools import cache, lru_cache
 from itertools import product
 from pathlib import Path
 from types import SimpleNamespace
@@ -1780,6 +1780,18 @@ def ci_contexts_paths(tmp_path_factory):
     return _make_ci_paths(tmp_path_factory, with_contexts=True)
 
 
+@pytest.fixture(scope="module")
+def ci_selection(tmp_path_factory, ci_contexts_paths):
+    """Run the real selector once per distinct selector input in each worker."""
+
+    @cache
+    def select(event: str, changed: str, *, release: bool) -> frozenset[str]:
+        directory = tmp_path_factory.mktemp("ci-selection")
+        return frozenset(_changes_outputs(directory, ci_contexts_paths, event, changed, release=release))
+
+    return select
+
+
 def _make_ci_paths(tmp_path_factory, *, with_contexts):
     jobs = _ci_jobs()
     script = next(step["run"] for step in jobs["changes"]["steps"] if step.get("id") == "paths")
@@ -3207,6 +3219,7 @@ _NATIVE_OFF = {"notifier=false", "contracts=false", "electron=false", "macos_ful
         ("web/src/components/Footer.tsx\n", {"site_only=false", "macos_full=false", "contracts=false"}),
         ("src/heinzel/kernel/_exposure_x.py\n", {"macos_full=true", "contracts=true"}),
         ("src/heinzel/testing.py\n", {"contracts=true"}),
+        ("src/heinzel/testing/heads.py\n", {"contracts=true"}),
         ("src/heinzel/conformance.py\n", {"contracts=true"}),
         ("src/heinzel/modules/team/_x.py\n", {"contracts=true"}),
         ("pyproject.toml\n", {"contracts=true", "notifier=true"}),
@@ -3313,7 +3326,7 @@ def test_the_macos_jobs_wait_for_a_native_path_on_ordinary_pull_requests():
         "tests/integration/chat_test.py",
     ],
 )
-def test_an_ordinary_pr_selects_upgrade_and_macos_cells(tmp_path, ci_contexts_paths, path):
+def test_an_ordinary_pr_selects_upgrade_and_macos_cells(tmp_path, ci_selection, path):
     jobs = _ci_jobs()
     full = next(step for step in jobs["changes"]["steps"] if step.get("id") == "full")
     assert "if" not in full
@@ -3323,9 +3336,7 @@ def test_an_ordinary_pr_selects_upgrade_and_macos_cells(tmp_path, ci_contexts_pa
     )
     assert full_output.read_text() == "selected=true\n"
     changed = path + "\n"
-    outputs = dict(
-        line.split("=", 1) for line in _changes_outputs(tmp_path, ci_contexts_paths, "pull_request", changed)
-    )
+    outputs = dict(line.split("=", 1) for line in ci_selection("pull_request", changed, release=False))
     selected = path not in {"src/heinzel/modules/team/_render.py", "web/src/App.tsx", "tests/integration/chat_test.py"}
     assert outputs["upgrade"] == str(selected).lower()
     outputs.update(full_ci="true", lane="all")
@@ -3338,15 +3349,15 @@ def test_an_ordinary_pr_selects_upgrade_and_macos_cells(tmp_path, ci_contexts_pa
     assert _macos_include(matrix, "pull_request", upgrade=selected) == (macos_cells if selected else [])
 
     # Replay CI OK with the workflow's actual selected/skipped inventory.
-    run = _selection_run(tmp_path, ci_contexts_paths, "pull_request", changed)
+    run = _selection_run(ci_selection, "pull_request", changed)
     assert run.returncode == 0, run.stdout + run.stderr
     if selected:
-        missing = _selection_run(tmp_path, ci_contexts_paths, "pull_request", changed, skipped_job="upgrade")
+        missing = _selection_run(ci_selection, "pull_request", changed, skipped_job="upgrade")
         assert missing.returncode == 1
         assert "did not pass: upgrade" in missing.stdout
     else:
         # Unrelated PRs still require their core wheel while upgrade is naturally skipped.
-        missing = _selection_run(tmp_path, ci_contexts_paths, "pull_request", changed, skipped_job="core-wheel")
+        missing = _selection_run(ci_selection, "pull_request", changed, skipped_job="core-wheel")
         assert missing.returncode == 1
         assert "did not pass: core-wheel" in missing.stdout
 
@@ -3404,15 +3415,11 @@ def _evaluate_job_if(expression, event, outputs, results, ref="refs/heads/main")
 
 
 def _selection_run(  # noqa: PLR0913 - independent event, path and job fixture inputs
-    tmp_path, ci_paths, event, changed, *, release=False, plugins="True", skipped_job=None
+    ci_selection, event, changed, *, release=False, plugins="True", skipped_job=None
 ):
-    """Run the real selector, evaluate every job `if` on it, then run CI OK's own script on the resulting results."""
+    """Evaluate every job `if` on the real selector output, then run CI OK's own script for this case."""
     jobs = _ci_jobs()
-    selected = dict(
-        line.split("=", 1)
-        for line in _changes_outputs(tmp_path, ci_paths, event, changed, release=release)
-        if "=" in line
-    )
+    selected = dict(line.split("=", 1) for line in ci_selection(event, changed, release=release) if "=" in line)
     lane = "linux" if event == "push" else "all"
     outputs = {
         "changes": {
@@ -3494,11 +3501,9 @@ SELECTION_PATHS = [
 @pytest.mark.parametrize("changed", SELECTION_PATHS)
 @pytest.mark.parametrize("event", ["pull_request", "push", "schedule", "workflow_dispatch"])
 @pytest.mark.timeout(10)
-def test_ci_ok_requires_only_jobs_the_selection_runs(  # noqa: PLR0913,PLR0917 - one parametrized axis each
-    tmp_path, ci_contexts_paths, event, changed, release, plugins
-):
+def test_ci_ok_requires_only_jobs_the_selection_runs(ci_selection, event, changed, release, plugins):
     """CI OK and the job conditions can never disagree: every job it requires is one this selection ran."""
-    run = _selection_run(tmp_path, ci_contexts_paths, event, changed, release=release, plugins=plugins)
+    run = _selection_run(ci_selection, event, changed, release=release, plugins=plugins)
     assert run.returncode == 0, run.stderr + run.stdout
 
 
@@ -3517,7 +3522,7 @@ def test_ci_ok_requires_only_jobs_the_selection_runs(  # noqa: PLR0913,PLR0917 -
     ],
 )
 @pytest.mark.parametrize("job", ["upgrade", "core-wheel"])
-def test_ci_ok_requires_linux_upgrade_and_its_wheel(tmp_path, ci_contexts_paths, case, job):
+def test_ci_ok_requires_linux_upgrade_and_its_wheel(ci_selection, case, job):
     event, release, changed = case
     if (
         job == "upgrade"
@@ -3529,10 +3534,10 @@ def test_ci_ok_requires_linux_upgrade_and_its_wheel(tmp_path, ci_contexts_paths,
             "AGENTS.md\n",
         )
     ):
-        run = _selection_run(tmp_path, ci_contexts_paths, event, changed)
+        run = _selection_run(ci_selection, event, changed)
         assert run.returncode == 0, run.stdout
         return
-    run = _selection_run(tmp_path, ci_contexts_paths, event, changed, release=release, skipped_job=job)
+    run = _selection_run(ci_selection, event, changed, release=release, skipped_job=job)
     assert run.returncode != 0
     assert f"did not pass: {job}" in run.stdout
 
@@ -3554,8 +3559,8 @@ def test_upgrade_reuses_the_run_local_candidate_wheel_and_executes_the_real_scen
     assert [s["run"] for s in upgrade["steps"] if "run" in s] == ["make test-upgrade"]
 
 
-def test_ci_ok_requires_macos_dispatch_on_prose_only_main_push(tmp_path, ci_contexts_paths):
-    run = _selection_run(tmp_path, ci_contexts_paths, "push", "README.md\n", plugins="False", skipped_job="macos-main")
+def test_ci_ok_requires_macos_dispatch_on_prose_only_main_push(ci_selection):
+    run = _selection_run(ci_selection, "push", "README.md\n", plugins="False", skipped_job="macos-main")
     assert run.returncode == 1
     assert "Required full CI job did not pass: macos-main" in run.stdout
 
@@ -3564,8 +3569,8 @@ HOMEPAGE_PATHS = "docs/assets/website/album-ticket.css\ndocs/overrides/partials/
 
 
 @pytest.mark.parametrize("event", ["pull_request", "push"])
-def test_real_homepage_paths_select_site_and_require_its_build(tmp_path, ci_contexts_paths, event):
-    outputs = _changes_outputs(tmp_path, ci_contexts_paths, event, HOMEPAGE_PATHS)
+def test_real_homepage_paths_select_site_and_require_its_build(ci_selection, event):
+    outputs = ci_selection(event, HOMEPAGE_PATHS, release=False)
     assert {"homepage_only=true", "site_only=true"} <= outputs
     selection = dict(line.split("=", 1) for line in outputs)
     selection.update(full_ci="false", lane="linux" if event == "push" else "all")
@@ -3588,9 +3593,9 @@ def test_real_homepage_paths_select_site_and_require_its_build(tmp_path, ci_cont
         "coverage-floor",
     ):
         assert not _evaluate_job_if(_ci_jobs()[job]["if"], event, {"changes": selection}, lambda _: "success"), job
-    run = _selection_run(tmp_path, ci_contexts_paths, event, HOMEPAGE_PATHS, plugins="False")
+    run = _selection_run(ci_selection, event, HOMEPAGE_PATHS, plugins="False")
     assert run.returncode == 0, run.stdout + run.stderr
-    run = _selection_run(tmp_path, ci_contexts_paths, event, HOMEPAGE_PATHS, plugins="False", skipped_job="site-tests")
+    run = _selection_run(ci_selection, event, HOMEPAGE_PATHS, plugins="False", skipped_job="site-tests")
     assert run.returncode != 0
     assert "site-tests" in run.stdout
     assert any(s.get("run", "").startswith("make docs-site") for s in _ci_jobs()["site-tests"]["steps"])
@@ -3628,8 +3633,8 @@ def test_homepage_paths_trigger_docs_build_and_leave_acceptance_harness_scope_in
 
 @pytest.mark.parametrize("event", ["pull_request", "push"])
 @pytest.mark.parametrize("job", ["lint", "secrets", "audit", "quarantine-registry"])
-def test_homepage_ci_ok_keeps_security_and_policy_guards(tmp_path, ci_contexts_paths, event, job):
-    run = _selection_run(tmp_path, ci_contexts_paths, event, HOMEPAGE_PATHS, plugins="False", skipped_job=job)
+def test_homepage_ci_ok_keeps_security_and_policy_guards(ci_selection, event, job):
+    run = _selection_run(ci_selection, event, HOMEPAGE_PATHS, plugins="False", skipped_job=job)
     assert run.returncode != 0
     assert job in run.stdout
 
@@ -3844,8 +3849,8 @@ def test_generated_plugin_ci_aggregate_runtime(result):
 
 
 @pytest.mark.parametrize("job", ["commits", "dependency-review", "sonar-ratings"])
-def test_homepage_pull_request_requires_remaining_policy(tmp_path, ci_contexts_paths, job):
-    run = _selection_run(tmp_path, ci_contexts_paths, "pull_request", HOMEPAGE_PATHS, plugins="False", skipped_job=job)
+def test_homepage_pull_request_requires_remaining_policy(ci_selection, job):
+    run = _selection_run(ci_selection, "pull_request", HOMEPAGE_PATHS, plugins="False", skipped_job=job)
     assert run.returncode != 0
     assert job in run.stdout
 

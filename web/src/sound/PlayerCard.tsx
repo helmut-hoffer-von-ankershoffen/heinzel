@@ -5,14 +5,23 @@
 // snapped back by letting go near the dock spot. In the collapsed rail the docked card is hidden, with playback
 // controlled by the rail button; the same iframe remains mounted when the full sidebar returns.
 import { ExternalLink, GripHorizontal, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
-import { type KeyboardEvent, type PointerEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { PaneAction } from "@/components/PaneActions";
+import { PublicMediaLink } from "@/components/public-media-link";
 import { t } from "@/i18n";
 import { clampToWindow } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { viewportBounds, watchViewport } from "@/lib/viewport";
-import { nearSlot, setDocked, setFloating, useDockPref, useDockSlot } from "./dock";
+import { nearSlot, setDocked, setFloating, setFloatingWidth, setYoutubeCard, useDockPref, useDockSlot } from "./dock";
 import { stop } from "./store";
 
 // 480px of video plus the floating card's borders: 16:9 clears YouTube's 200px minimum height.
@@ -26,14 +35,34 @@ type Props = {
   title: string;
   /** The video on YouTube, the one host with a page to open. */
   watchUrl?: string;
+  sourceUrl?: string;
+  youtube?: boolean;
   /** Where the sound comes from. */
   host: string;
   children: ReactNode;
+  artwork?: ReactNode;
   headerAction?: ReactNode;
   onClose?: () => void;
+  chromeIntent?: { action: string; value?: number; x?: number; y?: number };
 };
 
-export function PlayerCard({ title, watchUrl, host, children, headerAction, onClose = stop }: Props) {
+export function PlayerCard({
+  title,
+  watchUrl,
+  sourceUrl,
+  youtube = false,
+  host,
+  children,
+  artwork,
+  headerAction,
+  onClose = stop,
+  chromeIntent,
+}: Props) {
+  useLayoutEffect(() => {
+    if (!youtube) return;
+    setYoutubeCard(true);
+    return () => setYoutubeCard(false);
+  }, [youtube]);
   const [viewport, setViewport] = useState(viewportBounds);
   useLayoutEffect(() => watchViewport(() => setViewport(viewportBounds())), []);
   const pref = useDockPref();
@@ -176,11 +205,28 @@ export function PlayerCard({ title, watchUrl, host, children, headerAction, onCl
     floatAt((pref.x ?? rect?.left ?? 0) + by[0], (pref.y ?? rect?.top ?? 0) + by[1]);
   };
 
+  useEffect(() => {
+    if (!chromeIntent) return;
+    if (chromeIntent.action === "close") onClose();
+    if (chromeIntent.action === "redock") setDocked(true);
+    if (chromeIntent.action === "resize" && chromeIntent.value !== undefined) setFloatingWidth(chromeIntent.value);
+    if (chromeIntent.action === "move") {
+      const rect = card.current?.getBoundingClientRect();
+      if (rect) {
+        const next = clampToWindow(rect.left + (chromeIntent.x ?? 0), rect.top + (chromeIntent.y ?? 0), rect);
+        setFloating(next.x, next.y);
+      }
+    }
+  }, [chromeIntent, onClose]);
+
   const floatingStyle = pref.x === null || pref.y === null ? { left: 12, bottom: 68 } : { left: pref.x, top: pref.y };
   const dockedAt = at ?? { left: 0, top: 0, width: WIDTH };
-  const narrow = viewport.width < 218;
-  const subminimum = !docked && viewport.width < 200;
-  const geometry = floatingPlayerGeometry(viewport.width);
+  const geometry = floatingPlayerGeometry(viewport.width, pref.width ?? WIDTH);
+  const narrow = geometry.width < 218;
+  const subminimum = !docked && geometry.width < 200;
+  useLayoutEffect(() => {
+    if (!docked && pref.width !== null && pref.width > geometry.width) setFloatingWidth(geometry.width);
+  }, [docked, pref.width, geometry.width]);
   const style = docked
     ? { left: dockedAt.left + (offset?.dx ?? 0), top: dockedAt.top + (offset?.dy ?? 0), width: dockedAt.width }
     : offset
@@ -214,7 +260,8 @@ export function PlayerCard({ title, watchUrl, host, children, headerAction, onCl
               width: geometry.width,
               maxWidth: geometry.width,
               borderWidth: geometry.border,
-              ...(narrow ? { maxHeight: "none", overflow: "visible" } : {}),
+              maxHeight: viewport.height,
+              ...(narrow ? { overflowX: "auto" as const } : {}),
               ...(subminimum ? { maxHeight: viewport.height, overflow: "auto" } : {}),
             }
       }
@@ -229,6 +276,7 @@ export function PlayerCard({ title, watchUrl, host, children, headerAction, onCl
       {/* Keep this wrapper mounted through every mode: moving an iframe would restart playback. Native guests
           outside the viewport are hidden by useNativeSurface; their existing header help remains reachable here. */}
       <div style={subminimum ? { minWidth: 200 } : undefined}>
+        {artwork}
         <header
           onPointerDown={down}
           onPointerMove={move}
@@ -240,8 +288,20 @@ export function PlayerCard({ title, watchUrl, host, children, headerAction, onCl
           className="flex flex-wrap cursor-grab touch-none items-center gap-1 px-3 py-1.5 active:cursor-grabbing"
         >
           <div className="min-w-0 flex-1">
-            <p className="truncate text-ui-sm font-medium">{title}</p>
-            <p className="truncate text-xs text-muted-foreground">{t("sound.playsFrom", { host })}</p>
+            <p className={cn("text-ui-sm font-medium", artwork ? "line-clamp-2" : "truncate")}>{title}</p>
+            <div className="truncate text-xs text-muted-foreground">
+              {sourceUrl ? (
+                <>
+                  By{" "}
+                  <PublicMediaLink href={sourceUrl} className="inline-flex max-w-full items-center gap-1">
+                    {host}
+                    <ExternalLink aria-hidden className="size-3 shrink-0" />
+                  </PublicMediaLink>
+                </>
+              ) : (
+                t("sound.playsFrom", { host })
+              )}
+            </div>
           </div>
           <div data-pane-chrome="" className="flex flex-wrap items-center gap-1.5">
             {headerAction}
@@ -281,6 +341,19 @@ export function PlayerCard({ title, watchUrl, host, children, headerAction, onCl
           </div>
         </header>
         {children}
+        {!docked && viewport.width >= 218 && (
+          <label className="flex items-center gap-2 px-3 py-1 text-ui-sm">
+            {t("sound.playerWidth")}
+            <input
+              type="range"
+              min={Math.min(202, Math.floor(geometry.width))}
+              max={Math.floor(viewport.width)}
+              value={Math.round(geometry.width)}
+              onChange={(event) => setFloatingWidth(event.currentTarget.valueAsNumber)}
+              className="min-w-0 flex-1"
+            />
+          </label>
+        )}
       </div>
     </section>
   );
@@ -288,7 +361,8 @@ export function PlayerCard({ title, watchUrl, host, children, headerAction, onCl
 }
 
 /** Spend margins and borders only when the full provider minimum still fits. */
-export function floatingPlayerGeometry(available: number): { width: number; border: number } {
+export function floatingPlayerGeometry(available: number, requestedWidth = WIDTH): { width: number; border: number } {
   const width = Number.isFinite(available) ? Math.max(0, available) : 200;
-  return width < 218 ? { width, border: 0 } : { width: Math.min(WIDTH, width - 16), border: 1 };
+  const fit = Math.min(width, requestedWidth);
+  return { width: fit, border: fit < 202 || width < 218 ? 0 : 1 };
 }

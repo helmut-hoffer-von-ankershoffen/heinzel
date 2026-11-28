@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from heinzel.kernel.install import _uv_locate
+from heinzel.kernel.install import _receipt_overrides as published_receipts
 from heinzel.kernel.install._uv_locate import (
     find_uv,
     missing_uv_message,
@@ -15,10 +15,20 @@ from heinzel.kernel.install._uv_locate import (
     standard_directories,
     with_search_path,
 )
+from heinzel.services.install import _receipt_overrides as receipts
+from heinzel.services.install import _uv_locate
 
 pytestmark = pytest.mark.unit
 
 MINIMAL = "/usr/bin:/bin:/usr/sbin:/sbin"
+
+
+def test_install_facades_keep_callable_identities_and_published_names():
+    for old in (find_uv, missing_uv_message, search_path, standard_directories, with_search_path):
+        assert old is getattr(_uv_locate, old.__name__)
+        assert old.__module__ == "heinzel.kernel.install._uv_locate"
+    assert published_receipts.without_verified_overrides is receipts.without_verified_overrides
+    assert receipts.without_verified_overrides.__module__ == "heinzel.kernel.install._receipt_overrides"
 
 
 def _fake_uv(directory: Path) -> Path:

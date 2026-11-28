@@ -20,7 +20,7 @@ class ThemeSettings(ModuleSettings):
 
     section_title: ClassVar[str | None] = "Theme"  # the heading in Settings
 
-    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"name"})
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"name", "show_team_name"})
 
     name: str = Field(
         default="default",
@@ -31,6 +31,12 @@ class ThemeSettings(ModuleSettings):
             "The selected theme; when unset a plugin may recommend one. Explicit default uses the built-in fallback."
         ),
         json_schema_extra={"x-hidden": True},
+    )
+    show_team_name: bool = Field(
+        default=True,
+        title="Show team name in sidebar",
+        description="Use your team name in the sidebar when one is set. Otherwise use the selected theme's branding.",
+        json_schema_extra={"x-live": True},
     )
 
 
@@ -81,6 +87,9 @@ class ThemeView(BaseModel):
         default_factory=list[ThemeFontView], description="Font files the theme ships, for the web app to load."
     )
     logo: ThemeLogoView | None = Field(default=None, description="The theme's logo; none if it ships none.")
+    show_branding_bar: bool | None = Field(
+        default=None, description="Whether to show the branding row in the expanded sidebar."
+    )
     heinzel: ThemeHeinzel | None = Field(default=None, description="Core avatar colours and decorations.")
     heinzel_assets: dict[str, str] = Field(
         default_factory=dict[str, str], description="Available checked avatar layers as versioned same-origin URLs."

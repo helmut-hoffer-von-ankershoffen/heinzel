@@ -550,23 +550,53 @@ def test_desktop_release_assets_share_the_official_core_attestation():
     assert desktop["steps"][3]["with"] == {"node-version": "24.19.0", "package-manager-cache": False}
     assert desktop["steps"][4]["with"] == {"version": "12.15.0", "run_install": False}
     assert desktop["steps"][5]["run"] == "make desktop-electron-package"
-    swift = desktop["steps"][-2]
-    assert swift["env"] == {"APPLE_APPLICATION_IDENTIFIER_PREFIX": "${{ vars.APPLE_APPLICATION_IDENTIFIER_PREFIX }}"}
-    assert swift["run"] == "make desktop-swift-package"
+    assert not any(step.get("run") == "make desktop-swift-package" for step in desktop["steps"])
+    swift = jobs["swift-developer-id"]
+    assert "swift-developer-id" in publish["needs"]
+    assert "needs.swift-developer-id.result == 'success'" in publish["if"]
     assert "desktop" in publish["needs"]
     assert "needs.desktop.result == 'success'" in publish["if"]
     steps = publish["steps"]
     index = next(i for i, step in enumerate(steps) if step.get("id") == "attest")
-    download, bind, attest = steps[index - 2 : index + 1]
+    download, signed_download, bind, attest = steps[index - 3 : index + 1]
     assert desktop["steps"][-1]["with"]["name"] in download["with"]["name"]
     assert "promoted-desktop-macos-arm64" in download["with"]["name"]
+    assert signed_download["with"]["name"] == swift["steps"][-1]["with"]["name"]
+    assert signed_download["with"]["path"] == "signed-desktop"
     assert bind["if"] == f"github.repository == '{release.REPOSITORY}'"
     assert bind["env"]["SOURCE_COMMIT"] == "${{ steps.source.outputs.commit }}"
-    assert bind["run"] == "make desktop-bind-release-assets"
+    assert bind["run"] == "make desktop-bind-signed-release-assets"
+    signed_recipe = (
+        (ROOT / "Makefile").read_text().split("\ndesktop-bind-signed-release-assets:", 1)[1].split("\n\n", 1)[0]
+    )
+    assert signed_recipe.index('mv -- "signed-desktop/$$archive"') < signed_recipe.index(
+        "$(MAKE) desktop-bind-release-assets"
+    )
     recipe = (ROOT / "Makefile").read_text().split("\ndesktop-bind-release-assets:", 1)[1].split("\n\n", 1)[0]
     assert 'for suffix in "" "-swift"' in recipe
     assert recipe.index("jq -e") < recipe.index('mv -- "$$manifest" "desktop-release/$$archive" dist/')
     assert attest["with"]["subject-path"] == "dist/*"
+
+
+def test_developer_id_signer_waits_for_reviewed_source_and_authorized_artifacts():
+    jobs = yaml.safe_load((ROOT / ".github/workflows/publish.yml").read_text())["jobs"]
+    desktop = jobs["desktop"]
+    guard = desktop["steps"][1]["run"]
+    swift = jobs["swift-developer-id"]
+    assert f"github.repository == '{release.REPOSITORY}'" in swift["if"]
+    assert swift["needs"] == ["promote", "notifier", "desktop"]
+    assert "needs.promote.result == 'success' && needs.promote.outputs.reviewed == github.sha" in swift["if"]
+    assert "needs.promote.outputs.promoted == 'true'" in swift["if"]
+    assert "needs.promote.outputs.promoted == 'false'" in swift["if"]
+    assert "needs.notifier.result == 'success' && needs.desktop.result == 'success'" in swift["if"]
+    assert jobs["promote"]["outputs"]["reviewed"] == "${{ steps.signing-source.outputs.commit }}"
+    assert swift["environment"] == "macos-developer-id"
+    assert swift["runs-on"] == "macos-latest"
+    assert swift["permissions"] == {"contents": "read"}
+    assert swift["steps"][0]["with"] == desktop["steps"][0]["with"]
+    assert swift["steps"][1]["run"] == guard
+    assert swift["steps"][-2]["env"]["HEINZEL_MAC_CERTIFICATE_B64"] == "${{ secrets.HEINZEL_MAC_CERTIFICATE_B64 }}"
+    assert swift["steps"][-2]["run"] == "make desktop-swift-sign-release"
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="the release asset binding recipe runs on Linux")

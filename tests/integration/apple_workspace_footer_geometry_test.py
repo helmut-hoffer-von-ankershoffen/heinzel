@@ -40,3 +40,69 @@ def test_native_footer_rejects_untrusted_or_stale_geometry(tmp_path: Path) -> No
     assert "PASS: version refresh preserves offline cache and rejects superseded workspaces" in result.stdout
     assert "PASS: iCloud sign-in sync defaults on and keeps an explicit off" in result.stdout
     assert "PASS: iCloud sign-in uses a renewable device token" in result.stdout
+
+
+@pytest.fixture(scope="module")
+def workspace_row_probe(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    binary = tmp_path_factory.mktemp("workspace-row") / "probe"
+    subprocess.run(
+        [
+            "xcrun",
+            "swiftc",
+            "-parse-as-library",
+            "-swift-version",
+            "6",
+            "-whole-module-optimization",
+            "apple/App/WorkspaceDirectoryRow.swift",
+            "apple/tests/WorkspaceDirectoryRowTests.swift",
+            "-o",
+            str(binary),
+        ],
+        cwd=ROOT,
+        check=True,
+        timeout=scaled(55),
+    )
+    return binary
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Native row rendering requires SwiftUI and AppKit")
+@pytest.mark.timeout(func_only=True)  # The compiler fixture has its own cold-SDK deadline.
+def test_workspace_versions_follow_the_name_and_unused_actions_release_space(workspace_row_probe: Path) -> None:
+    result = subprocess.run([str(workspace_row_probe)], capture_output=True, text=True, check=False, timeout=scaled(15))
+    assert result.returncode == 0, result.stderr
+    for width in (320, 390, 420):
+        assert f"PASS: width {width} " in result.stdout
+    assert "PASS: rows without an action use the available width" in result.stdout
+
+
+@pytest.fixture(scope="module")
+def workspace_information_probe(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    binary = tmp_path_factory.mktemp("workspace-information") / "probe"
+    subprocess.run(
+        [
+            "xcrun",
+            "swiftc",
+            "-parse-as-library",
+            "-swift-version",
+            "6",
+            "-whole-module-optimization",
+            "apple/App/WorkspaceInformationSurface.swift",
+            "apple/tests/WorkspaceInformationSurfaceTests.swift",
+            "-o",
+            str(binary),
+        ],
+        cwd=ROOT,
+        check=True,
+        timeout=scaled(55),
+    )
+    return binary
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Native information surface requires SwiftUI and AppKit")
+@pytest.mark.timeout(func_only=True)
+def test_information_and_back_preserve_the_same_surface(workspace_information_probe: Path) -> None:
+    result = subprocess.run(
+        [str(workspace_information_probe)], capture_output=True, text=True, check=True, timeout=scaled(15)
+    )
+    assert "PASS: Mac footer stays at bottom center" in result.stdout
+    assert "PASS: information and Back keep the original directory and geometry for both surface sizes" in result.stdout

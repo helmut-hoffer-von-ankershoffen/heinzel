@@ -10,8 +10,8 @@ import { useNativeSurface } from "@/lib/nativeSurface";
 import { refreshName } from "@/lib/refreshFeedback";
 import { PlayerCard } from "./PlayerCard";
 import { PlayerHelp } from "./PlayerHelp";
-import { page } from "./queries";
-import { stop } from "./store";
+import { page, useSoundSetting } from "./queries";
+import { pause, resume, soundState, stop } from "./store";
 import {
   ACCOUNT_SANDBOX,
   accountStream,
@@ -25,6 +25,7 @@ import {
   type StreamView,
 } from "./stream";
 
+type ChromeIntent = { action: string; value?: number; x?: number; y?: number };
 type Level = { gain: number; seconds: number; playing: boolean };
 type GuestState = { status?: string; ready?: boolean; state?: number; error?: boolean };
 type GuestBridge = (request: Record<string, unknown>) => Promise<GuestState>;
@@ -94,10 +95,40 @@ function Player({
   chooseAccount?: (next: boolean) => void;
   retry: () => void;
 }) {
+  const settings = useSoundSetting();
+  const intentHandler = useRef<(intent: ChromeIntent) => void>(() => {});
+  const [chromeIntent, setChromeIntent] = useState<ChromeIntent>();
+  const chromeSurface = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const surface = useRef<HTMLDivElement>(null);
   // In the desktop the YouTube player is a guest on the website session, so a sign-in in the browser counts here.
   const guest = desktop && stream.provider === "youtube" ? guestBridge() : undefined;
+  const subscribe = (
+    window as Window & {
+      heinzelDesktop?: {
+        onPlayerIntent?: (callback: (intent: ChromeIntent) => void) => () => void;
+      };
+    }
+  ).heinzelDesktop?.onPlayerIntent;
+  intentHandler.current = (intent) => {
+    if (intent.action === "play") resume(soundscape.name);
+    else if (intent.action === "pause") pause();
+    else if (intent.action === "volume" && intent.value !== undefined) settings.save("volume", intent.value);
+    else setChromeIntent(intent);
+  };
+  useEffect(() => {
+    if (!guest || !subscribe) return;
+    return subscribe((intent) => intentHandler.current(intent));
+  }, [guest, subscribe]);
+  const chromeBridge = useCallback(
+    async (request: Record<string, unknown>) => {
+      if (!guest) return;
+      if (request.action === "layout") return guest({ ...request, action: "chromeLayout" });
+      if (request.action === "hide") return guest({ action: "chromeHide" });
+    },
+    [guest],
+  );
+  useNativeSurface(chromeSurface, Boolean(guest && subscribe), guest && subscribe ? chromeBridge : undefined);
   const [ready, setReady] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [reloading, setReloading] = useState(false);
@@ -122,16 +153,42 @@ function Player({
     [guest, origin],
   );
   const sawReady = useRef(false);
+  // A quick Pause can reach the desktop poll before it has ever sampled Playing.
+  const providerPlaying = useRef<boolean | null>(null);
+  const pausedInPlayer = useRef(false);
+  const observePlayback = useCallback(
+    (state: unknown) => {
+      if (state === 1) setHasPlayed(true);
+      if (state !== 1 && state !== 2) return;
+      const playing = state === 1;
+      if (providerPlaying.current === playing) return;
+      // A newly opened player can report Paused before the initial Play command.
+      if (!playing && providerPlaying.current === null && !sawReady.current) return;
+      providerPlaying.current = playing;
+      const sound = soundState();
+      if (!sound.started || sound.albumSelected || (sound.soundscape && sound.soundscape !== soundscape.name)) return;
+      if (!playing && sound.playing) {
+        pausedInPlayer.current = true;
+        pause();
+      } else if (playing && pausedInPlayer.current) {
+        pausedInPlayer.current = false;
+        if (!sound.playing) resume(soundscape.name);
+      }
+    },
+    [soundscape.name],
+  );
   const stateRequest = useRef(0);
   const appliedState = useRef(0);
   const openPending = useRef(false);
+  const guestActive = useRef(false);
   const onGuestState = useCallback(
     (next: GuestState) => {
+      if (!guestActive.current) return;
       if (next.status === "unavailable") setGuestUnavailable(true);
       else if (next.status === "loading" || next.status === "ready") setGuestUnavailable(false);
       if (next.status === "unavailable") setHelp(true);
       if (next.error) setHelp(true);
-      if (next.state === 1) setHasPlayed(true);
+      observePlayback(next.state);
       if (next.ready && !sawReady.current) {
         sawReady.current = true;
         // The guest starts silent, like the frame, so the fade decides what is heard.
@@ -139,10 +196,11 @@ function Player({
         setReady(true);
       }
     },
-    [guest],
+    [guest, observePlayback],
   );
   useEffect(() => {
     if (!guest || !src) return;
+    guestActive.current = true;
     openPending.current = true;
     void guest({ action: "open", video: stream.video })
       .then(onGuestState)
@@ -154,6 +212,7 @@ function Player({
         openPending.current = false;
       });
     return () => {
+      guestActive.current = false;
       void guest({ action: "close" }).catch(() => {});
     };
   }, [guest, src, stream.video, onGuestState]);
@@ -198,8 +257,9 @@ function Player({
           : data.info && typeof data.info === "object" && "playerState" in data.info
             ? data.info.playerState
             : undefined;
-      if (state === 1) setHasPlayed(true);
+      observePlayback(state);
       if (data.event !== "onReady" && data.event !== "initialDelivery") return;
+      sawReady.current = true;
       // The frame starts silent so a retry cannot jump to YouTube's own volume.
       if (deviceVolume) command(frame.current, origin, volume.current === 0 ? "mute" : "unMute");
       else command(frame.current, origin, "setVolume", [volume.current]);
@@ -214,7 +274,7 @@ function Player({
       window.removeEventListener("message", onMessage);
       document.removeEventListener("securitypolicyviolation", onViolation);
     };
-  }, [origin, deviceVolume]);
+  }, [origin, deviceVolume, observePlayback]);
 
   useEffect(() => {
     if (!level.playing || hasPlayed || blocked) return;
@@ -231,6 +291,7 @@ function Player({
 
   useEffect(() => {
     if (!ready) return;
+    if (level.playing) pausedInPlayer.current = false;
     const target = Math.round(level.gain * 100);
     // iOS owns media volume; mute and pause still work, so meetings and Pause must not depend on a fade.
     if (deviceVolume) {
@@ -300,7 +361,9 @@ function Player({
   );
   return (
     <PlayerCard
+      chromeIntent={chromeIntent}
       title={soundscape.title}
+      youtube
       watchUrl={desktop ? undefined : stream.watch_url}
       host="YouTube"
       headerAction={guest ? helpPane : undefined}
@@ -351,6 +414,7 @@ function Player({
         )}
         {!guest && helpPane}
       </div>
+      {guest && subscribe && <div ref={chromeSurface} style={{ height: 140 }} />}
       {guestUnavailable && (
         <div role="alert" className="flex items-center gap-2 p-2 text-ui-sm">
           <span>{t("sound.desktopUnavailable")}</span>

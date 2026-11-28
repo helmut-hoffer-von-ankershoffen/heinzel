@@ -1,6 +1,37 @@
 import Foundation
 import UserNotifications
 
+enum WorkspaceAlertAccess {
+    case denied, deliveryDisabled, permissionNeeded, appAllowed, workspaceOff, workspaceOn, unknown
+
+    init(authorization: UNAuthorizationStatus, alerts: UNNotificationSetting,
+         notificationCenter: UNNotificationSetting, workspaceOptIn: Bool?) {
+        switch authorization {
+        case .denied: self = .denied
+        case .notDetermined, .provisional: self = .permissionNeeded
+        case .authorized, .ephemeral:
+            guard alerts == .enabled || notificationCenter == .enabled else {
+                self = .deliveryDisabled
+                return
+            }
+            if let workspaceOptIn {
+                self = workspaceOptIn ? .workspaceOn : .workspaceOff
+            } else {
+                self = .appAllowed
+            }
+        @unknown default: self = .unknown
+        }
+    }
+
+    var bridgeValue: String {
+        switch self {
+        case .denied, .deliveryDisabled: "denied"
+        case .workspaceOn: "on"
+        default: "off"
+        }
+    }
+}
+
 /// Local alerts from the existing notice stream, with independent consent for each connected workspace.
 @MainActor
 final class WorkspaceNotifications: NSObject, UNUserNotificationCenterDelegate {
@@ -11,21 +42,10 @@ final class WorkspaceNotifications: NSObject, UNUserNotificationCenterDelegate {
     private let center = UNUserNotificationCenter.current()
     private let preference = "heinzelNativeNotificationWorkspaces"
     private var authorizing: String?
-    private var requestingStartupAuthorization = false
     private var authorizationCancelled = false
     private var openedRoute: (scope: String, path: String)?
 
     func install() { center.delegate = self }
-
-    func requestStartupAuthorization(whileForeground: () -> Bool) async {
-        guard !requestingStartupAuthorization, authorizing == nil else { return }
-        requestingStartupAuthorization = true
-        defer { requestingStartupAuthorization = false }
-        let settings = await center.notificationSettings()
-        guard settings.authorizationStatus == .notDetermined, !Task.isCancelled, whileForeground() else { return }
-        _ = try? await center.requestAuthorization(options: [.alert])
-        NotificationCenter.default.post(name: Self.changed, object: nil)
-    }
 
     /// Said once, the first time this Mac publishes its sign-in through iCloud Keychain.
     func announceCloudPublish() async {
@@ -47,19 +67,15 @@ final class WorkspaceNotifications: NSObject, UNUserNotificationCenterDelegate {
         set { UserDefaults.standard.set(newValue.sorted(), forKey: preference) }
     }
 
-    func status(for endpoint: Endpoint) async -> String {
+    func alertAccess(for endpoint: Endpoint?) async -> WorkspaceAlertAccess {
         let settings = await center.notificationSettings()
-        switch settings.authorizationStatus {
-        case .denied:
-            return "denied"
-        case .authorized, .ephemeral:
-            guard settings.alertSetting == .enabled || settings.notificationCenterSetting == .enabled else {
-                return "denied"
-            }
-            return enabled.contains(scope(for: endpoint)) ? "on" : "off"
-        default:
-            return "off"
-        }
+        return WorkspaceAlertAccess(authorization: settings.authorizationStatus, alerts: settings.alertSetting,
+                                    notificationCenter: settings.notificationCenterSetting,
+                                    workspaceOptIn: endpoint.map { enabled.contains(scope(for: $0)) })
+    }
+
+    func status(for endpoint: Endpoint) async -> String {
+        await alertAccess(for: endpoint).bridgeValue
     }
 
     func setEnabled(
@@ -73,7 +89,7 @@ final class WorkspaceNotifications: NSObject, UNUserNotificationCenterDelegate {
             NotificationCenter.default.post(name: Self.changed, object: nil)
             return await status(for: endpoint)
         }
-        guard authorizing == nil, !requestingStartupAuthorization, !enabled.contains(key) else {
+        guard authorizing == nil, !enabled.contains(key) else {
             return await status(for: endpoint)
         }
         authorizing = key

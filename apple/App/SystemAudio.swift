@@ -85,6 +85,17 @@ enum TapHealth {
 @MainActor
 final class SystemAudio {
     static let available = true
+    /// The output route used for ordinary playback. This query never opens an input or a process tap.
+    static var defaultPlaybackOutput: AudioDeviceID? {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var device = AudioDeviceID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout.size(ofValue: device))
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil,
+                                         &size, &device) == noErr, device != kAudioObjectUnknown else { return nil }
+        return device
+    }
+
     private var tap = AudioObjectID(kAudioObjectUnknown)
     private var device = AudioObjectID(kAudioObjectUnknown)
     private var io: AudioDeviceIOProcID?

@@ -549,3 +549,19 @@ def test_candidates_expect_the_macos_main_dispatch_job_skipped(event):
     """A candidate never dispatches the coalesced macOS main run; only a push to main does."""
     jobs = yaml.safe_load((ROOT / candidate.WORKFLOW).read_text(encoding="utf-8"))["jobs"]
     assert candidate.expected_jobs(event)[jobs["macos-main"]["name"]] == "skipped"
+
+
+@pytest.mark.parametrize("event", ["pull_request", "workflow_dispatch"])
+def test_postmerge_read_requires_the_same_squash_and_tested_base_and_preserves_open_pr_rules(event):
+    data = evidence(event)
+    squash = "9" * 40
+    data["pr"].update(state="closed", merged=True, merge_commit_sha=squash)
+    with pytest.raises(candidate.CandidateError, match="release PR"):
+        validate(data)
+    expected = candidate.ExpectedCandidate(RUN, PR, HEAD, TREE, merged=(squash, BASE))
+    assert candidate.validate(data, expected, PINS)["source_commit"] == (MERGE if event == "pull_request" else HEAD)
+    with pytest.raises(candidate.CandidateError, match="release base"):
+        candidate.validate(data, candidate.ExpectedCandidate(RUN, PR, HEAD, TREE, merged=(squash, "8" * 40)), PINS)
+    data["pr"]["merge_commit_sha"] = "7" * 40
+    with pytest.raises(candidate.CandidateError, match="release PR"):
+        candidate.validate(data, expected, PINS)

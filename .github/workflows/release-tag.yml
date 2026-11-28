@@ -85,6 +85,9 @@ jobs:
       tag: ${{ needs.tag.outputs.tag }}
     secrets:
       CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
+      HEINZEL_MAC_CERTIFICATE_B64: ${{ secrets.HEINZEL_MAC_CERTIFICATE_B64 }}
+      HEINZEL_MAC_CERTIFICATE_PASSWORD: ${{ secrets.HEINZEL_MAC_CERTIFICATE_PASSWORD }}
+      HEINZEL_MAC_NOTARY_KEY_B64: ${{ secrets.HEINZEL_MAC_NOTARY_KEY_B64 }}
     permissions:
       contents: write
       id-token: write

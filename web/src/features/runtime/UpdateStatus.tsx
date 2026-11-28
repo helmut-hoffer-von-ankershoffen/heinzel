@@ -6,6 +6,7 @@ import type { SchemaUpdatePlan } from "@/api/client";
 import { FooterItem } from "@/components/FooterItem";
 import { PaneAction } from "@/components/PaneActions";
 import { Progress, type ProgressSegment } from "@/components/Progress";
+import { Button } from "@/components/ui/button";
 import { AutoUpdateToggle } from "@/features/runtime/updates/AutoUpdateToggle";
 import { autoLoadInstalledCore } from "@/features/runtime/updates/autoLoad";
 import { checkNow, KEY, useAutoUpdateStatus } from "@/features/runtime/updates/autoUpdateApi";
@@ -20,15 +21,22 @@ import {
   type UpdateAnswers,
   updateDesktopApp,
 } from "@/features/runtime/updates/controller";
+import { desktopRestartTarget, localMacClient, useDesktopCountdown } from "@/features/runtime/updates/desktopCountdown";
 import { PluginUnpin } from "@/features/runtime/updates/PluginUnpin";
 import { UpdatePlanDetails } from "@/features/runtime/updates/UpdatePlanDetails";
 import { describe, partSegments } from "@/features/runtime/updates/updateState";
-import { reloadHeld, workOnScreen } from "@/features/runtime/updates/work";
+import { reloadHeld, saveOpenWork, workOnScreen } from "@/features/runtime/updates/work";
 import { t } from "@/i18n";
-import { type Phase, requestDrivenOperation } from "@/lib/operationRun";
+import {
+  OperationCancelled,
+  type Phase,
+  requestDrivenOperation,
+  startOperation,
+  useOperationRun,
+} from "@/lib/operationRun";
 import { zoneDateTime } from "@/lib/zoneTime";
 
-/** The update as the operation dialog asks for it: the call the person confirms there, after seeing its plan. */
+/** The explicit update action and its progress dialog share the same operation. */
 const updateCall = () => ({
   path: "/system/update",
   method: "POST" as const,
@@ -38,8 +46,12 @@ const updateCall = () => ({
   read_only: false,
 });
 
-/** What the operation dialog hears of an update it asked for: each step, and the answers given there. */
-type Agreed = { report: (phases: Phase[]) => void; answers: UpdateAnswers };
+type ManualUpdate = {
+  report: (phases: Phase[]) => void;
+  desktop: boolean;
+  reviewedToken?: string;
+  showChangedPlan: (plan: SchemaUpdatePlan) => void;
+};
 
 function updateRecoveryState(): "none" | "inspect" | "verify" {
   const receipt = pendingUpdate();
@@ -48,15 +60,19 @@ function updateRecoveryState(): "none" | "inspect" | "verify" {
 
 /** Inspect the pane first; its update button uses the existing installer and verified lifecycle. */
 export function UpdateStatus() {
+  const planQuery = useAutoUpdateStatus();
+  const plan = planQuery.data;
+  const watchDesktop = Boolean(plan?.enabled && localMacClient());
   const query = useQuery({
     queryKey: ["web", "update-status"],
     queryFn: ({ signal }) => readUpdateStatus(signal),
-    refetchInterval: 60_000,
+    refetchInterval: watchDesktop ? 2_000 : 60_000,
+    refetchIntervalInBackground: watchDesktop,
     retry: false,
   });
-  const planQuery = useAutoUpdateStatus();
-  const plan = planQuery.data;
   const queryClient = useQueryClient();
+  const operation = useOperationRun();
+  const updateDialogOpen = operation.stage !== "idle" && operation.call.path === "/system/update";
   const active = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   const [busy, setBusy] = useState(false);
@@ -92,10 +108,15 @@ export function UpdateStatus() {
   const { mutate: runCheck } = check;
   // The desktop app older than this server: the server quits, replaces and reopens it on its own.
   const desktopUpdate = useMutation({
-    mutationFn: () => updateDesktopApp(AbortSignal.timeout(15_000)),
+    mutationFn: (automatic: boolean) => {
+      saveOpenWork();
+      return updateDesktopApp(AbortSignal.timeout(15_000), automatic);
+    },
     onSuccess: () => console.info(JSON.stringify({ event: "web.update.desktop", outcome: "started" })),
     onError: () => console.info(JSON.stringify({ event: "web.update.desktop", outcome: "failed" })),
   });
+  const { mutate: runDesktopUpdate } = desktopUpdate;
+  const restartDesktop = useCallback(() => runDesktopUpdate(true), [runDesktopUpdate]);
   // "Check for Updates…" in the desktop app menu opens this pane and does the same check.
   useEffect(
     () =>
@@ -105,12 +126,18 @@ export function UpdateStatus() {
       }),
     [runCheck],
   );
-  const [planning, setPlanning] = useState(false);
+  const [includeDesktop, setIncludeDesktop] = useState(true);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewPlan, setPreviewPlan] = useState<SchemaUpdatePlan>();
+  const preview = useMutation({
+    mutationFn: () => readUpdatePlan(AbortSignal.timeout(30_000)),
+    onSuccess: setPreviewPlan,
+  });
   /**
    * `installed`: load that already installed core with a verified restart instead of installing anything.
-   * `agreed`: the update the person confirmed in the operation dialog, which hears every step and how it ended.
+   * `manual`: an explicit update whose preparation and result appear in one dialog.
    */
-  const run = useCallback(async (resume: boolean, installed?: string, agreed?: Agreed) => {
+  const run = useCallback(async (resume: boolean, installed?: string, manual?: ManualUpdate) => {
     if (active.current) return;
     const controller = new AbortController();
     active.current = controller;
@@ -118,6 +145,24 @@ export function UpdateStatus() {
     setProblem(null);
     setSteps([]);
     try {
+      let answers: UpdateAnswers | undefined;
+      if (manual) {
+        const reading: Phase = { id: "plan", label: t("updates.planning"), state: "running" };
+        manual.report([reading]);
+        let plan: SchemaUpdatePlan;
+        try {
+          plan = await readUpdatePlan(AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]));
+        } catch (error) {
+          manual.report([{ ...reading, state: "failed" }]);
+          throw new Error(`${t("updates.plan.unread")} ${error instanceof Error ? error.message : ""}`.trim());
+        }
+        if (manual.reviewedToken && plan.token !== manual.reviewedToken) {
+          if (mounted.current) manual.showChangedPlan(plan);
+          throw new OperationCancelled(t("updates.plan.changed"));
+        }
+        answers = { plan: manual.reviewedToken ?? plan.token ?? "", desktop: manual.desktop && plan.desktop === true };
+        manual.report([{ ...reading, state: "done" }]);
+      }
       const onPhase = (phase: string) => {
         if (mounted.current) setPhase(phase);
       };
@@ -133,14 +178,18 @@ export function UpdateStatus() {
               undefined,
               (phases) => {
                 if (mounted.current) setSteps(phases);
-                agreed?.report(phases);
+                manual?.report(phases);
               },
-              agreed?.answers,
+              answers,
             );
       if (mounted.current) {
         setSteps([]);
         setMessage(answer);
         setRecovery(updateRecoveryState());
+        if (manual) {
+          setPreviewPlan(undefined);
+          setPreviewOpen(false);
+        }
       }
       return answer;
     } catch (error) {
@@ -152,7 +201,7 @@ export function UpdateStatus() {
           setRecovery("inspect");
         }
       }
-      if (agreed) throw error; // the dialog that asked shows why, with the steps so far
+      if (manual) throw error; // the same dialog shows why, with the steps so far
     } finally {
       active.current = null;
       if (mounted.current) {
@@ -161,42 +210,28 @@ export function UpdateStatus() {
       }
     }
   }, []);
-  /** The update gesture: read what would change, then ask once in the operation dialog; nothing runs before. */
-  const ask = useCallback(async () => {
-    if (active.current || planning) return;
-    setPlanning(true);
-    setProblem(null);
-    let plan: SchemaUpdatePlan;
-    try {
-      plan = await readUpdatePlan(AbortSignal.timeout(30_000));
-    } catch (error) {
-      // Nobody can agree to a plan they did not see: say why it couldn't be read and offer nothing to confirm.
-      if (mounted.current) {
-        setPlanning(false);
-        setProblem(`${t("updates.plan.unread")} ${error instanceof Error ? error.message : ""}`.trim());
-      }
-      return;
-    }
-    if (!mounted.current) return;
-    setPlanning(false);
-    const answers: UpdateAnswers = { plan: plan.token ?? "", desktop: plan.desktop === true };
-    requestDrivenOperation(updateCall(), {
-      consent: [t("updates.confirm.consent"), t("updates.confirm.pins")],
-      details: (
-        <UpdatePlanDetails
-          plan={plan}
-          onDesktop={(on) => {
-            answers.desktop = on;
-          }}
-        />
-      ),
-      action: t("updates.confirm.action"),
+  const install = () => {
+    if (active.current || preview.isPending) return;
+    const requested = requestDrivenOperation(updateCall(), {
+      consent: [],
+      action: t("updates.action"),
       runningTitle: t("updates.dialogTitle"),
       doneTitle: t("updates.confirm.done"),
       running: t("updates.confirm.running"),
-      run: (report) => run(false, undefined, { report, answers }),
+      run: (report) =>
+        run(false, undefined, {
+          report,
+          desktop: includeDesktop,
+          reviewedToken: previewPlan?.token ?? undefined,
+          showChangedPlan: (plan) => {
+            setPreviewPlan(plan);
+            setPreviewOpen(true);
+          },
+        }),
     });
-  }, [run, planning]);
+    if (requested)
+      void startOperation(() => void queryClient.invalidateQueries({ queryKey: ["web", "update-status"] }));
+  };
   useEffect(() => {
     mounted.current = true;
     const first = new AbortController();
@@ -217,6 +252,23 @@ export function UpdateStatus() {
     };
   }, [run]);
   const status = query.data;
+  const desktopTarget = desktopRestartTarget(status);
+  const countdown = useDesktopCountdown(
+    desktopTarget,
+    !query.isError &&
+      !planQuery.isError &&
+      plan?.enabled === true &&
+      status?.current === plan.version &&
+      plan.phase === "idle" &&
+      !busy &&
+      !updateDialogOpen &&
+      problem === null &&
+      recovery === "none" &&
+      !desktopUpdate.isPending &&
+      !desktopUpdate.isSuccess,
+    status?.idle !== false,
+    restartDesktop,
+  );
   // A newer core is installed but this server still runs the old one (a restart was missed): load it on its own once
   // per version across windows, when the server is idle, nothing is open or running here and no other window acts.
   const installedCore = status?.installed ?? null;
@@ -269,16 +321,21 @@ export function UpdateStatus() {
         : [];
   const installed = status?.installed_at ? new Date(status.installed_at) : null;
   const installedDate = installed && !Number.isNaN(installed.getTime()) ? zoneDateTime(installed) : null;
-  const canUpdate = status?.supported && !busy && !planning && recovery === "none" && !installedCore;
+  const canUpdate = status?.supported && !busy && recovery === "none" && !installedCore;
   const canLoad = installedCore !== null && !busy && recovery === "none";
   const desktop = status?.desktop?.behind ? status.desktop : null;
   const canUpdateDesktop = desktop !== null && !busy && !desktopUpdate.isPending && !desktopUpdate.isSuccess;
-  const label = view.available || desktop ? t("updates.availableLabel") : t("updates.title");
-  return (
+  const manualRestart = Boolean(desktopTarget && countdown.manual && !desktopUpdate.isSuccess);
+  const label = manualRestart
+    ? t("updates.desktopRestartRequired")
+    : view.available || desktop
+      ? t("updates.availableLabel")
+      : t("updates.title");
+  const footer = (
     <FooterItem
       label={label}
       state={view.tone}
-      icon={busy ? LoaderCircle : Download}
+      icon={busy || desktopUpdate.isPending ? LoaderCircle : Download}
       className={
         (view.available || desktop) && !problem ? "animate-pulse text-bad" : view.allCurrent ? "text-ok" : undefined
       }
@@ -298,12 +355,19 @@ export function UpdateStatus() {
             </PaneAction>
           )}
           {canUpdateDesktop && (
-            <PaneAction icon={Download} primary={view.count === 0} onClick={() => desktopUpdate.mutate()}>
-              {t("updates.desktopAction")}
+            <PaneAction
+              icon={manualRestart ? RotateCcw : Download}
+              primary={view.count === 0}
+              onClick={() => {
+                countdown.cancel();
+                runDesktopUpdate(false);
+              }}
+            >
+              {t(manualRestart ? "updates.desktopRestartAction" : "updates.desktopAction")}
             </PaneAction>
           )}
           {canUpdate && (
-            <PaneAction icon={Download} primary={view.count > 0} onClick={() => void ask()}>
+            <PaneAction icon={Download} primary={view.count > 0} disabled={preview.isPending} onClick={install}>
               {view.count > 1
                 ? t("updates.allAction")
                 : view.count === 1
@@ -355,7 +419,11 @@ export function UpdateStatus() {
                 ? t("updates.desktopStarted")
                 : t("updates.desktopBehind", { app: desktop.version ?? "", version: status.current })}
             </p>
-            {!desktopUpdate.isSuccess && <p className="text-xs text-muted-foreground">{t("updates.desktopHow")}</p>}
+            {!desktopUpdate.isSuccess && (
+              <p className="text-xs text-muted-foreground">
+                {t(manualRestart ? "updates.desktopRestartManual" : "updates.desktopHow")}
+              </p>
+            )}
             {desktopUpdate.error && (
               <p role="alert" className="text-bad">
                 {desktopUpdate.error.message}
@@ -363,7 +431,25 @@ export function UpdateStatus() {
             )}
           </div>
         )}
-        {planning && <p role="status">{t("updates.planning")}</p>}
+        {canUpdate && (
+          <details
+            open={previewOpen}
+            onToggle={(event) => {
+              const { open } = event.currentTarget;
+              setPreviewOpen(open);
+              if (open && !preview.isPending && !previewPlan) preview.mutate();
+            }}
+          >
+            <summary className="cursor-pointer">{t("updates.plan.details")}</summary>
+            <p className="mt-1 text-xs text-muted-foreground">{t("updates.confirm.consent")}</p>
+            <p className="text-xs text-muted-foreground">{t("updates.confirm.pins")}</p>
+            {preview.isPending && <p role="status">{t("updates.planning")}</p>}
+            {preview.isError && <p role="alert">{t("updates.plan.unread")}</p>}
+            {previewPlan && (
+              <UpdatePlanDetails plan={previewPlan} desktop={includeDesktop} onDesktop={setIncludeDesktop} />
+            )}
+          </details>
+        )}
         <Progress label={t("updates.progress")} segments={segments} />
         {installedDate && (
           <p className="text-xs text-muted-foreground">{t("updates.installedDate", { date: installedDate })}</p>
@@ -377,5 +463,22 @@ export function UpdateStatus() {
         )}
       </div>
     </FooterItem>
+  );
+  return (
+    <>
+      {countdown.seconds !== null && (
+        <section
+          aria-label={t("updates.desktopRestartTitle")}
+          className="fixed top-16 right-4 z-[calc(var(--layer-modal,60)_+_10)] w-[min(24rem,calc(var(--hz-viewport-width,100vw)_-_2rem))] space-y-2 rounded-xl border border-foreground/20 bg-background p-4 text-sm text-foreground shadow-lg"
+        >
+          <h2 className="font-medium">{t("updates.desktopRestartTitle")}</h2>
+          <p role="timer">{t("updates.desktopRestartCountdown", { seconds: countdown.seconds })}</p>
+          <Button size="sm" variant="outline" onClick={countdown.cancel}>
+            {t("updates.desktopRestartCancel")}
+          </Button>
+        </section>
+      )}
+      {footer}
+    </>
   );
 }

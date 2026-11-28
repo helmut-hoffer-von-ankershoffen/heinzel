@@ -63,6 +63,31 @@ test("player diagnostics report native visibility without video identity", async
   assert.deepEqual(await f.play({ action: "diagnostics" }), { focused: true, visible: null, status: "loading", reason: "unknown" });
 });
 
+test("concurrent opens of the same video share one guest", async () => {
+  const f = fixture();
+  await Promise.all([f.play({ action: "open", video: VIDEO }), f.play({ action: "open", video: VIDEO })]);
+  assert.equal(f.views.length, 1);
+  assert.equal(f.sender.listenerCount("did-start-navigation"), 1);
+  f.player.closeAll();
+  assert.equal(f.sender.listenerCount("did-start-navigation"), 0);
+});
+
+for (const cancel of ["navigation", "close", "quit"]) {
+  test(`pending player open cannot survive ${cancel}`, async () => {
+    const f = fixture();
+    const opening = f.play({ action: "open", video: VIDEO });
+    const rejected = assert.rejects(opening, /closed/);
+    if (cancel === "navigation") f.sender.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
+    else if (cancel === "close") await f.play({ action: "close" });
+    else f.player.closeAll();
+    await rejected;
+    assert.equal(f.views.length, 0);
+    assert.equal(f.sender.listenerCount("did-start-navigation"), 0);
+    assert.equal(f.owner.listenerCount("closed"), 0);
+    f.browser.closeAll();
+  });
+}
+
 test("the player guest is the YouTube embed on the shared website partition, never the product session", async () => {
   const f = fixture();
   const state = await f.play({ action: "open", video: VIDEO });
@@ -306,4 +331,29 @@ test("the player's guest gets spell check only on macOS, where it downloads noth
     await f.play({ action: "open", video: VIDEO });
     assert.equal(f.views[0].webContents.preferences.webPreferences.spellcheck, expected, platform);
   }
+});
+
+test("production player owns local controls without a second media guest", async () => {
+  const f = fixture();
+  const intents = [];
+  f.sender.send = (channel, intent) => intents.push([channel, intent]);
+  await f.play({ action: "open", video: VIDEO });
+  f.views[0].webContents.emit("did-stop-loading");
+  await f.play({ action: "chromeLayout", bounds: { x: 10, y: 220, width: 480, height: 140 } });
+  assert.equal(f.views.length, 2);
+  assert.equal(f.views[0].webContents.preferences.webPreferences.preload, undefined);
+  const controls = f.views[1];
+  assert.equal(controls.webContents.preferences.webPreferences.partition, "player-chrome");
+  assert.equal(controls.getVisible(), true);
+  const event = { sender: controls.webContents, senderFrame: controls.webContents.mainFrame };
+  for (const intent of [{ action: "play" }, { action: "pause" }, { action: "volume", value: 45 },
+    { action: "move", x: 16, y: 0 }, { action: "resize", value: 500 }, { action: "redock" }, { action: "close" }]) {
+    f.player.chromeHandle(event, intent);
+    assert.deepEqual(intents.at(-1), ["hz:player-intent", intent]);
+  }
+  assert.throws(() => f.player.chromeHandle({ sender: f.views[0].webContents }, { action: "play" }));
+  await f.play({ action: "chromeHide" });
+  assert.throws(() => f.player.chromeHandle(event, { action: "play" }));
+  await f.play({ action: "close" });
+  assert.equal(controls.webContents.isDestroyed(), true);
 });

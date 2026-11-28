@@ -6,13 +6,15 @@ import { extractFile, getRawHeader, listPackage, statFile, uncacheAll } from "@e
 
 // Adding a runtime file is an explicit packaging decision, not an automatic inclusion of arbitrary source files.
 export const RUNTIME_FILES = Object.freeze([
+  "album-audio.html", "album-audio.js", "album-catalog.json", "album-scheme.js", "album-transport.js",
+  "player-chrome-preload.cjs", "player-chrome-ui.js", "player-chrome.css", "player-chrome.html", "player-chrome.js",
   "app-menu.js", "browser-agent.js", "browser-bridge.js", "client-identity.js", "connection.js", "identity.js", "instance-lifecycle.js",
   "lifecycle-ipc.js", "main-controller.js", "main-ipc.js", "main-menu.js", "main-picker.js", "main-quit.js",
   "main-service-watch.js", "main-services.js", "main-startup.js", "main-state.js", "main-window.js", "main.js", "media-player.js", "mini-browser-network.js", "mini-browser-policy.js",
   "mini-browser.js", "native-permissions.js", "owned-cli.js", "preload.cjs", "public-media.js", "reattach.js",
-  "settings-store.js",
+  "settings-store.js", "sibling-stack.js",
   "shutdown.js", "signal-quit.js", "ui-navigation.js", "window-options.js",
-  "workspace-audio.js", "workspace-brand.svg",
+  "workspace-attachment.js", "workspace-audio.js", "workspace-facts.js", "workspace-monitor.js", "workspace-brand.svg",
   "workspace-controller.js", "workspace-directory.js", "workspace-picker-preload.cjs", "workspace-picker.css",
   "workspace-picker.html", "workspace-picker.js", "workspace-remote-preload.cjs",
 ]);

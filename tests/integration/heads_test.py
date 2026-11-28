@@ -1,19 +1,22 @@
 """In-process parity across the CLI, MCP, REST and authenticated web heads."""
 
-import json
-from typing import Annotated, Literal
+from typing import Annotated
 
 import anyio
 import pytest
 from fastapi.testclient import TestClient
 from mcp import Client
 from pydantic import BaseModel, Field
-from typer.testing import CliRunner
 
-from heinzel import Check, HeinzelError, Kernel, Module, Status
-from heinzel.heads import api, cli, mcp, web
+from heinzel import Check, HeinzelError, Module, ModuleRecord, Status
+from heinzel.heads import api, mcp
+from heinzel.kernel import Origin
+from heinzel.ports import ProcessRunner
+from heinzel.testing import ScriptedProcessRunner, scaled
+from heinzel.testing.heads import HEADS, FakeKernel, OperationNotExposedError, operate
 
 pytestmark = pytest.mark.integration
+ORIGIN = Origin("heinzel-test", "9.9.9", builtin=False)
 
 
 class Greeting(BaseModel):
@@ -47,36 +50,49 @@ def kernel(make_kernel):
     return make_kernel(builtins=True, example=example())
 
 
-@pytest.mark.parametrize("head", ["cli", "api", "mcp", "web"])
+@pytest.mark.parametrize("head", HEADS)
 @pytest.mark.parametrize("arguments", [{}, {"name": "Ada"}], ids=["default", "explicit"])
-def test_typed_result_across_real_heads(
-    kernel: Kernel, head: Literal["cli", "api", "mcp", "web"], arguments: dict[str, str]
-) -> None:
+def test_typed_result_across_real_heads(kernel, head, arguments):
     expected = {"text": f"Hello, {arguments.get('name', 'world')}!"}
-    if head == "cli":
-        options = [part for key, value in arguments.items() for part in (f"--{key}", value)]
-        result = CliRunner().invoke(cli.build(kernel), ["example", "greet", *options, "--json"])
-        assert result.exit_code == 0, result.output
-        assert json.loads(result.stdout) == expected
-    elif head == "mcp":
+    result = operate(head, kernel, "example.greet", **arguments)
+    assert result.status == (200 if head in {"api", "web"} else 0), result.detail
+    assert result.error_kind is None, result.detail
+    assert result.payload == expected
 
-        async def scenario() -> None:
-            async with Client(mcp.build(kernel)) as client:
-                result = await client.call_tool("example_greet", arguments)
-                assert not result.is_error, result.content
-                assert result.structured_content == expected
 
-        anyio.run(scenario)
-    else:
-        if head == "web":
-            token = "head-parity-session"
-            client = TestClient(web.build(kernel, port=None, token=token, static=None), base_url="http://localhost")
-            response = client.get("/api/example/greet", params=arguments, headers={"Authorization": f"Bearer {token}"})
-        else:
-            client = TestClient(api.build(kernel), base_url="http://localhost")
-            response = client.get("/example/greet", params=arguments)
-        assert response.status_code == 200, response.text
-        assert response.json() == expected
+@pytest.mark.parametrize("head", HEADS)
+def test_declared_process_fake_is_used_by_every_head(settings, make_kernel, head):
+    module = Module("probe", "An isolated process call.")
+
+    @module.operation
+    def echo(runner: ProcessRunner, text: str, upper: bool = False) -> Greeting:
+        """Call an injected process runner and return the scripted text."""
+        result = runner.run(("synthetic-probe", text.upper() if upper else text), timeout=scaled(1))
+        return Greeting(text=result.stdout)
+
+    fake_runner, real_runner = [
+        ScriptedProcessRunner().on("synthetic-probe", "ADA", stdout="fixture response") for _ in range(2)
+    ]
+    fake = FakeKernel(
+        settings=settings, records=[ModuleRecord("probe", module, ORIGIN)], services={ProcessRunner: fake_runner}
+    )
+    real = make_kernel(builtins=True, probe=module)
+    real.bind(ProcessRunner, real_runner)
+    outcomes = []
+    for kernel, runner in ((fake, fake_runner), (real, real_runner)):
+        result = operate(head, kernel, "probe.echo", text="Ada", upper=True)
+        assert result.status == (200 if head in {"api", "web"} else 0), result.detail
+        assert result.error_kind is None, result.detail
+        assert runner.calls == [("synthetic-probe", "ADA")]
+        outcomes.append(result.payload)
+    assert outcomes == [{"text": "fixture response"}] * 2
+
+
+@pytest.mark.parametrize("head", HEADS[1:])
+def test_harness_refuses_operations_absent_from_the_head(settings, head):
+    kernel = FakeKernel(settings=settings, records=[ModuleRecord("example", example(), ORIGIN)])
+    with pytest.raises(OperationNotExposedError, match=r"example\.wizard"):
+        operate(head, kernel, "example.wizard")
 
 
 def test_mcp_tools(kernel):

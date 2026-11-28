@@ -118,7 +118,8 @@ afterEach(() => {
 
 const speaker = (name: RegExp) => screen.findByRole("button", { name });
 const openSoundChoices = async (user: ReturnType<typeof userEvent.setup>) => {
-  await user.click(await speaker(/^Choose a soundscape$/));
+  (await speaker(/^Choose a soundscape$/)).focus();
+  await user.keyboard("{ArrowDown}");
   return screen.findByRole("dialog", { name: "Sound" });
 };
 const playSound = async (user: ReturnType<typeof userEvent.setup>, title: string) => {
@@ -220,7 +221,8 @@ describe("Sound", () => {
     await waitFor(() =>
       expect(api.calls.some((call) => call.url.includes("/sound-assets/rain/layer-0.ogg"))).toBe(true),
     );
-    expect(screen.getByRole("dialog", { name: "Sound" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Sound" })).toBeNull();
+    await openSoundChoices(user);
     expect(soundState()).toMatchObject({ playing: true, started: true, soundscape: "rain", problem: null });
     expect(contexts[0]?.close).toHaveBeenCalledOnce();
     expect(contexts).toHaveLength(2);
@@ -258,14 +260,15 @@ describe("Sound", () => {
       const user = userEvent.setup();
       renderAt("/");
       await user.click(await speaker(/^Choose a soundscape$/));
-      const dialog = await screen.findByRole("dialog", { name: "Sound" });
+      let dialog = await screen.findByRole("dialog", { name: "Sound" });
       expect(within(dialog).getByRole("radio", { name: /^Rain/ })).toHaveAttribute("aria-checked", "true");
       await user.click(
         within(dialog).getByRole("radio", { name: name === "fixture-radio" ? /^Fixture radio/ : /^Rain/ }),
       );
       await waitFor(() => expect(calls.some((call) => call.url.includes(`/system/sound/use?name=${name}`))).toBe(true));
-      // The picker stays open. Rain plays at once; the stream's host needs another page first, which plays it after.
-      expect(screen.getByRole("dialog", { name: "Sound" })).toBeInTheDocument();
+      // Selection closes the picker. Rain plays at once; the stream's host needs another page first, which plays it after.
+      expect(screen.queryByRole("dialog", { name: "Sound" })).toBeNull();
+      dialog = await openSoundChoices(user);
       if (name === "rain") expect(soundState()).toMatchObject({ playing: true, soundscape: "rain" });
       else {
         await waitFor(() => expect(page.reload).toHaveBeenCalled());
@@ -417,22 +420,25 @@ describe("Sound", () => {
     await waitFor(() =>
       expect(calls.some((call) => call.url.includes("/system/sound/use?name=fixture-radio"))).toBe(true),
     );
-    expect(screen.getByRole("dialog", { name: "Sound" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Sound" })).toBeNull();
+    await openSoundChoices(user);
   });
 
-  it("a pick plays at once, in the click, and keeps the picker open and the keyboard focus on the pick", async () => {
+  it("a pick plays at once, closes the picker and restores keyboard focus", async () => {
     soundApi("off", "rain");
     serveLayers();
     const { Context, contexts } = fakeAudio();
     vi.stubGlobal("AudioContext", Context);
     const user = userEvent.setup();
     renderAt("/");
-    const dialog = await openSoundChoices(user);
-    const rainChoice = within(dialog).getByRole("radio", { name: /^Rain/ });
+    let dialog = await openSoundChoices(user);
+    let rainChoice = within(dialog).getByRole("radio", { name: /^Rain/ });
     await user.click(rainChoice);
     expect(soundState()).toMatchObject({ playing: true, started: true, soundscape: "rain" }); // before the answer
-    expect(screen.getByRole("dialog", { name: "Sound" })).toBeInTheDocument();
-    expect(rainChoice).toHaveFocus();
+    expect(screen.queryByRole("dialog", { name: "Sound" })).toBeNull();
+    expect(await speaker(/^Choose a soundscape$/)).toHaveFocus();
+    dialog = await openSoundChoices(user);
+    rainChoice = within(dialog).getByRole("radio", { name: /^Rain/ });
     expect(within(dialog).getByRole("button", { name: "Pause Rain" })).toBeInTheDocument();
     await waitFor(() => expect(contexts).toHaveLength(1));
     expect(speakerIcon()).toBe("volume-2");
@@ -654,6 +660,51 @@ describe("a layered soundscape", () => {
 });
 
 describe("a stream's fades", () => {
+  const surfaces = ["iframe", "desktop", "desktop before first playing poll"];
+  it.each(surfaces)("syncs the footer speaker with YouTube controls in the %s", async (surface) => {
+    let state = surface === "desktop before first playing poll" ? 5 : 1;
+    if (surface !== "iframe") {
+      vi.stubGlobal("heinzelDesktop", {
+        lifecycle: vi.fn(),
+        player: vi.fn(async () => ({ status: "ready", ready: true, state })),
+      });
+    }
+    try {
+      soundApi("fixture-radio");
+      const user = userEvent.setup();
+      renderAt("/");
+      await playSound(user, "Fixture radio");
+      const frame = surface === "iframe" ? await screen.findByTitle<HTMLIFrameElement>("Fixture radio player") : null;
+      const report = (next: number) => {
+        state = next;
+        if (frame) {
+          act(() => {
+            window.dispatchEvent(
+              new MessageEvent("message", {
+                data: { event: "infoDelivery", info: { playerState: next } },
+                origin: ORIGIN,
+                source: frame.contentWindow,
+              }),
+            );
+          });
+        }
+      };
+      if (frame) report(1);
+      else await screen.findByRole("img", { name: "Fixture radio player" });
+      expect(speakerIcon()).toBe("volume-2");
+      report(2);
+      await waitFor(() => expect(speakerIcon()).toBe("volume-x"));
+      report(1);
+      await waitFor(() => expect(speakerIcon()).toBe("volume-2"));
+      await user.click(screen.getByRole("button", { name: "Pause Fixture radio" }));
+      report(2);
+      report(1);
+      expect(speakerIcon()).toBe("volume-x");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("leaves iPhone volume to the device even when saved volume is zero, and mutes while recording voice", async () => {
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone) AppleWebKit/605.1.15");
     mockApi({ ...shell, "/api/system/sound/list": soundList("fixture-radio", { volume: 0 }) });

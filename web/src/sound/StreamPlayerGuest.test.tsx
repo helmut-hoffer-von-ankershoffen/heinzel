@@ -1,9 +1,19 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { act, fireEvent, render as renderBare, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaSoundscapeView } from "@/api/client";
+import { queryClient } from "@/app/providers";
 import { registerSlot, resetDock, setDocked } from "./dock";
 import { guestRequest, StreamPlayer } from "./StreamPlayer";
 import { resetSound } from "./store";
+
+function render(element: ReactElement) {
+  const client = queryClient();
+  return renderBare(element, {
+    wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+  });
+}
 
 const ORIGIN = "https://www.youtube-nocookie.com";
 const stream = {
@@ -40,6 +50,13 @@ afterEach(() => {
 });
 
 describe("desktop player guest", () => {
+  it("resizes a floating player when the sidebar has no slot", () => {
+    render(<StreamPlayer soundscape={soundscape} stream={stream} level={{ gain: 0.5, seconds: 0, playing: true }} />);
+    const slider = screen.getByRole("slider", { name: "Player width" });
+    fireEvent.change(slider, { target: { value: "371" } });
+    expect(slider.closest("section")).toHaveStyle({ width: "371px" });
+  });
+
   it.each([false, true])(
     "keeps the sub-200 floating provider and fallback keyboard reachable (guest=%s)",
     async (native) => {

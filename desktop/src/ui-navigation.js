@@ -290,18 +290,18 @@ export function guardUiNavigation(contents, connection, openExternal, options = 
 }
 
 /** Do not open or show a product window after shutdown began, including across asynchronous startup. */
-export async function openProductUi({ connection, lifecycle, createWindow, prepareWindow, cancelled,
+export async function openProductUi({ connection, lifecycle, createWindow, prepareWindow, cancelled, verifyRenderer = async () => {},
   loadTimeoutMs = 15000, schedule = setTimeout, unschedule = clearTimeout }) {
-  await lifecycle(connection);
+  const server = await lifecycle(connection);
   if (cancelled()) throw new Error("Desktop startup was cancelled.");
   const window = await createWindow();
   try {
     if (cancelled()) throw new Error("Desktop startup was cancelled.");
-    prepareWindow(window);
+    prepareWindow(window, server);
     let timer;
     try {
       await Promise.race([
-        window.loadURL(authenticatedUiUrl(connection)),
+        window.loadURL(authenticatedUiUrl(connection)).then(() => verifyRenderer(window, connection)),
         new Promise((_, reject) => { timer = schedule(() => {
           reject(Object.assign(new Error("Workspace loading timed out."), { name: "TimeoutError" }));
         }, loadTimeoutMs); }),

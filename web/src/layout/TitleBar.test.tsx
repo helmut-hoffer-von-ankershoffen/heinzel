@@ -1,7 +1,7 @@
-import { act, screen, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import { everyday, shell, theme, themeList } from "@/test/fixtures";
+import { acmeTheme, config, everyday, shell, theme, themeList } from "@/test/fixtures";
 import { expectAccessible, mockApi } from "@/test/render";
 import { renderAt } from "@/test/renderApp";
 
@@ -23,11 +23,31 @@ function desktop() {
   return (full: boolean) => act(() => relay?.(full));
 }
 
-function api() {
+function brandedTheme(name: string, title: string) {
+  return theme({
+    name,
+    title,
+    plugin: name === "heinzelmaennchen" ? "heinzel-theme" : null,
+    logo: {
+      alt: title,
+      light: `/theme-assets/${name}/light.svg`,
+      dark: `/theme-assets/${name}/dark.svg`,
+      mark: `/theme-assets/${name}/mark.svg`,
+      height: "24px",
+    },
+  });
+}
+
+function api(selected = "default") {
   mockApi({
     ...shell,
     "/api/system/expert": everyday,
-    "/api/system/theme/list": themeList("default", [theme()]),
+    "/api/system/theme/list": themeList(selected, [
+      theme(),
+      acmeTheme,
+      brandedTheme("heinzelmaennchen", "Heinzelmännchen"),
+      brandedTheme("soundflake", "Soundflake"),
+    ]),
   });
 }
 
@@ -41,45 +61,102 @@ describe("Integrated title bar", () => {
     api();
     renderAt("/doctor");
     const navigation = screen.getByRole("complementary", { name: "Main" });
-    await within(navigation).findByTestId("heinzel-wordmark");
+    await within(navigation).findByRole("link", { name: "Today" });
     expect(root).not.toHaveAttribute("data-desktop-titlebar");
     expect(variable("--titlebar-height")).toBe("0px");
     expect(variable("--titlebar-inset-left")).toBe("0px");
     expect(navigation.querySelector("[data-titlebar]")).toBeNull();
   });
 
-  it("puts the toggle, Home, Bell and Search in the desktop row after the lights, the lockup below", async () => {
-    const fullscreen = desktop();
-    api();
-    const user = userEvent.setup();
+  it.each(["default", "heinzelmaennchen"])(
+    "retains the native controls and omits the %s brand row",
+    async (selected) => {
+      const fullscreen = desktop();
+      api(selected);
+      const user = userEvent.setup();
+      renderAt("/doctor");
+      const navigation = screen.getByRole("complementary", { name: "Main" });
+      await within(navigation).findByRole("link", { name: "Heinzelmännchen" });
+      if (selected === "heinzelmaennchen") await waitFor(() => expect(variable("--radius-lg")).toBe("0.5rem"));
+      expect(root).toHaveAttribute("data-desktop-titlebar");
+      expect(variable("--titlebar-height")).toBe("44px");
+      expect(variable("--titlebar-inset-left")).toBe("80px");
+      expect(variable("--titlebar-main-start")).toBe("0px");
+      const row = navigation.querySelector<HTMLElement>("[data-titlebar]");
+      expect(row).not.toBeNull();
+      const controls = Array.from((row as HTMLElement).querySelectorAll("a, button"), (element) =>
+        element.getAttribute("aria-label"),
+      );
+      expect(controls).toEqual(["Collapse navigation", "Today", "Notifications", "Search"]);
+      expect(within(navigation).queryByTestId("heinzel-wordmark")).toBeNull();
+      expect(row?.nextElementSibling).toBe(navigation.querySelector("nav"));
+      await expectAccessible(navigation);
+      // Full screen hides the lights: their inset goes back to the row.
+      fullscreen(true);
+      expect(variable("--titlebar-inset-left")).toBe("0px");
+      fullscreen(false);
+      expect(variable("--titlebar-inset-left")).toBe("80px");
+      // Collapsed: the expand button stays in the row after the lights; the main header starts after it.
+      await user.click(within(row as HTMLElement).getByRole("button", { name: "Collapse navigation" }));
+      const railRow = navigation.querySelector<HTMLElement>("[data-titlebar]");
+      expect(within(railRow as HTMLElement).getByRole("button", { name: "Expand navigation" })).toBeInTheDocument();
+      expect(variable("--titlebar-main-start")).toBe("64px");
+      expect(within(navigation).getByRole("link", { name: "Today" })).toBeInTheDocument();
+    },
+  );
+
+  it.each([
+    ["acme", "Acme"],
+    ["soundflake", "Soundflake"],
+  ])("retains the %s home link below the native title bar", async (selected, alt) => {
+    desktop();
+    api(selected);
     renderAt("/doctor");
     const navigation = screen.getByRole("complementary", { name: "Main" });
-    const lockup = await within(navigation).findByTestId("heinzel-wordmark");
-    expect(root).toHaveAttribute("data-desktop-titlebar");
-    expect(variable("--titlebar-height")).toBe("44px");
-    expect(variable("--titlebar-inset-left")).toBe("80px");
-    expect(variable("--titlebar-main-start")).toBe("0px");
-    const row = navigation.querySelector<HTMLElement>("[data-titlebar]");
-    expect(row).not.toBeNull();
-    const controls = Array.from((row as HTMLElement).querySelectorAll("a, button"), (element) =>
-      element.getAttribute("aria-label"),
-    );
-    expect(controls).toEqual(["Collapse navigation", "Today", "Notifications", "Search"]);
-    // The lockup is the next line, outside the row, still the way home.
-    expect(row).not.toContainElement(lockup);
-    expect((row as HTMLElement).compareDocumentPosition(lockup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(lockup.closest("a")).toHaveAttribute("href", "/");
-    await expectAccessible(navigation);
-    // Full screen hides the lights: their inset goes back to the row.
-    fullscreen(true);
-    expect(variable("--titlebar-inset-left")).toBe("0px");
-    fullscreen(false);
-    expect(variable("--titlebar-inset-left")).toBe("80px");
-    // Collapsed: the expand button stays in the row after the lights; the main header starts after it.
-    await user.click(within(row as HTMLElement).getByRole("button", { name: "Collapse navigation" }));
-    const railRow = navigation.querySelector<HTMLElement>("[data-titlebar]");
-    expect(within(railRow as HTMLElement).getByRole("button", { name: "Expand navigation" })).toBeInTheDocument();
-    expect(variable("--titlebar-main-start")).toBe("64px");
-    expect(within(navigation).getByRole("link", { name: "Today" })).toBeInTheDocument();
+    const logo = await within(navigation).findByRole("img", { name: alt });
+    const brand = logo.closest("a");
+    expect(brand).toHaveAccessibleName("Heinzelmännchen home");
+    expect(brand).toHaveAttribute("href", "/");
+    expect(navigation.querySelector("[data-titlebar]")?.nextElementSibling).toContainElement(brand);
+  });
+
+  it.each([
+    ["default", true, "Test Team"],
+    ["default", false, null],
+    ["acme", true, "Test Team"],
+    ["acme", false, "Acme"],
+    ["sf", true, "Test Team"],
+    ["sf", false, "Soundflake"],
+    ["heinzelmaennchen", true, "Test Team"],
+    ["heinzelmaennchen", false, null],
+    ["quiet", false, null],
+  ])("uses the team-name preference and the %s theme fallback (%s)", async (selected, enabled, expected) => {
+    desktop();
+    const pluginTheme = {
+      ...acmeTheme,
+      name: selected,
+      plugin: selected === "heinzelmaennchen" ? "heinzel-theme" : acmeTheme.plugin,
+      logo: acmeTheme.logo ? { ...acmeTheme.logo, alt: selected === "sf" ? "Soundflake" : "Acme" } : null,
+      ...(selected === "quiet" ? { show_branding_bar: false } : {}),
+    };
+    mockApi({
+      ...shell,
+      "/api/system/theme/list": themeList(selected, [theme(), ...(selected === "default" ? [] : [pluginTheme])]),
+      "/api/system/config/show": {
+        ...config,
+        settings: [
+          { section: "team", key: "name", value: "Test Team" },
+          ...(!enabled ? [{ section: "system.theme", key: "show_team_name", value: false }] : []),
+        ],
+      },
+    });
+    renderAt("/doctor");
+    const navigation = screen.getByRole("complementary", { name: "Main" });
+    await within(navigation).findByRole("link", { name: "Heinzelmännchen" });
+    const row = navigation.querySelector("[data-titlebar]")?.nextElementSibling;
+    if (expected === "Test Team")
+      expect(row).toContainElement(await within(navigation).findByRole("link", { name: expected }));
+    else if (expected) expect(row).toContainElement(await within(navigation).findByRole("img", { name: expected }));
+    else expect(row).toBe(navigation.querySelector("nav"));
   });
 });

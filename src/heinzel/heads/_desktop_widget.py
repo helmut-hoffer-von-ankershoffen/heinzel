@@ -138,19 +138,36 @@ def _targets(native: Native, bundle: Path, expected: CodeIdentity) -> tuple[Proc
     return tuple(targets)
 
 
-def _await_exit(native: Native, bundle: Path, targets: tuple[ProcessIdentity, ...]) -> bool:
-    deadline = time.monotonic() + _TIMEOUT
+def _await_exit(native: Native, bundle: Path, targets: tuple[ProcessIdentity, ...], deadline: float) -> bool | None:
+    """Return None only for a separately launched replacement that can be verified afresh."""
     original = {process.pid: process for process in targets}
     while True:
         remaining = [row for row in inventory() if uses(row, bundle)]
         if not remaining:
             return True
-        # A replacement generation or another executable is never signaled again.
-        if any(row.pid not in original or native.process(row.pid) != original[row.pid] for row in remaining):
+        if any(row.pid in original and native.process(row.pid) != original[row.pid] for row in remaining):
             return False
         if time.monotonic() >= deadline:
             return False
+        if all(row.pid not in original for row in remaining):
+            return None
         time.sleep(0.05)
+
+
+def _request_widget_exits(
+    native: Native, bundle: Path, expected: CodeIdentity, targets: tuple[ProcessIdentity, ...]
+) -> bool:
+    if _widget_identity(native, bundle) != expected:
+        return False
+    if any(
+        native.process(process.pid) != process
+        or native.executable(process.pid)
+        != ExecutableIdentity(process.pid, bundle / WIDGET_EXECUTABLE, process.unique_id, process.version)
+        or native.running(process) != expected
+        for process in targets
+    ):
+        return False
+    return all(native.request_exit(process) for process in targets)
 
 
 def quiesce(bundle: Path) -> bool:
@@ -158,23 +175,22 @@ def quiesce(bundle: Path) -> bool:
     try:
         native = Native()
         expected = _widget_identity(native, bundle)
-        targets = _targets(native, bundle, expected)
-        # Revalidate the complete set and static identity before the first signal.
-        if _widget_identity(native, bundle) != expected:
-            return False
-        if any(
-            native.process(process.pid) != process
-            or native.executable(process.pid)
-            != ExecutableIdentity(process.pid, bundle / WIDGET_EXECUTABLE, process.unique_id, process.version)
-            or native.running(process) != expected
-            for process in targets
-        ):
-            return False
-        if not all(native.request_exit(process) for process in targets):
-            return False
-        return _await_exit(native, bundle, targets)
+        deadline = time.monotonic() + _TIMEOUT
+        signaled: set[int] = set()
+        # WidgetKit can replace the just-stopped extension. Allow one separately verified handoff.
+        for _attempt in range(2):
+            targets = _targets(native, bundle, expected)
+            if any(target.pid in signaled for target in targets):
+                return False
+            if not _request_widget_exits(native, bundle, expected, targets):
+                return False
+            signaled.update(target.pid for target in targets)
+            result = _await_exit(native, bundle, targets, deadline)
+            if result is not None:
+                return result
     except _ERRORS:
         return False
+    return False
 
 
 def retired_in_use(retired: Path, public: Path) -> bool:

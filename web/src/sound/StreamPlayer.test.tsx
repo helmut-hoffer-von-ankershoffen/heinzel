@@ -1,11 +1,21 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { act, fireEvent, render as renderBare, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaSoundscapeView } from "@/api/client";
+import { queryClient } from "@/app/providers";
 import { expectPaneStructure } from "@/test/pane";
 import { StreamPlayer } from "./StreamPlayer";
 import { resetSound, soundState, toggle } from "./store";
 import { rememberYouTubeAccount } from "./stream";
+
+function render(element: ReactElement) {
+  const client = queryClient();
+  return renderBare(element, {
+    wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+  });
+}
 
 const ORIGIN = "https://www.youtube-nocookie.com";
 const stream = {
@@ -248,7 +258,7 @@ describe("stream recovery", () => {
 });
 
 describe("video link placement", () => {
-  it("retains the header link in a browser and no bottom row", () => {
+  it("keeps the browser link in the header and only the width control below the video", () => {
     mount();
     const link = screen.getByRole("link", { name: "Open on YouTube" });
     const card = screen.getByRole("region", { name: "FM player" });
@@ -259,11 +269,12 @@ describe("video link placement", () => {
     expect(link).toHaveAttribute("href", stream.watch_url);
     expect(link).toHaveAttribute("title", "Open on YouTube");
     expect(link.textContent?.trim()).toBe("");
-    // The wider-view wrapper keeps the header and video together without adding controls below the video.
     const video = player().parentElement as HTMLElement;
     expect(card.lastElementChild).toContainElement(video);
     expect(header?.nextElementSibling).toBe(video);
-    expect(video.nextElementSibling).toBeNull();
+    const width = screen.getByRole("slider", { name: "Player width" });
+    expect(video.nextElementSibling).toContainElement(width);
+    expect(video.nextElementSibling?.nextElementSibling).toBeNull();
     expect(card.querySelector("[data-pane-actions]")).toBeNull();
     expect(
       [...card.querySelectorAll("button, a[href]")].every(

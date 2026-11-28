@@ -1,0 +1,34 @@
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("./assets/paper/source-serif-4.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+}
+
+html[data-paper-theme] {
+  --paper-fibres: url("./assets/paper/fibres.png");
+  --paper-wash:
+    radial-gradient(ellipse at 0 100%, #98652a19, transparent 54%),
+    radial-gradient(ellipse at 100% 0, #c28b4233, transparent 62%);
+  --paper-heading-impression: 0 -1px 0 #4f32185c, 0 1px 0 #fffaf1;
+}
+
+html.dark[data-paper-theme] {
+  --paper-wash:
+    radial-gradient(ellipse at 0 100%, #eab77312, transparent 54%),
+    radial-gradient(ellipse at 100% 0, #ddaa681f, transparent 62%);
+  --paper-heading-impression: 0 -1px 0 #120e09, 0 1px 0 #f4cd8e60;
+}
+
+html[data-paper-theme] :is([data-widget], .bg-card, [class~="bg-card/40"], .bg-sidebar, .bg-popover) {
+  background-image: var(--paper-fibres), var(--paper-wash);
+}
+
+html[data-paper-theme] [data-widget] {
+  box-shadow: 0 1px 0 var(--color-border);
+}
+
+html[data-paper-theme] :is(main, [data-pane], [data-widget]) :is(h1, h2, h3):not(.sr-only) {
+  text-shadow: var(--paper-heading-impression);
+}

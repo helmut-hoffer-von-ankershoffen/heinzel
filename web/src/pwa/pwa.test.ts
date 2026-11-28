@@ -37,9 +37,9 @@ describe("pairing", () => {
 
   it("drops a device token the server refused, and forgets it on request", async () => {
     localStorage.setItem(DEVICE_KEY, "hzd_old");
-    dropRefusedDevice(200, "hzd_old");
+    await dropRefusedDevice(200, "hzd_old");
     expect(deviceToken()).toBe("hzd_old");
-    dropRefusedDevice(401, "hzd_old");
+    await dropRefusedDevice(401, "hzd_old", async () => new Response(null, { status: 401 }));
     expect(deviceToken()).toBeNull();
     localStorage.setItem(DEVICE_KEY, "hzd_mine");
     const fetcher = vi.fn(async () => Response.json({ revoked: ["ab12"] }));

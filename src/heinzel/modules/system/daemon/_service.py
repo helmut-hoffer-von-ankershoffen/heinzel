@@ -866,6 +866,7 @@ class DaemonService(_Quiescence, _HandoverRequest, _Removal):
         if previous.pid is not None:
             msg = "A daemon tick is still running; no service or files were removed."
             raise HeinzelError(msg)
+        history = self._capture_uninstall_history(before)
         phases = Phases(
             self._kernel.resolve(Progress),
             [("unload", "Stopping the owned service"), ("remove", "Removing the owned service definition")],
@@ -892,6 +893,7 @@ class DaemonService(_Quiescence, _HandoverRequest, _Removal):
                 raise HeinzelError(msg)
         removed: list[Path] = []
         with phases.step("remove", "Removing the owned service definition"):
+            self._archive_uninstall_history(history, token)
             removed = self._remove_install_files(before)
             if self._platform == "linux":
                 command = ["/usr/bin/systemctl", "--user", "daemon-reload"]
@@ -908,21 +910,6 @@ class DaemonService(_Quiescence, _HandoverRequest, _Removal):
         pending.unlink()
         fsync_dir(pending.parent)
         return Uninstalled(removed=removed, commands=commands)
-
-    def _remove_install_files(self, before: dict[Path, bytes | None]) -> list[Path]:
-        removed: list[Path] = []
-        expected = dict(before)
-        for path, payload in before.items():
-            if self._capture_install_files() != expected:
-                msg = "The owned daemon files changed during removal; explicit recovery is required."
-                raise HeinzelError(msg)
-            if payload is not None:
-                path.unlink()
-                fsync_dir(path.parent)
-                if path.name != "install.json":
-                    removed.append(path)
-            expected[path] = None
-        return removed
 
     # Inspecting ------------------------------------------------------------------------------------------------------
 

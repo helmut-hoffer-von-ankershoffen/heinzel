@@ -1,12 +1,15 @@
 // Test-only bootstrap: isolate Electron before its single-instance lock and observe only owned child metadata.
-import { app, dialog, shell } from "electron";
+import { app, dialog, protocol, shell } from "electron";
 import childProcess from "node:child_process";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
+import { registerAlbumScheme } from "../src/album-scheme.js";
 
 const root = process.env.HZ_NATIVE_TEST_ROOT;
 if (!root) throw new Error("The isolated native test directory is required.");
+// The navigation controller can deliberately defer importing main until after ready.
+registerAlbumScheme(protocol);
 app.setPath("userData", join(root, "electron-profile"));
 app.setPath("sessionData", join(root, "electron-session"));
 app.setPath("logs", join(root, "electron-logs"));

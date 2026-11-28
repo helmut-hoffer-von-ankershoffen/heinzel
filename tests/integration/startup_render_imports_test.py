@@ -5,6 +5,8 @@ import sys
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.integration
 
 
@@ -62,5 +64,7 @@ with console.capture() as output:
 assert 'No module advertises a job' in output.get()
 assert 'heinzel.modules.system.daemon._render' in sys.modules
 """
-    result = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, check=False, timeout=10)
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", code], capture_output=True, text=True, check=False, timeout=scaled(10)
+    )
     assert result.returncode == 0, result.stderr

@@ -8,12 +8,12 @@ from typing import override
 import pytest
 
 import heinzel.kernel.ai._ai as ai_module
-import heinzel.kernel.session._session_store as session_store
 import heinzel.modules.heinzel._autonomous_schedule as schedule_module
 import heinzel.modules.heinzel._interactive_turn as interactive_turn
 import heinzel.modules.heinzel._service as service_module
 import heinzel.modules.heinzel._session_crud as session_crud
 import heinzel.modules.heinzel._session_repository as session_repository
+import heinzel.services.session._session_store as session_store
 from heinzel import HeinzelError, Notifications
 from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules
 from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants

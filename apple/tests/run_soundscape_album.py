@@ -162,6 +162,8 @@ def execute(run, routes):
         SHARED / "AlbumLibrary.swift",
         SHARED / "SoundscapePlayback.swift",
         TESTS / "SoundscapeAlbumTests.swift",
+        TESTS / "ApprovedAlbumFilmRangeTests.swift",
+        TESTS / "SoundscapeVolumeTests.swift",
         TESTS / "SoundscapeAlbumFixture.swift",
     ]
     pins = {}
@@ -214,7 +216,7 @@ def execute(run, routes):
         host.stop()
         host = None
         # Fresh process, ephemeral session, and the old loopback listener is gone.
-        for mode in ("offline", "selection-write", "selection-read"):
+        for mode in ("offline", "selection-write", "selection-read", "volume"):
             probe(mode, run / "complete")
         host = Host(routes, run)
         catalog = host.url + "/candidate-catalog.json"

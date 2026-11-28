@@ -13,6 +13,7 @@ import {
   Info,
   type LucideIcon,
   Moon,
+  Network,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
@@ -26,7 +27,16 @@ import {
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, matchPath, NavLink, useLocation } from "react-router";
-import { useContracts, useExpert, useNavigation, usePlayful, useProfile, useSetExpert } from "@/api/queries";
+import {
+  useConfig,
+  useContracts,
+  useExpert,
+  useNavigation,
+  usePlayful,
+  useProfile,
+  useSetExpert,
+  useTeam,
+} from "@/api/queries";
 import { setVizStage } from "@/audio/viz/stage";
 import { BookmarkNavigation } from "@/bookmarks/BookmarkNavigation";
 import { ICONS, StatusItems, useEffectRunner } from "@/components/Contributions";
@@ -44,6 +54,7 @@ import { BellButton } from "./NotificationCenter";
 import { CONTRACTS_SECTION, contractPath, railItems, sections, visibleSections } from "./navigation";
 import { useDark, useSelectedTheme } from "./ThemeTokens";
 import { useTheme } from "./theme";
+import { nativeWorkspaces } from "./titlebar";
 
 const link = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -105,93 +116,83 @@ function Full({ drawer, titlebar, onToggle, onSearch, onNotifications }: Omit<Pr
       section.items.length > 0 ||
       Boolean(contracts.data?.heinzelmaennchen.length),
   );
+  const theme = useSelectedTheme();
+  const dark = useDark();
+  const settings = useConfig().data?.settings ?? [];
+  const showTeamName =
+    settings.find(({ section, key }) => section === "system.theme" && key === "show_team_name")?.value !== false;
+  const configured = settings.find(({ section, key }) => section === "team" && key === "name")?.value;
+  const configuredName = typeof configured === "string" ? configured.trim() : "";
+  const checkout = settings.find(({ section, key }) => section === "team" && key === "checkout")?.value;
+  const joinedName = useTeam(showTeamName && !configuredName && Boolean(checkout)).data?.name?.trim();
+  const teamName = showTeamName ? configuredName || joinedName : undefined;
+  // Older servers and the bundled Heinzel plugin don't declare this preference.
+  const legacyHeinzel =
+    theme?.name === "default" || (theme?.name === "heinzelmaennchen" && theme.plugin === "heinzel-theme");
+  const showThemeBrand = theme && (theme.show_branding_bar ?? !legacyHeinzel);
+  const brand = (teamName || showThemeBrand) && (
+    <Link
+      to="/"
+      aria-label={teamName || t("nav.brand")}
+      className="ml-0.5 flex min-w-0 items-center rounded-lg px-1 py-1 transition-colors hover:bg-accent/70"
+    >
+      {teamName ? (
+        <span className="truncate px-1 text-ui font-medium">{teamName}</span>
+      ) : (
+        <Branding theme={theme} dark={dark} />
+      )}
+    </Link>
+  );
+  const toggleButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={onToggle}
+      aria-expanded
+      aria-label={t(drawer ? "op.close" : "nav.collapse")}
+      title={t(drawer ? "op.close" : "nav.collapse")}
+      className={cn(
+        "relative shrink-0 text-icon before:absolute before:-inset-1 before:content-['']",
+        !titlebar && brand && "ml-auto",
+      )}
+    >
+      {drawer ? <X aria-hidden /> : <PanelLeftClose aria-hidden />}
+    </Button>
+  );
   return (
     <div className="flex h-full flex-col px-2">
-      {titlebar ? (
-        <>
-          {/* The window's title bar row: the traffic lights, then the toggle where it never moves, Home, Bell and Search.
-              The theme's lockup follows below it and carries the name the window chrome no longer draws. */}
-          <div data-titlebar className={cn(TITLEBAR_ROW, "pr-3 pl-[calc(var(--titlebar-inset-left)+0.25rem)]")}>
-            {/* The top bar's icon button, with a 44 px touch target around its 36 px. */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onToggle}
-              aria-expanded
-              aria-label={t(drawer ? "op.close" : "nav.collapse")}
-              title={t(drawer ? "op.close" : "nav.collapse")}
-              className="relative shrink-0 text-icon before:absolute before:-inset-1 before:content-['']"
-            >
-              {drawer ? <X aria-hidden /> : <PanelLeftClose aria-hidden />}
-            </Button>
-            <NavLink to="/" end className={topButton} aria-label={t("nav.home")} title={t("nav.home")}>
-              <Home aria-hidden />
-            </NavLink>
-            <BellButton onOpen={onNotifications} className={topButton({ isActive: false })} />
-            <button
-              type="button"
-              onClick={onSearch}
-              aria-keyshortcuts="Meta+K Control+K"
-              aria-label={t("search.open")}
-              title={`${t("search.open")} (⌘K)`}
-              className={topButton({ isActive: false })}
-            >
-              <Search aria-hidden />
-            </button>
-          </div>
-          <div className={cn(HAIRLINE_BELOW, "h-12")}>
-            <Link
-              to="/"
-              aria-label={t("nav.brand")}
-              className="ml-0.5 flex min-w-0 items-center rounded-lg px-1 py-1 transition-colors hover:bg-accent/70"
-            >
-              <ThemeLogo />
-            </Link>
-          </div>
-        </>
-      ) : (
-        <>
-          {/* The same height and hairline as the main column's top bar, so both lines run across the window. The brand
-          is the way home, named by its wordmark; its mark starts where the navigation's icons do. */}
-          <div className={cn(HAIRLINE_BELOW, "h-12")}>
-            <Link
-              to="/"
-              aria-label={t("nav.brand")}
-              className="ml-0.5 flex min-w-0 items-center rounded-lg px-1 py-1 transition-colors hover:bg-accent/70"
-            >
-              <ThemeLogo />
-            </Link>
-            {/* The top bar's icon button, with a 44 px touch target around its 36 px. */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onToggle}
-              aria-expanded
-              aria-label={t(drawer ? "op.close" : "nav.collapse")}
-              title={t(drawer ? "op.close" : "nav.collapse")}
-              className="relative ml-auto shrink-0 text-icon before:absolute before:-inset-1 before:content-['']"
-            >
-              {drawer ? <X aria-hidden /> : <PanelLeftClose aria-hidden />}
-            </Button>
-          </div>
-          <div className={cn(HAIRLINE_BELOW, "h-12 justify-evenly")}>
-            <NavLink to="/" end className={topButton} aria-label={t("nav.home")} title={t("nav.home")}>
-              <Home aria-hidden />
-            </NavLink>
-            <BellButton onOpen={onNotifications} className={topButton({ isActive: false })} />
-            <button
-              type="button"
-              onClick={onSearch}
-              aria-keyshortcuts="Meta+K Control+K"
-              aria-label={t("search.open")}
-              title={`${t("search.open")} (⌘K)`}
-              className={topButton({ isActive: false })}
-            >
-              <Search aria-hidden />
-            </button>
-          </div>
-        </>
+      {!titlebar && brand && (
+        <div className={cn(HAIRLINE_BELOW, "h-12")}>
+          {brand}
+          {toggleButton}
+        </div>
       )}
+      <div
+        data-titlebar={titlebar ? true : undefined}
+        className={
+          titlebar
+            ? cn(TITLEBAR_ROW, "pr-3 pl-[calc(var(--titlebar-inset-left)+0.25rem)]")
+            : cn(HAIRLINE_BELOW, "h-12 justify-evenly")
+        }
+      >
+        {titlebar && toggleButton}
+        <NavLink to="/" end className={topButton} aria-label={t("nav.home")} title={t("nav.home")}>
+          <Home aria-hidden />
+        </NavLink>
+        <BellButton onOpen={onNotifications} className={topButton({ isActive: false })} />
+        <button
+          type="button"
+          onClick={onSearch}
+          aria-keyshortcuts="Meta+K Control+K"
+          aria-label={t("search.open")}
+          title={`${t("search.open")} (⌘K)`}
+          className={topButton({ isActive: false })}
+        >
+          <Search aria-hidden />
+        </button>
+        {!titlebar && !brand && toggleButton}
+      </div>
+      {titlebar && brand && <div className={cn(HAIRLINE_BELOW, "h-12")}>{brand}</div>}
       {/* Sized by its links first (basis auto), so the audio stage below takes only the room they leave. */}
       <nav aria-label={t("nav.label")} className="mt-2 min-h-0 flex-[1_1_auto] overflow-y-auto">
         <ul className="flex flex-col gap-0.5">
@@ -548,6 +549,12 @@ function Footer({ compact = false, onPopOut }: { compact?: boolean; onPopOut?: (
             <MenuLink to="?settings=" icon={Settings} onSelect={close} shortcut="⌘,">
               {t("nav.settings")}
             </MenuLink>
+            <WorkspacesItem
+              onSelect={() => {
+                close();
+                trigger.current?.focus({ preventScroll: true });
+              }}
+            />
             <MenuLink to="/profile" icon={UserRound} onSelect={close}>
               {t("nav.profile")}
             </MenuLink>
@@ -616,23 +623,85 @@ type MenuLinkProps = {
   children: React.ReactNode;
 } & ({ to: string; href?: never } | { href: string; to?: never });
 
+const accountMenuRow =
+  "flex w-full items-center gap-3 rounded-lg px-2.5 py-1.5 text-left text-ui text-foreground/90 transition-colors hover:bg-accent [&_svg]:size-(--icon) [&_svg]:shrink-0 [&_svg]:stroke-[1.75] [&_svg]:text-icon";
+
+/** Mounts with the profile popup, so each opening reads the current native selection. */
+function WorkspacesItem({ onSelect }: { onSelect: () => void }) {
+  const workspaces = nativeWorkspaces();
+  const [name, setName] = useState("");
+  const [opening, setOpening] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!workspaces) return;
+    let active = true;
+    async function readName() {
+      try {
+        const current = await workspaces?.currentName();
+        if (active && typeof current === "string") setName(current.trim());
+      } catch {
+        // The native sheet is still usable when the current name cannot be read.
+      }
+    }
+    void readName();
+    return () => {
+      active = false;
+    };
+  }, [workspaces]);
+  if (!workspaces) return null;
+  return (
+    <button
+      ref={button}
+      type="button"
+      role="menuitem"
+      aria-haspopup="dialog"
+      aria-label={[t("account.workspaces"), name].filter(Boolean).join(" ")}
+      disabled={opening}
+      className={accountMenuRow}
+      onClick={async () => {
+        setOpening(true);
+        try {
+          if ((await workspaces.open()) && button.current) onSelect();
+        } catch {
+          // A temporarily unavailable native sheet leaves the menu open for another attempt.
+        } finally {
+          if (button.current) setOpening(false);
+        }
+      }}
+    >
+      <Network aria-hidden />
+      <span className="shrink-0">{t("account.workspaces")}</span>
+      {name && (
+        <span className="ml-auto min-w-0 truncate text-right text-ui-sm text-muted-foreground" title={name}>
+          {name}
+        </span>
+      )}
+    </button>
+  );
+}
+
 /** One row of the account menu: a screen of the app, or an external page in a new tab. */
 function MenuLink({ icon: Icon, onSelect, shortcut, children, ...target }: MenuLinkProps) {
-  const row =
-    "flex w-full items-center gap-3 rounded-lg px-2.5 py-1.5 text-left text-ui text-foreground/90 transition-colors hover:bg-accent [&_svg]:size-(--icon) [&_svg]:shrink-0 [&_svg]:stroke-[1.75] [&_svg]:text-icon";
   const tail = shortcut ? (
     <kbd className="ml-auto font-sans text-xs text-muted-foreground">{shortcut}</kbd>
   ) : target.href ? (
     <ExternalLink aria-hidden className="ml-auto !size-3.5" />
   ) : null;
   return target.to === undefined ? (
-    <a role="menuitem" href={target.href} target="_blank" rel="noreferrer" className={row} onClick={onSelect}>
+    <a
+      role="menuitem"
+      href={target.href}
+      target="_blank"
+      rel="noreferrer"
+      className={accountMenuRow}
+      onClick={onSelect}
+    >
       <Icon aria-hidden />
       {children}
       {tail}
     </a>
   ) : (
-    <NavLink role="menuitem" to={target.to} className={row} onClick={onSelect}>
+    <NavLink role="menuitem" to={target.to} className={accountMenuRow} onClick={onSelect}>
       <Icon aria-hidden />
       {children}
       {tail}

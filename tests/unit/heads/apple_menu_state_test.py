@@ -33,13 +33,69 @@ def test_menu_probe_covers_every_state_field_and_route() -> None:
         assert f"{parameter}:" in probe, f"the probe never passes MacMenuDelivery {parameter}"
 
 
+def test_retained_workspace_host_extends_to_the_native_titlebar() -> None:
+    app = (ROOT / "apple/App/HeinzelApp.swift").read_text(encoding="utf-8")
+    scene = app[app.index('id: "workspace") {') : app.index(".defaultLaunchBehavior")]
+    host = scene[scene.index("MacWorkspaceHost(") : scene.index(".defaultSize")]
+    assert ".ignoresSafeArea(.container, edges: .top)" in host
+    assert ".windowStyle(.hiddenTitleBar)" in scene
+
+
+def test_web_sound_dock_does_not_block_the_mac_workspace_switcher() -> None:
+    app = (ROOT / "apple/App/HeinzelApp.swift").read_text(encoding="utf-8")
+    gate = app.split("private var canSwitchWorkspaceFromMenu: Bool {", 1)[1].split("\n    }", 1)[0]
+    # The Mac dock lives in the workspace page. Neither a pending widget handoff
+    # nor its visible player is a native sheet that blocks the Workspaces menu.
+    assert "soundscape.dockRequest" not in gate
+    assert "soundscape.showingDock" not in gate
+    assert "MacWorkspaceSwitchState.protectsEditor" in gate
+
+
 def test_about_uses_the_guarded_workspace_menu_with_a_native_fallback() -> None:
     app = (ROOT / "apple/App/HeinzelApp.swift").read_text(encoding="utf-8")
     coordinator = (ROOT / "apple/App/Navigation.swift").read_text(encoding="utf-8")
     app_info = app[app.index("CommandGroup(replacing: .appInfo)") : app.index("CommandGroup(replacing: .appSettings)")]
     assert re.search(r"WorkspaceMenuRequest\.send\(\.about\) \{\s*NSApp\.orderFrontStandardAboutPanel\(nil\)", app_info)
     menu = coordinator[coordinator.index("@objc private func menuAction") : coordinator.index("func close(_ view")]
-    assert menu.index("guard MacMenuDelivery.allowed(") < menu.index("request.claim()") < menu.index("case .about:")
+    assert (
+        menu.index("guard acceptsMenuAction(in: workspace)")
+        < menu.index("request.claim()")
+        < menu.index("case .about:")
+    )
     about = menu[menu.index("case .about:") : menu.index("case .reload:")]
     assert "!window.dispatchEvent(new CustomEvent('hz:menu', { detail: 'about', cancelable: true }))" in about
     assert "request.complete(value, error: error)" in about
+
+
+def test_mac_workspaces_menu_and_profile_share_the_guarded_native_action() -> None:
+    app = (ROOT / "apple/App/HeinzelApp.swift").read_text()
+    navigation = (ROOT / "apple/App/Navigation.swift").read_text()
+    bridge = (ROOT / "apple/App/WorkspaceView.swift").read_text()
+    command = app.split('Button("Workspaces…")', 1)[1].split("CommandGroup(replacing: .newItem)", 1)[0]
+    assert '.keyboardShortcut(",", modifiers: [.command, .shift])' in command
+    assert "post(name: .showHeinzelConnection" in command
+    handler = navigation.split('if message.name == "heinzelWorkspaces"', 1)[1].split(
+        'if message.name == "heinzelWindow"', 1
+    )[0]
+    assert handler.index("acceptsMenuAction(in: workspace)") < handler.index("openWorkspaceChooser()")
+    assert handler.index("let name = selectedWorkspaceName()") < handler.index("return (name, nil)")
+    assert "workspace.window?.attachedSheet == nil" in handler
+    assert "workspace.window?.isKeyWindow == true" in handler
+    assert "revision == documentRevision" in handler
+    assert "hasCommittedWorkspace" in handler
+    callback = app.split("}, openWorkspaceChooser: {", 1)[1].split("}, selectedWorkspaceName:", 1)[0]
+    assert callback.index("confirmedOrigin == endpoint.origin") < callback.index("openConnectionFromMenu()")
+    assert "#else" in callback
+    assert "showConnection = true" in callback
+    assert "const workspaces = Object.freeze" in bridge
+    assert "heinzelWorkspaces.postMessage('workspaces')" in bridge
+    assert "MacMenuDelivery.allowed(available: isMenuWorkspaceCurrent()" in navigation
+
+
+def test_mac_cold_launch_uses_local_attach_and_iphone_launch_lists_workspaces() -> None:
+    app = (ROOT / "apple/App/HeinzelApp.swift").read_text()
+    startup = app.split("private func openInitialWorkspace() async", 1)[1].split("private var requestedChat:", 1)[0]
+    mac, iphone = startup.split("#if os(macOS)", 1)[1].split("#else", 1)
+    assert "await startLocal(initialStartup: true)" in mac
+    assert "refreshSyncedWorkspaces()" in iphone
+    assert "startLocal(" not in iphone

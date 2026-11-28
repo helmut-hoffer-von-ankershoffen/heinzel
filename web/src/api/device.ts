@@ -1,6 +1,14 @@
 // Pairing (ADR 0046): with the session token `hz ui` opened the tab with, ask once for a device token and keep it,
 // so this browser, or the app installed from it, opens without a new link. `hz ui --devices` lists the paired ones.
-import { DEVICE_KEY, deviceToken, dropSessionToken, notifyAuthorityChange, sessionToken } from "./token";
+import { nativeWorkspaces } from "@/layout/titlebar";
+import {
+  authorityEpoch,
+  DEVICE_KEY,
+  deviceToken,
+  dropSessionToken,
+  notifyAuthorityChange,
+  sessionToken,
+} from "./token";
 
 /** What the browser is, in words, for `hz ui --devices`: no fingerprint, just the browser, the system and the mode. */
 export function deviceName(agent: string = navigator.userAgent): string {
@@ -59,38 +67,67 @@ export async function forgetDevice(fetcher: typeof fetch = (request) => globalTh
   }
 }
 
-/**
- * A token the server refused. A device token (unpaired with `hz ui --revoke`) is dropped, so the next link pairs again.
- * A session token is dead once `hz ui` started again with a new one; a paired browser then falls back to its device
- * token, which every later `hz ui` accepts (ADR 0046), instead of staying signed out behind a token that can't work.
- */
-export function dropRefusedDevice(status: number, sent: string | null, reload: () => void = () => location.reload()) {
+type SessionCheck = { epoch: number; device: string; done: Promise<void> };
+let sessionCheck: SessionCheck | undefined;
+
+/** Verify the session independently before acting on a resource refusal. Native recovery keeps its document mounted. */
+export async function dropRefusedDevice(
+  status: number,
+  sent: string | null,
+  fetcher?: typeof fetch,
+  reload: () => void = () => location.reload(),
+): Promise<void> {
   if (status !== 401 || !sent) return;
-  if (sent === sessionToken() && deviceToken()) {
-    dropSessionToken();
-    reload();
-  } else if (sent === deviceToken() && !sessionToken()) {
-    localStorage.removeItem(DEVICE_KEY);
-    notifyAuthorityChange();
+  await verifySession(sent, fetcher, () => {
+    if (!nativeWorkspaces()) reload();
+  });
+}
+
+async function verifySession(
+  sent: string,
+  fetcher: typeof fetch = (request) => globalThis.fetch(request),
+  onSessionDropped?: () => void,
+): Promise<void> {
+  const session = sessionToken();
+  const device = deviceToken();
+  if (!device || sent !== (session ?? device)) return;
+  const epoch = authorityEpoch();
+  if (sessionCheck?.epoch === epoch && sessionCheck.device === device) return sessionCheck.done;
+
+  const done = (async () => {
+    try {
+      const result = await fetcher(
+        new Request(new URL("/api/lifecycle", window.location.origin), {
+          headers: { Authorization: `Bearer ${sent}`, Accept: "application/json" },
+          mode: "same-origin",
+          redirect: "error",
+          cache: "no-store",
+          credentials: "omit",
+          signal: AbortSignal.timeout(5000),
+        }),
+      );
+      if (result.status !== 401 || authorityEpoch() !== epoch || deviceToken() !== device) return;
+      if (session) {
+        dropSessionToken();
+        onSessionDropped?.();
+      } else {
+        localStorage.removeItem(DEVICE_KEY);
+        notifyAuthorityChange();
+      }
+    } catch {
+      // The verification request could not reach the workspace. Keep its credentials for recovery.
+    }
+  })();
+  sessionCheck = { epoch, device, done };
+  try {
+    await done;
+  } finally {
+    if (sessionCheck?.done === done) sessionCheck = undefined;
   }
 }
 
-/**
- * Before the app asks for anything: a session token from an earlier `hz ui` (this window kept it across a restart, as an
- * installed app window does) is checked once, and dropped when refused, so a paired browser uses its device token.
- */
-export async function dropStaleSession(fetcher: typeof fetch = (request) => globalThis.fetch(request)): Promise<void> {
+/** Check a launch token retained across a backend restart before the first workspace request. */
+export async function dropStaleSession(fetcher?: typeof fetch): Promise<void> {
   const session = sessionToken();
-  if (!session || !deviceToken()) return;
-  try {
-    const response = await fetcher(
-      new Request(`${window.location.origin}/api/system/ui/navigation`, {
-        headers: { Authorization: `Bearer ${session}` },
-        signal: AbortSignal.timeout(5000), // a server that never answers must not keep the app from opening
-      }),
-    );
-    if (response.status === 401) dropSessionToken();
-  } catch {
-    // hz isn't answering: the splash says so; keep the token for when it is back.
-  }
+  if (session && deviceToken()) await verifySession(session, fetcher);
 }

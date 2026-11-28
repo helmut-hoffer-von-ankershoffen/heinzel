@@ -459,6 +459,6 @@ ignore_imports = [
 [[tool.importlinter.contracts]]
 name = "Kernel composition depends on declarative spec (contexts.toml)"
 type = "layers"
-layers = ["heinzel.kernel", "heinzel.spec"]
+layers = ["heinzel.kernel", "heinzel.services", "heinzel.spec", "heinzel.ports"]
 
 # END generated from contexts.toml

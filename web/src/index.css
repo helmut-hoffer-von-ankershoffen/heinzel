@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@xyflow/react/dist/style.css";
+@import "./paper.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -454,6 +455,19 @@ body {
     max(1rem, var(--hz-viewport-safe-top)) -
     max(1rem, var(--hz-viewport-safe-bottom))
   );
+}
+
+.confirmation-dialog[data-operation="/system/update"] {
+  top: calc(
+    var(--hz-viewport-top, 0px) +
+    (
+      var(--hz-viewport-height, 100dvh) +
+      max(1rem, var(--hz-viewport-safe-top)) -
+      max(1rem, var(--hz-viewport-safe-bottom))
+    ) /
+    2
+  );
+  transform: translate(-50%, -50%);
 }
 
 .viewport-popover {

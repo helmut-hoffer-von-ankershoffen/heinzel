@@ -1,14 +1,18 @@
 // The product window: its session, permissions, audio, link guards and what happens when it closes.
 import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { installWorkspaceFilm } from "./album-transport.js";
+import { isOwnedMainFrame } from "./public-media.js";
 import { release } from "node:os";
 import { fileURLToPath } from "node:url";
 import { BrowserWindow, app, dialog, session, shell, webContents } from "electron";
-import { menuScript } from "./app-menu.js";
+import { installLegacyWorkspaceMenu, menuScript } from "./app-menu.js";
 import { lifecycle } from "./connection.js";
 import { attachClientHeader, machineName } from "./client-identity.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createNativePermissions } from "./native-permissions.js";
 import { guardUiNavigation, openProductUi } from "./ui-navigation.js";
+import { verifyWorkspaceRenderer } from "./workspace-attachment.js";
 import { windowOptions } from "./window-options.js";
 import { createWorkspaceAudio, systemAudioAvailable } from "./workspace-audio.js";
 import { showConnection } from "./main-picker.js";
@@ -23,20 +27,30 @@ export function createWindowLifecycle() {
       if (!window.isVisible()) window.show();
       window.focus();
     },
-    createWindow: (connection) => openProductUi({
+    createWindow: (connection, superseded) => openProductUi({
       connection,
       lifecycle: async (target) => {
         const state = await lifecycle(target);
         if (!target.remote) ctx.localBackendVersion = state.version;
         return state;
       },
-      cancelled: () => ctx.stopping || ctx.quitting,
+      cancelled: () => ctx.stopping || ctx.quitting || superseded?.(),
+      verifyRenderer: verifyWorkspaceRenderer,
       createWindow: async () => {
         const workspaceSession = session.fromPartition(`workspace-${randomUUID()}`);
         if (!connection.remote) await workspaceSession.setProxy({ mode: "direct" });
         attachClientHeader(workspaceSession, connection.origin, () => ({
           appVersion: app.getVersion(), backendVersion: ctx.localBackendVersion, machine: machineName(),
         }));
+        if (!connection.remote) {
+          const current = () => ctx.instance.currentWindow()?.webContents;
+          const admitted = (sender, senderFrame) => sender?.session === workspaceSession &&
+            !ctx.stopping && !ctx.quitting && isOwnedMainFrame({ sender, senderFrame }, {
+              windows: productWindows, fromWebContents: contents => BrowserWindow.fromWebContents(contents),
+              connection: () => ctx.instance.currentConnection(),
+            });
+          installWorkspaceFilm(workspaceSession, current, admitted, path.join(app.getPath("userData"), "album-cache"));
+        }
         return new BrowserWindow({
         ...windowOptions(process.platform),
         webPreferences: {
@@ -49,8 +63,13 @@ export function createWindowLifecycle() {
         },
         });
       },
-      prepareWindow: (window) => {
+      prepareWindow: (window, server) => {
+        if (server?.version) ctx.windowVersions.set(window, server.version);
         productWindows.add(window);
+        if (!connection.remote) window.webContents.setUserAgent(`${window.webContents.getUserAgent()} HeinzelAlbum/1`);
+        window.webContents.on("dom-ready", () => {
+          void window.webContents.executeJavaScript(`(${installLegacyWorkspaceMenu})(${JSON.stringify(connection.origin)})`).catch(() => {});
+        });
         const workspaceSession = window.webContents.session;
         window.on("closed", () => {
           void workspaceSession.clearStorageData().catch(() => {});
@@ -58,7 +77,8 @@ export function createWindowLifecycle() {
           if (!ctx.switching && !ctx.startingProductWindow && !ctx.pickerLoading && !ctx.quitting && !ctx.picker?.isVisible()) app.quit();
         });
         const recover = () => {
-          if (ctx.switching || ctx.stopping || ctx.quitting) return;
+          if (ctx.switching || ctx.stopping || ctx.quitting || window !== ctx.instance.currentWindow()) return;
+          ctx.rendererFailed = true; ctx.monitor?.select(null);
           ctx.workspaceController?.failed(connection, new Error("Workspace unavailable"));
           showConnection();
         };
@@ -72,14 +92,14 @@ export function createWindowLifecycle() {
           guardUiNavigation(window.webContents, connection, (url) => shell.openExternal(url));
           return;
         }
-        windows.add(window);
+        if (!superseded) windows.add(window);
         const windowPermissions = createNativePermissions({
           windows,
           fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
           connection: () => (ctx.stopping || ctx.quitting ? null : ctx.instance.currentConnection()),
           prompt: (owner, options) => dialog.showMessageBox(owner, options),
         });
-        ctx.permissions = windowPermissions;
+
         const audio = createWorkspaceAudio({
           windows,
           fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
@@ -88,7 +108,8 @@ export function createWindowLifecycle() {
           prompt: (owner, options) => dialog.showMessageBox(owner, options),
           system: systemAudioAvailable(process.platform, release()),
         });
-        ctx.workspaceAudio = audio;
+        ctx.windowCapabilities.set(window, { permissions: windowPermissions, audio });
+        if (!superseded) { ctx.workspaceAudio = audio; ctx.permissions = windowPermissions; }
         window.webContents.session.setPermissionCheckHandler((contents, permission, origin, details) =>
           permission === "display-capture" ? audio.check(contents, permission, origin, details) :
             windowPermissions.check(contents, permission, origin, details));

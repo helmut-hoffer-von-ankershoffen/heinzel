@@ -1,9 +1,10 @@
 // Building blocks every screen uses: a page header, loading and error states, empty states, copyable commands.
 import { Check, Copy } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { Activity, type ReactNode, useState } from "react";
 import { ApiError } from "@/api/client";
 import { RunCommandButton } from "@/components/CommandActions";
 import { t } from "@/i18n";
+import { nativeWorkspaces } from "@/layout/titlebar";
 import { ErrorScreen } from "./ErrorScreen";
 import { Gnome } from "./Gnome";
 import type { Age, HeinzelState } from "./heinzel";
@@ -43,27 +44,17 @@ export function Loaded<T>({
   query: { data?: T; error: Error | null; isPending: boolean; refetch?: () => unknown };
   children: (data: T) => ReactNode;
 }) {
-  if (query.error instanceof ApiError && query.error.status === 401) {
-    // `hz ui` restarted, so this tab's token is stale: the link it printed now has a new one.
+  const error = query.error && <QueryFailure error={query.error} retry={query.refetch} />;
+  if (query.data !== undefined && nativeWorkspaces()) {
+    // A failed background read must not unmount the editor. Conceal cached content until the read succeeds.
     return (
-      <div role="alert" className="flex flex-col items-start gap-2 rounded-md border border-bad/40 p-3 text-sm">
-        <p>{t("token.refused")}</p>
-        <CopyCommand command="hz ui" />
-      </div>
+      <>
+        <Activity mode={query.error ? "hidden" : "visible"}>{children(query.data)}</Activity>
+        {error}
+      </>
     );
   }
-  if (query.error) {
-    return (
-      <ErrorScreen
-        compact
-        alert
-        title={t("error.loadTitle")}
-        message={`${t("state.error")} ${query.error.message}`}
-        detail={query.error instanceof ApiError ? `ApiError ${query.error.status}` : query.error.name}
-        onRetry={query.refetch ? () => void query.refetch?.() : undefined}
-      />
-    );
-  }
+  if (error) return error;
   if (query.isPending || query.data === undefined) {
     return (
       <p role="status" className="text-sm text-muted-foreground">
@@ -72,6 +63,28 @@ export function Loaded<T>({
     );
   }
   return <>{children(query.data)}</>;
+}
+
+function QueryFailure({ error, retry }: { error: Error; retry?: () => unknown }) {
+  if (error instanceof ApiError && error.status === 401) {
+    // `hz ui` restarted, so this tab's token is stale: the link it printed now has a new one.
+    return (
+      <div role="alert" className="flex flex-col items-start gap-2 rounded-md border border-bad/40 p-3 text-sm">
+        <p>{t("token.refused")}</p>
+        <CopyCommand command="hz ui" />
+      </div>
+    );
+  }
+  return (
+    <ErrorScreen
+      compact
+      alert
+      title={t("error.loadTitle")}
+      message={`${t("state.error")} ${error.message}`}
+      detail={error instanceof ApiError ? `ApiError ${error.status}` : error.name}
+      onRetry={retry}
+    />
+  );
 }
 
 /** A command to copy, in a monospace box with a copy button. */

@@ -2,6 +2,7 @@
 
 import hashlib
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -58,7 +59,9 @@ def client(make_kernel, tmp_path, **options):
             outside = tmp_path / "outside.js"
             outside.write_text("not an installed asset")
             (static / "assets" / "app-a.js").symlink_to(outside)
-    settings = Settings(cache_dir=tmp_path / "cache", update_check=checking)
+    settings = Settings(
+        cache_dir=tmp_path / "cache", update_check=checking, auto_update=options.get("automatic", False)
+    )
     kernel = make_kernel(builtins=True, settings_=settings)
     kernel.bind(
         Installation,
@@ -315,6 +318,32 @@ def test_update_desktop_app_starts_the_restart_install_in_its_own_session(make_k
     [(command, kwargs)] = started
     assert command[-4:] == ["heinzel", "app", "install", "--restart"]
     assert kwargs["detached"] is True  # it outlives the app it quits and the server that app may stop
+
+
+def test_automatic_desktop_restart_checks_enabled_local_policy_and_coalesces_requests(
+    make_kernel, tmp_path, monkeypatch
+):
+    _app_here(monkeypatch, "0.0.1", "native")
+    monkeypatch.setattr(_updates.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(_updates.Kernel, "fresh_settings", lambda self: self.settings)
+    started = []
+    process = SimpleNamespace(poll=lambda: None)
+
+    def spawn(*args, **kwargs):
+        started.append((args, kwargs))
+        return process
+
+    monkeypatch.setattr(_updates.SYSTEM_RUNNER, "spawn", spawn)
+    route = "/api/update-status/desktop?automatic=true"
+    disabled = client(make_kernel, tmp_path)
+    assert disabled.post(route, headers=AUTH).status_code == 409
+    enabled = client(make_kernel, tmp_path, automatic=True)
+    remote = enabled.post(f"http://remote.example{route}", headers=AUTH)
+    assert remote.status_code >= 400
+    assert not started
+    assert enabled.post(route, headers=AUTH).status_code == 202
+    assert enabled.post(route, headers=AUTH).status_code == 202
+    assert len(started) == 1
 
 
 @pytest.mark.parametrize("version", [__version__, None])

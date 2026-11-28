@@ -75,6 +75,8 @@ class ExpectedCandidate:
     pr_number: int
     head: str
     tree: str
+    # Only protected post-merge consumers provide the squash and its verified single parent.
+    merged: tuple[str, str] | None = None
 
 
 def command(argv: list[str]) -> bytes:
@@ -391,7 +393,15 @@ def validate(evidence: dict[str, Any], expected: ExpectedCandidate, approved_sou
     require(run.get("head_sha") == expected_head, "candidate run is not the exact expected head")
     require(
         pr.get("number") == expected.pr_number
-        and pr.get("state") == "open"
+        and (
+            pr.get("state") == "open"
+            if expected.merged is None
+            else (
+                pr.get("state") == "closed"
+                and pr.get("merged") is True
+                and pr.get("merge_commit_sha") == expected.merged[0]
+            )
+        )
         and pr.get("draft") is False
         and pr.get("head", {}).get("sha") == expected_head,
         "release PR is no longer the expected open head",
@@ -410,7 +420,8 @@ def validate(evidence: dict[str, Any], expected: ExpectedCandidate, approved_sou
         and proof.get("sources") == approved_sources,
         "candidate source artifact differs from reviewed run or release identity",
     )
-    require(proof.get("base") == pr.get("base", {}).get("sha"), "release base changed after candidate execution")
+    base = expected.merged[1] if expected.merged is not None else pr.get("base", {}).get("sha")
+    require(proof.get("base") == base, "release base changed after candidate execution")
     require(
         head.get("sha") == expected_head and head.get("commit", {}).get("tree", {}).get("sha") == expected_tree,
         "live release head tree differs",

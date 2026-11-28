@@ -13,6 +13,19 @@ import { activations, ctx, windows } from "./main-state.js";
 // Settings > Browser > "Open links in the built-in browser": a setting of the app itself, live and kept across restarts.
 export const settings = () => (ctx.settingsStore ??= createSettingsStore({ file: path.join(app.getPath("userData"), "settings.json") }));
 
+/** Runtime metadata for the packaged picker and the owned local About dialog. */
+export function applicationInfo() {
+  const platform = { darwin: "macOS", win32: "Windows", linux: "Linux" }[process.platform] ?? process.platform;
+  const executable = app.getPath("exe");
+  return {
+    type: "Electron",
+    version: app.getVersion(),
+    path: !app.isPackaged ? app.getAppPath()
+      : process.platform === "darwin" ? path.resolve(executable, "..", "..", "..") : executable,
+    operatingSystem: [platform, process.getSystemVersion()].filter(Boolean).join(" "),
+  };
+}
+
 export function createServices() {
   ctx.miniBrowser = createMiniBrowser({
     windows,
@@ -58,5 +71,5 @@ export function createServices() {
     listen: ctx.miniBrowser.agents.listen,
   });
   ctx.managedMac = app.isPackaged && process.platform === "darwin";
-  ctx.ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => developmentCli(), bridgeToken: ctx.bridgeToken, probe: lifecycle, env: { HZ_CALLER: "desktop-app" } });
+  ctx.ownedCli = createOwnedCli({ executable: app.isPackaged ? installedCli : () => developmentCli(), bridgeToken: ctx.bridgeToken, probe: (connection) => ctx.probeLocal ? ctx.probeLocal(connection) : lifecycle(connection), probeContext: () => ctx.foreground === false ? null : ctx.probeEpoch ?? 0, env: { HZ_CALLER: "desktop-app" } });
 }

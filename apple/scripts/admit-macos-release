@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+test "$GITHUB_REF_PROTECTED" = true
+workflow="$GITHUB_REPOSITORY/.github/workflows"
+case "$GITHUB_EVENT_NAME:$GITHUB_REF:$GITHUB_WORKFLOW_REF" in
+  "push:refs/heads/main:$workflow/release-tag.yml@refs/heads/main") ;;
+  "workflow_dispatch:refs/heads/main:$workflow/release-tag.yml@refs/heads/main") ;;
+  *) echo "Unexpected caller, event or ref for Core signing." >&2; exit 1 ;;
+esac
+test "$(git cat-file -t "refs/tags/$TAG")" = tag
+uv run --no-project --frozen --no-build --python 3.15 python -I scripts/pypi_release.py checkout "$TAG" >> "$GITHUB_OUTPUT"
+uv run --no-project --frozen --no-build --python 3.15 python -I scripts/release_latest.py "$TAG" "$GITHUB_SHA" --signing >> "$GITHUB_OUTPUT"

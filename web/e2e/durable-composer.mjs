@@ -223,6 +223,7 @@ try {
       await page.getByText(autoExplanation, { exact: true }).waitFor();
       await page.waitForFunction(() => window.durablePressGeometry !== null);
       const frames = await page.evaluate(() => window.durablePressGeometry);
+      assert.equal(updateRequests.install, 0, "Nothing may be installed before the Update now click completes");
       await page.mouse.up();
       for (const [phase, bounds] of Object.entries(frames))
         assert.deepEqual(
@@ -231,14 +232,8 @@ try {
           `Late automatic-update facts must not move the pressed action during ${phase}`,
         );
     };
-    // The press opens the confirmation with the plan; nothing is installed until the person agrees there.
-    const agree = async () => {
-      const confirm = page.getByRole("button", { name: "Agree and update", exact: true });
-      await confirm.waitFor();
-      assert.equal(updateRequests.install, 0, "Nothing may be installed before the person agrees");
-      await confirm.click();
-    };
-    await Promise.all([reloaded, press().then(agree)]);
+    // One click authorizes the plan, installs it and reloads after the verified restart.
+    await Promise.all([reloaded, press()]);
   } catch (error) {
     // Fixed facts only: never emit composer text, session storage contents, tokens or arbitrary server errors.
     const state = await page.evaluate(() => {
@@ -268,7 +263,8 @@ try {
   }
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
   await page.waitForFunction(() => sessionStorage.getItem("hz.update.receipt") === null, null, { timeout: 15_000 });
-  assert.equal(updateRequests.install, 1, "One agreed update must install exactly once");
+  assert.equal(updateRequests.preview, 1, "One Update now click must obtain exactly one plan");
+  assert.equal(updateRequests.install, 1, "One Update now click must install exactly once");
   assert.equal(updateRequests.restart, 1, "One physical gesture must restart exactly once");
   assert.equal(await page.getByLabel(/^Message /).inputValue(), "First session draft survives the update");
 

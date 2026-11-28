@@ -16429,6 +16429,11 @@ export interface components {
              */
             row_height: string;
             /**
+             * Show Branding Bar
+             * @description Show the expanded sidebar branding row. Omit to use the host default.
+             */
+            show_branding_bar?: boolean | null;
+            /**
              * Spacing
              * @description The base step of gaps and padding, e.g. `0.25rem`.
              * @default 0.25rem
@@ -17081,6 +17086,11 @@ export interface components {
              * @description Modules that offer a theme of the same name, hidden by this one (layer order decides).
              */
             shadows?: string[];
+            /**
+             * Show Branding Bar
+             * @description Whether to show the branding row in the expanded sidebar.
+             */
+            show_branding_bar?: boolean | null;
             /**
              * Spacing
              * @description The base step of gaps and padding (`--spacing`), e.g. `0.25rem`.
@@ -18064,6 +18074,11 @@ export interface components {
          */
         WorkspaceWebVersion: {
             /**
+             * Backend Ip
+             * @description Local HTTP server socket IP, not a proxy or client address; null when unavailable.
+             */
+            backend_ip?: string | null;
+            /**
              * Observed Since
              * Format: date-time
              * @description When this server instance was initialized; not process start time.
@@ -18071,7 +18086,7 @@ export interface components {
             observed_since: string;
             /**
              * Running Since
-             * @description Unknown without a verified process start time.
+             * @description OS-reported start time of the answering process; null when unavailable or invalid.
              */
             running_since?: string | null;
             /**

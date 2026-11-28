@@ -1,6 +1,9 @@
 import CoreFoundation
 import SwiftUI
 import WebKit
+#if os(iOS)
+import UIKit
+#endif
 #if DEBUG
 import OSLog
 #endif
@@ -12,20 +15,29 @@ typealias WebRepresentable = UIViewRepresentable
 #endif
 
 struct WorkspaceView: WebRepresentable {
+    static var clientOS: String {
+        #if os(macOS)
+        "macOS"
+        #else
+        UIDevice.current.userInterfaceIdiom == .pad ? "iPadOS" : "iOS"
+        #endif
+    }
+
     let endpoint: Endpoint
     let isObscured: Bool
+    var registerPage: (WKWebView) -> Void = { _ in }
     var reportsWidgetActivity = false
+    var isSelected: () -> Bool = { true }
+    var requiresVerification: () -> Bool = { false }
     var isWidgetWorkspaceCurrent: () -> Bool = { false }
     var isMenuWorkspaceCurrent: () -> Bool = { false }
+    var openWorkspaceChooser: () -> Bool = { false }
+    var selectedWorkspaceName: () -> String? = { nil }
     var isEnrollmentViewCurrent: () -> Bool = { false }
     var chatRequest: HeinzelChatRequest?
     var promptComposer: NativePromptComposer?
     var widgetRefreshRevision = 0
     var versionRefreshRevision = 0
-    var footerWidth: CGFloat = 88
-    var footerBottom: CGFloat = 0
-    var footerGeneration = 0
-    var reportFooterSlot: (CGRect?) -> Void = { _ in }
     var ready: () -> Void
     var reportHostName: (String) -> Void = { _ in
         // Hosts without a hostname display do not need this update.
@@ -37,15 +49,20 @@ struct WorkspaceView: WebRepresentable {
     }
 
     func makeCoordinator() -> Navigation {
-        Navigation(endpoint: endpoint, ready: ready, reportHostName: reportHostName, reportBackendVersion: reportBackendVersion,
-                   reportFooterSlot: reportFooterSlot, reportError: reportError,
+        Navigation(endpoint: endpoint, isSelected: isSelected, requiresVerification: requiresVerification, ready: ready, reportHostName: reportHostName, reportBackendVersion: reportBackendVersion,
+                   reportError: reportError,
                    isWidgetWorkspaceCurrent: isWidgetWorkspaceCurrent, isMenuWorkspaceCurrent: isMenuWorkspaceCurrent,
+                   selectedWorkspaceName: selectedWorkspaceName, openWorkspaceChooser: openWorkspaceChooser,
                    isEnrollmentViewCurrent: isEnrollmentViewCurrent)
     }
 
     private func makeWebView(_ context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlaybackIfSupported()
+        #if os(macOS)
+        configuration.applicationNameForUserAgent = [configuration.applicationNameForUserAgent, "HeinzelAlbum/1"].compactMap { $0 }.joined(separator: " ")
+        #endif
+        configuration.setURLSchemeHandler(ApprovedAlbumFilmHandler(origin: endpoint.origin), forURLScheme: "heinzel-album")
         configuration.userContentController.addScriptMessageHandler(
             context.coordinator, contentWorld: .defaultClient, name: "heinzelExternalLink"
         )
@@ -59,13 +76,11 @@ struct WorkspaceView: WebRepresentable {
         configuration.userContentController.addScriptMessageHandler(
             context.coordinator, contentWorld: .page, name: "heinzelNotices"
         )
-        #if os(iOS)
-        configuration.userContentController.addScriptMessageHandler(
-            context.coordinator, contentWorld: .page, name: "heinzelFooter"
-        )
-        #endif
         configuration.userContentController.addScriptMessageHandler(
             context.coordinator, contentWorld: .page, name: "heinzelAlbum"
+        )
+        configuration.userContentController.addScriptMessageHandler(
+            context.coordinator, contentWorld: .page, name: "heinzelWorkspaces"
         )
         var audioMember = ""
         #if os(macOS) || canImport(ScreenCaptureKit)
@@ -94,10 +109,16 @@ struct WorkspaceView: WebRepresentable {
                 lifecycle: () => window.webkit.messageHandlers.heinzelWindow.postMessage('lifecycle'),
                 """
             : ""
-        let chrome = "titlebar: Object.freeze({ height: 44, left: 80, right: 0 }), onFullscreen, \(localCommands)"
+        let chrome = """
+            titlebar: Object.freeze({ height: 44, left: 80, right: 0 }), onFullscreen, browserPlayerCutout: true,
+            \(localCommands)
+            """
         #else
-        let chrome = "mobileWorkspace: true, nativeFooter: footer,"
+        let chrome = "mobileWorkspace: true,"
         #endif
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: WorkspaceLegacyProfileMenu.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true
+        ))
         let connection = endpoint.origin.scheme == "https"
             ? "remoteWorkspace: true,"
             : "workspaceLinkStyle: '\(Endpoint.sharesHTTPSLinks ? "https" : "scheme")',"
@@ -125,87 +146,23 @@ struct WorkspaceView: WebRepresentable {
                         window.removeEventListener("heinzel-window-change", notify);
                     };
                 };
+                const workspaces = Object.freeze({
+                    currentName: () => window.webkit.messageHandlers.heinzelWorkspaces.postMessage('workspace-name'),
+                    open: () => window.webkit.messageHandlers.heinzelWorkspaces.postMessage('workspaces')
+                });
                 const audio = action => {
                     if (action === "start" && !navigator.userActivation?.isActive) return Promise.resolve(false);
                     return window.webkit.messageHandlers.heinzelAudio.postMessage(action);
                 };
-                const album = (action, geometry) => window.webkit.messageHandlers.heinzelAlbum.postMessage(
-                    geometry ? { action, geometry } : action);
+                const album = (action, options) => window.webkit.messageHandlers.heinzelAlbum.postMessage(
+                    action === "seek" ? { action, trackID: options?.trackID, seconds: options?.seconds } :
+                    action === "volume" ? { action, gain: options?.gain } :
+                    ["select", "openVideo"].includes(action) ? { action, trackID: typeof options === "string" ? options : options?.trackID, ...(action === "openVideo" ? { geometry: options } : {}) } :
+                        options ? { action, geometry: options } : action);
                 const browser = request => window.webkit.messageHandlers.heinzelBrowser.postMessage(request);
                 const notices = request => window.webkit.messageHandlers.heinzelNotices.postMessage(request);
-                let footerMetrics = { width: 88, bottom: 0, revision: -1, generation: -1 };
-                let pageHandlesFooter = false;
-                let legacyStyle = null;
-                let legacyFooter = null;
-                let legacyLast = '';
-                let legacyCandidate = '';
-                let legacyAttempts = 0;
-                let legacySequence = 0;
-                let legacyFrame = 0;
-                const legacySizes = new ResizeObserver(() => scheduleLegacy());
-                const scheduleLegacy = () => {
-                    if (!legacyFrame) legacyFrame = requestAnimationFrame(updateLegacy);
-                };
-                const updateLegacy = () => {
-                    legacyFrame = 0;
-                    if (pageHandlesFooter || document.querySelector('[data-native-footer-slot][data-native-footer-version="2"]')) {
-                        legacySequence += 1;
-                        pageHandlesFooter = true; legacyMutations.disconnect();
-                        legacyStyle?.remove(); legacyStyle = null; legacySizes.disconnect(); legacyFooter = null;
-                        return;
-                    }
-                    const shell = document.querySelector('[data-testid="app-shell"]');
-                    const bar = shell?.querySelector('footer[data-footer-width]');
-                    if (!shell || !bar || !document.head || footerMetrics.revision < 0) return;
-                    if (!legacyStyle) { legacyStyle = document.createElement('style'); document.head.appendChild(legacyStyle); }
-                    const css = `[data-testid="app-shell"]{padding-bottom:0!important} footer[data-footer-width]{height:${48 + footerMetrics.bottom}px!important;padding-bottom:${footerMetrics.bottom}px!important;padding-left:${footerMetrics.width}px!important;justify-content:flex-end} footer[data-footer-width] [data-footer-part="@version"]{display:none!important}`;
-                    if (legacyStyle.textContent !== css) { legacyStyle.textContent = css; window.dispatchEvent(new Event('resize')); }
-                    if (legacyFooter !== bar) { legacySizes.disconnect(); legacySizes.observe(bar); legacyFooter = bar; }
-                    const rect = bar.getBoundingClientRect();
-                    const { width, revision, generation } = footerMetrics;
-                    const slot = {x:rect.x, y:rect.y, width, height:48,
-                                  viewportWidth:innerWidth, viewportHeight:innerHeight, revision, generation};
-                    const value = JSON.stringify(slot);
-                    if (value !== legacyCandidate) { legacyCandidate = value; legacyLast = ''; legacyAttempts = 0; }
-                    if (value !== legacyLast && legacyAttempts < 10) {
-                        legacyAttempts += 1;
-                        legacyLast = value;
-                        const request = ++legacySequence;
-                        const expired = setTimeout(() => {
-                            if (request === legacySequence && legacyAttempts < 10) { legacySequence += 1; legacyLast = ''; scheduleLegacy(); }
-                        }, 1000);
-                        window.webkit.messageHandlers.heinzelFooter.postMessage(slot).then(ok => {
-                            clearTimeout(expired);
-                            if (request === legacySequence && ok !== true && legacyAttempts < 10) { legacyLast = ''; setTimeout(scheduleLegacy, 200); }
-                        }).catch(() => { clearTimeout(expired); if (request === legacySequence && legacyAttempts < 10) { legacyLast = ''; setTimeout(scheduleLegacy, 200); } });
-                    }
-                };
-                const legacyMutations = new MutationObserver(scheduleLegacy);
-                legacyMutations.observe(document, { childList:true, subtree:true, attributes:true,
-                    attributeFilter:['data-native-footer-version'] });
-                window.addEventListener('resize', scheduleLegacy);
-                window.addEventListener('scroll', scheduleLegacy, true);
-                window.addEventListener('hz:footer-relocated', scheduleLegacy);
-                const footer = Object.freeze({
-                    metrics: () => ({ ...footerMetrics }),
-                    reportSlot: slot => {
-                        // Older pages report without a stamp. The compatibility reporter measures their footer itself.
-                        if (slot.revision !== footerMetrics.revision || slot.generation !== footerMetrics.generation ||
-                            slot.revision < 0 || slot.generation < 0) return Promise.resolve(false);
-                        return window.webkit.messageHandlers.heinzelFooter.postMessage(slot);
-                    },
-                });
-                Object.defineProperty(window, "__heinzelUpdateFooter", { value: (width, bottom, revision, generation) => {
-                    footerMetrics = { width, bottom, revision, generation };
-                    legacyLast = '';
-                    legacyCandidate = '';
-                    legacyAttempts = 0;
-                    legacySequence += 1;
-                    scheduleLegacy();
-                    window.dispatchEvent(new Event("heinzel-native-footer-metrics"));
-                }});
                 Object.defineProperty(window, "heinzelDesktop", {
-                    value: Object.freeze({ clientFlavor: "native", \(chrome) \(connection) browser, notices, album, workspaceAudio: false, \(audioMember) })
+                    value: Object.freeze({ clientFlavor: "native", clientOS: \(Self.javascriptString(Self.clientOS)), \(chrome) \(connection) workspaces, browser, notices, album, workspaceAudio: false, \(audioMember) })
                 });
             })();
             """,
@@ -214,6 +171,7 @@ struct WorkspaceView: WebRepresentable {
         ))
         let view = WKWebView(frame: .zero, configuration: configuration)
         context.coordinator.workspace = view
+        registerPage(view)
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
         view.allowsBackForwardNavigationGestures = true
@@ -267,6 +225,9 @@ struct WorkspaceView: WebRepresentable {
         } catch { failed(); }
     };
     addEventListener("pointerdown", activate, true);
+    addEventListener("pointerup", event => {
+        if (event.target instanceof HTMLInputElement && event.target.hasAttribute("data-album-seek")) activate(event);
+    }, true);
     addEventListener("keydown", activate, true);
     addEventListener("click", activate, true);
     addEventListener("click", openGuest, true);
@@ -316,6 +277,7 @@ struct WorkspaceView: WebRepresentable {
         const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
         const sizes = new ResizeObserver(schedule);
         new MutationObserver(schedule).observe(document, { subtree: true, attributes: true, childList: true });
+        addEventListener("heinzel-window-change", () => { last = ""; schedule(); });
         addEventListener("resize", schedule);
         addEventListener("scroll", schedule, true);
         addEventListener("transitionend", schedule, true);
@@ -336,13 +298,13 @@ struct WorkspaceView: WebRepresentable {
     func updateUIView(_ view: WKWebView, context: Context) {
         view.accessibilityElementsHidden = isObscured
         view.isUserInteractionEnabled = !isObscured
-        context.coordinator.updateFooterMetrics(in: view, width: footerWidth, bottom: footerBottom, generation: footerGeneration)
         updateWidgetActivity(context.coordinator)
     }
     static func dismantleUIView(_ view: WKWebView, coordinator: Navigation) { coordinator.close(view) }
     #endif
 
     private func updateWidgetActivity(_ coordinator: Navigation) {
+        guard isSelected() else { return }
         coordinator.refreshWorkspaceVersion(revision: versionRefreshRevision)
         promptComposer?.navigation = coordinator
         coordinator.setWidgetActivityEnabled(reportsWidgetActivity, revision: widgetRefreshRevision)
@@ -355,5 +317,65 @@ private extension WKWebViewConfiguration {
         #if os(iOS)
         allowsInlineMediaPlayback = true
         #endif
+    }
+}
+
+/// Installed only on the trusted workspace configuration, never guest browser views.
+@MainActor
+final class ApprovedAlbumFilmHandler: NSObject, WKURLSchemeHandler {
+    private let origin: URL
+    private var deliveries: [ObjectIdentifier: Task<Void, Never>] = [:]
+    init(origin: URL) { self.origin = origin }
+
+    func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
+        let request = task.request
+        guard request.url?.absoluteString == AlbumLibrary.approvedFilmWebURL.absoluteString,
+              request.httpMethod == "GET" || request.httpMethod == "HEAD",
+              let document = webView.url,
+              document.scheme == origin.scheme, document.host == origin.host, document.port == origin.port,
+              let file = AlbumLibrary.shared.availableApprovedFilm(),
+              let bytes = try? Data(contentsOf: file, options: .mappedIfSafe) else {
+            task.didFailWithError(URLError(.resourceUnavailable)); return
+        }
+        let requestedRange = request.value(forHTTPHeaderField: "Range")
+        let range = AlbumLibrary.byteRange(requestedRange, count: bytes.count)
+        var headers = ["Content-Type": "video/mp4", "Accept-Ranges": "bytes", "Cache-Control": "no-store"]
+        let status: Int
+        if let range {
+            status = requestedRange == nil ? 200 : 206
+            headers["Content-Length"] = String(range.count)
+            if status == 206 { headers["Content-Range"] = "bytes \(range.lowerBound)-\(range.upperBound - 1)/\(bytes.count)" }
+        } else {
+            status = 416
+            headers["Content-Range"] = "bytes */\(bytes.count)"
+            headers["Content-Length"] = "0"
+        }
+        guard let response = HTTPURLResponse(url: AlbumLibrary.approvedFilmWebURL, statusCode: status,
+                                             httpVersion: "HTTP/1.1", headerFields: headers) else {
+            task.didFailWithError(URLError(.badServerResponse)); return
+        }
+        let key = ObjectIdentifier(task)
+        deliveries[key] = Task { @MainActor [weak self] in
+            defer { self?.deliveries.removeValue(forKey: key) }
+            guard !Task.isCancelled else { return }
+            task.didReceive(response)
+            if request.httpMethod != "HEAD", let range {
+                // Bounded callback chunks; no network fallback or forwarded request headers.
+                var offset = range.lowerBound
+                while offset < range.upperBound {
+                    guard !Task.isCancelled else { return }
+                    let end = min(offset + 256 * 1024, range.upperBound)
+                    task.didReceive(bytes.subdata(in: offset..<end))
+                    offset = end
+                    await Task.yield()
+                }
+            }
+            guard !Task.isCancelled else { return }
+            task.didFinish()
+        }
+    }
+
+    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {
+        deliveries.removeValue(forKey: ObjectIdentifier(task))?.cancel()
     }
 }

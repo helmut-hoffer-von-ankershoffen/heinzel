@@ -1,8 +1,8 @@
-"""The update and lifecycle tests that need the real system are marked and counted; the count may only fall.
+"""The update and lifecycle tests that need the real system are marked and listed.
 
 These tests run real processes, `uv` or the service manager: they are the upgrade proof (they caught #919), so they
 stay, and they run in the upgrade and macOS lanes. What may not happen is a new one: a new test on this path uses the
-fakes of `heinzel.testing` instead. A file is converted only when it flakes; then lower `MAX_FILES`.
+fakes of `heinzel.testing` instead. When a file stops needing the real system, remove its entry.
 """
 
 import re
@@ -23,7 +23,27 @@ PATH = (
 """The update and lifecycle path, by test file name."""
 REAL = re.compile(r"subprocess\.(?:run|Popen)|launchctl|real_uv|uv tool")
 MARK = re.compile(r"pytest\.mark\.real_system\b")
-MAX_FILES = 19
+REAL_SYSTEM_FILES = {
+    "tests/e2e/auto_update_test.py",
+    "tests/e2e/daemon_browser_proof_test.py",
+    "tests/e2e/daemon_install_ui_test.py",
+    "tests/e2e/daemon_legacy_recovery_test.py",
+    "tests/e2e/isolated_build_cache_test.py",
+    "tests/e2e/ui_service_browser_test.py",
+    "tests/e2e/ui_service_test.py",
+    "tests/e2e/web_ui_test.py",
+    "tests/integration/apple_prompt_lifecycle_test.py",
+    "tests/integration/auto_update_real_uv_test.py",
+    "tests/integration/lifecycle_commands_test.py",
+    "tests/integration/lifecycle_prepare_test.py",
+    "tests/integration/lifecycle_uninstall_test.py",
+    "tests/integration/supervised_update_recovery_test.py",
+    "tests/integration/ui_service_test.py",
+    "tests/integration/ui_stop_test.py",
+    "tests/integration/update_heads_real_uv_test.py",
+    "tests/integration/update_test.py",
+    "tests/integration/web_update_test.py",
+}
 
 pytestmark = pytest.mark.unit
 
@@ -47,6 +67,6 @@ def test_a_test_on_the_update_path_that_needs_the_real_system_is_marked() -> Non
 
 
 def test_the_real_system_tests_only_get_fewer() -> None:
-    count = sum(marked(path) for path in (ROOT / "tests").rglob("*_test.py"))
-    assert count <= MAX_FILES, "a new test needs the real system: use the fakes of heinzel.testing instead"
-    assert count >= MAX_FILES, f"{MAX_FILES - count} fewer real-system files: lower MAX_FILES to {count}"
+    found = {path.relative_to(ROOT).as_posix() for path in (ROOT / "tests").rglob("*_test.py") if marked(path)}
+    assert not (added := sorted(found - REAL_SYSTEM_FILES)), f"use fakes for new real-system tests: {added}"
+    assert not (retired := sorted(REAL_SYSTEM_FILES - found)), f"remove retired real-system exceptions: {retired}"

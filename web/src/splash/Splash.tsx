@@ -14,6 +14,7 @@ import { CodeInput } from "@/components/ui/code-input";
 import { type MessageKey, t } from "@/i18n";
 import { Branding } from "@/layout/Branding";
 import { useDark, useSelectedTheme } from "@/layout/ThemeTokens";
+import { nativeWorkspaces } from "@/layout/titlebar";
 import { logEvent } from "@/lib/events";
 import { installState } from "@/pwa/install";
 import {
@@ -393,7 +394,13 @@ export function Splash({ store = splash, probe = probeServer, now = clock, reloa
         const version = (answer.info as { version?: unknown } | undefined)?.version;
         // hz came back as another version: this page's files are the old ones, so load the new app.
         const known = readSnapshot().version;
-        if (back && typeof version === "string" && known && known !== version) {
+        if (
+          back &&
+          typeof version === "string" &&
+          known &&
+          known !== version &&
+          !(store.get().booted && nativeWorkspaces())
+        ) {
           remember({ version });
           reload();
           return false;
@@ -462,8 +469,10 @@ export function Splash({ store = splash, probe = probeServer, now = clock, reloa
   useEffect(() => {
     if (state.checks === handled.current) return;
     handled.current = state.checks;
+    // The host monitors an established workspace and owns its Pause/Resume controls.
+    if (state.booted && nativeWorkspaces()) return;
     if (!asking) void ask(true); // a blip (a laptop waking up) doesn't bring the overlay back
-  }, [state.checks, asking, ask]);
+  }, [state.checks, state.booted, asking, ask]);
 
   // Give up after GIVE_UP_MS of waiting: the fix instead of a spinner forever.
   useEffect(() => {

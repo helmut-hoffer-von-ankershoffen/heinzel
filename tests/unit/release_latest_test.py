@@ -325,3 +325,54 @@ def test_release_tag_retry_never_retags_or_repairs_completed_lineage(tmp_path, p
     assert output.exists() is (expect_tag is True)
     if expect_tag:
         assert output.read_text(encoding="utf-8") == f"tag={TAG}\n"
+
+
+@pytest.mark.parametrize(
+    ("marked", "configured", "defect"),
+    [
+        (True, "", ""),
+        (False, "77", ""),
+        (False, "", "missing"),
+        (False, "77", "tree"),
+        (True, "", "parent"),
+        (True, "", "late"),
+        (False, "77", "candidate"),
+    ],
+)
+def test_signing_rechecks_the_pinned_original_candidate_before_merge(latest, monkeypatch, marked, configured, defect):
+    rows = lineage(marked=marked)
+    rows["pulls/9"]["merged_at"] = "2026-11-26T02:15:00Z"
+    if defect == "tree":
+        rows[f"commits/{MERGE}"]["commit"]["tree"]["sha"] = "e" * 40
+    if defect == "parent":
+        rows[f"commits/{HEAD}"]["parents"][0]["sha"] = "e" * 40
+    monkeypatch.setattr(latest, "receipt_for", lambda run: receipt())
+    candidate = latest.chain.load_candidate_module()
+    monkeypatch.setattr(latest.chain, "load_candidate_module", lambda: candidate)
+    monkeypatch.setattr(candidate, "source_bytes", lambda _get, path, ref: path.encode() if ref == MERGE else b"")
+
+    def validate(_read, _download, expected, pins):
+        assert (expected.run_id, expected.head, expected.tree, expected.pr_number, expected.merged) == (
+            77,
+            HEAD,
+            TREE,
+            9,
+            (MERGE, BASE),
+        )
+        assert set(pins) == {candidate.WORKFLOW, candidate.RECORDER}
+        if defect == "candidate":
+            message = "incomplete original inventory"
+            raise candidate.CandidateError(message)
+        return {"run_id": 77, "updated_at": "2026-11-26T03:00:00Z" if defect == "late" else "2026-11-26T02:00:00Z"}
+
+    monkeypatch.setattr(candidate, "verify", validate)
+    if defect:
+        with pytest.raises((latest.ChainError, candidate.CandidateError)):
+            latest.signing_candidate(TAG, MERGE, MESSAGE if marked else TITLE, read=rows.get, configured_run=configured)
+    else:
+        assert (
+            latest.signing_candidate(
+                TAG, MERGE, MESSAGE if marked else TITLE, read=rows.get, configured_run=configured
+            )["run_id"]
+            == 77
+        )

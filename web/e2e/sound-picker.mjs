@@ -1,6 +1,4 @@
-// The sound picker keeps its place (ADR 0058): open it, pick a soundscape, and it plays at once with the picker
-// still open; picking another switches over; Escape and a click outside still close it. Real Chromium against the
-// real page, with the sound list and the stream's host replaced by local stand-ins that record what the page asks.
+// A single pick closes the picker and starts the chosen stream in the mounted player.
 // Usage: node e2e/sound-picker.mjs URL SCREENSHOT_DIR (prints one JSON object)
 import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
@@ -93,12 +91,19 @@ try {
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
   const speaker = page.getByRole("button", { name: "Choose a soundscape", exact: true });
   const dialog = page.getByRole("dialog", { name: "Sound", exact: true });
-  const commands = async (title) => {
+  const assertPlaying = async (title, video) => {
     const frame = await page
       .getByRole("region", { name: `${title} player` })
       .locator("iframe")
       .elementHandle();
-    return (await frame.contentFrame()).evaluate(() => window.commands);
+    const player = await frame.contentFrame();
+    await player.waitForURL((url) => url.pathname === `/embed/${video}`);
+    await player.waitForFunction(() => window.commands?.includes("playVideo"));
+    await page
+      .getByRole("region", { name: `${title} player` })
+      .getByRole("button")
+      .first()
+      .waitFor();
   };
 
   await speaker.click();
@@ -107,25 +112,18 @@ try {
   // The first thing the person does on this page is pick: that click is the gesture the player starts inside.
   await dialog.getByRole("radio", { name: /^Alpha FM/ }).click();
 
-  // 1. The picker is still open, and the sound plays, with no second click.
-  await dialog.waitFor({ state: "visible" });
-  await dialog.getByRole("button", { name: "Pause Alpha FM", exact: true }).waitFor();
-  await page.getByRole("region", { name: "Alpha FM player" }).waitFor();
-  await page.waitForTimeout(400);
+  await dialog.waitFor({ state: "hidden" });
+  await assertPlaying("Alpha FM", "aaaaaaaaaaa");
   await shotAfter("picked");
-  assert.ok((await commands("Alpha FM")).includes("playVideo"), "the player was told to play inside the pick");
-  assert.equal(await dialog.getByRole("radio", { name: /^Alpha FM/ }).getAttribute("aria-checked"), "true");
   assert.ok(await page.evaluate(() => navigator.userActivation.hasBeenActive), "a gesture started it");
-  assert.equal(await page.locator('[role="radio"]:focus').count(), 1, "the keyboard focus stays on the pick");
-
-  // 2. Picking another switches over: the new player plays, the old one is gone, the picker is still there.
+  assert.ok(await speaker.evaluate((element) => element === document.activeElement));
+  await speaker.click();
+  assert.equal(await dialog.getByRole("radio", { name: /^Alpha FM/ }).getAttribute("aria-checked"), "true");
   await dialog.getByRole("radio", { name: /^Beta FM/ }).click();
-  await dialog.getByRole("button", { name: "Pause Beta FM", exact: true }).waitFor();
-  await page.getByRole("region", { name: "Beta FM player" }).waitFor();
-  await page.waitForTimeout(400);
-  assert.ok((await commands("Beta FM")).includes("playVideo"));
+  await dialog.waitFor({ state: "hidden" });
+  await assertPlaying("Beta FM", "bbbbbbbbbbb");
   assert.equal(await page.getByRole("region", { name: "Alpha FM player" }).count(), 0);
-  assert.equal(await dialog.isVisible(), true);
+  await speaker.click();
 
   // 3. The header's Pause pauses the current one and says so; the speaker shows it too.
   await dialog.getByRole("button", { name: "Pause Beta FM", exact: true }).click();
@@ -151,7 +149,7 @@ try {
   await dialog.waitFor({ state: "hidden" });
   await page.getByRole("region", { name: "Beta FM player" }).waitFor();
   assert.equal(await icon(), "lucide-volume-2");
-  console.log(JSON.stringify({ stayedOpen: true, played: true, switched: true, closes: ["Escape", "outside"] }));
+  console.log(JSON.stringify({ closedAfterPick: true, played: true, switched: true, closes: ["Escape", "outside"] }));
 
   async function shotAfter(name) {
     await page.screenshot({ path: join(shots, `sound-picker-${name}.png`) });

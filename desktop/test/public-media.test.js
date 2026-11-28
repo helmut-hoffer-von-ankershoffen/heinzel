@@ -6,13 +6,15 @@ import { createPublicMediaHandler, publicMediaUrl } from "../src/public-media.js
 
 const screenshot = `https://raw.githubusercontent.com/fictional-lab/harbor/${"a".repeat(40)}/docs/ui.png`;
 const sound = "https://www.youtube.com/watch?v=abcdefghijk";
+const artist = "https://latentheinzels.heinzel.team/";
 const connection = { origin: "http://127.0.0.1:30123", token: "synthetic_native_ui_test_token_1234567890" };
 
-test("only bounded canonical immutable rasters and exact watch identities may reach the browser", () => {
+test("only bounded canonical immutable rasters and exact soundscape links may reach the browser", () => {
   for (const url of [screenshot, screenshot.replace(".png", ".jpg"), screenshot.replace(".png", ".webp"),
     screenshot.replace("docs/ui.png", `${"d".repeat(200)}/${"f".repeat(200)}.png`), sound])
     assert.equal(publicMediaUrl(url), url);
-  for (const url of [null, {}, "x".repeat(1025), "file:///tmp/a.png", "javascript:alert(1)",
+  assert.equal(publicMediaUrl(artist), artist);
+  for (const url of [artist + "other", artist + "?other", null, {}, "x".repeat(1025), "file:///tmp/a.png", "javascript:alert(1)",
     "http://127.0.0.1/image.png", sound.replace("https:", "http:"), sound.replace("www.youtube.com", "www.youtube.com.evil.example"),
     sound + "&token=secret", sound + "#token=secret", sound.replace("www.youtube.com", "user:secret@www.youtube.com"),
     sound.replace("www.youtube.com", "www.youtube.com:443"), sound.replace("abcdefghijk", "bad"),
@@ -75,7 +77,7 @@ test("the isolated preload exposes no opener and requires trusted activated prim
   const activation = { isActive: true };
   const context = vm.createContext({
     require: () => ({ contextBridge: { exposeInMainWorld: (_name, api) => { exposed = api; } },
-      ipcRenderer: { invoke: async (channel, url) => {
+      ipcRenderer: { on() {}, invoke: async (channel, url) => {
         if (channel === "hz:user-activation") sent.push([channel]); else invoked.push([channel, url]);
         return false;
       } } }),
@@ -89,11 +91,12 @@ test("the isolated preload exposes no opener and requires trusted activated prim
   });
   vm.runInContext(readFileSync(new URL("../src/preload.cjs", import.meta.url), "utf8"), context);
   assert.deepEqual(Object.keys(exposed), [
-    "clientFlavor",
-    "workspaceAudio", "titlebar", "browser", "player", "linkMode", "lifecycle", "about", "systemAudio", "audioSource",
+    "workspaces", "album", "clientFlavor",
+    "workspaceAudio", "titlebar", "browser", "onPlayerIntent", "player", "linkMode", "lifecycle", "about", "systemAudio", "audioSource",
     "onFullscreen",
   ]);
   assert.equal(exposed.clientFlavor, "electron");
+  assert.deepEqual(Object.keys(exposed.workspaces), ["currentName", "open"]);
   const anchor = new Anchor();
   let prevented = 0;
   const event = { isTrusted: true, button: 0, target: anchor, preventDefault: () => { prevented++; } };
@@ -109,22 +112,30 @@ test("the isolated preload exposes no opener and requires trusted activated prim
   assert.deepEqual(invoked, [["hz:public-media", sound]]);
   assert.equal(prevented, 1);
   assert.deepEqual(results, [false]);
-  assert.deepEqual(Object.keys(listeners), ["pointerdown", "keydown", "click"]);
+  assert.deepEqual(Object.keys(listeners), ["pointerdown", "keydown", "click", "pointerup"]);
 });
 
 test("the isolated preload reports only trusted input as a user activation", () => {
   const listeners = {}, sent = [];
+  class Input {
+    constructor(seek) { this.seek = seek; }
+    hasAttribute(name) { return name === "data-album-seek" && this.seek; }
+  }
   const context = vm.createContext({
     require: () => ({ contextBridge: { exposeInMainWorld: () => {} },
-      ipcRenderer: { invoke: async (...args) => { sent.push(args); } } }),
+      ipcRenderer: { on() {}, invoke: async (...args) => { sent.push(args); } } }),
     document: { addEventListener: (name, handler, capture) => { assert.equal(capture, true); (listeners[name] ??= []).push(handler); } },
-    navigator: { userActivation: { isActive: false } }, Element: class {}, HTMLAnchorElement: class {}, CustomEvent: class {},
+    navigator: { userActivation: { isActive: false } }, Element: class {}, HTMLAnchorElement: class {}, HTMLInputElement: Input, CustomEvent: class {},
   });
   vm.runInContext(readFileSync(new URL("../src/preload.cjs", import.meta.url), "utf8"), context);
   for (const name of ["pointerdown", "keydown", "click"]) listeners[name][0]({ isTrusted: false, button: 0, target: {} });
   assert.deepEqual(sent, []);
   for (const name of ["pointerdown", "keydown", "click"]) listeners[name][0]({ isTrusted: true, button: 0, target: {} });
-  assert.deepEqual(sent, [["hz:user-activation"], ["hz:user-activation"], ["hz:user-activation"]]);
+  listeners.pointerup[0]({ isTrusted: false, target: new Input(true) });
+  listeners.pointerup[0]({ isTrusted: true, target: new Input(false) });
+  assert.equal(sent.length, 3);
+  listeners.pointerup[0]({ isTrusted: true, target: new Input(true) });
+  assert.deepEqual(sent, Array.from({ length: 4 }, () => ["hz:user-activation"]));
 });
 
 test("About links use keyed IPC only after an activated click inside the dialog", async () => {
@@ -140,7 +151,7 @@ test("About links use keyed IPC only after an activated click inside the dialog"
   vm.runInNewContext(readFileSync(new URL("../src/preload.cjs", import.meta.url), "utf8"), {
     require: () => ({
       contextBridge: { exposeInMainWorld: (_name, api) => { exposed = api; } },
-      ipcRenderer: { invoke: async (...args) => { invoked.push(args); return true; } },
+      ipcRenderer: { on() {}, invoke: async (...args) => { invoked.push(args); return true; } },
     }),
     document: { addEventListener: (_name, handler) => { click = handler; } },
     navigator: { userActivation: activation }, Element, HTMLAnchorElement: Anchor,

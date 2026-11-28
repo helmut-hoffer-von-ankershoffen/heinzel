@@ -1,0 +1,646 @@
+{
+  "schemaVersion": 1,
+  "albums": [
+    {
+      "id": "dreaming-of-electric-snow",
+      "title": "Dreaming of Electric Snow",
+      "artist": "Latent Heinzels",
+      "cover": {
+        "key": "/media/sha256/bb465f44cecd01f1f84b3353704ca9fa7b2bdc995ff495a8879b1dcaf570d84c.webp",
+        "bytes": 41738,
+        "sha256": "bb465f44cecd01f1f84b3353704ca9fa7b2bdc995ff495a8879b1dcaf570d84c"
+      },
+      "tracks": [
+        {
+          "id": "berlin-morning",
+          "position": 1,
+          "title": "Berlin Morning: Riemann's Hypothesis",
+          "durationSeconds": 262.016,
+          "poster": {
+            "key": "/media/sha256/763a964cc4c38c240d3bfabce097cd44ebaa695484e7f41a682b06bbfb453003.webp",
+            "bytes": 26314,
+            "sha256": "763a964cc4c38c240d3bfabce097cd44ebaa695484e7f41a682b06bbfb453003"
+          },
+          "media": {
+            "key": "/media/sha256/91dd6887f4dc53ecee20648d849848b984aebd1e24a887a4cc4c0aad4dfb9906.mp4",
+            "bytes": 9227757,
+            "sha256": "91dd6887f4dc53ecee20648d849848b984aebd1e24a887a4cc4c0aad4dfb9906",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "berlin-morning-to-lunch",
+          "position": 2,
+          "title": "Berlin Interlude: Morning to Lunch",
+          "durationSeconds": 31.616,
+          "poster": {
+            "key": "/media/sha256/81318ff897b886d388923de0d9ebfc9c0d4d4c762356d4ff1a3f0512abb507a9.webp",
+            "bytes": 12378,
+            "sha256": "81318ff897b886d388923de0d9ebfc9c0d4d4c762356d4ff1a3f0512abb507a9"
+          },
+          "media": {
+            "key": "/media/sha256/d0e82627add14730adbb0e392aaba0b24295a9626e89a4719802e12e4d4f21a9.mp4",
+            "bytes": 1099584,
+            "sha256": "d0e82627add14730adbb0e392aaba0b24295a9626e89a4719802e12e4d4f21a9",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "berlin-lunch",
+          "position": 3,
+          "title": "Berlin Lunch: Anthropic Utopia",
+          "durationSeconds": 259.2,
+          "poster": {
+            "key": "/media/sha256/7ebd70158e2cbe0683aca0c50fe7abc4e48db4db2fcf0a98a1535da3723215a8.webp",
+            "bytes": 30206,
+            "sha256": "7ebd70158e2cbe0683aca0c50fe7abc4e48db4db2fcf0a98a1535da3723215a8"
+          },
+          "media": {
+            "key": "/media/sha256/487b32c3ded8d104300b95e225360065924f03f8a502eea0657c4fc809dd8e9f.mp4",
+            "bytes": 9565411,
+            "sha256": "487b32c3ded8d104300b95e225360065924f03f8a502eea0657c4fc809dd8e9f",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "berlin-lunch-to-afternoon",
+          "position": 4,
+          "title": "Berlin Interlude: Lunch to Afternoon",
+          "durationSeconds": 32.81,
+          "poster": {
+            "key": "/media/sha256/c48ba40358a0da807e901035a07635240c6a5071d8b48dca7b4799ac11ffd73e.webp",
+            "bytes": 12334,
+            "sha256": "c48ba40358a0da807e901035a07635240c6a5071d8b48dca7b4799ac11ffd73e"
+          },
+          "media": {
+            "key": "/media/sha256/cbc23e67d94c5e753126811aca2d2f317c9e9eadb2532365cdd3b24e029134ba.mp4",
+            "bytes": 1135968,
+            "sha256": "cbc23e67d94c5e753126811aca2d2f317c9e9eadb2532365cdd3b24e029134ba",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "berlin-afternoon",
+          "position": 5,
+          "title": "Berlin Afternoon: Recursive self-improvement",
+          "durationSeconds": 262.016,
+          "poster": {
+            "key": "/media/sha256/dee805ba6ca7b94c5bfb95d3256f110dae6dcda618979d4ee4bb62444f3a90a8.webp",
+            "bytes": 25586,
+            "sha256": "dee805ba6ca7b94c5bfb95d3256f110dae6dcda618979d4ee4bb62444f3a90a8"
+          },
+          "media": {
+            "key": "/media/sha256/26b8eebc32f3c24ab06cbd3bb283c3048aaff24dedad4d01544b7a9e5cf3dc80.mp4",
+            "bytes": 9623949,
+            "sha256": "26b8eebc32f3c24ab06cbd3bb283c3048aaff24dedad4d01544b7a9e5cf3dc80",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "berlin-afternoon-to-evening",
+          "position": 6,
+          "title": "Berlin Interlude: Afternoon to Evening",
+          "durationSeconds": 31.616,
+          "poster": {
+            "key": "/media/sha256/48931a8b4600171dc40645f95e85a2af3412ed17808f4fa11ce778beb2a6b563.webp",
+            "bytes": 13264,
+            "sha256": "48931a8b4600171dc40645f95e85a2af3412ed17808f4fa11ce778beb2a6b563"
+          },
+          "media": {
+            "key": "/media/sha256/eb9f16c3b6f4274eac68a5b8e70d8a4b11917cdfbe04e9dc20b2c0d8ae4f1bd5.mp4",
+            "bytes": 1141693,
+            "sha256": "eb9f16c3b6f4274eac68a5b8e70d8a4b11917cdfbe04e9dc20b2c0d8ae4f1bd5",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "berlin-evening",
+          "position": 7,
+          "title": "Berlin Evening: Singularity",
+          "durationSeconds": 263.616,
+          "poster": {
+            "key": "/media/sha256/87d8cf437c37e1f55d35022031df2e2519c78dc96fc46bd5f7ed267ac38bf1af.webp",
+            "bytes": 30232,
+            "sha256": "87d8cf437c37e1f55d35022031df2e2519c78dc96fc46bd5f7ed267ac38bf1af"
+          },
+          "media": {
+            "key": "/media/sha256/3b423aafa72aa6dff0df93d479c469ac8f35c9be1f3f3d446d0ad4bdeb3198e5.mp4",
+            "bytes": 9739986,
+            "sha256": "3b423aafa72aa6dff0df93d479c469ac8f35c9be1f3f3d446d0ad4bdeb3198e5",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "berlin-evening-to-night",
+          "position": 8,
+          "title": "Berlin Interlude: Evening to Night",
+          "durationSeconds": 32.4,
+          "poster": {
+            "key": "/media/sha256/04fb7562010cfb021b0b9214bd92b75f31397cac4011fd58ff7eb8df1225407f.webp",
+            "bytes": 24484,
+            "sha256": "04fb7562010cfb021b0b9214bd92b75f31397cac4011fd58ff7eb8df1225407f"
+          },
+          "media": {
+            "key": "/media/sha256/dbba7661eda888a6621415c506cde03145480df7cfbe57f4f90be28848fb1fd2.mp4",
+            "bytes": 1195202,
+            "sha256": "dbba7661eda888a6621415c506cde03145480df7cfbe57f4f90be28848fb1fd2",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "berlin-night",
+          "position": 9,
+          "title": "Berlin Night",
+          "durationSeconds": 599.616,
+          "poster": {
+            "key": "/media/sha256/530686fad27106b58fb3b41ea9b0cdb85650c0cdbdcb9c71ca152834bb6327ab.webp",
+            "bytes": 27554,
+            "sha256": "530686fad27106b58fb3b41ea9b0cdb85650c0cdbdcb9c71ca152834bb6327ab"
+          },
+          "media": {
+            "key": "/media/sha256/35a9e092aa36569a79e8efc2e313e7edd43ef1e5c52741d2b5592d168c7173ea.mp4",
+            "bytes": 21090277,
+            "sha256": "35a9e092aa36569a79e8efc2e313e7edd43ef1e5c52741d2b5592d168c7173ea",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "paris-morning",
+          "position": 10,
+          "title": "Paris Morning: Riemann's Hypothesis",
+          "durationSeconds": 262.4,
+          "poster": {
+            "key": "/media/sha256/103f9481b1173a0337a630e9909a40a59aae22b5e4b6ad6f4bc532e306b5b35a.webp",
+            "bytes": 21444,
+            "sha256": "103f9481b1173a0337a630e9909a40a59aae22b5e4b6ad6f4bc532e306b5b35a"
+          },
+          "media": {
+            "key": "/media/sha256/6ed4562b140ebe94fbe917759ea28c7127082a51e19b91916b01da5981cf161f.mp4",
+            "bytes": 9531088,
+            "sha256": "6ed4562b140ebe94fbe917759ea28c7127082a51e19b91916b01da5981cf161f",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "paris-morning-to-lunch",
+          "position": 11,
+          "title": "Paris Interlude: Morning to Lunch",
+          "durationSeconds": 31.616,
+          "poster": {
+            "key": "/media/sha256/a6c004830a9f5bdee497aeb9a37ffd96bb6e134c14635282226da85540c39e7d.webp",
+            "bytes": 18552,
+            "sha256": "a6c004830a9f5bdee497aeb9a37ffd96bb6e134c14635282226da85540c39e7d"
+          },
+          "media": {
+            "key": "/media/sha256/de195b648766f936f1d44f787b9924fd15d51c7f876d0689a0b50d6a36f2d955.mp4",
+            "bytes": 1089347,
+            "sha256": "de195b648766f936f1d44f787b9924fd15d51c7f876d0689a0b50d6a36f2d955",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "paris-lunch",
+          "position": 12,
+          "title": "Paris Lunch: Anthropic Utopia",
+          "durationSeconds": 262.016,
+          "poster": {
+            "key": "/media/sha256/94427927713e2171b2636f1779852a584f473a403ee040989ab73320087471a9.webp",
+            "bytes": 26180,
+            "sha256": "94427927713e2171b2636f1779852a584f473a403ee040989ab73320087471a9"
+          },
+          "media": {
+            "key": "/media/sha256/bf9d8716d19c0222e54c4ab4fbe03199948f9768f059ea020b53cb698e571ed8.mp4",
+            "bytes": 9594473,
+            "sha256": "bf9d8716d19c0222e54c4ab4fbe03199948f9768f059ea020b53cb698e571ed8",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "paris-lunch-to-afternoon",
+          "position": 13,
+          "title": "Paris Interlude: Lunch to Afternoon",
+          "durationSeconds": 31.616,
+          "poster": {
+            "key": "/media/sha256/c9a3648deb83bf069d5ced888f30213b187aed6ad6e8b0ca9fc13aa669a90a4c.webp",
+            "bytes": 18658,
+            "sha256": "c9a3648deb83bf069d5ced888f30213b187aed6ad6e8b0ca9fc13aa669a90a4c"
+          },
+          "media": {
+            "key": "/media/sha256/5051eb529f4c3d09a0299626202adc84d9b9128d375faa989c1c3228c033048d.mp4",
+            "bytes": 1140492,
+            "sha256": "5051eb529f4c3d09a0299626202adc84d9b9128d375faa989c1c3228c033048d",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "paris-afternoon",
+          "position": 14,
+          "title": "Paris Afternoon: Recursive self-improvement",
+          "durationSeconds": 261.61,
+          "poster": {
+            "key": "/media/sha256/35dbe174890f0945fbb3386ca6c109b2ab02f1b6dbc2cf20f344cc2c95242350.webp",
+            "bytes": 30066,
+            "sha256": "35dbe174890f0945fbb3386ca6c109b2ab02f1b6dbc2cf20f344cc2c95242350"
+          },
+          "media": {
+            "key": "/media/sha256/6b41b0b97ccde1a1debd58a368ced03164a52a6a596256cded200ede654f1888.mp4",
+            "bytes": 9519683,
+            "sha256": "6b41b0b97ccde1a1debd58a368ced03164a52a6a596256cded200ede654f1888",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "paris-afternoon-to-evening",
+          "position": 15,
+          "title": "Paris Interlude: Afternoon to Evening",
+          "durationSeconds": 32.0,
+          "poster": {
+            "key": "/media/sha256/87e829792c340d4bb82882126b255028994164fa6ae3ee7034d80d950e1ccb0c.webp",
+            "bytes": 19686,
+            "sha256": "87e829792c340d4bb82882126b255028994164fa6ae3ee7034d80d950e1ccb0c"
+          },
+          "media": {
+            "key": "/media/sha256/de87742b6c6c1f12a3fbca1c97c24227c54cdc378279b5a687d42a761ed24d02.mp4",
+            "bytes": 1178356,
+            "sha256": "de87742b6c6c1f12a3fbca1c97c24227c54cdc378279b5a687d42a761ed24d02",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "paris-evening",
+          "position": 16,
+          "title": "Paris Evening: Singularity",
+          "durationSeconds": 259.2,
+          "poster": {
+            "key": "/media/sha256/c1f093f198bbf7c831e966ba032e56be255d3bc08e76b786188ff0d66084a409.webp",
+            "bytes": 22934,
+            "sha256": "c1f093f198bbf7c831e966ba032e56be255d3bc08e76b786188ff0d66084a409"
+          },
+          "media": {
+            "key": "/media/sha256/ed95ce26289bbcb7d6010259b6ef809b9ecc7c5e2afe6776a5b1cb2b4418c8bc.mp4",
+            "bytes": 9464743,
+            "sha256": "ed95ce26289bbcb7d6010259b6ef809b9ecc7c5e2afe6776a5b1cb2b4418c8bc",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "paris-evening-to-night",
+          "position": 17,
+          "title": "Paris Interlude: Evening to Night",
+          "durationSeconds": 42.005,
+          "poster": {
+            "key": "/media/sha256/853d6aaabe54502278ea28e1298b3efca55f2208d481459740cdbdf314e3e5cc.webp",
+            "bytes": 22364,
+            "sha256": "853d6aaabe54502278ea28e1298b3efca55f2208d481459740cdbdf314e3e5cc"
+          },
+          "media": {
+            "key": "/media/sha256/508fea97794bb3a60fed3f85cc8cb6f4a6fb1d4ac92762705f913a335c9ea103.mp4",
+            "bytes": 1534029,
+            "sha256": "508fea97794bb3a60fed3f85cc8cb6f4a6fb1d4ac92762705f913a335c9ea103",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "paris-night",
+          "position": 18,
+          "title": "Paris Night: Superintelligence (Raindrops in Paris)",
+          "durationSeconds": 640.81,
+          "poster": {
+            "key": "/media/sha256/7838f64760efa9fd6938693869522f2f979e521bd8da3a21f9ba866c108c654e.webp",
+            "bytes": 29516,
+            "sha256": "7838f64760efa9fd6938693869522f2f979e521bd8da3a21f9ba866c108c654e"
+          },
+          "media": {
+            "key": "/media/sha256/8ca65de55b77246ba48c6ee20db8b0cf72deab47cc157f69d5749861d21539e8.mp4",
+            "bytes": 22445041,
+            "sha256": "8ca65de55b77246ba48c6ee20db8b0cf72deab47cc157f69d5749861d21539e8",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "san-francisco-morning",
+          "position": 19,
+          "title": "San Francisco Morning: Riemann's Hypothesis",
+          "durationSeconds": 262.016,
+          "poster": {
+            "key": "/media/sha256/97d21864bbc52ab9413a904fe06914fdacc2019eb9799fa8b3339a0004ae89b0.webp",
+            "bytes": 30194,
+            "sha256": "97d21864bbc52ab9413a904fe06914fdacc2019eb9799fa8b3339a0004ae89b0"
+          },
+          "media": {
+            "key": "/media/sha256/3e22aea44ead782e8acf7d14ba91f97e796d5f58810c2ccc1d34a3f64106ffd2.mp4",
+            "bytes": 9510657,
+            "sha256": "3e22aea44ead782e8acf7d14ba91f97e796d5f58810c2ccc1d34a3f64106ffd2",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "san-francisco-morning-to-lunch",
+          "position": 20,
+          "title": "San Francisco Interlude: Morning to Lunch",
+          "durationSeconds": 32.4,
+          "poster": {
+            "key": "/media/sha256/592fe6991fb07603f20ba005cfe7970cd683c9ec142ce991d799dfd9d9f5e7b8.webp",
+            "bytes": 15830,
+            "sha256": "592fe6991fb07603f20ba005cfe7970cd683c9ec142ce991d799dfd9d9f5e7b8"
+          },
+          "media": {
+            "key": "/media/sha256/a0877181fb409bf91a4e956e56f92e9e628c64165a17cc98080f0c5113f2274e.mp4",
+            "bytes": 1109779,
+            "sha256": "a0877181fb409bf91a4e956e56f92e9e628c64165a17cc98080f0c5113f2274e",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "san-francisco-lunch",
+          "position": 21,
+          "title": "San Francisco Lunch: Anthropic Utopia",
+          "durationSeconds": 261.205,
+          "poster": {
+            "key": "/media/sha256/ca35ddbfcefc75110c29f89b14d927dbe2f754219bbfabb7d7b9c6079cb2f4e4.webp",
+            "bytes": 28368,
+            "sha256": "ca35ddbfcefc75110c29f89b14d927dbe2f754219bbfabb7d7b9c6079cb2f4e4"
+          },
+          "media": {
+            "key": "/media/sha256/523ef507c5adf47e5aa676ab7a96636eb3af16a475b35a92530a4bc3b4ec75dc.mp4",
+            "bytes": 9274317,
+            "sha256": "523ef507c5adf47e5aa676ab7a96636eb3af16a475b35a92530a4bc3b4ec75dc",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "san-francisco-lunch-to-afternoon",
+          "position": 22,
+          "title": "San Francisco Interlude: Lunch to Afternoon",
+          "durationSeconds": 32.8,
+          "poster": {
+            "key": "/media/sha256/3012738645c1f4674aaac1b4b30178f9175980331b926eb46c14448f302b578f.webp",
+            "bytes": 21616,
+            "sha256": "3012738645c1f4674aaac1b4b30178f9175980331b926eb46c14448f302b578f"
+          },
+          "media": {
+            "key": "/media/sha256/0647255d53eb64fd0c25803056ee8006254263406f99e86c5b5e4a232b413cb9.mp4",
+            "bytes": 1186391,
+            "sha256": "0647255d53eb64fd0c25803056ee8006254263406f99e86c5b5e4a232b413cb9",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "san-francisco-afternoon",
+          "position": 23,
+          "title": "San Francisco Afternoon: Recursive self-improvement",
+          "durationSeconds": 261.6,
+          "poster": {
+            "key": "/media/sha256/9176233de641eaa8e69f77aedf615618106102fff7dcee6e9e850d2f4655c644.webp",
+            "bytes": 38846,
+            "sha256": "9176233de641eaa8e69f77aedf615618106102fff7dcee6e9e850d2f4655c644"
+          },
+          "media": {
+            "key": "/media/sha256/3488b7fb8c0cf75d9edb049e03312ae368863a293224ed85d1cd1ce04b20bccf.mp4",
+            "bytes": 9940833,
+            "sha256": "3488b7fb8c0cf75d9edb049e03312ae368863a293224ed85d1cd1ce04b20bccf",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "san-francisco-afternoon-to-evening",
+          "position": 24,
+          "title": "San Francisco Interlude: Afternoon to Evening",
+          "durationSeconds": 32.4,
+          "poster": {
+            "key": "/media/sha256/4c0eb70cce17c5d3d691470ab4cd70f3a46ffcc1782ca653906e11a44bc4462f.webp",
+            "bytes": 25372,
+            "sha256": "4c0eb70cce17c5d3d691470ab4cd70f3a46ffcc1782ca653906e11a44bc4462f"
+          },
+          "media": {
+            "key": "/media/sha256/5bc6191da77fef8bf76a1ac2a3a5af4de72c5673e131f774f409aacd358f7828.mp4",
+            "bytes": 1214558,
+            "sha256": "5bc6191da77fef8bf76a1ac2a3a5af4de72c5673e131f774f409aacd358f7828",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "san-francisco-evening",
+          "position": 25,
+          "title": "San Francisco Evening: Singularity",
+          "durationSeconds": 259.605,
+          "poster": {
+            "key": "/media/sha256/20afdea76065f9b2d0d8bc85f2944c3dfaf13c65bd1119104320c3d56fd3d330.webp",
+            "bytes": 25392,
+            "sha256": "20afdea76065f9b2d0d8bc85f2944c3dfaf13c65bd1119104320c3d56fd3d330"
+          },
+          "media": {
+            "key": "/media/sha256/22feaed174e72ef94a2532ad25e46cd363105ebb8687401ff1611df92f06fac3.mp4",
+            "bytes": 9564514,
+            "sha256": "22feaed174e72ef94a2532ad25e46cd363105ebb8687401ff1611df92f06fac3",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "san-francisco-evening-to-night",
+          "position": 26,
+          "title": "San Francisco Interlude: Evening to Night",
+          "durationSeconds": 32.0,
+          "poster": {
+            "key": "/media/sha256/d9c7b5964d98a48212ce5213dae05beb99ee67317eef45c1cecf259dc015ef43.webp",
+            "bytes": 19824,
+            "sha256": "d9c7b5964d98a48212ce5213dae05beb99ee67317eef45c1cecf259dc015ef43"
+          },
+          "media": {
+            "key": "/media/sha256/134b2eabc7c9330beae0eb4da41120f73cebd7beb5cc25a28c82bb82259977ed.mp4",
+            "bytes": 1201124,
+            "sha256": "134b2eabc7c9330beae0eb4da41120f73cebd7beb5cc25a28c82bb82259977ed",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "san-francisco-night",
+          "position": 27,
+          "title": "San Francisco Night: Superintelligence (Fog in San Francisco)",
+          "durationSeconds": 600.81,
+          "poster": {
+            "key": "/media/sha256/daf79e91a4f6e6b653f61433305273eb2d24f7b85a1fa29f1642522e592694b9.webp",
+            "bytes": 27472,
+            "sha256": "daf79e91a4f6e6b653f61433305273eb2d24f7b85a1fa29f1642522e592694b9"
+          },
+          "media": {
+            "key": "/media/sha256/43def9a76f1389eff201a5952fe1c84508f3b1f4bc0f2c924d78807a3ad2a54c.mp4",
+            "bytes": 21985834,
+            "sha256": "43def9a76f1389eff201a5952fe1c84508f3b1f4bc0f2c924d78807a3ad2a54c",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "shenzhen-morning",
+          "position": 28,
+          "title": "Shenzhen Morning: Riemann's Hypothesis",
+          "durationSeconds": 261.61,
+          "poster": {
+            "key": "/media/sha256/f1fc601ebbbcd37dd704ad596b91dd5670f957f39859be7ec7f5bee84ee9430e.webp",
+            "bytes": 37330,
+            "sha256": "f1fc601ebbbcd37dd704ad596b91dd5670f957f39859be7ec7f5bee84ee9430e"
+          },
+          "media": {
+            "key": "/media/sha256/5169e0124a28e1a52554329192b87bedb1f5d09c51db9b9e02421bb226925363.mp4",
+            "bytes": 8991043,
+            "sha256": "5169e0124a28e1a52554329192b87bedb1f5d09c51db9b9e02421bb226925363",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "shenzhen-morning-to-lunch",
+          "position": 29,
+          "title": "Shenzhen Interlude: Morning to Lunch",
+          "durationSeconds": 34.005,
+          "poster": {
+            "key": "/media/sha256/02caeb3c6d092024245a7b1a8d9b95690ff43d33712dc630fc5c7f7f65ad4f62.webp",
+            "bytes": 24246,
+            "sha256": "02caeb3c6d092024245a7b1a8d9b95690ff43d33712dc630fc5c7f7f65ad4f62"
+          },
+          "media": {
+            "key": "/media/sha256/998ec7fd85cc29c467f2455ad5fd90d7fc10410adae8156e29476f3862fd94a3.mp4",
+            "bytes": 1252150,
+            "sha256": "998ec7fd85cc29c467f2455ad5fd90d7fc10410adae8156e29476f3862fd94a3",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "shenzhen-lunch",
+          "position": 30,
+          "title": "Shenzhen Lunch: Anthropic Utopia",
+          "durationSeconds": 261.6,
+          "poster": {
+            "key": "/media/sha256/b9ede73c18cbd8eb821445db03dae61ffde555efdbe70aa7ba059b8510e9fb06.webp",
+            "bytes": 44092,
+            "sha256": "b9ede73c18cbd8eb821445db03dae61ffde555efdbe70aa7ba059b8510e9fb06"
+          },
+          "media": {
+            "key": "/media/sha256/6c9ffe5daa48b8f23da8a5ee1b0d46f5ff89ed42fac1262908d0c584fa1a5589.mp4",
+            "bytes": 9353687,
+            "sha256": "6c9ffe5daa48b8f23da8a5ee1b0d46f5ff89ed42fac1262908d0c584fa1a5589",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "shenzhen-lunch-to-afternoon",
+          "position": 31,
+          "title": "Shenzhen Interlude: Lunch to Afternoon",
+          "durationSeconds": 37.6,
+          "poster": {
+            "key": "/media/sha256/4e6afceb36a156d8c56c27907650a3e4f4e1ef6919211406007ba59d473d583c.webp",
+            "bytes": 21608,
+            "sha256": "4e6afceb36a156d8c56c27907650a3e4f4e1ef6919211406007ba59d473d583c"
+          },
+          "media": {
+            "key": "/media/sha256/f354c2e8583a7c328cb3b1c7c4ae009b222e954fa0fa04747be95fc982538bee.mp4",
+            "bytes": 1314371,
+            "sha256": "f354c2e8583a7c328cb3b1c7c4ae009b222e954fa0fa04747be95fc982538bee",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "shenzhen-afternoon",
+          "position": 32,
+          "title": "Shenzhen Afternoon: Recursive self-improvement",
+          "durationSeconds": 261.6,
+          "poster": {
+            "key": "/media/sha256/fc7c6e7ae84295099d69a2a9b4a7c236732352d3bffd732444fcd65419842ccb.webp",
+            "bytes": 33512,
+            "sha256": "fc7c6e7ae84295099d69a2a9b4a7c236732352d3bffd732444fcd65419842ccb"
+          },
+          "media": {
+            "key": "/media/sha256/a7bb9533ab27a676483a2e14ec5443fbd103acb481dcf396e0a0a7ae56edb22d.mp4",
+            "bytes": 9547751,
+            "sha256": "a7bb9533ab27a676483a2e14ec5443fbd103acb481dcf396e0a0a7ae56edb22d",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "shenzhen-afternoon-to-evening",
+          "position": 33,
+          "title": "Shenzhen Interlude: Afternoon to Evening",
+          "durationSeconds": 39.616,
+          "poster": {
+            "key": "/media/sha256/4169c51b1d5dec55a06dd65d2e212c1c57529671470f8629905a71cd07a31f25.webp",
+            "bytes": 19690,
+            "sha256": "4169c51b1d5dec55a06dd65d2e212c1c57529671470f8629905a71cd07a31f25"
+          },
+          "media": {
+            "key": "/media/sha256/47162cb197d9c913b7c5331a469f3225036ce8eff9de4e87e3af9a0b7cda34e7.mp4",
+            "bytes": 1407269,
+            "sha256": "47162cb197d9c913b7c5331a469f3225036ce8eff9de4e87e3af9a0b7cda34e7",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "shenzhen-evening",
+          "position": 34,
+          "title": "Shenzhen Evening: Singularity",
+          "durationSeconds": 261.6,
+          "poster": {
+            "key": "/media/sha256/641e851af8d35b10357c8e8a8ff29a461c71ed4c380fc711c0ae36e2fb27b3f3.webp",
+            "bytes": 28864,
+            "sha256": "641e851af8d35b10357c8e8a8ff29a461c71ed4c380fc711c0ae36e2fb27b3f3"
+          },
+          "media": {
+            "key": "/media/sha256/e4aaa200ca006877d867b1ecb00afe1eedd8e94b28c0beae15988db94833a6e0.mp4",
+            "bytes": 9429655,
+            "sha256": "e4aaa200ca006877d867b1ecb00afe1eedd8e94b28c0beae15988db94833a6e0",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "shenzhen-evening-to-night",
+          "position": 35,
+          "title": "Shenzhen Interlude: Evening to Night",
+          "durationSeconds": 32.405,
+          "poster": {
+            "key": "/media/sha256/f25af4e995206af1bd6c37f286a2e8ee6fef83ed83de81f187d1f0f7407745dd.webp",
+            "bytes": 29786,
+            "sha256": "f25af4e995206af1bd6c37f286a2e8ee6fef83ed83de81f187d1f0f7407745dd"
+          },
+          "media": {
+            "key": "/media/sha256/f511cfc8aaf53f454519c44bd0dcfac36d6ed8735e6974f31b7b1fd2d6d76aa0.mp4",
+            "bytes": 1223833,
+            "sha256": "f511cfc8aaf53f454519c44bd0dcfac36d6ed8735e6974f31b7b1fd2d6d76aa0",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "shenzhen-night",
+          "position": 36,
+          "title": "Shenzhen Night: Superintelligence (Monsoon in Shenzhen)",
+          "durationSeconds": 618.005,
+          "poster": {
+            "key": "/media/sha256/caacf566f916d60e8a8947bdb5b955fa1f3da71e8b4e3f9d9d1dbcd3c7a34654.webp",
+            "bytes": 34380,
+            "sha256": "caacf566f916d60e8a8947bdb5b955fa1f3da71e8b4e3f9d9d1dbcd3c7a34654"
+          },
+          "media": {
+            "key": "/media/sha256/a6f437d9f598611537eef9792b8a8d414a3fb5e0bec29e8f42cc191ac378b383.mp4",
+            "bytes": 22140644,
+            "sha256": "a6f437d9f598611537eef9792b8a8d414a3fb5e0bec29e8f42cc191ac378b383",
+            "mimeType": "video/mp4"
+          }
+        },
+        {
+          "id": "berlin-evening-extended",
+          "position": 37,
+          "title": "Berlin Evening: Singularity (Extended Version)",
+          "durationSeconds": 676.375,
+          "poster": {
+            "key": "/media/sha256/57f977d38e0a9aefa81ad0a5559ac9559a6dadee62c0363045d3716203a08802.webp",
+            "bytes": 20096,
+            "sha256": "57f977d38e0a9aefa81ad0a5559ac9559a6dadee62c0363045d3716203a08802"
+          },
+          "media": {
+            "key": "/media/sha256/306c4b7f00c9f89aa80b624f7dcaeace22c52a14ece3b3f7a1e9b107d6c0f126.mp4",
+            "bytes": 93178226,
+            "sha256": "306c4b7f00c9f89aa80b624f7dcaeace22c52a14ece3b3f7a1e9b107d6c0f126",
+            "mimeType": "video/mp4"
+          }
+        }
+      ]
+    }
+  ]
+}

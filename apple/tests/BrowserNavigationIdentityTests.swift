@@ -4,9 +4,28 @@ import Foundation
 struct BrowserNavigationIdentityTests {
     final class Token {}
 
+    static func rapidReloadKeepsTheNewestToken(at url: URL) {
+        var identity = NavigationIdentity<Token>()
+        let firstReload = Token()
+        let firstAttempt = identity.begin(target: url)
+        identity.attach(firstReload, to: firstAttempt)
+        precondition(identity.start(firstReload, url: url))
+
+        let secondReload = Token()
+        let secondAttempt = identity.begin(target: url)
+        identity.attach(secondReload, to: secondAttempt)
+        let foreignNavigation = Token()
+        precondition(!identity.start(foreignNavigation, url: url), "the same URL does not make a foreign start current")
+        precondition(!identity.finish(firstReload, url: url), "the previous reload cannot settle the next one")
+        precondition(identity.start(secondReload, url: url))
+        precondition(!identity.finish(foreignNavigation, url: url), "only the newest reload token can settle the attempt")
+        precondition(identity.finish(secondReload, url: url))
+    }
+
     static func main() {
         let oldURL = URL(string: "https://old.example/")!
         let newURL = URL(string: "https://new.example/")!
+        rapidReloadKeepsTheNewestToken(at: newURL)
         var identity = NavigationIdentity<Token>()
 
         let oldAttempt = identity.begin(target: oldURL)

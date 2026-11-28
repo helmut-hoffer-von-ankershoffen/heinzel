@@ -10,7 +10,7 @@ import {
   Settings,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { MENU_EVENT } from "@/about/menu";
 import { BookmarkBar } from "@/bookmarks/BookmarkStar";
 import { Favicon } from "@/bookmarks/Favicon";
@@ -57,7 +57,10 @@ const NOTICES = {
   "no-device": "browser.noDeviceNote",
   "clear-failed": "browser.clearFailedNote",
 } as const;
-type BrowserBridge = { browser: (request: Record<string, unknown>) => Promise<BrowserState> };
+type BrowserBridge = {
+  browserPlayerCutout?: boolean;
+  browser: (request: Record<string, unknown>) => Promise<BrowserState>;
+};
 function bridge(): BrowserBridge | undefined {
   const value = (window as Window & { heinzelDesktop?: Partial<BrowserBridge> }).heinzelDesktop;
   return typeof value?.browser === "function" ? (value as BrowserBridge) : undefined;
@@ -88,6 +91,7 @@ function AgentFace({ kind }: Readonly<{ kind: string }>) {
 }
 const SCHEME = /^[a-z][a-z\d+.-]*:/i;
 const SEARCH = "https://www.google.com/search";
+const START_PAGE = "https://heinzel.team";
 
 /**
  * What a typed address means, like a browser's address bar: a scheme stays as typed, a host or path gets https://,
@@ -129,13 +133,17 @@ export function BrowserPanel({
   onClose,
   onSettings,
   bookmarks = false,
+  startup: workspaceStartup,
 }: Readonly<{
   active: boolean;
   onClose: () => void /** Show the bookmark star; needs the app's providers. */;
   onSettings?: () => void;
   bookmarks?: boolean;
+  startup?: RefObject<boolean>;
 }>) {
-  const [address, setAddress] = useState("https://heinzel.team");
+  const localStartup = useRef(false);
+  const startup = workspaceStartup ?? localStartup;
+  const [address, setAddress] = useState(() => (startup.current ? "" : START_PAGE));
   const [addressEdited, setAddressEdited] = useState(false);
   const addressRevision = useRef(0);
   const navigationRevision = useRef(0);
@@ -182,10 +190,10 @@ export function BrowserPanel({
   const reloadFailed =
     reloadRejected &&
     (rejectedReloadTab.current === null ? state.selected === undefined : rejectedReloadTab.current === state.selected);
-  const clearReloadFailure = () => {
+  const clearReloadFailure = useCallback(() => {
     rejectedReloadTab.current = undefined;
     setReloadRejected(false);
-  };
+  }, []);
   const applyState = useCallback((result: BrowserState, requestRevision?: number) => {
     if (requestRevision !== undefined && requestRevision !== browserRequestRevision.current) return false;
     if (result.revision !== undefined && result.revision < observedBrowserRevision.current) return false;
@@ -233,31 +241,6 @@ export function BrowserPanel({
       window.removeEventListener("heinzel-guest-external-failed", failed);
     };
   }, []);
-  // Tabs live in the desktop, not in this panel: closing the panel only hides them, and reopening shows them again.
-  useEffect(() => {
-    const revision = browserRequestRevision.current;
-    void native
-      ?.browser({ action: "tabs" })
-      .then((result) => {
-        if (!applyState(result, revision)) return;
-        const current = result.tabs?.find((tab) => tab.selected);
-        if (current?.url) setAddress(current.url);
-      })
-      .catch(() => {});
-  }, [native, applyState]);
-  const surfaceFailed = useNativeSurface(
-    surface,
-    active,
-    native?.browser,
-    () => {
-      const revision = browserRequestRevision.current;
-      void native
-        ?.browser({ action: "state" })
-        .then((result) => applyState(result, revision))
-        .catch(() => {});
-    },
-    "browser",
-  );
   const selectedId = state.selected ?? null;
   const [shownTab, setShownTab] = useState<string | null>(null);
   useEffect(() => {
@@ -274,6 +257,7 @@ export function BrowserPanel({
   }, [selectedId, shownTab, state.tabs]);
   const newTab = () => {
     if (!native || ownTabs >= MAX_TABS) return;
+    startup.current = true;
     setAddress("");
     setRefused(false);
     void request({ action: "new-tab" }).then(() => addressInput.current?.focus());
@@ -324,33 +308,87 @@ export function BrowserPanel({
     };
   }, [native, active]);
   const current = tabs.find((tab) => tab.id === selectedId);
-  // The bookmark bar draws its star into the tools row.
+  // The bookmark bar draws its star beside the address.
   const [starSlot, setStarSlot] = useState<HTMLElement | null>(null);
   const displayAddress = !addressEdited && state.status === "ready" && state.url ? state.url : address;
   const target = addressUrl(displayAddress);
   const external = target ? externalBrowserUrl(target) : null;
   // The desktop refuses local, private and non-HTTPS targets; say so instead of a silent failure.
-  const go = async (url: string) => {
-    const submittedRevision = addressRevision.current;
-    const navigation = ++navigationRevision.current;
-    const requestRevision = ++browserRequestRevision.current;
-    clearReloadFailure();
-    try {
-      const result = await native?.browser({ action: "navigate", url });
-      if (navigation !== navigationRevision.current || requestRevision !== browserRequestRevision.current) return;
-      setRefused(false);
-      if (result) {
-        if (submittedRevision === addressRevision.current) setAddressEdited(false);
-        if (result.selected) setShownTab(result.selected);
-        applyState(result, requestRevision);
+  const go = useCallback(
+    async (url: string) => {
+      startup.current = true;
+      const submittedRevision = addressRevision.current;
+      const navigation = ++navigationRevision.current;
+      const requestRevision = ++browserRequestRevision.current;
+      clearReloadFailure();
+      try {
+        const result = await native?.browser({ action: "navigate", url });
+        if (navigation !== navigationRevision.current || requestRevision !== browserRequestRevision.current) return;
+        setRefused(false);
+        if (result) {
+          if (submittedRevision === addressRevision.current) setAddressEdited(false);
+          if (result.selected) setShownTab(result.selected);
+          applyState(result, requestRevision);
+        }
+      } catch (error) {
+        if (navigation !== navigationRevision.current || requestRevision !== browserRequestRevision.current) return;
+        if (String(error).includes("public HTTPS")) {
+          if (submittedRevision === addressRevision.current) setRefused(true);
+        } else setState((previous) => ({ ...previous, status: "unavailable" }));
       }
-    } catch (error) {
-      if (navigation !== navigationRevision.current || requestRevision !== browserRequestRevision.current) return;
-      if (String(error).includes("public HTTPS")) {
-        if (submittedRevision === addressRevision.current) setRefused(true);
-      } else setState((previous) => ({ ...previous, status: "unavailable" }));
-    }
-  };
+    },
+    [native, applyState, clearReloadFailure, startup],
+  );
+  // The workspace keeps first-use state when the user closes and remounts this panel.
+  useEffect(() => {
+    if (!native) return;
+    let disposed = false;
+    const requestRevision = browserRequestRevision.current;
+    const editedRevision = addressRevision.current;
+    void native
+      .browser({ action: "tabs" })
+      .then((result) => {
+        if (disposed || !applyState(result, requestRevision)) return;
+        const firstOpen = active && !startup.current;
+        if (active) startup.current = true;
+        const restored = result.tabs?.find((tab) => tab.selected);
+        if (restored) {
+          setShownTab(restored.id);
+          if (addressRevision.current === editedRevision) {
+            setAddressEdited(false);
+            setAddress(restored.url);
+          }
+        } else if (
+          firstOpen &&
+          result.tabs?.length === 0 &&
+          result.status === "empty" &&
+          !result.link &&
+          !result.notice &&
+          addressRevision.current === editedRevision
+        ) {
+          setAddress(START_PAGE);
+          void go(START_PAGE);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+    };
+  }, [active, native, applyState, go, startup]);
+  const surfaceFailed = useNativeSurface(
+    surface,
+    active,
+    native?.browser,
+    () => {
+      const revision = browserRequestRevision.current;
+      void native
+        ?.browser({ action: "state" })
+        .then((result) => applyState(result, revision))
+        .catch(() => {});
+    },
+    "browser",
+    native?.browserPlayerCutout === true,
+  );
   const status =
     state.status === "loading"
       ? t("browser.loading")
@@ -412,15 +450,25 @@ export function BrowserPanel({
           <Button
             type="button"
             variant="ghost"
-            size="sm"
-            className="h-10 shrink-0 px-2"
+            size="icon"
+            className="size-9 shrink-0"
             aria-label={t("browser.newTab")}
             title={t("browser.newTab")}
             disabled={ownTabs >= MAX_TABS}
             onClick={newTab}
           >
             <Plus aria-hidden />
-            {t("browser.newTab")}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-9 shrink-0"
+            aria-label={t("browser.closePanel")}
+            title={t("browser.closePanel")}
+            onClick={onClose}
+          >
+            <X aria-hidden />
           </Button>
         </div>
       )}
@@ -493,6 +541,7 @@ export function BrowserPanel({
           spellCheck={false}
           value={displayAddress}
           onChange={(event) => {
+            startup.current = true;
             addressRevision.current += 1;
             setAddress(event.target.value);
             setAddressEdited(true);
@@ -500,6 +549,7 @@ export function BrowserPanel({
           }}
           className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-1 text-sm"
         />
+        {native && bookmarks && <span ref={setStarSlot} className="contents" />}
         {native ? (
           <Button
             type="submit"
@@ -552,7 +602,6 @@ export function BrowserPanel({
           aria-label={t("browser.moreActions")}
           className="flex shrink-0 flex-wrap items-center gap-1 px-2 py-1"
         >
-          {bookmarks && <span ref={setStarSlot} className="contents" />}
           <Button
             type="button"
             variant="ghost"
@@ -578,18 +627,6 @@ export function BrowserPanel({
               {t("browser.settings")}
             </Button>
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setToolsOpen(false);
-              onClose();
-            }}
-          >
-            <X aria-hidden />
-            {t("browser.close")}
-          </Button>
         </section>
       )}
       {native ? (

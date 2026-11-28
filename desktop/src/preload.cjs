@@ -7,10 +7,20 @@ const titlebar = mac ? Object.freeze({ height: 44, left: 80, right: 0 }) : null;
 // The bridge exposes fixed product operations, a capability label, the title bar insets and a full-screen listener;
 // no raw IPC or credential material reaches the page.
 contextBridge.exposeInMainWorld("heinzelDesktop", Object.freeze({
+  workspaces: Object.freeze({
+    currentName: () => ipcRenderer.invoke("hz:workspace-menu", "name"),
+    open: () => ipcRenderer.invoke("hz:workspace-menu", "open"),
+  }),
+  album: (action, options = {}) => ipcRenderer.invoke("hz:album", action, options),
   clientFlavor: "electron",
   workspaceAudio: true,
   titlebar,
   browser: (request) => ipcRenderer.invoke("hz:browser", request),
+  onPlayerIntent: (callback) => {
+    const listener = (_event, intent) => callback(intent);
+    ipcRenderer.on("hz:player-intent", listener);
+    return () => ipcRenderer.removeListener("hz:player-intent", listener);
+  },
   player: (request) => ipcRenderer.invoke("hz:player", request),
   // Settings: whether links open in the built-in browser (true) or the system's default browser (false). Stored by
   // the desktop app itself; called with no argument it only reads the choice.
@@ -30,6 +40,9 @@ contextBridge.exposeInMainWorld("heinzelDesktop", Object.freeze({
 // Only trusted native input in this main frame lets the next external link open in the default browser.
 const activate = (event) => { if (event.isTrusted) void ipcRenderer.invoke("hz:user-activation").catch(() => {}); };
 for (const name of ["pointerdown", "keydown", "click"]) document.addEventListener(name, activate, true);
+document.addEventListener("pointerup", event => {
+  if (event.target instanceof HTMLInputElement && event.target.hasAttribute("data-album-seek")) activate(event);
+}, true);
 
 // A trusted native click is required; renderer scripts receive no callable external-opening bridge.
 document.addEventListener("click", (event) => {
@@ -51,3 +64,7 @@ document.addEventListener("click", (event) => {
   const failed = () => anchor.dispatchEvent(new CustomEvent("hz-public-media-result", { detail: false }));
   void ipcRenderer.invoke("hz:public-media", anchor.href).then((opened) => { if (opened !== true) failed(); }, failed);
 }, true);
+
+ipcRenderer.on("hz:album-change", (_event, snapshot) => {
+  window.dispatchEvent(new CustomEvent("heinzel-album-change", { detail: snapshot }));
+});

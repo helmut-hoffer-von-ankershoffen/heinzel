@@ -1,3 +1,5 @@
+import { createPlayerChrome } from "./player-chrome.js";
+import { siblingStack } from "./sibling-stack.js";
 import { browserBounds, browserOwner, browserUrl, hasExactKeys, nativeSurfaceDiagnostics } from "./mini-browser-policy.js";
 import { classifyUiLink, createExternalOpener, createUserActivation, grantOnNativeInput } from "./ui-navigation.js";
 
@@ -46,22 +48,26 @@ export function playerState(value) {
 }
 
 const FIELDS = { open: ["action", "video"], layout: ["action", "bounds"], hide: ["action"], close: ["action"],
-  play: ["action"], pause: ["action"], volume: ["action", "value"], state: ["action"], diagnostics: ["action"] };
+  play: ["action"], pause: ["action"], volume: ["action", "value"], state: ["action"], diagnostics: ["action"], chromeLayout: ["action", "bounds"], chromeHide: ["action"] };
 
 export function createMediaPlayer({ windows, fromWebContents, connection, lease, createView, openExternal,
   now = Date.now, platform = process.platform }) {
   const players = new Map();
+  const openings = new Map();
   const generations = new WeakMap();
   let stopped = false;
   const close = (window) => {
     generations.set(window, (generations.get(window) ?? 0) + 1);
+    openings.get(window)?.detach();
+    openings.delete(window);
     const player = players.get(window);
     if (!player) return;
     players.delete(window);
+    player.chrome?.close();
     player.detach();
     // The window may be destroyed already (it closes before the app quits): the lease is given back all the same.
     try {
-      if (!window.isDestroyed()) window.contentView.removeChildView(player.view);
+      siblingStack(window).release(player.view);
       if (!player.view.webContents.isDestroyed()) player.view.webContents.close({ waitForBeforeUnload: false });
     } catch { /* destroyed with its window */ }
     player.release();
@@ -132,7 +138,7 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
       if (mainFrame && code !== -3) player.status = "unavailable";
     });
     contents.on("render-process-gone", () => { player.status = "unavailable"; view.setVisible(false); });
-    window.contentView.addChildView(view);
+    siblingStack(window).attach(view, "media");
     view.setVisible(false);
     players.set(window, player);
     const onClosed = () => close(window);
@@ -197,21 +203,70 @@ export function createMediaPlayer({ windows, fromWebContents, connection, lease,
       if (request.action === "open") {
         playerUrl(request.video);
         if (player?.video !== request.video) {
-          close(window);
-          player = await open(window, request.video);
+          let opening = openings.get(window);
+          if (opening?.video !== request.video) {
+            close(window);
+            const owner = window.webContents;
+            const cancel = () => close(window);
+            const navigate = (navigation) => {
+              if (navigation.isMainFrame && !navigation.isSameDocument) cancel();
+            };
+            opening = { video: request.video, detach: () => {
+              window.off("closed", cancel);
+              owner.off("did-start-navigation", navigate);
+            } };
+            window.on("closed", cancel);
+            owner.on("did-start-navigation", navigate);
+            openings.set(window, opening);
+            const current = opening;
+            opening.promise = open(window, request.video).finally(() => {
+              current.detach();
+              if (openings.get(window) === current) openings.delete(window);
+            });
+          }
+          player = await opening.promise;
         }
       }
       if (!player) return { status: "empty", ready: false, state: -1, error: false };
+      if (request.action === "chromeHide") { player.chromeRevision = (player.chromeRevision ?? 0) + 1; player.chrome?.hide(); }
+      if (request.action === "chromeLayout") {
+        const revision = player.chromeRevision = (player.chromeRevision ?? 0) + 1;
+        if (!player.chromePending) {
+          player.chromePending = createPlayerChrome({
+            window, createView,
+            dispatch: (intent) => {
+              browserOwner({ sender: window.webContents, senderFrame: window.webContents.mainFrame },
+                { windows, fromWebContents, connection });
+              window.webContents.send("hz:player-intent", intent);
+            },
+          }).then((chrome) => {
+            if (players.get(window) !== player) { chrome.close(); return; }
+            player.chrome = chrome;
+          }).catch(() => { player.chromePending = null; });
+        }
+        await player.chromePending;
+        if (players.get(window) !== player || revision !== player.chromeRevision) return { status: player.status };
+        const zoom = event.sender.getZoomFactor();
+        const bounds = Object.fromEntries(Object.entries(browserBounds(request.bounds,
+          window.getContentSize().map((n) => n / zoom))).map(([key, n]) => [key, Math.round(n * zoom)]));
+        player.chrome?.layout(bounds, { suppressed: false, playerReady: player.status === "ready", dispatcherReady: true });
+      }
       if (request.action === "layout") layout(window, event, player, request.bounds);
-      if (request.action === "hide") player.view.setVisible(false);
+      if (request.action === "hide") { player.chromeRevision = (player.chromeRevision ?? 0) + 1; player.view.setVisible(false); player.chrome?.hide(); }
       if (["play", "pause", "volume"].includes(request.action)) await run(player, request.action, request.value);
       const state = playerState(await run(player, "state"));
       return { status: player.status, ...state };
     },
     /** At quit: never throws, so a window that is already gone cannot keep the app from quitting. */
+    chromeHandle(event, request) {
+      for (const player of players.values()) {
+        if (player.chrome?.owns(event)) return player.chrome.handle(event, request);
+      }
+      throw new Error("Unknown player controls.");
+    },
     closeAll() {
       stopped = true;
-      for (const window of [...players.keys()]) {
+      for (const window of new Set([...players.keys(), ...openings.keys()])) {
         try { close(window); } catch { /* the other windows are still closed */ }
       }
     },

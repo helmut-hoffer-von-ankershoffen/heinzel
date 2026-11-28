@@ -33,6 +33,7 @@ export const notify = {
   "sound.credits": "Sounds by {credits}",
   "sound.following": "Your theme brings {title}, which plays instead.",
   "sound.player": "{title} player",
+  "sound.playerWidth": "Player width",
   "sound.move": "Move the player (arrow keys)",
   "sound.popOut": "Pop the player out of the sidebar",
   "sound.dock": "Dock the player in the sidebar",

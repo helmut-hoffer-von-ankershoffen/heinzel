@@ -1357,6 +1357,63 @@ def test_handover_observes_only_fresh_manager_tick_and_actual_contributions(make
     assert service.handover_observation(result.request_id) is None
 
 
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+@pytest.mark.parametrize("case", ["completed", "unverified", "changed-before-archive"])
+def test_uninstall_preserves_completed_handover_evidence(make, bin_dir, monkeypatch, platform, case):
+    service = make(platform=platform, runner=Runner(bin_dir))
+    service.install(FIVE_MINUTES)
+    service._boot_identity = lambda: "fixture-boot"
+    service._continuity_fingerprint = lambda: "a" * 64
+    fence = {"ticks": 100, "hz": 100, "ns_dev": 1, "ns_ino": 2}
+    service._birth_fence = lambda: fence
+    request = service.request_handover(service.capture_handover())
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    service._process_birth = lambda: {**fence, "ticks": 101}
+    service.tick()
+    assert service.handover_observation(request.request_id) is not None
+    state = service.state_dir
+    files = [
+        *service._unit_paths(),
+        *(
+            state / name
+            for name in ("install.json", "handover-request.json", "handover-observation.json", "heartbeat.json")
+        ),
+    ]
+    original = {path: path.read_bytes() for path in files}
+    if case == "unverified":
+        service._continuity_fingerprint = lambda: "b" * 64
+        with pytest.raises(HeinzelError, match="previous handover cannot be verified"):
+            service.uninstall()
+        assert service.owned_manager_state(bin_dir).registered
+        assert all(path.read_bytes() == data for path, data in original.items())
+        assert not (state / "handover-pending.json").exists()
+        return
+    if case == "changed-before-archive":
+        run = service.owned_manager_command
+
+        def change_during_unload(command):
+            result = run(command)
+            if "bootout" in command or "disable" in command:
+                (state / "heartbeat.json").write_text("{}")
+            return result
+
+        monkeypatch.setattr(service, "owned_manager_command", change_during_unload)
+        with pytest.raises(HeinzelError, match="evidence changed"):
+            service.uninstall()
+        assert (state / "handover-pending.json").exists()
+        assert all(path.read_bytes() == data for path, data in original.items() if path.name != "heartbeat.json")
+        return
+    service.uninstall()
+    assert not (state / "handover-request.json").exists()
+    service.install(FIVE_MINUTES)
+    assert service.owned_manager_state(bin_dir).registered
+    assert not service.status().version_mismatch
+    (archive,) = state.glob("uninstall-*")
+    assert {path.name: path.read_bytes() for path in archive.iterdir()} == {
+        path.name: data for path, data in original.items()
+    }
+
+
 @pytest.mark.parametrize("failure", ["manual", "wrong-boot", "missing-boot", "changed-fingerprint", "changed-request"])
 def test_handover_remains_pending_when_fresh_tick_evidence_is_uncertain(make, bin_dir, monkeypatch, failure):
     service = make(runner=Runner(bin_dir))

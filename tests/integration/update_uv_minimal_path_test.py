@@ -42,7 +42,7 @@ def test_missing_uv_says_where_it_looked(tmp_path, monkeypatch):
     monkeypatch.delenv("UV_INSTALL_DIR", raising=False)
     monkeypatch.delenv("XDG_BIN_HOME", raising=False)
     monkeypatch.delenv("CARGO_HOME", raising=False)
-    monkeypatch.setattr("heinzel.kernel.install._uv_locate.standard_directories", lambda _=None: [str(bin_dir)])
+    monkeypatch.setattr("heinzel.services.install._uv_locate.standard_directories", lambda _=None: [str(bin_dir)])
     from heinzel import HeinzelError
 
     with pytest.raises(HeinzelError) as caught:

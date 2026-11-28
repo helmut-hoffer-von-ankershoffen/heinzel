@@ -581,3 +581,16 @@ def test_an_explicit_choice_beats_the_default_off_included_and_a_missing_one_sti
     listed = hz(hzk, "system", "sound", "list")[1]
     assert listed["effective"] == "off"
     assert "No installed plugin offers the soundscape 'rain'" in listed["note"]
+
+
+def test_desktop_album_policy_only_admits_the_two_fixed_film_locations(kernel, static):
+    browser = client(kernel(), static)
+    header = {"user-agent": "Workspace/1 HeinzelAlbum/1"}
+    digest = "306c4b7f00c9f89aa80b624f7dcaeace22c52a14ece3b3f7a1e9b107d6c0f126"
+    policy = browser.get("/", headers=header).headers["content-security-policy"]
+    assert (
+        policy
+        == f"{web.CSP}; media-src https://latentheinzels.heinzel.team/media/sha256/{digest}.mp4 heinzel-album://film/{digest}.mp4"
+    )
+    assert browser.get("/", headers={"user-agent": "OtherHeinzelAlbum/1"}).headers["content-security-policy"] == web.CSP
+    assert browser.get("/favicon.svg", headers=header).headers["content-security-policy"] == web.CSP

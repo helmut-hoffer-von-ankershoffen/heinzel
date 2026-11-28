@@ -1,6 +1,8 @@
 import AVFoundation
+import Network
 import SwiftUI
 import UserNotifications
+import WebKit
 #if os(macOS)
 import Carbon
 #endif
@@ -20,7 +22,7 @@ private var heinzelAppVersion: String {
     let bundle = Bundle.main
     let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
     let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
-    return "Version \(version) · Build \(build)"
+    return "Heinzel app \(version) · Build \(build)"
 }
 
 private var heinzelAppBuild: AppBuildObservation.Build? {
@@ -38,16 +40,12 @@ private enum ConnectionPalette {
     static let muted = Color(red: 0.30, green: 0.36, blue: 0.32)
     static let warning = Color(red: 0.50, green: 0.25, blue: 0.17)
     static let rule = ink.opacity(0.14)
+    static let appSurface = Color(red: 0.94, green: 0.96, blue: 0.98)
 }
 
 private struct ConnectionFooter: View {
-    var showTagline = false
-
     var body: some View {
-        VStack(spacing: 8) {
-            if showTagline { Text(heinzelTagline).font(.footnote) }
-            Text(heinzelAppVersion).font(.caption2)
-        }
+        Text(heinzelAppVersion).font(.caption2)
         .foregroundStyle(ConnectionPalette.muted)
         .multilineTextAlignment(.center)
         .frame(maxWidth: 460)
@@ -59,57 +57,99 @@ private struct ConnectionFooter: View {
 
 private struct WorkspaceVersionDetails: View {
     let app: AppBuildObservation?
-    let workspace: WorkspaceVersionObservation?
+    let checks: [(String, String)]
+    let internetClientAddress: String?
+    let origin: URL?
+    let name: String?
+    let source: String?
+    let target: WorkspaceInformationRequest?
+    let document: @MainActor @Sendable () -> WKWebView?
+
+    @Environment(\.workspaceInformationVisible) private var visible
+    @State private var facts = WorkspaceInformationFacts()
+    private var request: WorkspaceInformationRequest? { visible ? target : nil }
+    private var current: WorkspaceInformationFacts.Snapshot? {
+        guard let request, facts.snapshot?.target == request else { return nil }
+        return facts.snapshot
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let app {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("App \(app.build.version) · Build \(app.build.number)").fontWeight(.medium)
-                    Text("This build observed here since \(date(app.observedSince))")
-                }
-            } else {
-                Text("App build details are unavailable.")
-            }
-
-            if let workspace {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Workspace web \(workspace.version)").fontWeight(.medium)
-                    Text("Version last seen \(date(workspace.observedAt))")
-                    if let installed = workspace.installedVersion {
-                        Text("Installed hz \(installed)")
-                        if let updated = workspace.installedUpdatedAt {
-                            Text("Installed hz updated \(date(updated))")
-                        } else {
-                            Text("Workspace did not report an installation update date.")
-                        }
-                    } else {
-                        Text("Workspace did not report the installed hz version or update date.")
-                    }
-                    if let daemon = workspace.daemonLastVersion, let observed = workspace.daemonLastObservedAt {
-                        Text("Daemon \(daemon) · Last observed \(date(observed))")
-                        if let stale = workspace.daemonObservationStale {
-                            Text(stale ? "Daemon observation was stale when checked." : "Daemon observation was fresh when checked.")
-                        }
-                    } else {
-                        Text("Workspace did not report a daemon observation.")
-                    }
-                    if workspace.version.range(of: #"^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$"#, options: .regularExpression) != nil,
-                       let release = URL(string: "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v\(workspace.version)") {
-                        Link("Release details", destination: release)
-                    }
-                }
-            } else {
-                Text("No workspace version has been recorded here. Version details appear when the workspace can report them.")
+        let live = current?.version
+        VStack(alignment: .leading, spacing: 10) {
+            heading("Application")
+            fact("Name", "Heinzelmännchen")
+            fact("Type", "Native")
+            fact("Version", heinzelAppBuild?.version ?? "Unknown")
+            fact("Build", heinzelAppBuild?.number ?? "Unknown")
+            fact("Revision", heinzelAppBuild?.revision)
+            fact("Operating system", WorkspaceView.clientOS + " " + ProcessInfo.processInfo.operatingSystemVersionString)
+            fact("IP address", (origin == nil ? internetClientAddress : current?.clientAddress) ?? "Unknown")
+            fact("Build first observed", date(app?.observedSince))
+            fact("Location", Bundle.main.bundleURL.path(percentEncoded: false))
+            ForEach(checks, id: \.0) { check in fact(check.0, check.1) }
+            if let origin, let name {
+                Divider()
+                heading("Workspace")
+                fact("Name", name)
+                fact("Version", live?.version ?? "Unknown")
+                fact("Uptime", live?.uptimeAtObservation.map(uptime) ?? "Unavailable")
+                fact("IP address", live?.backendIP ?? "Unavailable")
+                fact("Source", source)
+                fact("Address", origin.absoluteString)
+                fact("Connection", origin.scheme == "http" ? "Local" : (live != nil ? "Online" : "Unknown"))
+                fact("Backend running since", date(live?.webRunningSince))
+                if let live { versionFacts(live) }
             }
         }
         .font(.footnote)
         .foregroundStyle(ConnectionPalette.muted)
-        .connectionPanel()
+        .task(id: request) { await facts.observe(request, view: document) }
     }
 
-    private func date(_ value: Date) -> String {
-        value.formatted(date: .abbreviated, time: .shortened)
+    @ViewBuilder private func versionFacts(_ version: WorkspaceVersionObservation) -> some View {
+        fact("Version report", date(version.backendObservedAt ?? version.observedAt))
+        fact("Web server initialized", date(version.webObservedSince))
+        fact("Installed version", version.differentInstalledVersion)
+        fact("Installation updated", date(version.installedUpdatedAt))
+        fact("Daemon running version", version.daemonRunningVersion)
+        fact("Daemon running since", date(version.daemonRunningSince))
+        fact("Daemon observed version", version.daemonLastVersion)
+        fact("Daemon tick observed", date(version.daemonLastObservedAt))
+        fact("Tick stale at report", version.daemonObservationStale.map { $0 ? "Yes" : "No" })
+        fact("Daemon registration recorded", date(version.daemonRegisteredAt))
+        fact("Daemon loaded at report", version.daemonLoaded.map { $0 ? "Yes" : "No" })
+        fact("Daemon ownership verified at report", version.daemonOwned.map { $0 ? "Yes" : "No" })
+        fact("Daemon status observed", date(version.daemonStatusObservedAt))
+        if version.version.range(of: #"^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$"#, options: .regularExpression) != nil,
+           let release = URL(string: "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v" + version.version) {
+            Link("Release details", destination: release)
+        }
+    }
+
+    private func heading(_ title: String) -> some View {
+        Text(title).font(.headline).foregroundStyle(ConnectionPalette.ink).accessibilityAddTraits(.isHeader)
+    }
+
+    @ViewBuilder private func fact(_ label: String, _ value: String?) -> some View {
+        if let value {
+            LabeledContent {
+                Text(verbatim: value).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.trailing)
+            } label: { Text(label) }
+        }
+    }
+
+    private func date(_ value: Date?) -> String? {
+        value?.formatted(date: .abbreviated, time: .standard)
+    }
+
+    private func uptime(_ interval: TimeInterval) -> String {
+        if interval < 60 { return "Under a minute" }
+        let minutes = Int(interval) / 60
+        let hours = minutes / 60
+        if hours >= 24 { return "\(hours / 24)d \(hours % 24)h" }
+        if hours > 0 { return "\(hours)h \(minutes % 60)m" }
+        return "\(minutes)m"
     }
 }
 
@@ -171,6 +211,10 @@ struct HeinzelApp: App {
         #if os(macOS)
         Window("Heinzelmännchen", id: "workspace") {
             MacWorkspaceHost(menu: menu, service: service)
+                // The retained host must reach the title bar before its web toolbar can draw underneath it.
+                .ignoresSafeArea(.container, edges: .top)
+                .focusedSceneValue(\.workspaceMenuAvailable, menu.available)
+                .focusedSceneValue(\.connectionMenuAvailable, menu.connectionAvailable)
                 .frame(minWidth: 550, minHeight: 440)
         }
         .defaultSize(width: 1100, height: 760)
@@ -198,7 +242,7 @@ struct HeinzelApp: App {
     }
 }
 
-private extension Notification.Name {
+extension Notification.Name {
     static let showHeinzelConnection = Notification.Name("showHeinzelConnection")
 }
 
@@ -329,6 +373,7 @@ private final class MacStatusMenu {
     var workspaces: [RecentWorkspace] = []
     var selectedWorkspace: String?
     var canSwitchWorkspace = false
+    var connectionAvailable = false
     var pendingWorkspace: MacWorkspaceChoice?
     var refreshWorkspaces: (() -> Void)?
     // App-owned models survive popover dismissal and are never reused across scopes.
@@ -503,7 +548,7 @@ private struct WorkspaceCommands: Commands {
         CommandGroup(replacing: .appSettings) {
             command("Settings…", .settings).keyboardShortcut(",")
             command("Check for Updates…", .updates)
-            Button("Connection…") {
+            Button("Workspaces…") {
                 NotificationCenter.default.post(name: .showHeinzelConnection, object: nil)
             }
             .keyboardShortcut(",", modifiers: [.command, .shift])
@@ -571,7 +616,9 @@ struct ConnectionView: View {
     @State private var soundDockAvailableSize = CGSize(width: 600, height: 800)
     @State private var soundscape = SoundscapePlayback.shared
     #if os(macOS)
-    let service: LocalService
+    @ObservedObject var service: LocalService
+    @State private var localBackend: Endpoint.Lifecycle?
+    @State private var returnAfterLocalRecovery = false
     fileprivate let statusMenu: MacStatusMenu
     #endif
 
@@ -586,11 +633,9 @@ struct ConnectionView: View {
     @AppStorage("forgottenWorkspaces") private var forgottenWorkspaces = Data()
     @AppStorage("workspaceBackendVersions") private var workspaceBackendVersions = Data()
     @AppStorage("appBuildObservation") private var appBuildObservation = Data()
-    @State private var syncedWorkspaces: [RecentWorkspace] = []
-    @State private var cloudDirectoryUnavailable = false
-    @State private var cloudDirectoryChecked = false
+    @State private var cloudDirectory = WorkspaceCloudDirectory()
+    private var cloudDirectoryUnavailable: Bool { cloudDirectory.access == .unavailable }
     @State private var attemptedCloudSignIns: [String: Date] = [:]
-    @State private var cloudSignInInProgress = false
     #if os(macOS)
     @AppStorage(CloudSyncPreference.key) private var syncWorkspaceSignIn = true
     @AppStorage("cloudPublishNoticeShown") private var cloudPublishNoticeShown = false
@@ -600,32 +645,64 @@ struct ConnectionView: View {
     #endif
     @State private var link = ""
     @State private var endpoint: Endpoint?
+    private struct PendingSwitch {
+        let page: WorkspacePage
+        let previousEndpoint: Endpoint?
+        let previousRevision: Int
+        let remember: Bool
+        let source: RecentWorkspace.Source?
+        let cloudSignInRejected: Bool
+        let menuRevision: Int
+        var startsLocal = false
+    }
+
+    @State private var pendingSwitch: PendingSwitch?
+    @State private var switchSequence = 0
+    @State private var connectingOrigin: URL?
+    @State private var connectionAttempt: UUID?
+    private enum WorkspaceEntry: Equatable {
+        case add, signIn(URL)
+    }
+    @State private var workspaceEntry: WorkspaceEntry?
+    private var signInDestination: URL? {
+        if case .signIn(let origin) = workspaceEntry { return origin }
+        return nil
+    }
+    @State private var switchCompletion: CheckedContinuation<Bool, Never>?
+    @State private var confirmedOrigin: URL?
+    @State private var needsSignIn: Set<URL> = []
+    @State private var directoryResults: [URL: WorkspaceHostProbe] = [:]
+    @State private var directoryHasNetwork: Bool?
+    @State private var directoryRevision = 0
     @State private var connecting = false
-    @State private var stoppingLocalWorkspace = false
+    @State private var deviceCheckInteracting = false
+    @State private var internetClientAddress: String?
+    @State private var observedDeviceChecks: [String: String] = [:]
+    private var informationDeviceChecks: [(String, String)] {
+        ["Internet", "Notifications", "System audio", "iCloud", "Microphone"].map {
+            ($0, observedDeviceChecks[$0] ?? "Checking")
+        }
+    }
     @State private var loadingWorkspace = false
     @State private var workspaceBackground = Color("StartupBackground")
     @State private var error: String?
     @State private var widgetClearFailed = false
     @State private var showConnection = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    #if os(iOS)
-    @State private var nativeFooterWidth: CGFloat = 88
-    @State private var nativeFooterBottom: CGFloat = 0
-    @State private var nativeFooterGeneration = 0
-    @State private var nativeFooterSlot: CGRect?
-    #endif
     @State private var connectionSheetContentHeight: CGFloat = 350
+    @State private var connectionSheetFooterHeight: CGFloat = 88
     private var connectionSheetHeight: CGFloat {
-        min(520, max(300, connectionSheetContentHeight.rounded(.up)))
+        min(620, max(300, (connectionSheetContentHeight + connectionSheetFooterHeight).rounded(.up)))
     }
-    @State private var showDisconnectConfirmation = false
+    @State private var removalCandidate: RecentWorkspace?
     @State private var choosingWorkspace = false
     @State private var showConnectionHelp = false
     @State private var helpAfterConnection = false
     #if os(iOS)
     @State private var shortcutRouter = AppShortcutRouter.shared
     #endif
-    @State private var pendingShortcutURL: NativeRoute?
+    @State private var shortcutDismissal = ShortcutSheetDismissal()
+    @State private var pendingShortcut: ShortcutRequest?
     @State private var showHeinzelPicker = false
     @State private var pickerRoster: [WidgetHeinzel] = []
     @State private var pickerSearch = ""
@@ -646,8 +723,29 @@ struct ConnectionView: View {
     @State private var loadFailure: WorkspaceProblem?
     @State private var loadRevision = 0
     @State private var widgetViewRotation = WidgetViewRotation()
+    @State private var pageSessions = WorkspacePageSessions()
+    @State private var returnAfterRemoteRecovery = false
+    @State private var remoteRecovery: WorkspaceRemoteRecovery?
+    @State private var monitorGeneration = 0
+
+    private struct RemoteSessionWatch: Equatable {
+        let origin: URL
+        let page: Int
+        let generation: Int
+        let network: Bool?
+        let authenticatedPage: Bool
+    }
+
+    private var remoteWatch: RemoteSessionWatch? {
+        guard let origin = monitoredOrigin, !connecting, !deviceCheckInteracting, workspaceEntry == nil,
+              !showConnectionHelp, sharedWorkspace == nil,
+              remoteRecovery?.paused != true, remoteRecovery?.issue.canReconnectAutomatically != false else { return nil }
+        return RemoteSessionWatch(origin: origin, page: loadRevision, generation: monitorGeneration,
+                                  network: routeAvailable(to: origin),
+                                  authenticatedPage: confirmedOrigin == origin || remoteRecovery != nil)
+    }
+
     @State private var connectionIssue: WorkspaceProblem?
-    @State private var verifiedConnectionOrigin: URL?
     #if os(iOS)
     @State private var connectionProbeRevision = 0
     @State private var connectionProbe: ConnectionProbe?
@@ -662,11 +760,7 @@ struct ConnectionView: View {
     }
     #endif
     @FocusState private var editingLink: Bool
-    @State private var draftRevision = 0
-    @State private var checkedDraft: URL?
-    @State private var draftIssue: WorkspaceProblem?
     #if os(iOS)
-    @State private var manualDraftProbe: DraftProbe?
     @State private var refreshingConnection = false
     #endif
 
@@ -675,11 +769,11 @@ struct ConnectionView: View {
 
     private var menuState: MacMenuState {
         MacMenuState(hasEndpoint: endpoint != nil, choosingWorkspace: choosingWorkspace,
-                     starting: showingColdStart || connecting || stoppingLocalWorkspace,
+                     starting: showingColdStart || connecting || deviceCheckInteracting,
                      loading: loadingWorkspace, hasProblem: visibleProblem != nil,
                      connectionPresented: showConnection,
-                     otherSheetPresented: showConnectionHelp || helpAfterConnection || showHeinzelPicker ||
-                        showPromptComposer || showDisconnectConfirmation || sharedWorkspace != nil)
+                     otherSheetPresented: deviceCheckInteracting || workspaceEntry != nil || showConnectionHelp || helpAfterConnection || showHeinzelPicker ||
+                        showPromptComposer || removalCandidate != nil || sharedWorkspace != nil)
     }
 
     private func refreshStatusMenu() {
@@ -703,14 +797,14 @@ struct ConnectionView: View {
 
     private func refreshWorkspaceMenu() {
         statusMenu.workspaces = recentWorkspaces
-        statusMenu.selectedWorkspace = endpoint?.origin.absoluteString
+        statusMenu.selectedWorkspace = confirmedOrigin?.absoluteString
         statusMenu.canSwitchWorkspace = canSwitchWorkspaceFromMenu
     }
 
     private var canSwitchWorkspaceFromMenu: Bool {
-        !connecting && !stoppingLocalWorkspace && !showingColdStart && !loadingWorkspace &&
+        !connecting && !deviceCheckInteracting && !showingColdStart && !loadingWorkspace &&
             !MacWorkspaceSwitchState.protectsEditor(link: link, focused: editingLink) &&
-            !soundscape.showingDock && !showPromptComposer && !showHeinzelPicker && !showDisconnectConfirmation &&
+            !showPromptComposer && !showHeinzelPicker && removalCandidate == nil &&
             !showConnectionHelp && !helpAfterConnection && sharedWorkspace == nil
     }
 
@@ -721,7 +815,7 @@ struct ConnectionView: View {
         statusMenu.pending = nil
         switch choice {
         case .local:
-            if endpoint?.origin.scheme == "http", loadFailure == nil { return }
+            if endpoint?.origin.scheme == "http", loadFailure == nil, service.recovery == nil { return }
             showConnection = false
             if await startLocal() == false {
                 var presentation = MacWorkspaceSwitchState(
@@ -736,7 +830,7 @@ struct ConnectionView: View {
             showConnection = false
             await connectRecent(item.address, source: item.source)
         case .manage:
-            chooseAnotherWorkspace()
+            openConnectionFromMenu()
         }
         refreshStatusMenu()
     }
@@ -752,21 +846,12 @@ struct ConnectionView: View {
     }
     #endif
 
-    private struct DraftProbe: Equatable {
-        let origin: URL
-        let revision: Int
-    }
-
-    private var draftProbe: DraftProbe? {
-        draftOrigin.map { DraftProbe(origin: $0, revision: draftRevision) }
-    }
-
     private var draftOrigin: URL? {
         draftWorkspace?.origin
     }
 
     private var draftWorkspace: Endpoint? {
-        guard choosingWorkspace || endpoint == nil else { return nil }
+        guard workspaceEntry != nil || choosingWorkspace || endpoint == nil else { return nil }
         return parseWorkspaceLink(link)
     }
 
@@ -776,7 +861,7 @@ struct ConnectionView: View {
 
     private var availableCloudWorkspaces: [RecentWorkspace] {
         let forgotten = forgottenWorkspaceDates
-        return syncedWorkspaces.filter { $0.lastUsed > (forgotten[$0.address] ?? .distantPast) }
+        return cloudDirectory.workspaces.filter { $0.lastUsed > (forgotten[$0.address] ?? .distantPast) }
     }
 
     private var shouldRefreshSyncedWorkspaces: Bool {
@@ -786,6 +871,43 @@ struct ConnectionView: View {
         #else
         scenePhase == .active && (endpoint == nil || choosingWorkspace || showConnection || loadFailure == .signIn)
         #endif
+    }
+
+    private struct DirectoryProbe: Equatable {
+        let origins: [URL]
+        let revision: Int
+    }
+
+    private var directoryVisible: Bool {
+        scenePhase == .active && (endpoint == nil || choosingWorkspace || showConnection || loadFailure == .signIn)
+    }
+
+    private func routeAvailable(to origin: URL) -> Bool? {
+        WorkspaceHostProbe.routeAvailable(networkAvailable: directoryHasNetwork, probe: directoryResults[origin])
+    }
+
+    private var directoryProbe: DirectoryProbe? {
+        guard directoryVisible, directoryHasNetwork != nil else { return nil }
+        let origins = recentWorkspaces.compactMap { Endpoint($0.address)?.origin }
+        let paused = remoteRecovery?.paused == true ? endpoint?.origin : nil
+        return DirectoryProbe(origins: origins.filter { $0 != paused }, revision: directoryRevision)
+    }
+
+    private func checkDirectory(_ probe: DirectoryProbe) async {
+        let session = Endpoint.probeSession()
+        defer { session.invalidateAndCancel() }
+        var origins = probe.origins.makeIterator()
+        await withTaskGroup(of: (URL, WorkspaceHostProbe).self) { group in
+            func enqueue(_ origin: URL) {
+                group.addTask { (origin, await Endpoint.probeHost(at: origin, using: session)) }
+            }
+            for _ in 0..<3 { if let origin = origins.next() { enqueue(origin) } }
+            for await (origin, result) in group {
+                guard !Task.isCancelled, probe == directoryProbe else { group.cancelAll(); return }
+                directoryResults[origin] = result
+                if let origin = origins.next() { enqueue(origin) }
+            }
+        }
     }
 
     private var recentWorkspaces: [RecentWorkspace] {
@@ -825,6 +947,8 @@ struct ConnectionView: View {
     }
 
     private func forgetWorkspace(_ item: RecentWorkspace) {
+        guard item.isUserAdded, !connecting, confirmedOrigin?.absoluteString != item.address else { return }
+        if endpoint?.origin.absoluteString == item.address { disconnect() }
         var versions = (try? JSONDecoder().decode([String: WorkspaceVersionObservation].self, from: workspaceBackendVersions)) ?? [:]
         versions.removeValue(forKey: item.address)
         if let encoded = try? JSONEncoder().encode(versions) { workspaceBackendVersions = encoded }
@@ -832,7 +956,7 @@ struct ConnectionView: View {
         local.removeAll { $0.address == item.address }
         if let encoded = try? JSONEncoder().encode(local) { workspaceHistory = encoded }
         var forgotten = (try? JSONDecoder().decode([String: Date].self, from: forgottenWorkspaces)) ?? [:]
-        let latestSync = syncedWorkspaces.first { $0.address == item.address }?.lastUsed ?? .distantPast
+        let latestSync = cloudDirectory.workspaces.first { $0.address == item.address }?.lastUsed ?? .distantPast
         forgotten[item.address] = max(.now, latestSync)
         if let encoded = try? JSONEncoder().encode(forgotten) { forgottenWorkspaces = encoded }
         if serverOrigin == item.address {
@@ -861,25 +985,57 @@ struct ConnectionView: View {
         return endpoint?.origin
     }
 
-    private var mayRequestStartupNotifications: Bool {
-        #if DEBUG
-        if ProcessInfo.processInfo.environment["HZ_SPIKE_SERVER"] != nil { return false }
-        #endif
-        return scenePhase == .active && !showingColdStart && !connecting && !loadingWorkspace &&
-            !stoppingLocalWorkspace && !showConnection && !showConnectionHelp && !helpAfterConnection &&
-            sharedWorkspace == nil && !editingLink
-    }
-
     private var canOpenShortcut: Bool {
-        scenePhase == .active && !showingColdStart && !stoppingLocalWorkspace &&
-            !showDisconnectConfirmation && !dismissingPromptComposer &&
+        scenePhase == .active && !showingColdStart && !deviceCheckInteracting &&
+            removalCandidate == nil && !dismissingPromptComposer && shortcutDismissal.waiting == nil &&
             (sharedWorkspace == nil || endpoint == nil)
     }
 
+    private func queueShortcut(_ route: NativeRoute) {
+        endConnectionAttempt()
+        pendingShortcut = ShortcutRequest(route: route, origin: endpoint?.origin ?? Endpoint(serverOrigin)?.origin)
+        advanceShortcutDismissal()
+    }
+
+    private func advanceShortcutDismissal() {
+        guard pendingShortcut != nil, !deviceCheckInteracting else { return }
+        switch shortcutDismissal.next(entry: workspaceEntry != nil, connection: showConnection) {
+        case .entry:
+            workspaceEntry = nil
+            editingLink = false
+            link = ""
+            error = nil
+        case .connection:
+            helpAfterConnection = false
+            showConnection = false
+        case nil: break
+        }
+    }
+
+    private func shortcutSheetDidDismiss(_ sheet: ShortcutSheetDismissal.Sheet) {
+        if shortcutDismissal.finished(sheet) { advanceShortcutDismissal() }
+    }
+
+    #if os(iOS)
+    private func restoreShortcutWorkspace(for request: ShortcutRequest) async -> Bool {
+        guard !connecting, sharedWorkspace == nil else { return false }
+        let saved = Endpoint(serverOrigin)?.origin
+        switch request.destination(selected: endpoint?.origin, saved: saved) {
+        case .superseded: return false
+        case .current: return true
+        case .restore(let origin):
+            if case .chat(let scope, _) = request.route, ActivityWidgetData.currentScope(for: origin) != scope { return true }
+            await connectRecent(origin.absoluteString, checkHost: false, preservingShortcut: request.id)
+            return endpoint?.origin == origin && sharedWorkspace == nil
+        }
+    }
+    #endif
+
     private func openShortcut(_ shortcut: NativeRoute) {
+        endConnectionAttempt()
         editingLink = false
         if showPromptComposer && shortcut != .writePrompt {
-            pendingShortcutURL = shortcut
+            queueShortcut(shortcut)
             dismissingPromptComposer = true
             showPromptComposer = false
             return
@@ -1061,22 +1217,28 @@ struct ConnectionView: View {
             if choosingWorkspace { setup }
         }
         #if os(macOS)
-        .focusedSceneValue(\.workspaceMenuAvailable, menuState.workspaceAvailable)
-        .focusedSceneValue(\.connectionMenuAvailable, menuState.connectionRoute != .unavailable)
+        .onChange(of: menuState.connectionRoute != .unavailable, initial: true) { _, available in
+            statusMenu.connectionAvailable = available
+        }
         .onReceive(NotificationCenter.default.publisher(for: .showHeinzelConnection)) { _ in
             openConnectionFromMenu()
         }
         .onChange(of: menuState.workspaceAvailable ? endpoint : nil, initial: true) { _, _ in
             refreshStatusMenu()
         }
+        .onChange(of: confirmedOrigin) { _, _ in refreshWorkspaceMenu() }
         .onChange(of: workspaceHistory) { _, _ in refreshWorkspaceMenu() }
         .onChange(of: forgottenWorkspaces) { _, _ in refreshWorkspaceMenu() }
         .onChange(of: cloudDirectoryUnavailable) { _, _ in refreshWorkspaceMenu() }
-        .onChange(of: syncedWorkspaces.map { "\($0.address)|\($0.name)|\($0.source?.rawValue ?? "")" }) { _, _ in
+        .onChange(of: cloudDirectory.workspaces.map { "\($0.address)|\($0.name)|\($0.source?.rawValue ?? "")" }) { _, _ in
             refreshWorkspaceMenu()
         }
         .onChange(of: canSwitchWorkspaceFromMenu) { _, _ in refreshWorkspaceMenu() }
         .onAppear {
+            service.onLost = { presentLocalLoss() }
+            service.verifyRecoveredPage = { try await verifyLocalPage($0) }
+            service.onRecovered = { restoreLocalSession($0) }
+            service.setForeground(NSApp.isActive)
             statusMenu.prepareQuickChat = { prepareQuickChat() }
             statusMenu.refreshWorkspaces = {
                 refreshSyncedWorkspaces()
@@ -1099,13 +1261,30 @@ struct ConnectionView: View {
             }
             if statusMenu.snapshot?.expiresAt == expiry { statusMenu.readCache() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            service.setForeground(true)
+            directoryRevision &+= 1
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
+            service.setForeground(false)
+        }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)) { _ in
+            service.setSleeping(true)
+        }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
+            service.setSleeping(false)
+        }
         .onDisappear {
+            service.setForeground(false)
+            service.onLost = nil
+            service.verifyRecoveredPage = nil
+            service.onRecovered = nil
             statusMenu.refreshWorkspaces = nil
         }
         .task(id: canOpenShortcut ? statusMenu.pending : nil) { @MainActor in
             guard !Task.isCancelled, canOpenShortcut, let route = statusMenu.pending else { return }
             statusMenu.pending = nil
-            openShortcut(route)
+            queueShortcut(route)
         }
         #endif
     }
@@ -1113,11 +1292,19 @@ struct ConnectionView: View {
     private var presentedContent: some View {
         menuContent
         .onGeometryChange(for: CGSize.self) { $0.size } action: { soundDockAvailableSize = $0 }
+        #if !os(macOS)
         .sheet(isPresented: $soundscape.showingDock) {
             SoundDock(playback: soundscape, availableSize: soundDockAvailableSize)
                 .presentationSizing(.fitted)
         }
-        .sheet(isPresented: $showConnection, onDismiss: {
+        #endif
+        .sheet(isPresented: Binding(get: { workspaceEntry != nil && !showConnection }, set: { showing in
+            if !showing && !showConnection && workspaceEntry != nil { dismissWorkspaceEntry() }
+        }), onDismiss: { shortcutSheetDidDismiss(.entry) }) { linkEntrySheet }
+        .sheet(isPresented: Binding(get: { showConnection }, set: { showing in
+            if showing { showConnection = true } else { dismissConnectionPicker() }
+        }), onDismiss: {
+            shortcutSheetDidDismiss(.connection)
             if helpAfterConnection {
                 helpAfterConnection = false
                 showConnectionHelp = true
@@ -1126,16 +1313,20 @@ struct ConnectionView: View {
             if let endpoint { connectionSheet(for: endpoint) }
         }
         .onChange(of: showConnection) { _, open in
-            if open { versionRefreshRevision &+= 1 }
+            if open {
+                versionRefreshRevision &+= 1
+            } else if pendingSwitch != nil && !choosingWorkspace {
+                endConnectionAttempt(supersedeShortcut: true)
+            }
         }
-        .sheet(isPresented: $showConnectionHelp) {
+        .sheet(isPresented: $showConnectionHelp, onDismiss: { directoryRevision += 1 }) {
             ConnectionHelp(
                 origin: diagnosticOrigin,
                 activeWorkspace: !choosingWorkspace && draftOrigin == nil && loadFailure == nil && !loadingWorkspace ? endpoint : nil,
                 needsSignIn: !choosingWorkspace && loadFailure == .signIn,
                 workspaceIsCurrent: { target in endpoint == target && loadFailure == nil && !loadingWorkspace }
             )
-                .presentationBackground(Color("StartupBackground"))
+                .presentationBackground(ConnectionPalette.appSurface)
         }
         .sheet(isPresented: $showHeinzelPicker) { heinzelPicker }
         .sheet(isPresented: $showPromptComposer, onDismiss: { dismissingPromptComposer = false }) {
@@ -1170,11 +1361,17 @@ struct ConnectionView: View {
                     appBuildObservation = encoded
                 }
             }
-            // A short cold-start beat keeps the branded screen perceptible even when the host responds immediately.
-            let earliest = ContinuousClock.now + .milliseconds(650)
+            #if os(macOS)
+            // AppKit moves this retained host from its parking window into the visible window.
+            // That transfer cancels view tasks while the one-shot local attach is still running.
+            Task { @MainActor in
+                await openInitialWorkspace()
+                showingColdStart = false
+            }
+            #else
             await openInitialWorkspace()
-            try? await ContinuousClock().sleep(until: earliest)
             showingColdStart = false
+            #endif
         }
         .task(id: shouldRefreshSyncedWorkspaces) {
             var fastReads = 0
@@ -1187,20 +1384,15 @@ struct ConnectionView: View {
             }
         }
         #if os(macOS)
-        .task(id: syncWorkspaceSignIn ? endpoint?.origin : nil) {
+        .task(id: syncWorkspaceSignIn ? service.publishingSession : nil) {
             await publishLocalSignIn()
         }
         .onChange(of: syncWorkspaceSignIn) { _, enabled in
             if !enabled { removePublishedSignIn() }
         }
         #endif
-        .task(id: mayRequestStartupNotifications) {
-            guard mayRequestStartupNotifications else { return }
-            // Give the startup view or connection sheet time to leave before presenting the system prompt.
-            do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
-            await WorkspaceNotifications.shared.requestStartupAuthorization {
-                mayRequestStartupNotifications
-            }
+        .onChange(of: deviceCheckInteracting) { _, busy in
+            if !busy { advanceShortcutDismissal() }
         }
         .onChange(of: scenePhase) { _, phase in
             #if os(iOS)
@@ -1210,9 +1402,19 @@ struct ConnectionView: View {
             }
             invalidateConnectionScope()
             #endif
-            if phase == .active && draftOrigin != nil { draftRevision += 1 }
         }
-        .onChange(of: link) { _, _ in error = nil }
+
+        .task(id: pendingSwitch?.page.id) {
+            guard let revision = pendingSwitch?.page.id else { return }
+            do { try await Task.sleep(for: .seconds(12)) } catch { return }
+            finishPendingSwitch(revision, issue: .slow)
+        }
+        .onDisappear {
+            #if os(macOS)
+            if showingColdStart { return }
+            #endif
+            endConnectionAttempt(supersedeShortcut: true)
+        }
         .onReceive(NotificationCenter.default.publisher(for: ActivityWidgetData.clearFailed)) { _ in widgetClearFailed = true }
         .onReceive(NotificationCenter.default.publisher(for: WidgetCredentialStore.activationChanged).receive(on: RunLoop.main)) { notification in
             let activation = ActivityWidgetData.currentActivation()
@@ -1244,41 +1446,76 @@ struct ConnectionView: View {
 
     var body: some View {
         lifecycleContent
-        .task(id: draftProbe) {
-            guard let probe = draftProbe else { return }
-            #if os(iOS)
-            guard manualDraftProbe != probe else { return }
-            #endif
-            let origin = probe.origin
-            let session = Endpoint.probeSession()
-            defer { session.invalidateAndCancel() }
-            checkedDraft = nil
-            do { try await Task.sleep(for: .milliseconds(450)) } catch { return }
-            let issue = await Endpoint.connectionIssue(at: origin, using: session)
-            guard !Task.isCancelled, draftProbe == probe else { return }
-            draftIssue = issue
-            checkedDraft = origin
+        .task(id: scenePhase == .active) {
+            directoryHasNetwork = nil
+            directoryResults.removeAll()
+            guard scenePhase == .active else { return }
+            let monitor = NWPathMonitor()
+            defer { monitor.cancel() }
+            for await path in monitor {
+                guard !Task.isCancelled else { return }
+                directoryResults.removeAll()
+                switch path.status {
+                case .satisfied: directoryHasNetwork = true
+                case .unsatisfied: directoryHasNetwork = false
+                case .requiresConnection: directoryHasNetwork = nil
+                @unknown default: directoryHasNetwork = nil
+                }
+                directoryRevision &+= 1
+            }
         }
-        .task(id: monitoredOrigin) {
-            verifiedConnectionOrigin = nil
+        #if os(macOS)
+        .task(id: directoryVisible && service.recovery == nil ? service.localSession : nil) {
+            localBackend = nil
+            guard directoryVisible, service.recovery == nil, service.localSession != nil else { return }
+            while !Task.isCancelled {
+                let backend = await service.runningBackend()
+                guard !Task.isCancelled else { return }
+                localBackend = backend
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            }
+        }
+        #endif
+        .task(id: directoryProbe) {
+            guard let probe = directoryProbe else { return }
+            while !Task.isCancelled {
+                await checkDirectory(probe)
+                // With no default path, make one bounded check per destination on
+                // discovery or path change. Do not poll unreachable destinations.
+                guard directoryHasNetwork == true else { return }
+                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            }
+        }
+        .task(id: remoteWatch) {
             #if os(iOS)
             connectionProbeRevision += 1
             connectionProbe?.task.cancel()
             connectionProbe = nil
             #endif
-            guard let origin = monitoredOrigin else { return }
-            await watchConnection(to: origin)
+            guard let watch = remoteWatch else { return }
+            if watch.authenticatedPage {
+                await watchRemoteSession(watch)
+            } else {
+                await watchConnection(to: watch.origin)
+            }
         }
-        .task(id: canOpenShortcut ? pendingShortcutURL : nil) { @MainActor in
-            guard !Task.isCancelled, canOpenShortcut, let shortcut = pendingShortcutURL else { return }
-            pendingShortcutURL = nil
-            openShortcut(shortcut)
+        .task(id: canOpenShortcut ? pendingShortcut?.id : nil) { @MainActor in
+            guard !Task.isCancelled, canOpenShortcut, let request = pendingShortcut else { return }
+            #if os(iOS)
+            let restored = await restoreShortcutWorkspace(for: request)
+            guard !Task.isCancelled, pendingShortcut?.id == request.id else { return }
+            pendingShortcut = nil
+            guard restored else { return }
+            #else
+            pendingShortcut = nil
+            #endif
+            openShortcut(request.route)
         }
         #if os(iOS)
-        .task(id: canOpenShortcut ? shortcutRouter.pending : nil) { @MainActor in
-            guard !Task.isCancelled, canOpenShortcut, let shortcut = shortcutRouter.pending else { return }
+        .task(id: shortcutRouter.pending) { @MainActor in
+            guard !Task.isCancelled, let shortcut = shortcutRouter.pending else { return }
             shortcutRouter.pending = nil
-            openShortcut(shortcut)
+            queueShortcut(shortcut)
         }
         #endif
         .onOpenURL { url in
@@ -1286,19 +1523,28 @@ struct ConnectionView: View {
                 openURL(SoundscapeLink.artist)
                 return
             }
-            if SoundscapeLink.handles(url) {
-                if url == SoundscapeLink.picker { soundscape.openPicker() }
-                else { soundscape.dockWidth = nil; soundscape.openVideo() }
+            if url == SoundscapeLink.picker {
+                soundscape.openPicker()
+                return
+            }
+            if url == SoundscapeLink.video {
+                soundscape.dockWidth = nil
+                soundscape.openVideo()
+                return
+            }
+            if let id = SoundscapeLink.trackID(url) {
+                Task { await soundscape.openWidgetTrack(id) }
                 return
             }
             if let shortcut = NativeRoute(url: url) {
-                pendingShortcutURL = shortcut
+                queueShortcut(shortcut)
                 return
             }
             guard let target = Endpoint.sharedWorkspace(url) else {
                 if endpoint == nil { error = "This Heinzel link is incomplete. Ask the host to share it again." }
                 return
             }
+            endConnectionAttempt(supersedeShortcut: true)
             if endpoint?.owns(target.origin) == true {
                 if loadFailure != nil { retryWorkspace() }
             } else {
@@ -1333,13 +1579,8 @@ struct ConnectionView: View {
         startupStage = "Starting the local workspace…"
         await startLocal(initialStartup: true)
         #else
+        startupStage = "Looking for known workspaces…"
         refreshSyncedWorkspaces()
-        if !serverOrigin.isEmpty && sharedWorkspace == nil {
-            startupStage = "Checking workspace connection…"
-            await connectRecent(serverOrigin, checkHost: false)
-        } else {
-            startupStage = "Looking for a saved workspace…"
-        }
         #endif
     }
 
@@ -1347,121 +1588,155 @@ struct ConnectionView: View {
         !loadingWorkspace && loadFailure == nil ? chatRequest : nil
     }
 
+    private func workspacePage(_ page: WorkspacePage, obscured: Bool) -> some View {
+        let endpoint = page.endpoint
+        let revision = page.id
+        return WorkspaceView(endpoint: endpoint, isObscured: obscured,
+                      registerPage: { pageSessions.register($0, page: revision) },
+                      reportsWidgetActivity: mayRefreshWidgetActivity && !obscured,
+                      isSelected: { self.endpoint == endpoint && loadRevision == revision },
+                      requiresVerification: {
+                          pendingSwitch?.page.id == revision ||
+                              (self.endpoint == endpoint && loadRevision == revision && confirmedOrigin != endpoint.origin)
+                      },
+                      isWidgetWorkspaceCurrent: {
+            self.endpoint == endpoint && loadRevision == revision && widgetWorkspaceScope != nil
+        }, isMenuWorkspaceCurrent: {
+            #if os(macOS)
+            self.endpoint == endpoint && loadRevision == revision && menuState.workspaceAvailable
+            #else
+            self.endpoint == endpoint && loadRevision == revision && scenePhase == .active &&
+                confirmedOrigin == endpoint.origin && !choosingWorkspace && !showConnection &&
+                workspaceEntry == nil && pendingSwitch == nil && !loadingWorkspace && loadFailure == nil
+            #endif
+        }, openWorkspaceChooser: {
+            guard self.endpoint == endpoint, confirmedOrigin == endpoint.origin, loadRevision == revision,
+                  !choosingWorkspace, !showConnection, workspaceEntry == nil, !connecting else { return false }
+            #if os(macOS)
+            openConnectionFromMenu()
+            #else
+            showConnection = true
+            #endif
+            return showConnection
+        }, selectedWorkspaceName: {
+            self.endpoint == endpoint && confirmedOrigin == endpoint.origin && loadRevision == revision
+                ? workspaceName(endpoint.origin) : nil
+        }, isEnrollmentViewCurrent: {
+            #if os(iOS)
+            self.endpoint == endpoint && loadRevision == revision && !choosingWorkspace && !showingColdStart && scenePhase == .active
+            #else
+            self.endpoint == endpoint && loadRevision == revision && !choosingWorkspace && !showingColdStart
+            #endif
+        }, chatRequest: requestedChat, promptComposer: promptComposer, widgetRefreshRevision: widgetRefreshRevision,
+        versionRefreshRevision: versionRefreshRevision, ready: {
+            if pendingSwitch?.page.id == revision { finishPendingSwitch(revision, issue: nil); return }
+            guard self.endpoint == endpoint, loadRevision == revision, remoteRecovery == nil else { return }
+            #if os(macOS)
+            if service.recovery != nil && endpoint == service.localSession { return }
+            #endif
+            confirmedOrigin = endpoint.origin
+            loadingWorkspace = false
+            loadFailure = nil
+        }, reportHostName: { name in
+            guard self.endpoint == endpoint, serverOrigin == endpoint.origin.absoluteString,
+                  loadRevision == revision else { return }
+            rememberWorkspace(endpoint, hostName: name)
+        }, reportBackendVersion: { observation in
+            guard self.endpoint == endpoint else { return }
+            var versions = (try? JSONDecoder().decode([String: WorkspaceVersionObservation].self, from: workspaceBackendVersions)) ?? [:]
+            guard WorkspaceVersionObservation.record(observation, origin: endpoint.origin.absoluteString,
+                selectedOrigin: self.endpoint?.origin.absoluteString ?? "", requestRevision: revision, currentRevision: loadRevision,
+                into: &versions) else { return }
+            let newest = versions.sorted { $0.value.observedAt > $1.value.observedAt }.prefix(12)
+            if let encoded = try? JSONEncoder().encode(Dictionary(uniqueKeysWithValues: newest.map { ($0.key, $0.value) })) {
+                workspaceBackendVersions = encoded
+            }
+        }, reportError: { message in
+            if pendingSwitch?.page.id == revision { finishPendingSwitch(revision, issue: message); return }
+            guard self.endpoint == endpoint, loadRevision == revision else { return }
+            #if os(macOS)
+            if endpoint == service.localSession, confirmedOrigin == endpoint.origin || service.recovery != nil,
+               message != .interrupted {
+                service.reportPageIssue(message, for: endpoint)
+                return
+            }
+            #endif
+            if endpoint.origin.scheme == "https", confirmedOrigin == endpoint.origin || remoteRecovery != nil,
+               message != .interrupted {
+                if remoteRecovery?.paused != true { monitorGeneration &+= 1 }
+                return
+            }
+            if message.revokesAccess { confirmedOrigin = nil }
+            if message == .signIn && endpoint.origin.scheme == "https" {
+                needsSignIn.insert(endpoint.origin)
+                // The navigation error has no captured secure activation.
+                // Do not let it revoke a newer credential at this origin.
+                let signInWidgetToken = ActivityWidgetData.legacyRefreshToken()
+                #if os(iOS)
+                guard scenePhase == .active else {
+                    loadFailure = .signIn
+                    loadingWorkspace = false
+                    return
+                }
+                let scope = connectionScopeRevision
+                signInProbeScope = scope
+                #endif
+                Task {
+                    #if os(iOS)
+                    defer { if signInProbeScope == scope { signInProbeScope = nil } }
+                    while self.endpoint == endpoint, loadRevision == revision,
+                          connectionScopeRevision == scope, scenePhase == .active, !Task.isCancelled {
+                        guard let result = await sharedConnectionProbe(endpoint.origin, manual: false) else { continue }
+                        guard self.endpoint == endpoint, loadRevision == revision,
+                              connectionScopeRevision == scope, scenePhase == .active else { return }
+                        guard connectionProbe?.revision == result.revision else { continue }
+                        connectionIssue = result.issue
+                        loadFailure = result.issue ?? .signIn
+                        if result.issue == nil, widgetWorkspaceScope != nil, let signInWidgetToken {
+                            _ = WidgetCredentialStore.clearShared(expectedToken: signInWidgetToken)
+                            ActivityWidgetData.reload()
+                        }
+                        loadingWorkspace = false
+                        finishConnectionProbe(result.revision)
+                        return
+                    }
+                    #else
+                    let issue = await Endpoint.connectionIssue(at: endpoint.origin)
+                    guard self.endpoint == endpoint, loadRevision == revision else { return }
+                    connectionIssue = issue
+                    loadFailure = issue ?? .signIn
+                    if issue == nil, widgetWorkspaceScope != nil, let signInWidgetToken {
+                        _ = WidgetCredentialStore.clearShared(expectedToken: signInWidgetToken)
+                        ActivityWidgetData.reload()
+                    }
+                    loadingWorkspace = false
+                    #endif
+                }
+            } else {
+                loadingWorkspace = false
+                loadFailure = message
+            }
+        }, appearance: { color in
+            guard self.endpoint == endpoint, loadRevision == revision else { return }
+            workspaceBackground = color
+        })
+            .id(endpoint.url)
+            .id(revision)
+    }
+
     @ViewBuilder
     private var content: some View {
-        if let endpoint, loadFailure == .signIn {
-            Group {
-                if showingColdStart { startup } else { recovery(visibleProblem ?? .signIn, for: endpoint) }
-            }
-            #if os(iOS)
-            .safeAreaInset(edge: .bottom, spacing: 0) { recoveryWorkspaceFooter(for: endpoint) }
-            #endif
-        } else if let endpoint {
+        if endpoint != nil, loadFailure == .signIn, pendingSwitch == nil {
+            if showingColdStart { startup } else { setup }
+        } else if let endpoint = endpoint ?? pendingSwitch?.page.endpoint {
             let revision = loadRevision
-            let obscured = choosingWorkspace || showingColdStart || loadingWorkspace || visibleProblem != nil
+            let obscured = self.endpoint == nil || choosingWorkspace || showingColdStart || loadingWorkspace || visibleProblem != nil
             VStack(spacing: 0) {
-                WorkspaceView(endpoint: endpoint, isObscured: obscured,
-                              reportsWidgetActivity: mayRefreshWidgetActivity && !obscured,
-                              isWidgetWorkspaceCurrent: {
-                    self.endpoint == endpoint && loadRevision == revision && widgetWorkspaceScope != nil
-                }, isMenuWorkspaceCurrent: {
-                    #if os(macOS)
-                    self.endpoint == endpoint && loadRevision == revision && menuState.workspaceAvailable
-                    #else
-                    false
-                    #endif
-                }, isEnrollmentViewCurrent: {
-                    #if os(iOS)
-                    self.endpoint == endpoint && loadRevision == revision && !choosingWorkspace && !showingColdStart && scenePhase == .active
-                    #else
-                    self.endpoint == endpoint && loadRevision == revision && !choosingWorkspace && !showingColdStart
-                    #endif
-                }, chatRequest: requestedChat, promptComposer: promptComposer, widgetRefreshRevision: widgetRefreshRevision,
-                versionRefreshRevision: versionRefreshRevision, footerWidth: nativeFooterWidthValue, footerBottom: nativeFooterBottomValue,
-                footerGeneration: nativeFooterGenerationValue,
-                reportFooterSlot: { slot in
-                    #if os(iOS)
-                    guard self.endpoint == endpoint, loadRevision == revision else { return }
-                    nativeFooterSlot = slot
-                    #endif
-                }, ready: {
-                    guard self.endpoint == endpoint, loadRevision == revision else { return }
-                    loadingWorkspace = false
-                    loadFailure = nil
-                }, reportHostName: { name in
-                    guard self.endpoint == endpoint, serverOrigin == endpoint.origin.absoluteString,
-                          loadRevision == revision else { return }
-                    rememberWorkspace(endpoint, hostName: name)
-                }, reportBackendVersion: { observation in
-                    guard self.endpoint == endpoint else { return }
-                    var versions = (try? JSONDecoder().decode([String: WorkspaceVersionObservation].self, from: workspaceBackendVersions)) ?? [:]
-                    guard WorkspaceVersionObservation.record(observation, origin: endpoint.origin.absoluteString,
-                        selectedOrigin: serverOrigin, requestRevision: revision, currentRevision: loadRevision,
-                        into: &versions) else { return }
-                    let newest = versions.sorted { $0.value.observedAt > $1.value.observedAt }.prefix(12)
-                    if let encoded = try? JSONEncoder().encode(Dictionary(uniqueKeysWithValues: newest.map { ($0.key, $0.value) })) {
-                        workspaceBackendVersions = encoded
-                    }
-                }, reportError: { message in
-                    guard self.endpoint == endpoint, loadRevision == revision else { return }
-                    if message == .signIn && endpoint.origin.scheme == "https" {
-                        // The navigation error has no captured secure activation.
-                        // Do not let it revoke a newer credential at this origin.
-                        let signInWidgetToken = ActivityWidgetData.legacyRefreshToken()
-                        #if os(iOS)
-                        guard scenePhase == .active else {
-                            loadFailure = .signIn
-                            loadingWorkspace = false
-                            return
-                        }
-                        let scope = connectionScopeRevision
-                        signInProbeScope = scope
-                        #endif
-                        Task {
-                            #if os(iOS)
-                            defer { if signInProbeScope == scope { signInProbeScope = nil } }
-                            while self.endpoint == endpoint, loadRevision == revision,
-                                  connectionScopeRevision == scope, scenePhase == .active, !Task.isCancelled {
-                                guard let result = await sharedConnectionProbe(endpoint.origin, manual: false) else { continue }
-                                guard self.endpoint == endpoint, loadRevision == revision,
-                                      connectionScopeRevision == scope, scenePhase == .active else { return }
-                                guard connectionProbe?.revision == result.revision else { continue }
-                                connectionIssue = result.issue
-                                loadFailure = result.issue ?? .signIn
-                                if result.issue == nil, widgetWorkspaceScope != nil, let signInWidgetToken {
-                                    _ = WidgetCredentialStore.clearShared(expectedToken: signInWidgetToken)
-                                    ActivityWidgetData.reload()
-                                }
-                                loadingWorkspace = false
-                                finishConnectionProbe(result.revision)
-                                return
-                            }
-                            #else
-                            let issue = await Endpoint.connectionIssue(at: endpoint.origin)
-                            guard self.endpoint == endpoint, loadRevision == revision else { return }
-                            connectionIssue = issue
-                            loadFailure = issue ?? .signIn
-                            if issue == nil, widgetWorkspaceScope != nil, let signInWidgetToken {
-                                _ = WidgetCredentialStore.clearShared(expectedToken: signInWidgetToken)
-                                ActivityWidgetData.reload()
-                            }
-                            loadingWorkspace = false
-                            #endif
-                        }
-                    } else {
-                        loadingWorkspace = false
-                        loadFailure = message
-                    }
-                }, appearance: { color in
-                    guard self.endpoint == endpoint, loadRevision == revision else { return }
-                    workspaceBackground = color
-                })
+                WorkspaceSwitchPages(current: self.endpoint.map { WorkspacePage(endpoint: $0, id: revision) },
+                                     pending: pendingSwitch?.page, obscured: obscured) { page, hidden in
+                    workspacePage(page, obscured: hidden)
+                }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                #if os(iOS)
-                .ignoresSafeArea(.container, edges: nativeFooterSlot == nil ? [] : .bottom)
-                #endif
-                .id(endpoint.url)
-                .id(revision)
                 .opacity(obscured ? 0 : 1)
                 #if os(iOS)
                 .background {
@@ -1499,6 +1774,8 @@ struct ConnectionView: View {
                 .overlay {
                     if showingColdStart {
                         startup
+                    } else if self.endpoint == nil || loadFailure == .signIn {
+                        if !choosingWorkspace { setup }
                     } else if let problem = visibleProblem {
                         recovery(problem, for: endpoint)
                     } else if loadingWorkspace {
@@ -1508,32 +1785,9 @@ struct ConnectionView: View {
                 #if os(macOS)
                 .ignoresSafeArea(edges: .top)
                 #endif
-                #if os(iOS)
-                if !obscured && nativeFooterSlot == nil {
-                    HStack(spacing: 0) {
-                        workspaceFooterButton(for: endpoint, width: nativeFooterWidth)
-                        Spacer(minLength: 0)
-                    }
-                    .frame(height: 48)
-                    .background(workspaceBackground.ignoresSafeArea(.container, edges: .bottom))
-                }
-                #endif
             }
-            #if os(iOS)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if obscured { recoveryWorkspaceFooter(for: endpoint) }
-            }
-            .overlay {
-                if !obscured { workspaceFooterControl(for: endpoint, fallback: false) }
-            }
-            #endif
-        } else if connecting || showingColdStart {
+        } else if showingColdStart {
             startup
-            #if os(iOS)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if let saved = Endpoint(serverOrigin) { recoveryWorkspaceFooter(for: saved) }
-            }
-            #endif
         } else if let target = sharedWorkspace {
             launchCard(compactBrand: true) {
                 Text("Open workspace?")
@@ -1554,110 +1808,31 @@ struct ConnectionView: View {
         }
     }
 
-    private var nativeFooterWidthValue: CGFloat {
-        #if os(iOS)
-        nativeFooterWidth
-        #else
-        88
-        #endif
-    }
-
-    private var nativeFooterBottomValue: CGFloat {
-        #if os(iOS)
-        WorkspaceFooterGeometry.webBottomInset(safeArea: nativeFooterBottom, hasSlot: nativeFooterSlot != nil)
-        #else
-        0
-        #endif
-    }
-
-    private var nativeFooterGenerationValue: Int {
-        #if os(iOS)
-        nativeFooterGeneration
-        #else
-        0
-        #endif
-    }
-
-    #if os(iOS)
-    // Native recovery screens reserve their own space; the web footer uses reported geometry.
-    private func recoveryWorkspaceFooter(for endpoint: Endpoint) -> some View {
-        Button {
-            if self.endpoint == nil { chooseAnotherWorkspace() } else { showConnection = true }
-        } label: {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: "point.3.connected.trianglepath.dotted").accessibilityHidden(true)
-                Text(workspaceName(endpoint.origin)).fixedSize(horizontal: false, vertical: true)
-                Image(systemName: "chevron.down").accessibilityHidden(true)
-            }
-            .font(.footnote.weight(.medium))
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Workspace: \(workspaceName(endpoint.origin))")
-        .accessibilityHint("Open connection details or switch workspace")
-        .foregroundStyle(ConnectionPalette.ink)
-        .environment(\.colorScheme, .light)
-        .background(Color("StartupBackground").ignoresSafeArea(.container, edges: .bottom))
-    }
-
-    private func workspaceFooterControl(for endpoint: Endpoint, fallback: Bool) -> some View {
-        GeometryReader { geometry in
-            let bottom = geometry.safeAreaInsets.bottom
-            let name = workspaceName(endpoint.origin)
-            let textWidth = (name as NSString).size(withAttributes: [.font: UIFont.preferredFont(forTextStyle: .footnote)]).width
-            let width = max(44, min(180, geometry.size.width * 0.45, max(76, textWidth + 52)))
-            let slot = fallback ? nil : nativeFooterSlot
-            ZStack(alignment: .bottomLeading) {
-                if fallback {
-                    workspaceBackground
-                        .frame(height: 48)
-                        .frame(maxHeight: .infinity, alignment: .bottom)
-                        .ignoresSafeArea(.container, edges: .bottom)
-                        .allowsHitTesting(false)
-                }
-                if fallback || slot != nil {
-                    workspaceFooterButton(for: endpoint, width: width)
-                        .position(x: slot?.midX ?? width / 2, y: slot?.midY ?? geometry.size.height - 24)
-                }
-            }
-            .onAppear { nativeFooterWidth = width; nativeFooterBottom = bottom }
-            .onChange(of: width) { _, value in nativeFooterSlot = nil; nativeFooterWidth = value }
-            .onChange(of: bottom) { _, value in nativeFooterSlot = nil; nativeFooterBottom = value }
-            .onChange(of: geometry.size) { _, _ in nativeFooterSlot = nil; nativeFooterGeneration &+= 1 }
-            .onChange(of: dynamicTypeSize) { _, _ in nativeFooterSlot = nil; nativeFooterGeneration &+= 1 }
-            .onChange(of: nativeFooterSlot == nil) { _, _ in nativeFooterGeneration &+= 1 }
-        }
-    }
-
-    private func workspaceFooterButton(for endpoint: Endpoint, width: CGFloat) -> some View {
-        let name = workspaceName(endpoint.origin)
-        return Button {
-            if self.endpoint == nil { chooseAnotherWorkspace() } else { showConnection = true }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "point.3.connected.trianglepath.dotted").accessibilityHidden(true)
-                if width >= 76 { Text(name).lineLimit(1).truncationMode(.tail) }
-                Image(systemName: "chevron.down").accessibilityHidden(true)
-            }
-            .font(.footnote.weight(.medium))
-            .frame(width: width, height: 48)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Workspace \(name)")
-        .accessibilityHint("Shows saved workspaces and connection actions")
-    }
-    #endif
-
     private func connectionSheet(for endpoint: Endpoint) -> some View {
+        WorkspaceInformationSurface(version: heinzelAppBuild?.version, background: ConnectionPalette.appSurface) { information in
+            connectedDirectory(for: endpoint, information: information)
+        } details: { workspaceInformation }
+        #if os(macOS)
+        .frame(width: 460, height: connectionSheetHeight)
+        #endif
+        .environment(\.colorScheme, .light)
+        .tint(ConnectionPalette.accent)
+        .background(ConnectionPalette.appSurface)
+        .presentationBackground(ConnectionPalette.appSurface)
+        .sheet(isPresented: Binding(get: { workspaceEntry != nil }, set: { showing in
+            if !showing && workspaceEntry != nil { dismissWorkspaceEntry() }
+        }), onDismiss: { shortcutSheetDidDismiss(.entry) }) { linkEntrySheet }
+        .interactiveDismissDisabled(deviceCheckInteracting)
+        .presentationDetents([.height(connectionSheetHeight), .large])
+
+    }
+
+    private func connectedDirectory(for endpoint: Endpoint, information: WorkspaceInformationButton) -> some View {
         let problem = visibleProblem ?? connectionIssue
-        let confirmed = !loadingWorkspace && (endpoint.origin.scheme == "http" || verifiedConnectionOrigin == endpoint.origin)
         return ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                connectionSheetHeader("Workspace") {
+                #if os(macOS)
+                connectionSheetHeader("Heinzel App") {
                     if let shareURL = endpoint.shareURL {
                         ShareLink(item: shareURL) { connectionIcon("square.and.arrow.up", label: "Share Workspace Link") }
                             .buttonStyle(.plain)
@@ -1669,84 +1844,14 @@ struct ConnectionView: View {
                     }
                     connectionIconButton("xmark", label: "Close") { showConnection = false }
                 }
-                VStack(alignment: .leading, spacing: 5) {
-                    Group {
-                        if let problem {
-                            Label(problem == .signIn ? "Sign-in required" : problem.title, systemImage: problem.icon)
-                                .foregroundStyle(ConnectionPalette.warning)
-                        } else if confirmed {
-                            Label("Connected", systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(ConnectionPalette.accent)
-                        } else {
-                            ProgressView("Checking connection…")
-                                .controlSize(.small)
-                                .foregroundStyle(ConnectionPalette.muted)
-                        }
-                    }
-                    .font(.callout.weight(.semibold))
-                    .accessibilityIdentifier("workspaceConnectionState")
-                    if endpoint.origin.scheme == "https", workspaceName(endpoint.origin) != endpoint.origin.host() {
-                        workspaceIdentity(endpoint.origin)
-                            .font(.callout.weight(.medium))
-                    }
-                    Text(endpoint.origin.absoluteString)
-                        .font(.footnote.monospaced())
-                        .foregroundStyle(ConnectionPalette.muted)
-                        .textSelection(.enabled)
-                }
-                .connectionPanel()
-                if let error {
-                    Label(error, systemImage: "exclamationmark.circle")
-                        .font(.callout)
-                        .foregroundStyle(ConnectionPalette.warning)
-                }
-                if let problem {
-                    if problem == .signIn || problem == .wrongAddress {
-                        Button(problem == .signIn ? "Enter Sign-in Link" : "Enter Workspace Link") {
-                            if problem == .wrongAddress { chooseAnotherWorkspace() }
-                            showConnection = false
-                        }
-                        .buttonStyle(.borderedProminent)
-                    } else if loadFailure != nil || problem.canReconnectAutomatically {
-                        Button(loadFailure != nil ? "Try Again" : "Reload Workspace") {
-                            showConnection = false
-                            retryWorkspace()
-                        }
-                        .buttonStyle(.borderedProminent)
+                #endif
+                workspaceDirectory
+                if let problem, problem != .signIn {
+                    Button("Retry " + workspaceName(endpoint.origin), systemImage: "arrow.clockwise") {
+                        showConnection = false
+                        retryWorkspace()
                     }
                 }
-                VStack(spacing: 0) {
-                    Group {
-                        #if os(macOS)
-                        Menu {
-                            MacWorkspaceSwitcher(menu: statusMenu) { choice in
-                                guard canSwitchWorkspaceFromMenu, statusMenu.pendingWorkspace == nil else { return }
-                                statusMenu.pendingWorkspace = choice
-                            }
-                        } label: {
-                            connectionRow(workspaceSwitchTitle, workspaceSwitchSymbol)
-                        }
-                        .disabled(!canSwitchWorkspaceFromMenu || statusMenu.pendingWorkspace != nil)
-                        #else
-                        Button(action: chooseAnotherWorkspace) { connectionRow(workspaceSwitchTitle, workspaceSwitchSymbol) }
-                        #endif
-                    }
-                    .foregroundStyle(ConnectionPalette.accent)
-                    Divider()
-                    Button {
-                        showDisconnectConfirmation = true
-                    } label: {
-                        connectionRow("Disconnect…", "rectangle.portrait.and.arrow.right")
-                    }
-                    .foregroundStyle(ConnectionPalette.warning)
-                }
-                .buttonStyle(.plain)
-                WorkspaceVersionDetails(
-                    app: (try? JSONDecoder().decode(AppBuildObservation.self, from: appBuildObservation))
-                        .flatMap { $0.build == heinzelAppBuild ? $0 : nil },
-                    workspace: (try? JSONDecoder().decode([String: WorkspaceVersionObservation].self,
-                        from: workspaceBackendVersions))?[endpoint.origin.absoluteString]
-                )
                 #if os(macOS)
                 if endpoint.origin.scheme == "http", offersCloudSignIn {
                     VStack(alignment: .leading, spacing: 4) {
@@ -1758,6 +1863,7 @@ struct ConnectionView: View {
                     .connectionPanel()
                 }
                 #endif
+                if dynamicTypeSize.isAccessibilitySize { directoryFooter(information) }
             }
             .frame(maxWidth: 420, alignment: .leading)
             .padding(.horizontal, 24)
@@ -1767,32 +1873,14 @@ struct ConnectionView: View {
                 connectionSheetContentHeight = height
             }
         }
-        #if os(iOS)
-        .refreshable { await refreshConnectionStatus(for: endpoint) }
-        #endif
-        #if os(macOS)
-        .frame(width: 460, height: connectionSheetHeight)
-        #endif
-        .environment(\.colorScheme, .light)
-        .tint(ConnectionPalette.accent)
-        .presentationBackground(Color("StartupBackground"))
-        .presentationDetents([.height(connectionSheetHeight), .large])
-        .alert("Disconnect from this workspace?", isPresented: $showDisconnectConfirmation) {
-            Button("Cancel", role: .cancel) {
-                // SwiftUI dismisses the alert and leaves the connection intact.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !dynamicTypeSize.isAccessibilitySize {
+                directoryFooter(information).onGeometryChange(for: CGFloat.self) { $0.size.height } action: { connectionSheetFooterHeight = $0 }
             }
-            Button("Disconnect", role: .destructive, action: disconnect)
-        } message: {
-            Text(endpoint.origin.scheme == "http"
-                ? "This stops the local workspace and returns to the chooser."
-                : "You’ll return to the workspace chooser.")
         }
-    }
-
-    private func connectionRow(_ title: String, _ icon: String) -> some View {
-        Label(title, systemImage: icon)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            .contentShape(Rectangle())
+        #if os(iOS)
+        .refreshable { directoryRevision += 1; await refreshConnectionStatus(for: endpoint) }
+        #endif
     }
 
     private func recovery(_ problem: WorkspaceProblem, for endpoint: Endpoint) -> some View {
@@ -1816,17 +1904,10 @@ struct ConnectionView: View {
                 workspaceAddress(endpoint.origin, opensConnection: !choosingWorkspace)
             }
             if problem == .signIn {
-                if cloudSignInInProgress {
-                    ProgressView("Signing in with iCloud…")
-                        .controlSize(.small)
-                        .font(.callout)
-                } else {
-                    signInActions(for: endpoint)
-                }
-                Button(workspaceSwitchTitle, systemImage: workspaceSwitchSymbol) { chooseDifferentWorkspace(from: endpoint) }
+                Button("Sign In", systemImage: "person.crop.circle") { showWorkspaceEntry(.signIn(endpoint.origin)) }
+                    .buttonStyle(.borderedProminent)
+                Button(workspaceSwitchTitle, systemImage: workspaceSwitchSymbol, action: chooseAnotherWorkspace)
                     .buttonStyle(.borderless)
-                    .controlSize(.large)
-                    .disabled(connecting)
             } else if problem.shouldEnterLink {
                 Button("Enter Workspace Link", action: chooseAnotherWorkspace)
                     .buttonStyle(.borderedProminent)
@@ -1866,92 +1947,15 @@ struct ConnectionView: View {
         .background(.white.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
     }
 
-    private func signInActions(for endpoint: Endpoint) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let cloud = availableCloudWorkspaces.first(where: { $0.address == endpoint.origin.absoluteString }) {
-                Button("Sign In with iCloud", systemImage: "icloud") {
-                    Task { await connectCloudWorkspace(cloud) }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                Divider()
-            } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    Label(cloudDirectoryUnavailable
-                        ? "Synced sign-ins couldn’t be read on this device."
-                        : cloudDirectoryChecked
-                            ? "No synced sign-in for this workspace is available on this device."
-                            : "Checking for a synced sign-in…", systemImage: "icloud")
-                    if endpoint.origin.host?.hasSuffix(".ts.net") == true {
-                        Text("Enable private Tailscale sharing on the Mac, then Sync Sign-in with iCloud in the Mac app’s Connection screen. Both devices need the same Apple Account and iCloud Keychain. If that option is missing on the Mac, use a private sign-in link.")
-                    }
-                }
-                .font(.footnote)
-                .foregroundStyle(ConnectionPalette.muted)
-                .fixedSize(horizontal: false, vertical: true)
-                Divider()
-            }
-            if endpoint.origin.host?.hasSuffix(".ts.net") == true {
-                Text("On the computer running Heinzel, open **Tailscale** at the bottom of the signed-in workspace. Choose **Copy link** or **Share**, send yourself the link privately, then paste it here.")
-                    .font(.callout)
-                    .foregroundStyle(ConnectionPalette.muted)
-            } else {
-                Text("Ask the person who runs this workspace to send you a sign-in link, then paste it below.")
-                    .font(.callout)
-                    .foregroundStyle(ConnectionPalette.muted)
-            }
-            linkField("Sign-in link") { signIn(at: endpoint) }
-            if let message = error ?? signInLinkIssue(for: endpoint) {
-                Label(message, systemImage: "exclamationmark.circle")
-                    .font(.callout)
-                    .foregroundStyle(ConnectionPalette.warning)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Button { signIn(at: endpoint) } label: {
-                Text(connecting ? "Signing In…" : "Sign In")
-                    .frame(maxWidth: .infinity, minHeight: 30)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(trimmedLink.isEmpty || signInLinkIssue(for: endpoint) != nil)
-            .controlSize(.large)
-        }
-        .disabled(connecting)
-        .multilineTextAlignment(.leading)
-        .connectionPanel()
-    }
-
-    private func signInLinkIssue(for endpoint: Endpoint) -> String? {
-        guard !trimmedLink.isEmpty else { return nil }
-        let target = parseWorkspaceLink(link)
-        guard let target else { return "Enter the full sign-in link from the host." }
-        guard endpoint.owns(target.origin) else {
-            return "This link is for another workspace."
-        }
-        guard target.token != nil else {
-            return "This link has no sign-in access. Get a link from the signed-in workspace on the host computer."
-        }
-        return nil
-    }
-
-    private func chooseDifferentWorkspace(from endpoint: Endpoint) {
-        let alternateLink = parseWorkspaceLink(link).flatMap { endpoint.owns($0.origin) ? nil : link }
-        chooseAnotherWorkspace()
-        if let alternateLink { link = alternateLink }
-    }
-
-    private func signIn(at endpoint: Endpoint) {
-        guard !connecting, !trimmedLink.isEmpty, signInLinkIssue(for: endpoint) == nil else { return }
-        let value = link
-        editingLink = false
-        Task { await connect(value) }
+    private func changeLink(_ value: String) {
+        endConnectionAttempt(supersedeShortcut: true)
+        link = value
+        error = nil
     }
 
     private func linkField(_ title: String, submit: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "link")
-                .foregroundStyle(ConnectionPalette.muted)
-                .accessibilityHidden(true)
-            SecureField(title, text: $link)
+            SecureField(title, text: Binding(get: { link }, set: { value in changeLink(value) }))
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled()
                 #if os(iOS)
@@ -1964,8 +1968,7 @@ struct ConnectionView: View {
                 .onSubmit(submit)
             if !link.isEmpty {
                 Button {
-                    link = ""
-                    error = nil
+                    changeLink("")
                     editingLink = true
                 } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -1974,22 +1977,30 @@ struct ConnectionView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(ConnectionPalette.muted)
-                .accessibilityLabel("Clear link")
+                .accessibilityLabel("Clear sign-in URL")
+                Button(action: submit) {
+                    Group {
+                        if connecting {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.right")
+                        }
+                    }
+                    .frame(width: 44, height: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(connecting ? "Verifying workspace" : (workspaceEntry == .add ? "Add workspace" : "Sign in"))
+                .disabled(connecting || trimmedLink.isEmpty)
+            } else {
+                PasteButton(payloadType: String.self) { values in
+                    if let value = values.first { changeLink(value) }
+                }
+                .labelStyle(.titleOnly)
+                .buttonStyle(.borderless)
+                .controlSize(.regular)
+                .fixedSize()
+                .frame(minHeight: 44)
             }
-            #if os(iOS)
-            Rectangle()
-                .fill(ConnectionPalette.rule)
-                .frame(width: 1, height: 24)
-                .accessibilityHidden(true)
-            PasteButton(payloadType: String.self) { values in
-                if let value = values.first { link = value }
-            }
-            .labelStyle(.titleOnly)
-            .buttonStyle(.borderless)
-            .controlSize(.regular)
-            .fixedSize()
-            .frame(minHeight: 44)
-            #endif
         }
         .padding(.leading, 12)
         .padding(.trailing, 6)
@@ -2015,16 +2026,14 @@ struct ConnectionView: View {
             .accessibilityElement(children: .combine)
 
         }
-        .task(id: stoppingLocalWorkspace) {
+        .task {
             startupIsSlow = false
-            guard !stoppingLocalWorkspace else { return }
             do { try await Task.sleep(for: .seconds(4)) } catch { return }
             startupIsSlow = true
         }
     }
 
     private var startupText: String {
-        if stoppingLocalWorkspace { return "Stopping workspace…" }
         if startupIsSlow { return "Still trying to open the workspace…" }
         if showingColdStart { return startupStage }
         return "Opening workspace…"
@@ -2035,9 +2044,9 @@ struct ConnectionView: View {
     ) -> some View {
         ScrollView {
             VStack(spacing: 14) {
-                brandHeader(loading: loading, compact: compactBrand || editingLink)
+                brandHeader(compact: compactBrand || editingLink)
                 actions()
-                if !editingLink { ConnectionFooter(showTagline: !loading) }
+                if !editingLink { ConnectionFooter() }
             }
             .frame(maxWidth: 420)
             .padding(24)
@@ -2053,29 +2062,34 @@ struct ConnectionView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.colorScheme, .light)
         .tint(ConnectionPalette.accent)
-        .background { paperBackground }
+        .background(ConnectionPalette.appSurface.ignoresSafeArea())
         .overlay(alignment: .topTrailing) {
-            if !loading || startupIsSlow && !stoppingLocalWorkspace {
+            if !loading || startupIsSlow {
                 helpButton.padding(.trailing, 12)
             }
         }
     }
 
-    private func brandHeader(loading: Bool = false, compact: Bool = false) -> some View {
-        VStack(spacing: 6) {
-            Image(loading ? "StartupIcon" : "HeinzelCrew")
-                .resizable()
-                .scaledToFit()
-                .frame(width: compact ? 76 : (loading ? 96 : 133), height: compact ? 48 : (loading ? 96 : 95))
+    private func brandHeader(compact: Bool = false) -> some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: 12))
+        return layout {
+            Image("HeinzelCrew")
+                .resizable().scaledToFit()
+                .frame(width: compact ? 84 : 96)
                 .accessibilityHidden(true)
-            Text("Heinzelmännchen")
-                .font(.system(compact ? .title2 : .largeTitle, design: .serif, weight: .semibold))
-                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.7)
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
-                .foregroundStyle(ConnectionPalette.ink)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Heinzelmännchen")
+                    .font(.system(.title2, design: .serif, weight: .semibold))
+                    .accessibilityAddTraits(.isHeader)
+                Text(heinzelTagline)
+                    .font(.footnote).multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(ConnectionPalette.muted)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var helpButton: some View {
@@ -2085,236 +2099,353 @@ struct ConnectionView: View {
         }
     }
 
-    private var paperBackground: some View {
-        ZStack {
-            Color("StartupBackground")
-            RadialGradient(
-                colors: [.white.opacity(0.7), Color(red: 0.81, green: 0.72, blue: 0.57).opacity(0.23)],
-                center: .center, startRadius: 30, endRadius: 620
-            )
-            Canvas(rendersAsynchronously: true) { context, size in
-                var grain = Path()
-                var seed: UInt64 = 67
-                func sample() -> Double {
-                    seed = 1_664_525 &* seed &+ 1_013_904_223
-                    return Double(UInt32(truncatingIfNeeded: seed)) / 4_294_967_296
-                }
-                let grainCount = min(12_000, Int(size.width * size.height / 34))
-                for _ in 0..<grainCount {
-                    let x = sample() * size.width
-                    let y = sample() * size.height
-                    grain.addEllipse(in: CGRect(x: x, y: y, width: 0.55 + sample() * 1.25, height: 0.65))
-                }
-                context.fill(grain, with: .color(Color(red: 0.43, green: 0.32, blue: 0.21).opacity(0.10)))
-            }
-            .accessibilityHidden(true)
-        }
-        .ignoresSafeArea()
-    }
-
     private var setup: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                brandHeader(compact: editingLink).frame(maxWidth: .infinity)
-                if choosingWorkspace, let endpoint {
-                    let cloud = availableCloudWorkspaces.first { $0.address == endpoint.origin.absoluteString }
-                    Button {
-                        if let cloud, loadFailure == .signIn {
-                            choosingWorkspace = false
-                            Task { await connectCloudWorkspace(cloud) }
-                        } else {
-                            error = nil
-                            link = ""
-                            choosingWorkspace = false
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Label(loadFailure == .signIn && cloud != nil
-                                  ? "Sign in to \(workspaceName(endpoint.origin))"
-                                  : "Back to \(workspaceName(endpoint.origin))",
-                                  systemImage: "chevron.backward")
-                            if cloud != nil {
-                                Image(systemName: "icloud")
-                                    .accessibilityHidden(true)
-                            }
-                        }
-                        .multilineTextAlignment(.leading)
-                    }
-                    .buttonStyle(.bordered)
-                    .accessibilityValue(cloud == nil ? "" : "Sign-in synced with iCloud")
-                }
-                #if os(macOS)
-                if endpoint?.origin.scheme != "http" {
-                    Button("Start Local Workspace", systemImage: "desktopcomputer") {
-                        Task { await startLocal() }
-                    }
-                    .buttonStyle(.bordered)
-                    Divider()
-                }
-                #endif
-                let choices = recentWorkspaces.filter { $0.address != endpoint?.origin.absoluteString }
-                if !choices.isEmpty {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Recent Workspaces")
-                            .font(.system(.headline, design: .serif))
-                            .foregroundStyle(ConnectionPalette.ink)
-                            .accessibilityAddTraits(.isHeader)
-                        ForEach(choices) { item in
-                            HStack(spacing: 0) {
-                                Button { Task { await connectRecent(item.address, source: item.source) } } label: {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "link").accessibilityHidden(true)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(item.name).fontWeight(.medium)
-                                            if choices.contains(where: { $0.id != item.id && $0.name == item.name }) {
-                                                Text(item.address).font(.caption).foregroundStyle(ConnectionPalette.muted)
-                                            }
-                                        }
-                                        if item.source == .iCloud {
-                                            Image(systemName: "icloud")
-                                                .font(.footnote)
-                                                .foregroundStyle(ConnectionPalette.muted)
-                                                .accessibilityHidden(true)
-                                        }
-                                        Spacer(minLength: 0)
-                                    }
-                                    .frame(minHeight: 44).contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityValue(item.source == .iCloud ? "Synced with iCloud" : "Added on this device")
-                                connectionIconButton("trash", label: "Forget \(item.name)") { forgetWorkspace(item) }
-                            }
-                        }
-                    }
-                    .connectionPanel()
-                }
-                setupForm
-            }
-            .disabled(connecting)
-            .frame(maxWidth: 450, alignment: .leading)
-            .padding(28)
-            .frame(maxWidth: .infinity)
-        }
-        #if os(iOS)
-        .scrollDismissesKeyboard(.interactively)
-        .refreshable { await refreshSetupStatus() }
-        #endif
-        .defaultScrollAnchor(editingLink ? .top : .center, for: .alignment)
-        .frame(maxHeight: .infinity)
+        WorkspaceInformationSurface(version: heinzelAppBuild?.version, background: ConnectionPalette.appSurface) { information in
+            startDirectory(information)
+        } details: { workspaceInformation }
         .environment(\.colorScheme, .light)
         .tint(ConnectionPalette.accent)
-        .background { paperBackground }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !editingLink { ConnectionFooter(showTagline: true) }
+        .background(ConnectionPalette.appSurface.ignoresSafeArea())
+    }
+
+    private func startDirectory(_ information: WorkspaceInformationButton) -> some View {
+        WorkspaceStartLayout {
+            brandHeader(compact: true)
+        } heading: {
+            workspaceDirectoryHeading
+        } rows: {
+            VStack(alignment: .leading, spacing: 8) {
+                workspaceDirectoryRows
+                if choosingWorkspace, remoteRecovery == nil, let current = confirmedOrigin, current == endpoint?.origin {
+                    Button("Back to " + workspaceName(current), systemImage: "chevron.backward") {
+                        endConnectionAttempt(supersedeShortcut: true)
+                        choosingWorkspace = false
+                        error = nil
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+            .foregroundStyle(ConnectionPalette.ink)
+        } footer: {
+            directoryFooter(information)
         }
-        .overlay(alignment: .topTrailing) {
-            helpButton.padding(.trailing, 12)
+        .refreshable {
+            refreshSyncedWorkspaces()
+            directoryRevision += 1
         }
     }
 
-    private var setupForm: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Connect to a workspace")
-                .font(.system(.title2, design: .serif, weight: .semibold))
-                .accessibilityAddTraits(.isHeader)
-                .foregroundStyle(ConnectionPalette.ink)
-            Text("Enter the link your workspace host shared with you.")
-                .font(.callout)
-                .foregroundStyle(ConnectionPalette.muted)
-            linkField("Workspace link", submit: connectDraft)
-            if let origin = draftOrigin { reachability(for: origin) }
-            if let message = error ?? (draftWorkspace == nil && !trimmedLink.isEmpty && !editingLink ? "Enter the full workspace link from the host." : nil) {
-                Label(message, systemImage: "exclamationmark.circle")
-                    .font(.footnote)
-                    .foregroundStyle(ConnectionPalette.warning)
-            }
-            Button(action: connectDraft) {
-                Text(connecting ? "Connecting…" : "Connect")
-                    .frame(maxWidth: .infinity, minHeight: 30)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(!canConnectDraft)
+    @ViewBuilder
+    private var workspaceDirectory: some View {
+        workspaceDirectoryHeading
+        workspaceDirectoryRows
+    }
+
+    private var workspaceDirectoryHeading: some View {
+        HStack {
+            Text("Workspaces").font(.title2.bold()).accessibilityAddTraits(.isHeader)
+            Spacer()
+            connectionIconButton("plus", label: "Add Workspace") { showWorkspaceEntry(.add) }
             #if os(iOS)
-            DisclosureGroup("Where do I find my link?") {
-                Text("Ask the person hosting your workspace for a sign-in link, then paste it here. Already connected on another device? You can also choose a recent workspace above when one is available.")
-                    .font(.footnote)
-                    .foregroundStyle(ConnectionPalette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 6)
+            if showConnection {
+                connectionIconButton("xmark", label: "Close workspace sheet", action: dismissConnectionPicker)
             }
-            .font(.footnote.weight(.medium))
             #endif
         }
-        .connectionPanel()
     }
 
-    private func reachability(for origin: URL) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(origin.absoluteString)
-                .font(.footnote.monospaced())
-                .foregroundStyle(ConnectionPalette.muted)
-                .textSelection(.enabled)
-                .accessibilityLabel("Workspace address: \(origin.absoluteString)")
-            if checkedDraft == origin {
-                Label(draftIssue?.title ?? "Workspace reachable", systemImage: draftIssue?.icon ?? "checkmark.circle.fill")
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(draftIssue == nil ? Color(red: 0.19, green: 0.37, blue: 0.27) : ConnectionPalette.warning)
-                    .accessibilityIdentifier("workspaceReachability")
-                if draftIssue != nil {
-                    #if os(iOS)
-                    Button("Check Again", systemImage: "arrow.clockwise") { draftRevision += 1 }
-                        .buttonStyle(.bordered)
-                        .controlSize(.regular)
-                    #else
-                    connectionIconButton("arrow.clockwise", label: "Check Again") { draftRevision += 1 }
-                    #endif
-                }
+    @ViewBuilder
+    private var workspaceDirectoryRows: some View {
+        let versions = recordedVersions
+        let rows = orderedWorkspaces
+        let addresses = RecentWorkspace.disambiguatingAddresses(for: rows, probes: directoryResults)
+        VStack(spacing: 0) {
+            #if os(macOS)
+            let localVersion = if let origin = endpoint?.origin, origin.scheme == "http" {
+                versions[origin.absoluteString]
             } else {
-                ProgressView("Checking workspace…")
-                    .controlSize(.small)
-                    .font(.callout)
+                WorkspaceVersionObservation.lastLocal(in: versions)
+            }
+            let localOrigin = endpoint?.origin.scheme == "http" ? endpoint?.origin : nil
+            let localSession = WorkspaceDirectoryRow.Session(origin: localOrigin, retained: endpoint?.origin, confirmed: confirmedOrigin)
+            WorkspaceDirectoryRow(name: "This Mac", detail: service.recovery?.detail ??
+                (localBackend == nil ? "Open local workspace" : "Running · Local backend"),
+                version: localBackend?.version ?? localVersion?.version,
+                symbol: "desktopcomputer", session: localSession, localBackend: true, userAdded: false, busy: connecting,
+                recoveryControl: localRecoveryControl, open: {
+                    if localSession == .connected && service.recovery == nil {
+                        endConnectionAttempt(supersedeShortcut: true)
+                        choosingWorkspace = false
+                        showConnection = false
+                    } else {
+                        endConnectionAttempt(supersedeShortcut: true)
+                        Task { await startLocal() }
+                    }
+                }, perform: { _ in disconnect() })
+            #endif
+            ForEach(rows) { item in
+                if let target = Endpoint(item.address) {
+                    let url = target.origin
+                    let recovery = url == endpoint?.origin ? remoteRecovery : nil
+                    let session = WorkspaceDirectoryRow.Session(origin: url, retained: endpoint?.origin, confirmed: confirmedOrigin)
+                    WorkspaceDirectoryRow(name: item.name, detail: recovery?.label(network: routeAvailable(to: url)) ?? directoryDetail(item, origin: url), version: versions[item.address]?.version,
+                        symbol: item.source == .iCloud ? "icloud" : "arrow.up.right", session: session,
+                        address: addresses[item.address],
+                        available: recovery != nil || WorkspaceHostProbe.canAttemptConnection(networkAvailable: directoryHasNetwork, probe: directoryResults[url]),
+                        userAdded: item.isUserAdded, busy: connecting,
+                        recoveryControl: recovery.flatMap { state in
+                            state.issue.canReconnectAutomatically ? (state.paused, { toggleRecovery() }) : nil
+                        }, open: {
+                            if let recovery {
+                                if recovery.issue == .signIn { showWorkspaceEntry(.signIn(url)) }
+                                else if recovery.paused { toggleRecovery() }
+                                else if recovery.issue.canReconnectAutomatically { monitorGeneration &+= 1 }
+                            } else if session == .connected {
+                                endConnectionAttempt(supersedeShortcut: true)
+                                choosingWorkspace = false
+                                showConnection = false
+                            } else if routeAvailable(to: url) == true && directoryResults[url]?.issue == nil && needsSignIn.contains(url) && !hasFreshCloudSignIn(item) {
+                                showWorkspaceEntry(.signIn(url))
+                            } else {
+                                Task { await connectRecent(item.address, source: item.source) }
+                            }
+                        }, perform: { action in
+                            switch action {
+                            case .disconnect: disconnect()
+                            case .remove: removalCandidate = item
+                            }
+                        })
+                        #if os(iOS)
+                        .contextMenu {
+                            if session == .connected {
+                                if let link = target.shareURL {
+                                    ShareLink(item: link) { Label("Share Workspace Link", systemImage: "square.and.arrow.up") }
+                                }
+                                Button("Connection Help", systemImage: "questionmark.circle") {
+                                    helpAfterConnection = true
+                                    showConnection = false
+                                }
+                            }
+                        }
+                        #endif
+                }
+            }
+            #if os(iOS)
+            if orderedWorkspaces.isEmpty && !cloudDirectoryUnavailable {
+                Text(cloudDirectory.access == .checking ? "Looking for workspaces…" : "No known workspaces")
+                    .foregroundStyle(ConnectionPalette.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding()
+            }
+            #endif
+        }
+        .background(.white, in: RoundedRectangle(cornerRadius: 14))
+        .alert("Remove workspace?", isPresented: Binding(get: { removalCandidate != nil }, set: { showing in
+            if !showing { removalCandidate = nil }
+        }), presenting: removalCandidate) { item in
+            Button("Cancel", role: .cancel) {}
+            Button("Remove", role: .destructive) { forgetWorkspace(item) }
+        } message: { item in
+            Text("Remove " + item.name + " from this device?")
+        }
+        if cloudDirectoryUnavailable {
+            Label("iCloud sign-ins are temporarily unavailable.", systemImage: "icloud.slash")
+                .font(.footnote).foregroundStyle(ConnectionPalette.muted)
+        }
+        if let error, workspaceEntry == nil {
+            Label(error, systemImage: "exclamationmark.circle").font(.callout)
+                .foregroundStyle(ConnectionPalette.warning)
+        }
+        if connecting {
+            HStack {
+                ProgressView().controlSize(.small)
+                Text("Verifying workspace…").font(.callout)
+                Spacer()
+                connectionIconButton("xmark", label: "Cancel connection") {
+                    endConnectionAttempt(supersedeShortcut: true)
+                }
             }
         }
     }
 
-    private var canConnectDraft: Bool {
-        guard let origin = draftOrigin else { return false }
-        return !connecting && checkedDraft == origin && draftIssue == nil
+    private var recordedVersions: [String: WorkspaceVersionObservation] {
+        (try? JSONDecoder().decode([String: WorkspaceVersionObservation].self, from: workspaceBackendVersions)) ?? [:]
+    }
+
+    private func directoryFooter(_ information: WorkspaceInformationButton) -> some View {
+        VStack(spacing: 0) {
+            deviceChecks
+            information.disabled(connecting).foregroundStyle(ConnectionPalette.muted)
+        }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity)
+        .background(ConnectionPalette.appSurface)
+    }
+
+    private var deviceChecks: some View {
+        ConnectionDeviceSummary(revision: directoryRevision, networkAvailable: directoryHasNetwork,
+            cloud: ConnectionHelp.cloudStatus(cloudDirectory.access), interacting: $deviceCheckInteracting,
+            report: { observedDeviceChecks = $0 }, reportAddress: { internetClientAddress = $0 },
+            refresh: { refreshSyncedWorkspaces(); directoryRevision &+= 1 })
+    }
+
+    private var orderedWorkspaces: [RecentWorkspace] {
+        recentWorkspaces.sorted { lhs, rhs in
+            let a = URL(string: lhs.address).map { directoryResults[$0]?.reachability == .online } == true
+            let b = URL(string: rhs.address).map { directoryResults[$0]?.reachability == .online } == true
+            return a && !b
+        }
+    }
+
+    private func hasFreshCloudSignIn(_ item: RecentWorkspace) -> Bool {
+        guard let origin = URL(string: item.address), !cloudDirectoryUnavailable, let cloud = availableCloudWorkspaces.first(where: { $0.address == item.address }) else { return false }
+        return !needsSignIn.contains(origin) || attemptedCloudSignIns[item.address] != cloud.lastUsed
+    }
+
+    private func directoryDetail(_ item: RecentWorkspace, origin: URL) -> String {
+        let probe = directoryResults[origin]
+        let reachability = WorkspaceHostProbe.remoteReachability(networkAvailable: directoryHasNetwork, probe: probe)
+        let status = reachability.rawValue
+        let source: String? = switch item.source {
+        case .iCloud: "iCloud"
+        case .pasted: "Added manually"
+        case nil: nil
+        }
+        let detail: String?
+        if routeAvailable(to: origin) == true, reachability != .offline, let issue = probe?.issue {
+            detail = issue.title
+        } else if needsSignIn.contains(origin) && !hasFreshCloudSignIn(item) {
+            detail = "Sign in"
+        } else if !cloudDirectoryUnavailable && hasFreshCloudSignIn(item) {
+            detail = "iCloud"
+        } else if item.isUserAdded && confirmedOrigin == origin {
+            detail = "Signed in"
+        } else {
+            detail = source
+        }
+        return [status, detail].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private func dismissConnectionPicker() {
+        if connectionAttempt != nil { endConnectionAttempt(supersedeShortcut: true) }
+        showConnection = false
+    }
+
+    private func showWorkspaceEntry(_ entry: WorkspaceEntry) {
+        #if os(macOS)
+        service.pauseRecovery()
+        #endif
+        endConnectionAttempt(supersedeShortcut: true)
+        link = ""
+        error = nil
+        workspaceEntry = entry
+        returnAfterRemoteRecovery = false
+        monitorGeneration &+= 1
+    }
+
+    private func dismissWorkspaceEntry() {
+        if signInDestination != nil, remoteRecovery == nil, confirmedOrigin != nil, confirmedOrigin == endpoint?.origin {
+            choosingWorkspace = false
+        }
+        endConnectionAttempt(supersedeShortcut: true)
+        workspaceEntry = nil
+        editingLink = false
+        link = ""
+        error = nil
+    }
+
+    private var workspaceInformation: some View {
+        let origin = confirmedOrigin.flatMap { $0 == endpoint?.origin && remoteRecovery == nil ? $0 : nil }
+        let target = origin.flatMap { origin -> WorkspaceInformationRequest? in
+            guard scenePhase == .active, !loadingWorkspace, visibleProblem == nil, connectionIssue == nil else { return nil }
+            if origin.scheme != "http", routeAvailable(to: origin) != true || directoryResults[origin]?.reachability == .offline { return nil }
+            let route = directoryResults[origin]
+            return WorkspaceInformationRequest(origin: origin, page: loadRevision, networkRevision: directoryRevision,
+                                               remoteAddress: route?.address, clientAddress: route?.clientAddress)
+        }
+        let source = origin.flatMap { origin -> String? in
+            if origin.scheme == "http" { return "This Mac" }
+            switch recentWorkspaces.first(where: { $0.address == origin.absoluteString })?.source {
+            case .pasted: return "Added manually"
+            case .iCloud: return "iCloud"
+            case nil: return nil
+            }
+        }
+        return WorkspaceVersionDetails(app: (try? JSONDecoder().decode(AppBuildObservation.self, from: appBuildObservation))
+            .flatMap { $0.build == heinzelAppBuild ? $0 : nil },
+            checks: informationDeviceChecks, internetClientAddress: internetClientAddress, origin: origin, name: origin.map(workspaceName), source: source,
+            target: target, document: { target.flatMap { pageSessions.view(for: $0.page) } })
+    }
+
+    private var linkEntrySheet: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                connectionSheetHeader(signInDestination.map { "Sign in to " + workspaceName($0) } ?? "Add Workspace") {
+                    connectionIconButton("xmark", label: "Cancel") { dismissWorkspaceEntry() }
+                        #if os(macOS)
+                        .keyboardShortcut(.cancelAction)
+                        #endif
+                }
+                linkField("Sign-in URL", submit: connectDraft)
+                if let error {
+                    Label(error, systemImage: "exclamationmark.circle").font(.footnote)
+                        .foregroundStyle(ConnectionPalette.warning)
+                }
+            }
+            .frame(maxWidth: 440, alignment: .leading).padding(20)
+            .frame(maxWidth: .infinity)
+        }
+        .background(ConnectionPalette.appSurface)
+        .foregroundStyle(ConnectionPalette.ink).environment(\.colorScheme, .light)
+        #if os(iOS)
+        .onAppear { editingLink = true }
+        .onChange(of: error) { _, message in
+            if let message, !editingLink {
+                editingLink = true
+                AccessibilityNotification.Announcement(message).post()
+            }
+        }
+        .presentationDetents([.height(dynamicTypeSize.isAccessibilitySize ? 300 : (error == nil ? 160 : 215)), .large])
+        .presentationDragIndicator(.visible)
+        #else
+        .frame(minWidth: 380, idealWidth: 420, minHeight: 160, idealHeight: 200)
+        #endif
     }
 
     private func connectDraft() {
-        guard canConnectDraft else { return }
+        guard !connecting, !trimmedLink.isEmpty else { return }
+        if let message = Endpoint.signInInputIssue(link, expectedOrigin: signInDestination) {
+            error = message
+            AccessibilityNotification.Announcement(message).post()
+            return
+        }
+        guard let target = draftWorkspace, target.token != nil else { return }
+        endConnectionAttempt(supersedeShortcut: true)
         let value = link
+        let storedSource = recentWorkspaces.first { $0.address == target.origin.absoluteString }?.source
         editingLink = false
-        Task { await connect(value) }
+        Task { await connect(value, source: storedSource ?? .pasted) }
     }
 
     private func refreshSyncedWorkspaces() {
-        cloudDirectoryChecked = true
-        if let workspaces = WorkspaceKeychain.workspaces() {
-            syncedWorkspaces = workspaces
-            cloudDirectoryUnavailable = false
-        } else {
-            cloudDirectoryUnavailable = true
-        }
+        cloudDirectory.update(WorkspaceKeychain.workspaces())
     }
 
     private func resumeCloudSignInIfReady() {
-        guard !connecting, !editingLink, trimmedLink.isEmpty, !choosingWorkspace,
+        guard workspaceEntry == nil, !connecting, !editingLink, trimmedLink.isEmpty, !choosingWorkspace,
               !showConnectionHelp, !showConnection, sharedWorkspace == nil, loadFailure == .signIn,
               let address = endpoint?.origin.absoluteString,
               let cloud = availableCloudWorkspaces.first(where: { $0.address == address }),
               attemptedCloudSignIns[address] != cloud.lastUsed else { return }
         // The chosen workspace stays the same; only its credential arrived after the first load.
         Task {
-            guard !connecting, !editingLink, trimmedLink.isEmpty, !choosingWorkspace,
+            guard workspaceEntry == nil, !connecting, !editingLink, trimmedLink.isEmpty, !choosingWorkspace,
                   loadFailure == .signIn, endpoint?.origin.absoluteString == address else { return }
             await connectCloudWorkspace(cloud, reportMissing: false)
         }
     }
 
     private func connectCloudWorkspace(_ workspace: RecentWorkspace, reportMissing: Bool = true) async {
+        if reportMissing { endConnectionAttempt(supersedeShortcut: true) }
         guard let credential = WorkspaceKeychain.signIn(address: workspace.address,
                                                        newerThan: forgottenWorkspaceDates[workspace.address]) else {
             if reportMissing { error = "The iCloud sign-in is temporarily unavailable. Try again or paste a sign-in link." }
@@ -2323,7 +2454,11 @@ struct ConnectionView: View {
         await connectUsingCloud(credential)
     }
 
-    private func connectRecent(_ address: String, checkHost: Bool = true, source: RecentWorkspace.Source? = nil) async {
+    private func connectRecent(_ address: String, checkHost: Bool = true, source: RecentWorkspace.Source? = nil,
+                               preservingShortcut: UUID? = nil) async {
+        if connecting, connectingOrigin?.absoluteString == address { return }
+        endConnectionAttempt(supersedeShortcut: preservingShortcut != pendingShortcut?.id)
+        workspaceEntry = nil
         if let credential = WorkspaceKeychain.signIn(address: address, newerThan: forgottenWorkspaceDates[address]) {
             await connectUsingCloud(credential, checkHost: checkHost, fallBackToWorkspace: true)
         } else {
@@ -2337,10 +2472,7 @@ struct ConnectionView: View {
         guard !connecting else { return }
         let item = credential.workspace
         attemptedCloudSignIns[item.address] = item.lastUsed
-        syncedWorkspaces.removeAll { $0.address == item.address }
-        syncedWorkspaces.append(item)
-        cloudSignInInProgress = true
-        defer { cloudSignInInProgress = false }
+        cloudDirectory.observedSignIn(item)
         await connect(credential.link, checkHost: checkHost, fallBackToWorkspace: fallBackToWorkspace, source: .iCloud)
     }
 
@@ -2349,7 +2481,10 @@ struct ConnectionView: View {
                          initialStartup: Bool = false) async {
         guard !connecting else { return }
         #if os(macOS)
+        service.pauseRecovery()
         let menuRevision = initialStartup ? 0 : connectionMenuIntent.revision
+        #else
+        let menuRevision = 0
         #endif
         let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard var target = parseWorkspaceLink(value) else {
@@ -2358,20 +2493,37 @@ struct ConnectionView: View {
         }
         // A shared address can refer to the active workspace, including a session
         // opened with a sign-in fragment. Keep its WebKit view and in-memory state.
-        if target.token == nil, endpoint?.owns(target.origin) == true {
+        if (target.token == nil || target == endpoint), confirmedOrigin == target.origin, loadFailure != .signIn {
+            workspaceEntry = nil
+            showConnection = false
             choosingWorkspace = false
             if loadFailure != nil { retryWorkspace() }
             return
         }
+        let previousEndpoint = endpoint
+        let previousRevision = loadRevision
+        let attempt = UUID()
+        if remoteRecovery != nil { returnAfterRemoteRecovery = false }
+        connectingOrigin = target.origin
+        monitorGeneration &+= 1
+        connectionAttempt = attempt
         connecting = true
         error = nil
-        defer { connecting = false }
-        if checkHost, let issue = await Endpoint.connectionIssue(at: target.origin) {
-            error = issue.title
-            if endpoint != nil && loadFailure != .signIn && !choosingWorkspace { showConnection = true }
-            return
+        defer {
+            if connectionAttempt == attempt && pendingSwitch == nil { endConnectionAttempt() }
+        }
+        if checkHost {
+            let probe = await Endpoint.probeHost(at: target.origin)
+            guard connectionAttempt == attempt, !Task.isCancelled else { return }
+            directoryResults[target.origin] = probe
+            if let title = probe.issue?.title {
+                error = title
+                if workspaceEntry == nil && endpoint != nil && loadFailure != .signIn && !choosingWorkspace { showConnection = true }
+                return
+            }
         }
         do {
+            guard connectionAttempt == attempt, !Task.isCancelled else { return }
             var cloudSignInRejected = false
             do { try await target.verify() }
             catch ConnectionError.authentication where fallBackToWorkspace {
@@ -2379,51 +2531,144 @@ struct ConnectionView: View {
                 target = addressOnly
                 cloudSignInRejected = source == .iCloud
             }
-            if remember {
-                #if os(macOS)
+            guard connectionAttempt == attempt, !Task.isCancelled, endpoint == previousEndpoint,
+                  loadRevision == previousRevision else { return }
+            let staged = !initialStartup && (endpoint != target || confirmedOrigin != target.origin)
+            switchSequence = max(loadRevision, switchSequence) + 1
+            let selection = PendingSwitch(page: WorkspacePage(endpoint: target, id: switchSequence),
+                                          previousEndpoint: previousEndpoint, previousRevision: previousRevision,
+                                          remember: remember, source: source, cloudSignInRejected: cloudSignInRejected,
+                                          menuRevision: menuRevision)
+            if staged {
+                _ = await stageWorkspace(selection)
+                return
+            }
+            installWorkspace(selection, staged: false)
+        } catch ConnectionError.authentication {
+            guard connectionAttempt == attempt, !Task.isCancelled else { return }
+            needsSignIn.insert(target.origin)
+            if workspaceEntry == nil { workspaceEntry = .signIn(target.origin) }
+            error = "This sign-in link expired or was rejected. Ask the host for a new one."
+        } catch {
+            guard connectionAttempt == attempt, !Task.isCancelled else { return }
+            self.error = (error as? ConnectionError)?.errorDescription ?? "The server could not be reached."
+            if workspaceEntry == nil && endpoint != nil && loadFailure != .signIn && !choosingWorkspace { showConnection = true }
+        }
+    }
+
+    private func installWorkspace(_ selection: PendingSwitch, staged: Bool) {
+        let target = selection.page.endpoint
+        monitorGeneration &+= 1
+        remoteRecovery = nil
+        #if os(macOS)
+        if selection.startsLocal {
+            if let snapshot = ActivityWidgetData.read(), snapshot.workspaceScope != ActivityWidgetData.scope(for: target.origin) {
                 clearWidgetActivity()
                 chatRequest = nil
-                #else
-                if serverOrigin != target.origin.absoluteString {
-                    clearWidgetActivity()
-                    chatRequest = nil
-                }
-                #endif
-                serverOrigin = target.origin.absoluteString
-                let provenance = source ?? .pasted
-                let cloudName = provenance == .iCloud
-                    ? availableCloudWorkspaces.first { $0.address == target.origin.absoluteString }?.hostName
-                    : nil
-                rememberWorkspace(target, hostName: cloudName, source: provenance)
-                if provenance == .pasted, target.token != nil {
-                    var forgotten = (try? JSONDecoder().decode([String: Date].self, from: forgottenWorkspaces)) ?? [:]
-                    forgotten.removeValue(forKey: target.origin.absoluteString)
-                    if let encoded = try? JSONEncoder().encode(forgotten) { forgottenWorkspaces = encoded }
-                }
             }
-            link = ""
-            if endpoint?.origin != target.origin { connectionIssue = nil }
-            if endpoint != target {
-                loadFailure = nil
-                loadingWorkspace = true
-            }
-            #if os(iOS)
-            if endpoint != target { invalidateConnectionScope() }
-            #endif
-            endpoint = target
-            #if os(macOS)
-            choosingWorkspace = connectionMenuIntent.keepSetup(afterStartedAt: menuRevision)
-            #else
-            choosingWorkspace = false
-            #endif
-            if cloudSignInRejected { error = "The workspace didn’t accept the saved iCloud sign-in." }
-            #if os(macOS)
-            await service.stop()
-            #endif
-        } catch {
-            self.error = (error as? ConnectionError)?.errorDescription ?? "The server could not be reached."
-            if endpoint != nil && loadFailure != .signIn && !choosingWorkspace { showConnection = true }
         }
+        returnAfterLocalRecovery = false
+        service.selectWorkspace(target)
+        #endif
+        if selection.remember {
+            #if os(macOS)
+            clearWidgetActivity()
+            chatRequest = nil
+            #else
+            if serverOrigin != target.origin.absoluteString {
+                clearWidgetActivity()
+                chatRequest = nil
+            }
+            #endif
+            serverOrigin = target.origin.absoluteString
+            let provenance = selection.source ?? recentWorkspaces.first { $0.address == target.origin.absoluteString }?.source ?? .pasted
+            let cloudName = provenance == .iCloud
+                ? availableCloudWorkspaces.first { $0.address == target.origin.absoluteString }?.hostName
+                : nil
+            rememberWorkspace(target, hostName: cloudName, source: provenance)
+            if provenance == .pasted, target.token != nil {
+                var forgotten = (try? JSONDecoder().decode([String: Date].self, from: forgottenWorkspaces)) ?? [:]
+                forgotten.removeValue(forKey: target.origin.absoluteString)
+                if let encoded = try? JSONEncoder().encode(forgotten) { forgottenWorkspaces = encoded }
+            }
+        }
+        link = ""
+        if staged || endpoint?.origin != target.origin { connectionIssue = nil }
+        if staged || endpoint != target {
+            loadFailure = nil
+            loadingWorkspace = !staged
+        }
+        #if os(iOS)
+        if endpoint != target { invalidateConnectionScope() }
+        #endif
+        workspaceEntry = nil
+        needsSignIn.remove(target.origin)
+        confirmedOrigin = staged ? target.origin : (endpoint == target ? confirmedOrigin : nil)
+        showConnection = false
+        if staged { loadRevision = selection.page.id }
+        endpoint = target
+        #if os(macOS)
+        choosingWorkspace = connectionMenuIntent.keepSetup(afterStartedAt: selection.menuRevision)
+        #else
+        choosingWorkspace = false
+        #endif
+        if selection.cloudSignInRejected && !staged { error = "The workspace didn’t accept the saved iCloud sign-in." }
+    }
+
+    private func stageWorkspace(_ selection: PendingSwitch) async -> Bool {
+        guard !Task.isCancelled else { return false }
+        let id = selection.page.id
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { completion in
+                switchCompletion = completion
+                pendingSwitch = selection
+            }
+        } onCancel: {
+            Task { @MainActor in
+                if pendingSwitch?.page.id == id { endConnectionAttempt() }
+            }
+        }
+    }
+
+    private func endConnectionAttempt(supersedeShortcut: Bool = false, succeeded: Bool = false) {
+        if supersedeShortcut { pendingShortcut = nil }
+        guard connectionAttempt != nil else { return }
+        pendingSwitch = nil
+        switchCompletion?.resume(returning: succeeded)
+        switchCompletion = nil
+        connectionAttempt = nil
+        connectingOrigin = nil
+        connecting = false
+    }
+
+    private func finishPendingSwitch(_ revision: Int, issue: WorkspaceProblem?) {
+        guard let candidate = pendingSwitch, candidate.page.id == revision else { return }
+        guard candidate.previousEndpoint == endpoint, candidate.previousRevision == loadRevision else {
+            endConnectionAttempt()
+            return
+        }
+        if let issue {
+            endConnectionAttempt()
+            if !showConnection && !choosingWorkspace { chooseAnotherWorkspace() }
+            let name = workspaceName(candidate.page.endpoint.origin)
+            if issue == .signIn && candidate.startsLocal {
+                error = "Local sign-in expired. Select This Mac to reconnect."
+            } else if issue == .signIn {
+                needsSignIn.insert(candidate.page.endpoint.origin)
+                if workspaceEntry != nil {
+                    error = "This sign-in link expired or was rejected. Ask the host for a new one."
+                } else {
+                    link = ""
+                    workspaceEntry = .signIn(candidate.page.endpoint.origin)
+                    error = "\(name) needs sign-in. Paste a fresh sign-in link from that host."
+                }
+            } else {
+                error = "\(name): \(issue.detail)"
+            }
+            return
+        }
+        installWorkspace(candidate, staged: true)
+        endConnectionAttempt(succeeded: true)
     }
 
     private func parseWorkspaceLink(_ input: String) -> Endpoint? {
@@ -2431,6 +2676,8 @@ struct ConnectionView: View {
     }
 
     private func chooseAnotherWorkspace() {
+        endConnectionAttempt(supersedeShortcut: true)
+        workspaceEntry = nil
         showConnection = false
         choosingWorkspace = true
         link = ""
@@ -2447,24 +2694,19 @@ struct ConnectionView: View {
     }
 
     private func workspaceName(_ origin: URL) -> String {
-        if origin.scheme == "http" { return "Local Workspace" }
+        if origin.scheme == "http" { return "This Mac" }
         let address = origin.absoluteString
         return recentWorkspaces.first { $0.address == address }?.name ?? RecentWorkspace.displayName(for: address)
     }
 
     private func disconnect() {
+        monitorGeneration &+= 1
+        remoteRecovery = nil
+        confirmedOrigin = nil
+        endConnectionAttempt(supersedeShortcut: true)
+        workspaceEntry = nil
         #if os(macOS)
-        if endpoint?.origin.scheme == "http" {
-            connecting = true
-            stoppingLocalWorkspace = true
-            Task {
-                defer {
-                    connecting = false
-                    stoppingLocalWorkspace = false
-                }
-                await service.stop()
-            }
-        }
+        service.selectWorkspace(nil)
         #endif
         showConnection = false
         choosingWorkspace = false
@@ -2487,6 +2729,7 @@ struct ConnectionView: View {
     }
 
     private func retryWorkspace() {
+        endConnectionAttempt(supersedeShortcut: true)
         loadFailure = nil
         loadingWorkspace = true
         loadRevision += 1
@@ -2498,23 +2741,6 @@ struct ConnectionView: View {
         connectionProbe?.task.cancel()
         connectionProbe = nil
         signInProbeScope = nil
-    }
-
-    private func refreshSetupStatus() async {
-        refreshSyncedWorkspaces()
-        guard let origin = draftOrigin, !connecting else { return }
-        draftRevision += 1
-        let probe = DraftProbe(origin: origin, revision: draftRevision)
-        manualDraftProbe = probe
-        checkedDraft = nil
-        defer { if manualDraftProbe == probe { manualDraftProbe = nil } }
-        let session = Endpoint.probeSession()
-        defer { session.invalidateAndCancel() }
-        let issue = await Endpoint.connectionIssue(at: origin, using: session)
-        guard !Task.isCancelled, draftProbe == probe else { return }
-        draftIssue = issue
-        checkedDraft = origin
-        AccessibilityNotification.Announcement(issue?.title ?? "Workspace reachable").post()
     }
 
     private func refreshConnectionStatus(for target: Endpoint) async {
@@ -2529,7 +2755,6 @@ struct ConnectionView: View {
               endpoint == target, monitoredOrigin == target.origin,
               connectionProbe?.revision == result.revision else { return }
         connectionIssue = result.issue
-        verifiedConnectionOrigin = result.issue == nil ? target.origin : nil
         if result.issue == nil, loadFailure?.canReconnectAutomatically == true { retryWorkspace() }
         AccessibilityNotification.Announcement(result.issue?.title ?? "Workspace reachable").post()
         finishConnectionProbe(result.revision, manual: true)
@@ -2557,6 +2782,49 @@ struct ConnectionView: View {
     }
     #endif
 
+    private func watchRemoteSession(_ watch: RemoteSessionWatch) async {
+        guard let view = pageSessions.view(for: watch.page), let target = endpoint else { return }
+        await WorkspaceRemoteMonitor.run(recovery: remoteRecovery, network: watch.network, isCurrent: {
+            remoteWatch == watch && view === pageSessions.view(for: watch.page)
+        }, probe: {
+            await WorkspaceWebSession.issue(in: view, for: target, requireRenderedShell: remoteRecovery != nil)
+        }, report: { event in
+            switch event {
+            case .healthy:
+                connectionIssue = nil
+                guard remoteRecovery != nil else { return }
+                remoteRecovery = nil
+                confirmedOrigin = watch.origin
+                WorkspaceWebSession.reportRestored(in: view, for: target)
+                if returnAfterRemoteRecovery { choosingWorkspace = false }
+                returnAfterRemoteRecovery = false
+                loadFailure = nil
+                loadingWorkspace = false
+            case .lost(let lost):
+                if directoryHasNetwork != true && [.offline, .slow, .unavailable].contains(lost.issue) {
+                    directoryResults.removeValue(forKey: watch.origin)
+                }
+                if remoteRecovery == nil {
+                    returnAfterRemoteRecovery = !choosingWorkspace && !showConnection && workspaceEntry == nil
+                    showConnection = false
+                    choosingWorkspace = true
+                }
+                remoteRecovery = lost
+                connectionIssue = lost.issue
+                if lost.issue.revokesAccess {
+                    confirmedOrigin = nil
+                    if lost.issue == .signIn { needsSignIn.insert(watch.origin) }
+                }
+            }
+        })
+    }
+
+    private func toggleRecovery() {
+        guard remoteRecovery?.issue.canReconnectAutomatically == true else { return }
+        remoteRecovery?.togglePause()
+        monitorGeneration &+= 1
+    }
+
     private func watchConnection(to origin: URL) async {
         let session = Endpoint.probeSession()
         defer { session.invalidateAndCancel() }
@@ -2581,7 +2849,6 @@ struct ConnectionView: View {
             #endif
             let recovered = connectionIssue != nil && issue == nil
             connectionIssue = issue
-            verifiedConnectionOrigin = issue == nil ? origin : nil
             if recovered && (loadFailure?.canReconnectAutomatically == true || loadingWorkspace) { retryWorkspace() }
             let delay = issue == nil ? 12 : retryDelay
             retryDelay = issue == nil ? 2 : min(retryDelay * 2, 12)
@@ -2620,23 +2887,25 @@ struct ConnectionView: View {
                                   hostRefusedIt: refused) == .keep, let existing {
             return (existing.token, false)
         }
+        guard !Task.isCancelled, syncWorkspaceSignIn, service.publishingSession == endpoint else { throw CancellationError() }
         let fresh = try await endpoint.mintDeviceToken(name: CloudSignInPlan.deviceName)
+        guard !Task.isCancelled, syncWorkspaceSignIn, service.publishingSession == endpoint else { throw CancellationError() }
         if let old = existing?.token { await Self.revokeIssued(token: old, address: address) }
         return (fresh, true)
     }
 
     private func publishLocalSignIn() async {
-        guard offersCloudSignIn, syncWorkspaceSignIn, let endpoint, endpoint.origin.scheme == "http", endpoint.token != nil else { return }
-        while !Task.isCancelled, syncWorkspaceSignIn, self.endpoint == endpoint {
+        guard offersCloudSignIn, syncWorkspaceSignIn, let endpoint = service.publishingSession, endpoint.origin.scheme == "http", endpoint.token != nil else { return }
+        while !Task.isCancelled, syncWorkspaceSignIn, service.publishingSession == endpoint {
             do {
                 let target = try await endpoint.sharedSignInOrigin()
-                guard !Task.isCancelled, syncWorkspaceSignIn, self.endpoint == endpoint else { return }
+                guard !Task.isCancelled, syncWorkspaceSignIn, service.publishingSession == endpoint else { return }
                 if let target {
                     let address = target.origin.absoluteString
                     if publishedWorkspaceOrigin != address { removePublishedSignIn() }
                     let item = RecentWorkspace(address: address, hostName: Host.current().localizedName, lastUsed: .now, source: .iCloud)
                     let issued = try await cloudToken(for: address, endpoint: endpoint)
-                    guard !Task.isCancelled, syncWorkspaceSignIn, self.endpoint == endpoint else { return }
+                    guard !Task.isCancelled, syncWorkspaceSignIn, service.publishingSession == endpoint else { return }
                     if WorkspaceKeychain.publish(workspace: item, token: issued.token) {
                         publishedWorkspaceOrigin = address
                         syncStatus = "Available to your devices through iCloud Keychain."
@@ -2659,45 +2928,80 @@ struct ConnectionView: View {
         }
     }
 
-    /// Attach again after the owned service was lost, with bounded backoff; only when every attempt failed does the
-    /// connection screen open, where Start Local Workspace tries again.
-    private func reattachLocal() async {
-        // The person choosing another workspace (or none) during the backoff ends it: that choice wins.
-        let back = await LocalService.retrying(cancelled: { endpoint?.origin.scheme != "http" }) {
-            await startLocal()
-        }
-        guard !back, endpoint?.origin.scheme == "http" else { return }
-        endpoint = nil
-        error = ConnectionError.stopped.errorDescription
-        showConnection = true
+    private var localRecoveryControl: (paused: Bool, toggle: () -> Void)? {
+        guard let recovery = service.recovery, recovery.retries || recovery == .paused else { return nil }
+        return (recovery == .paused, {
+            if service.recovery == .paused { service.resumeRecovery() } else { service.pauseRecovery() }
+        })
     }
 
-    /// True when attached, false when attaching failed, nil when another connection attempt is running (busy).
+    private func presentLocalLoss() {
+        guard let endpoint, endpoint == service.localSession else { return }
+        // Keep the installed workspace page alive. Only the chooser owns interaction during loss.
+        returnAfterLocalRecovery = !choosingWorkspace && !showConnection && workspaceEntry == nil && !connecting
+        confirmedOrigin = nil
+        choosingWorkspace = true
+        if workspaceEntry == nil && !deviceCheckInteracting { showConnection = false }
+        if connecting || workspaceEntry != nil || deviceCheckInteracting { service.pauseRecovery() }
+    }
+
+    private func verifyLocalPage(_ target: Endpoint) async throws {
+        let revision = loadRevision
+        guard endpoint == target, let view = pageSessions.view(for: revision) else { throw ConnectionError.unverifiedWorkspace }
+        let issue = await WorkspaceWebSession.issue(in: view, for: target)
+        guard !Task.isCancelled, endpoint == target, revision == loadRevision,
+              view === pageSessions.view(for: revision) else { throw CancellationError() }
+        switch issue {
+        case nil: return
+        case .signIn: throw ConnectionError.authentication
+        case .denied: throw ConnectionError.accessDenied
+        default: throw ConnectionError.unverifiedWorkspace
+        }
+    }
+
+    private func restoreLocalSession(_ target: Endpoint) {
+        guard endpoint == target else { return }
+        if let view = pageSessions.view(for: loadRevision) {
+            WorkspaceWebSession.reportRestored(in: view, for: target)
+        }
+        confirmedOrigin = target.origin
+        connectionIssue = nil
+        loadFailure = nil
+        loadingWorkspace = false
+        if returnAfterLocalRecovery && !connecting && workspaceEntry == nil {
+            choosingWorkspace = false
+        }
+        returnAfterLocalRecovery = false
+    }
+
+    /// Cold launch and explicit selection share the supported local attach path.
     @discardableResult
     private func startLocal(initialStartup: Bool = false) async -> Bool? {
         guard !connecting else { return nil }
+        guard service.shouldAttachOnSelection() else { return nil }
         let menuRevision = initialStartup ? 0 : connectionMenuIntent.revision
+        let previousEndpoint = endpoint
+        let previousRevision = loadRevision
+        let attempt = UUID()
+        monitorGeneration &+= 1
+        connectionAttempt = attempt
         connecting = true
         error = nil
-        defer { connecting = false }
-        service.onLost = {
-            // The owned service restarted with a new session: attach again rather than show a dead workspace.
-            guard endpoint?.origin.scheme == "http" else { return }
-            Task { await reattachLocal() }
+        defer {
+            if connectionAttempt == attempt && pendingSwitch == nil { endConnectionAttempt() }
         }
         do {
-            let target = try await service.start()
-            if let snapshot = ActivityWidgetData.read(), snapshot.workspaceScope != ActivityWidgetData.scope(for: target.origin) {
-                clearWidgetActivity()
-                chatRequest = nil
-            }
-            choosingWorkspace = connectionMenuIntent.keepSetup(afterStartedAt: menuRevision)
-            loadFailure = nil
-            connectionIssue = nil
-            loadingWorkspace = true
-            endpoint = target
-            return true
+            let target = try await service.start(monitoring: false)
+            guard connectionAttempt == attempt, !Task.isCancelled, endpoint == previousEndpoint,
+                  loadRevision == previousRevision else { return nil }
+            switchSequence = max(loadRevision, switchSequence) + 1
+            let selection = PendingSwitch(page: WorkspacePage(endpoint: target, id: switchSequence),
+                                          previousEndpoint: previousEndpoint, previousRevision: previousRevision,
+                                          remember: false, source: nil, cloudSignInRejected: false,
+                                          menuRevision: menuRevision, startsLocal: true)
+            return await stageWorkspace(selection)
         } catch {
+            guard connectionAttempt == attempt, !Task.isCancelled else { return nil }
             self.error = (error as? ConnectionError)?.errorDescription ?? ConnectionError.startup.errorDescription
             return false
         }
@@ -2866,6 +3170,157 @@ private struct NativePromptSheet: View {
     }
 }
 
+private struct ConnectionDeviceSummary: View {
+    let revision: Int
+    let networkAvailable: Bool?
+    let cloud: ConnectionHelp.Result
+    @Binding var interacting: Bool
+    let report: ([String: String]) -> Void
+    let reportAddress: (String?) -> Void
+    let refresh: () -> Void
+    @Environment(\.scenePhase) private var phase
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.openURL) private var openURL
+    @State private var internet: ConnectionHelp.Result?
+    @State private var notifications: ConnectionHelp.Result?
+    @State private var playback: ConnectionHelp.Result?
+    @State private var permissionTask: Task<Void, Never>?
+
+    private enum DeviceCheck: String, CaseIterable {
+        case internet = "Internet", notifications = "Notifications", audio = "System audio", cloud = "iCloud"
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            if !typeSize.isAccessibilitySize {
+                HStack(spacing: 8) { indicators }.fixedSize(horizontal: true, vertical: false)
+            }
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .center),
+                                     count: typeSize.isAccessibilitySize ? 1 : 2), spacing: 0) {
+                indicators
+            }
+        }
+        .frame(maxWidth: 460)
+        #if os(iOS)
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)) { _ in
+            if phase == .active { playback = Self.playbackCapability() }
+        }
+        #endif
+        .onChange(of: internet?.clientAddress, initial: true) { _, value in reportAddress(value) }
+        .onChange(of: informationValues, initial: true) { _, values in report(values) }
+        .disabled(interacting)
+        .onDisappear {
+            if permissionTask != nil {
+                permissionTask?.cancel()
+                permissionTask = nil
+                interacting = false
+            }
+        }
+        .task(id: phase == .active ? revision : nil) {
+            guard phase == .active else { return }
+            playback = Self.playbackCapability()
+            let session = Endpoint.probeSession()
+            defer { session.invalidateAndCancel() }
+            let permission = await ConnectionHelp.notificationStatus(for: nil)
+            guard !Task.isCancelled else { return }
+            notifications = permission
+            guard networkAvailable == true else {
+                internet = networkAvailable == false ? ConnectionHelp.Result(.failed, "Offline. This device has no network connection.") : nil
+                return
+            }
+            let publicSite = await ConnectionHelp.internetStatus(using: session)
+            if !Task.isCancelled { internet = publicSite }
+        }
+    }
+
+    @ViewBuilder private var indicators: some View {
+        indicator(.internet)
+        indicator(.notifications)
+        indicator(.audio)
+        indicator(.cloud)
+    }
+
+    private var informationValues: [String: String] {
+        var values = Dictionary(uniqueKeysWithValues: DeviceCheck.allCases.map { ($0.rawValue, result(for: $0)?.detail ?? "Checking") })
+        values["Microphone"] = ConnectionHelp.microphone.detail
+        return values
+    }
+
+    private func result(for check: DeviceCheck) -> ConnectionHelp.Result? {
+        switch check {
+        case .internet: internet
+        case .notifications: notifications
+        case .cloud: cloud
+        case .audio: playback
+        }
+    }
+
+    private static func playbackCapability() -> ConnectionHelp.Result {
+        #if os(iOS)
+        let available = !AVAudioSession.sharedInstance().currentRoute.outputs.isEmpty
+        #else
+        let available = SystemAudio.defaultPlaybackOutput != nil
+        #endif
+        return available ? .init(.passed, "An audio output is available for Soundscapes")
+                         : .init(.unavailable, "No audio output is currently available")
+    }
+
+    @ViewBuilder private func indicator(_ check: DeviceCheck) -> some View {
+        let result = result(for: check)
+        if check == .notifications, result?.status == .optional {
+            Button {
+                guard !interacting else { return }
+                interacting = true
+                permissionTask = Task {
+                    let updated = await ConnectionHelp.requestDeviceNotifications()
+                    guard !Task.isCancelled else { return }
+                    notifications = updated
+                    finishPermission(updated)
+                }
+            } label: { statusLabel(check, result) }
+            .buttonStyle(.plain).accessibilityHint("Requests notification permission")
+        } else if check == .notifications, result?.status == .off {
+            Button { openURL(ConnectionHelp.notificationSettingsURL) } label: { statusLabel(check, result) }
+                .buttonStyle(.plain).accessibilityHint("Opens notification settings")
+        } else if (check == .cloud || check == .internet || check == .notifications),
+                  result?.status == .failed || result?.status == .unavailable {
+            Button(action: refresh) { statusLabel(check, result) }
+                .buttonStyle(.plain).accessibilityHint("Checks again")
+        } else {
+            statusLabel(check, result)
+        }
+    }
+
+    private func statusLabel(_ check: DeviceCheck, _ result: ConnectionHelp.Result?) -> some View {
+        Label {
+            Text(check.rawValue).foregroundStyle(ConnectionPalette.muted)
+        } icon: {
+            switch result?.status {
+            case .off, .failed, .unavailable:
+                Image(systemName: "xmark.circle.fill").foregroundStyle(ConnectionHelp.Status.failed.color)
+            case .optional:
+                Image(systemName: "circle").foregroundStyle(ConnectionPalette.muted)
+            default:
+                Image(systemName: result?.status.symbol ?? "circle.dotted")
+                    .foregroundStyle(result?.status.color ?? ConnectionPalette.muted)
+            }
+        }
+        .font(.caption)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(check.rawValue)
+        .accessibilityValue(result?.detail ?? "Checking")
+        .help(result?.detail ?? "Checking")
+    }
+
+    private func finishPermission(_ result: ConnectionHelp.Result) {
+        permissionTask = nil
+        interacting = false
+        AccessibilityNotification.Announcement(result.detail).post()
+    }
+}
+
 private struct ConnectionHelp: View {
     let origin: URL?
     let activeWorkspace: Endpoint?
@@ -2873,9 +3328,7 @@ private struct ConnectionHelp: View {
     let workspaceIsCurrent: (Endpoint) -> Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
-    #if os(iOS)
     @Environment(\.openURL) private var openURL
-    #endif
     @State private var run = 1
     @State private var audioRun = 0
     @State private var checking = true
@@ -2887,11 +3340,11 @@ private struct ConnectionHelp: View {
     #endif
 
     private enum Check: String, CaseIterable {
-        case internet = "Internet", workspace = "Workspace", microphone = "Microphone"
-        case systemAudio = "System Audio", notifications = "Notifications"
+        case device = "Device Network", internet = "Internet", workspace = "Workspace", microphone = "Microphone"
+        case systemAudio = "System Audio", notifications = "Notifications", cloud = "iCloud"
     }
 
-    private enum Status {
+    fileprivate enum Status {
         case pending, checking, passed, action, optional, off, failed, unavailable
 
         var symbol: String {
@@ -2929,17 +3382,20 @@ private struct ConnectionHelp: View {
         }
     }
 
-    private struct Result {
+    fileprivate struct Result {
         let status: Status
         let detail: String
 
-        init(_ status: Status, _ detail: String) {
+        let clientAddress: String?
+
+        init(_ status: Status, _ detail: String, clientAddress: String? = nil) {
+            self.clientAddress = clientAddress
             self.status = status
             self.detail = detail
         }
     }
 
-    private var microphone: Result {
+    fileprivate static var microphone: Result {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized: Result(.passed, "Access allowed")
         case .denied: Result(.off, "Access is off in Settings")
@@ -2950,9 +3406,13 @@ private struct ConnectionHelp: View {
     }
 
     private var canTestSystemAudio: Bool {
+        Self.canTestSystemAudio(for: activeWorkspace)
+    }
+
+    fileprivate static func canTestSystemAudio(for workspace: Endpoint?) -> Bool {
         #if os(macOS)
-        activeWorkspace?.origin.scheme == "http"
-        #elseif canImport(ScreenCaptureKit)
+        SystemAudio.available && (workspace == nil || workspace?.origin.scheme == "http")
+        #elseif canImport(ScreenCaptureKit) && !targetEnvironment(simulator)
         if #available(iOS 27, *) { SystemAudio.available } else { false }
         #else
         false
@@ -3009,10 +3469,10 @@ private struct ConnectionHelp: View {
                 #if os(iOS)
                 connectionSummary
                 #endif
-                diagnosticGroup([.internet, .workspace])
+                diagnosticGroup([.device, .internet, .workspace])
                 #if os(iOS)
                 DisclosureGroup(isExpanded: $showingDeviceFeatures) {
-                    diagnosticGroup([.microphone, .systemAudio, .notifications])
+                    diagnosticGroup([.microphone, .systemAudio, .notifications, .cloud])
                         .padding(.top, 8)
                 } label: {
                     VStack(alignment: .leading, spacing: 3) {
@@ -3028,7 +3488,7 @@ private struct ConnectionHelp: View {
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(ConnectionPalette.muted)
                         .accessibilityAddTraits(.isHeader)
-                    diagnosticGroup([.microphone, .systemAudio, .notifications])
+                    diagnosticGroup([.microphone, .systemAudio, .notifications, .cloud])
                 }
                 #endif
 
@@ -3062,7 +3522,7 @@ private struct ConnectionHelp: View {
         #endif
         .safeAreaInset(edge: .top, spacing: 0) { diagnosticsHeader }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ConnectionFooter(showTagline: true).background(Color("StartupBackground"))
+            ConnectionFooter().background(ConnectionPalette.appSurface)
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active && !checking && !testingAudio && !askingPermission {
@@ -3083,7 +3543,7 @@ private struct ConnectionHelp: View {
     #if os(iOS)
     @ViewBuilder
     private var connectionSummary: some View {
-        if !checking, let workspace = results[.workspace] {
+        if let workspace = results[.workspace], workspace.status != .checking {
             VStack(alignment: .leading, spacing: 8) {
                 Text(connectionSummaryTitle(workspace))
                     .font(.system(.title3, design: .serif, weight: .semibold))
@@ -3150,7 +3610,7 @@ private struct ConnectionHelp: View {
         .padding(.top, 16)
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity)
-        .background(Color("StartupBackground"))
+        .background(ConnectionPalette.appSurface)
     }
 
     private func diagnosticGroup(_ checks: [Check]) -> some View {
@@ -3164,9 +3624,9 @@ private struct ConnectionHelp: View {
     }
 
     private func refreshPermissions() async {
-        let notifications = await notificationStatus()
+        let notifications = await Self.notificationStatus(for: activeWorkspace)
         guard !checking && !testingAudio && !askingPermission else { return }
-        results[.microphone] = microphone
+        results[.microphone] = Self.microphone
         results[.notifications] = notifications
     }
 
@@ -3199,7 +3659,7 @@ private struct ConnectionHelp: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("diagnostic-\(check.rawValue)")
-            if !checking && !testingAudio && !askingPermission && result.status != .pending {
+            if !testingAudio && !askingPermission && result.status != .pending && result.status != .checking {
                 permissionAction(check)
             }
         }
@@ -3222,7 +3682,7 @@ private struct ConnectionHelp: View {
             if results[.notifications]?.status == .optional {
                 Button("Enable Notifications") { Task { await requestNotifications() } }.buttonStyle(.bordered)
             } else if results[.notifications]?.status == .off {
-                permissionSettings
+                Button("Open Notification Settings") { openURL(Self.notificationSettingsURL) }.buttonStyle(.bordered)
             }
         default:
             EmptyView()
@@ -3242,30 +3702,36 @@ private struct ConnectionHelp: View {
 
     private func runDiagnostics() async {
         checking = true
-        results = [:]
+        results = Dictionary(uniqueKeysWithValues: Check.allCases.map { ($0, Result(.checking, "Checking…")) })
         defer { checking = false }
         let session = Endpoint.probeSession()
         defer { session.invalidateAndCancel() }
-        async let publicCheck = internetStatus(using: session)
-        async let privateCheck = workspaceStatus(using: session)
-        async let alertCheck = notificationStatus()
+        results[.microphone] = Self.microphone
+        results[.cloud] = Self.cloudStatus(WorkspaceCloudDirectory(WorkspaceKeychain.workspaces()).access)
+        results[.systemAudio] = systemAudio
+        async let device: Void = record(.device, await Self.deviceStatus())
+        async let internet: Void = record(.internet, await Self.internetStatus(using: session))
+        async let workspace: Void = record(.workspace, await workspaceStatus(using: session))
+        async let alerts: Void = record(.notifications, await Self.notificationStatus(for: activeWorkspace))
+        _ = await (device, internet, workspace, alerts)
+    }
 
-        for check in Check.allCases {
-            results[check] = Result(.checking, "Checking…")
-            let result: Result
-            switch check {
-            case .internet: result = await publicCheck
-            case .workspace: result = await privateCheck
-            case .microphone: result = microphone
-            case .systemAudio: result = systemAudio
-            case .notifications: result = await alertCheck
-            }
-            // Keep quick local checks visible long enough for the change in status to register.
-            do { try await Task.sleep(for: .milliseconds(220)) } catch { return }
-            results[check] = result
-        }
-        if let status = results[.workspace] {
-            AccessibilityNotification.Announcement(status.detail).post()
+    private func record(_ check: Check, _ result: Result) {
+        guard !Task.isCancelled else { return }
+        results[check] = result
+        if check == .workspace { AccessibilityNotification.Announcement(result.detail).post() }
+    }
+
+    fileprivate static func deviceStatus() async -> Result {
+        let monitor = NWPathMonitor()
+        defer { monitor.cancel() }
+        var updates = monitor.makeAsyncIterator()
+        guard let path = await updates.next() else { return Result(.unavailable, "Device network status unavailable") }
+        switch path.status {
+        case .satisfied: return Result(.passed, "Connected to a network")
+        case .unsatisfied: return Result(.failed, "Device offline. Check your network connection.")
+        case .requiresConnection: return Result(.action, "Connect to a network and check again")
+        @unknown default: return Result(.unavailable, "Device network status unavailable")
         }
     }
 
@@ -3273,27 +3739,62 @@ private struct ConnectionHelp: View {
         askingPermission = true
         defer { askingPermission = false }
         _ = await AVCaptureDevice.requestAccess(for: .audio)
-        results[.microphone] = microphone
+        results[.microphone] = Self.microphone
     }
 
-    private func notificationStatus() async -> Result {
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
-        switch settings.authorizationStatus {
-        case .denied:
-            return Result(.off, "Access is off in Settings")
-        case .notDetermined, .provisional:
-            return Result(.optional, "Allow alerts for workspace updates")
-        case .authorized, .ephemeral:
-            guard settings.alertSetting == .enabled || settings.notificationCenterSetting == .enabled else {
-                return Result(.off, "Turn on alerts in Settings")
-            }
-            if let activeWorkspace {
-                let state = await WorkspaceNotifications.shared.status(for: activeWorkspace)
-                if state == "off" { return Result(.optional, "Turn on alerts for this workspace") }
-            }
-            return Result(.passed, activeWorkspace == nil ? "App alerts allowed. Open a workspace to enable its alerts." : "Workspace alerts on")
-        @unknown default:
-            return Result(.failed, "Notification permission could not be read")
+    fileprivate static func cloudStatus(_ access: WorkspaceCloudDirectory.Access) -> Result {
+        switch access {
+        case .checking: Result(.checking, "Checking iCloud Keychain")
+        case .unavailable: Result(.unavailable, "iCloud Keychain could not be read")
+        case .empty: Result(.optional, "Keychain is readable. No synced sign-ins on this device.")
+        case .available: Result(.passed, "Synced workspace sign-ins are readable")
+        }
+    }
+
+    fileprivate static func audioAvailability(for workspace: Endpoint?) -> Result {
+        #if os(macOS)
+        if let workspace, workspace.origin.scheme != "http" {
+            return Result(.optional, "System audio is available in the local Mac workspace")
+        }
+        return SystemAudio.available ? Result(.optional, "System audio is available to test with your permission")
+                                     : Result(.unavailable, "System audio capture is unavailable on this Mac")
+        #elseif canImport(ScreenCaptureKit) && !targetEnvironment(simulator)
+        if #available(iOS 27, *), SystemAudio.available {
+            return Result(.optional, "Choose what to share in the system audio picker")
+        }
+        return Result(.unavailable, "System audio sharing picker unavailable")
+        #else
+        return Result(.unavailable, "System audio sharing unavailable on this device")
+        #endif
+    }
+
+    fileprivate static func notificationStatus(for workspace: Endpoint?) async -> Result {
+        notificationStatus(await WorkspaceNotifications.shared.alertAccess(for: workspace))
+    }
+
+    fileprivate static var notificationSettingsURL: URL {
+        #if os(iOS)
+        URL(string: UIApplication.openNotificationSettingsURLString)!
+        #else
+        URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!
+        #endif
+    }
+
+    fileprivate static func requestDeviceNotifications() async -> Result {
+        guard !Task.isCancelled else { return await notificationStatus(for: nil) }
+        _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert])
+        return await notificationStatus(for: nil)
+    }
+
+    fileprivate static func notificationStatus(_ access: WorkspaceAlertAccess) -> Result {
+        switch access {
+        case .denied: Result(.off, "Access is off in Settings")
+        case .deliveryDisabled: Result(.off, "Turn on alerts in Settings")
+        case .permissionNeeded: Result(.optional, "Notification permission is needed for workspace alerts")
+        case .appAllowed: Result(.passed, "Notifications are allowed on this device")
+        case .workspaceOff: Result(.optional, "Turn on alerts for this workspace")
+        case .workspaceOn: Result(.passed, "Workspace alerts on")
+        case .unknown: Result(.failed, "Notification permission could not be read")
         }
     }
 
@@ -3304,84 +3805,65 @@ private struct ConnectionHelp: View {
             _ = await WorkspaceNotifications.shared.setEnabled(
                 true, for: activeWorkspace, workspaceIsCurrent: { workspaceIsCurrent(activeWorkspace) }, confirm: { true }
             )
+            results[.notifications] = await Self.notificationStatus(for: activeWorkspace)
         } else {
-            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert])
+            results[.notifications] = await Self.requestDeviceNotifications()
         }
-        results[.notifications] = await notificationStatus()
     }
 
     private func testSystemAudio() async {
-        #if os(macOS) || canImport(ScreenCaptureKit)
         guard canTestSystemAudio else { return }
         testingAudio = true
-        #if os(macOS)
-        results[.systemAudio] = Result(.checking, "Checking audio access…")
-        #else
-        results[.systemAudio] = Result(.checking, "Opening the system sharing picker…")
-        #endif
         defer { testingAudio = false }
-        if #available(iOS 27, *) {
-            let capture = SystemAudio()
-            #if os(macOS)
-            guard let window = NSApp.keyWindow, await capture.confirm(in: window), !Task.isCancelled else {
-                results[.systemAudio] = systemAudio
-                return
-            }
-            #endif
-            let started = await capture.start()
-            #if os(macOS)
-            var stopped = false
-            if started {
-                for _ in 0..<20 {
-                    if capture.read() == nil { stopped = true; break }
-                    if capture.hasReceivedSamples || Task.isCancelled { break }
-                    try? await Task.sleep(for: .milliseconds(100))
-                }
-            }
-            let received = capture.hasReceivedSamples
-            capture.stop()
-            guard !Task.isCancelled else { return }
-            if !started || stopped {
-                results[.systemAudio] = Result(.optional, "Sharing didn’t start or stopped. Try again.")
-            } else if received {
-                results[.systemAudio] = Result(.passed, "Audio samples received")
-            } else {
-                results[.systemAudio] = Result(.optional, "Sharing started, but no audio samples arrived. Try playing sound and test again.")
-            }
-            #else
-            if started {
-                for _ in 0..<20 {
-                    if capture.read() == nil || capture.hasReceivedSamples || Task.isCancelled { break }
-                    try? await Task.sleep(for: .milliseconds(100))
-                }
-            }
-            let received = capture.hasReceivedSamples
-            capture.stop()
-            guard !Task.isCancelled else { return }
-            if !started {
-                results[.systemAudio] = Result(.optional, "Sharing didn’t start. Try again and choose a source if asked.")
-            } else if received {
-                results[.systemAudio] = Result(.passed, "Audio samples received")
-            } else {
-                results[.systemAudio] = Result(.optional, "Sharing started, but no audio samples arrived. Try playing sound and test again.")
-            }
-            #endif
-        }
-        #endif
+        results[.systemAudio] = Result(.checking, "Checking system audio access…")
+        let result = await Self.performAudioTest()
+        if !Task.isCancelled { results[.systemAudio] = result }
     }
 
-    private func internetStatus(using session: URLSession) async -> Result {
+    fileprivate static func performAudioTest() async -> Result {
+        #if os(macOS) || (canImport(ScreenCaptureKit) && !targetEnvironment(simulator))
+        if #available(iOS 27, *) {
+            let capture = SystemAudio()
+            defer { capture.stop() }
+            #if os(macOS)
+            guard !Task.isCancelled, let window = NSApp.keyWindow else {
+                return Result(.off, "System audio sharing is off. Try again.")
+            }
+            let confirmed = await withTaskCancellationHandler {
+                await capture.confirm(in: window)
+            } onCancel: {
+                Task { @MainActor in capture.stop() }
+            }
+            guard confirmed else { return Result(.off, "System audio sharing is off. Try again.") }
+            #endif
+            guard !Task.isCancelled, await capture.start() else {
+                return Result(.off, "System audio sharing didn’t start. Try again.")
+            }
+            for _ in 0..<20 {
+                guard !Task.isCancelled, capture.read() != nil else {
+                    return Result(.off, "System audio sharing stopped. Try again.")
+                }
+                if capture.hasReceivedSamples { break }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            return capture.hasReceivedSamples ? Result(.passed, "Test received audio samples. Test sharing has ended.")
+                : Result(.optional, "Sharing started, but no audio samples arrived. Try playing sound and test again.")
+        }
+        #endif
+        return Result(.unavailable, "System audio sharing is unavailable on this device")
+    }
+
+    fileprivate static func internetStatus(using session: URLSession) async -> Result {
         guard let url = URL(string: "https://heinzel.team/") else { return Result(.failed, "Check unavailable") }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 4)
         request.httpMethod = "HEAD"
         do {
-            let (_, response) = try await session.data(for: request)
+            let route = RefuseRedirects()
+            let (_, response) = try await session.data(for: request, delegate: route)
             if let response = response as? HTTPURLResponse, (200..<400).contains(response.statusCode) {
-                return Result(.passed, "Public website reachable")
+                return Result(.passed, "Public website reachable", clientAddress: route.connectionAddresses.withLock { $0.client })
             }
             return Result(.failed, "Public website did not answer as expected")
-        } catch let error as URLError where error.code == .notConnectedToInternet {
-            return Result(.failed, "This device is offline")
         } catch {
             return Result(.failed, "Can’t reach heinzel.team")
         }

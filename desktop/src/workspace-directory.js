@@ -50,11 +50,11 @@ export function createWorkspaceDirectory({ file, safeStorage, read = readFileSyn
   const transient = new Map();
   try {
     const data = JSON.parse(read(file, "utf8"));
-    if (Array.isArray(data)) entries = data.slice(0, 12).flatMap((entry) => {
+    if (Array.isArray(data)) entries = data.slice(0, 128).flatMap((entry) => {
       try {
         const { origin } = parseWorkspaceLink(entry.origin, { requireToken: false });
         if (origin !== entry.origin || !Number.isFinite(entry.lastUsed)) return [];
-        return [{ origin, lastUsed: entry.lastUsed, encrypted: typeof entry.encrypted === "string" ? entry.encrypted : null }];
+        return [{ origin, version: typeof entry.version === "string" ? entry.version : null, lastUsed: entry.lastUsed, encrypted: typeof entry.encrypted === "string" ? entry.encrypted : null }];
       } catch { return []; }
     });
   } catch { /* A missing or damaged directory starts empty. */ }
@@ -80,21 +80,25 @@ export function createWorkspaceDirectory({ file, safeStorage, read = readFileSyn
     } catch { return null; }
   }
   return {
-    list: () => entries.map(({ origin, lastUsed }) => ({ origin, name: workspaceName(origin), lastUsed,
-      signedIn: Boolean(connection(origin)) })),
+    list: () => entries.map(({ origin, lastUsed, version, encrypted }) => ({ origin, ...(version ? { version } : {}), name: workspaceName(origin), lastUsed,
+      signedIn: transient.has(origin) || Boolean(encrypted) })),
     connection,
-    remember(value) {
+    hasCredential: (origin) => Boolean(entries.find((entry) => entry.origin === origin)?.encrypted),
+    remember(value, version) {
       const checked = parseWorkspaceLink(`${value.origin}/#token=${value.token}`);
       transient.set(checked.origin, checked.token);
       let encrypted = null;
       try { if (secure()) encrypted = safeStorage.encryptString(JSON.stringify(checked)).toString("base64"); } catch { /* Session only. */ }
-      entries = [{ origin: checked.origin, lastUsed: now(), encrypted }, ...entries.filter((item) => item.origin !== checked.origin)].slice(0, 12);
+      const previous = entries.find((item) => item.origin === checked.origin);
+      entries = [{ origin: checked.origin, version: version ?? previous?.version ?? null, lastUsed: now(), encrypted: encrypted ?? previous?.encrypted ?? null }, ...entries.filter((item) => item.origin !== checked.origin)].slice(0, 128);
       return persist() && encrypted !== null;
     },
     forget(origin) {
-      transient.delete(origin);
+      const previous = entries;
       entries = entries.filter((item) => item.origin !== origin);
-      return persist();
+      if (!persist()) { entries = previous; return false; }
+      transient.delete(origin);
+      return true;
     },
   };
 }

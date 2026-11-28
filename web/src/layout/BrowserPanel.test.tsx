@@ -320,12 +320,17 @@ const TABS = [
   { id: "t-00000001", owner: "person", selected: true, status: "ready", url: "https://one.example.com/", title: "One" },
   { id: "t-00000002", owner: "person", selected: false, status: "ready", url: "https://two.example.com/", title: "" },
 ];
-function tabBridge() {
-  let tabs = TABS.map((tab) => ({ ...tab }));
+function tabBridge(initial = TABS) {
+  let tabs = initial.map((tab) => ({ ...tab }));
   const select = (id: string) => {
     tabs = tabs.map((tab) => ({ ...tab, selected: tab.id === id }));
   };
   const browser = vi.fn(async (request: Record<string, unknown>) => {
+    if (request.action === "navigate" && tabs.length === 0) {
+      tabs = [
+        { id: "home", owner: "person", selected: true, status: "ready", url: String(request.url), title: "Home" },
+      ];
+    }
     if (request.action === "select-tab") select(String(request.tab));
     if (request.action === "close-tab") {
       tabs = tabs.filter((tab) => tab.id !== request.tab);
@@ -344,6 +349,63 @@ function tabBridge() {
   return browser;
 }
 
+it("opens one default tab on first activation and restores it without navigating again", async () => {
+  const browser = tabBridge([]);
+  const close = vi.fn();
+  const view = render(<BrowserPanel active={false} onClose={close} />);
+  await act(async () => {});
+  expect(browser).not.toHaveBeenCalledWith(expect.objectContaining({ action: "navigate" }));
+  view.rerender(<BrowserPanel active onClose={close} />);
+  expect(await screen.findByRole("tab", { name: "Home" })).toHaveAttribute("aria-selected", "true");
+  expect(browser).toHaveBeenCalledWith({ action: "navigate", url: "https://heinzel.team" });
+  const plus = screen.getByRole("button", { name: "New tab" });
+  expect(plus).toHaveTextContent(/^$/);
+  const closePanel = screen.getByRole("button", { name: "Close browser panel" });
+  expect(closePanel).toHaveTextContent(/^$/);
+  fireEvent.click(closePanel);
+  expect(close).toHaveBeenCalledOnce();
+  view.rerender(<BrowserPanel active={false} onClose={close} />);
+  view.rerender(<BrowserPanel active onClose={close} />);
+  await act(async () => {});
+  expect(browser.mock.calls.filter(([request]) => request.action === "navigate")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Close tab Home" }));
+  await waitFor(() => expect(screen.queryByRole("tab", { name: "Home" })).toBeNull());
+  expect(browser.mock.calls.filter(([request]) => request.action === "navigate")).toHaveLength(1);
+});
+
+it("does not navigate or overwrite a draft typed before the empty snapshot resolves", async () => {
+  let resolve!: (result: { status: string; tabs: never[]; selected: null }) => void;
+  const opening = new Promise<{ status: string; tabs: never[]; selected: null }>((done) => {
+    resolve = done;
+  });
+  const browser = vi.fn(async ({ action }: Record<string, unknown>) =>
+    action === "tabs" ? opening : { status: "empty" },
+  );
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  const field = screen.getByRole("textbox", { name: "Website address" });
+  fireEvent.change(field, { target: { value: "fast input" } });
+  await act(async () => resolve({ status: "empty", tabs: [], selected: null }));
+  expect(field).toHaveValue("fast input");
+  expect(browser).not.toHaveBeenCalledWith(expect.objectContaining({ action: "navigate" }));
+});
+
+it("keeps an explicitly closed last tab closed when the workspace remounts the panel", async () => {
+  const browser = tabBridge([]);
+  const startup = { current: false };
+  const view = render(<BrowserPanel active onClose={vi.fn()} startup={startup} />);
+  await screen.findByRole("tab", { name: "Home" });
+  fireEvent.click(screen.getByRole("button", { name: "Close tab Home" }));
+  await waitFor(() => expect(screen.queryByRole("tab", { name: "Home" })).toBeNull());
+  view.unmount();
+
+  render(<BrowserPanel active onClose={vi.fn()} startup={startup} />);
+  await act(async () => {});
+  expect(screen.queryByRole("tab")).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Website address" })).toHaveValue("");
+  expect(browser.mock.calls.filter(([request]) => request.action === "navigate")).toHaveLength(1);
+});
+
 it("shows the tabs the desktop holds when the panel opens again, and switches and closes them", async () => {
   const browser = tabBridge();
   render(<BrowserPanel active onClose={vi.fn()} />);
@@ -359,6 +421,46 @@ it("shows the tabs the desktop holds when the panel opens again, and switches an
   fireEvent.click(screen.getByRole("button", { name: "Close tab two.example.com" }));
   await waitFor(() => expect(browser).toHaveBeenCalledWith({ action: "close-tab", tab: "t-00000002" }));
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(1));
+});
+
+it("keeps the remaining tab ready when the closed tab's reload rejects", async () => {
+  const [first, second] = TABS;
+  if (!first || !second) {
+    throw new Error("The reload fixture requires two tabs");
+  }
+  let rejectReload!: (error: Error) => void;
+  let tabs = TABS;
+  let selected = first;
+  let revision = 1;
+  const browser = vi.fn(async ({ action }: Record<string, unknown>) => {
+    if (action === "reload") {
+      return await new Promise<never>((_resolve, reject) => {
+        rejectReload = reject;
+      });
+    }
+    if (action === "close-tab") {
+      selected = { ...second, selected: true };
+      tabs = [selected];
+      revision += 1;
+    }
+    return { status: selected.status, url: selected.url, selected: selected.id, tabs, revision };
+  });
+  Object.defineProperty(window, "heinzelDesktop", { value: { browser }, configurable: true });
+  render(<BrowserPanel active onClose={vi.fn()} />);
+  const reload = await screen.findByRole("button", { name: "Reload the website" });
+  await waitFor(() => expect(reload).toBeEnabled());
+  fireEvent.click(reload);
+  expect(browser).toHaveBeenCalledWith({ action: "reload" });
+  fireEvent.click(screen.getByRole("button", { name: "Close tab One" }));
+  expect(browser).toHaveBeenCalledWith({ action: "close-tab", tab: first.id });
+  await waitFor(() =>
+    expect(screen.getByRole("tab", { name: "two.example.com" })).toHaveAttribute("aria-selected", "true"),
+  );
+  await act(async () => rejectReload(new Error("closed tab's reload refused")));
+  expect(screen.getAllByRole("tab")).toHaveLength(1);
+  expect(screen.getByRole("textbox", { name: "Website address" })).toHaveValue(second.url);
+  expect(screen.getByRole("button", { name: "Reload the website" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: /Refresh failed/ })).not.toBeInTheDocument();
 });
 
 it("a new tab opens from the plus button and from Ctrl-T; Ctrl-W closes the selected tab", async () => {

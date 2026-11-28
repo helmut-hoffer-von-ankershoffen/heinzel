@@ -71,13 +71,14 @@ test("selecting the current local or recent workspace keeps its renderer", async
   assert.equal(f.events.some((event) => event[0] === "replace"), false);
 });
 
-test("concurrent transitions are rejected while one verifies", async () => {
+test("a newer selection supersedes one still verifying", async () => {
   let finish;
   const f = fixture({ verify: () => new Promise((resolve) => { finish = resolve; }) });
   const pending = f.controller.connect(request);
-  assert.equal((await f.controller.connect({ kind: "local" })).busy, true);
-  assert.equal(f.events.includes("local"), false);
+  assert.equal((await f.controller.connect({ kind: "local" })).busy, false);
   finish(); await pending;
+  assert.equal(f.controller.state().current, local.origin);
+  assert.equal(f.events.some((event) => event[0] === "replace"), false);
 });
 
 test("invalid links and unavailable recent credentials cannot switch", async () => {
@@ -135,33 +136,82 @@ test("picker IPC accepts only its exact living main frame", () => {
   assert.equal(isPickerFrame(event, picker, url), false);
 });
 
-test("remote preload exposes appearance only and cannot invoke IPC", () => {
+test("remote preload exposes only appearance and fixed workspace menu actions", () => {
   let exposed;
   runInNewContext(readFileSync(new URL("../src/workspace-remote-preload.cjs", import.meta.url), "utf8"), {
     navigator: { platform: "MacIntel" },
+    process: { platform: "darwin" },
     require(name) { assert.equal(name, "electron"); return { contextBridge: { exposeInMainWorld: (_key, value) => { exposed = value; } } }; },
   });
-  assert.deepEqual(Object.keys(exposed).sort(), ["remoteWorkspace", "titlebar"]);
+  assert.deepEqual(Object.keys(exposed).sort(), ["clientFlavor", "clientOS", "remoteWorkspace", "titlebar", "workspaces"]);
+  assert.deepEqual(Object.keys(exposed.workspaces).sort(), ["currentName", "open"]);
+  assert.equal(exposed.clientFlavor, "electron");
+  assert.equal(exposed.clientOS, "macOS");
   assert.equal(exposed.remoteWorkspace, true);
   assert.equal(exposed.titlebar.left, 80);
 });
 
-test("picker directs an unsigned recent workspace to the fresh link field", async () => {
+test("a rejected saved credential requests sign-in for that candidate and retains the current workspace", async () => {
+  const origin = "https://studio.example";
+  const f = fixture({ directory: { list: () => [], connection: () => ({ origin, token, remote: true }) },
+    verify: async () => { throw { status: 401 }; } });
+  const result = await f.controller.connect({ kind: "recent", origin });
+  assert.equal(result.signInOrigin, origin);
+  assert.equal(result.needsSignIn, true);
+  assert.equal(result.current, local.origin);
+  assert.equal(result.canRetry, false);
+  f.controller.cancel();
+  assert.equal(f.controller.state().signInOrigin, null);
+});
+
+test("selecting an unsigned saved workspace focuses its empty sign-in sheet and cancel restores the row", async () => {
+  const origin = "https://studio.example";
+  const { controller } = fixture({ directory: {
+    list: () => [{ origin, name: "Studio", signedIn: false }], connection: () => null,
+  } });
   const elements = new Map();
-  const element = () => ({ classList: { toggle() {} }, dataset: {}, addEventListener() {},
-    append() {}, replaceChildren() {}, setAttribute() {}, focus() { this.focused = true; },
-    scrollIntoView() { this.scrolled = true; } });
-  const byId = (id) => { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); };
-  let publish;
-  const state = await fixture().controller.connect({ kind: "recent", origin: "https://studio.example" });
+  const document = {
+    activeElement: null,
+    createElement() {
+      return {
+        children: [], dataset: {}, classList: { toggle() {} }, setAttribute() {},
+        addEventListener(name, handler) { this[name] = handler; },
+        append(...children) { this.children.push(...children); },
+        replaceChildren(...children) { this.children = children; },
+        showModal() { this.open = true; }, close() { this.open = false; },
+        focus() { document.activeElement = this; },
+      };
+    },
+    getElementById(id) {
+      if (!elements.has(id)) elements.set(id, this.createElement());
+      return elements.get(id);
+    },
+    querySelectorAll() { return this.getElementById("rows").children.flatMap((row) => row.children); },
+  };
+  let opened = 0, cancelled = 0;
   runInNewContext(readFileSync(new URL("../src/workspace-picker.js", import.meta.url), "utf8"), {
-    window: { workspacePicker: { onState: (handler) => { publish = handler; }, state: async () => state } },
-    document: { getElementById: byId, createElement: element, querySelectorAll: () => [] },
+    document, navigator: {}, window: { addEventListener() {}, workspacePicker: {
+      onState() {}, async state() { return controller.state(); },
+      async edit() { opened++; }, async cancel() { cancelled++; controller.cancel(); },
+      recent() { assert.fail("an unsigned workspace must wait for a sign-in URL"); },
+    } },
   });
   await new Promise(setImmediate);
-  assert.equal(byId("retry").hidden, true);
-  assert.equal(byId("local").disabled, true);
-  assert.equal(byId("link").focused, true);
-  assert.equal(byId("link").scrolled, true);
-  assert.equal(typeof publish, "function");
+  const get = (id) => document.getElementById(id);
+  const choose = document.querySelectorAll().find((node) => node.dataset.key === `choose-${origin}`);
+  assert.ok(choose);
+  choose.click();
+  assert.equal(get("sheet").open, true);
+  assert.equal(get("sheet-title").textContent, "Sign in");
+  assert.equal(document.activeElement, get("link"));
+  assert.equal(get("link").value, "");
+  assert.equal(get("submit").disabled, true);
+  assert.equal(get("paste").hidden, false);
+  assert.equal(get("retry").hidden, true);
+  assert.equal(opened, 1);
+  get("cancel").onclick();
+  assert.equal(get("sheet").open, false);
+  assert.equal(document.activeElement, choose);
+  assert.equal(cancelled, 1);
+  assert.equal(controller.state().current, local.origin);
 });

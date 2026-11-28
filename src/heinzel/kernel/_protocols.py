@@ -28,12 +28,9 @@ from typing import Any, Literal, Protocol, Self
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from heinzel.spec._window import Window as _Window
 
-class Window(BaseModel):
-    """A half-open time window `[since, until)` to list changes in."""
-
-    since: AwareDatetime = Field(description="Start of the window, inclusive; timezone-aware.")
-    until: AwareDatetime = Field(description="End of the window, exclusive; timezone-aware.")
+Window = _Window
 
 
 class PullRequest(BaseModel):

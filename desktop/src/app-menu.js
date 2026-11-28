@@ -49,7 +49,7 @@ export function appMenuTemplate({ name, send, open, devTools = false }) {
         { type: "separator" },
         { label: "Settings\u2026", accelerator: "Command+,", click: () => send("settings") },
         { label: "Check for Updates\u2026", click: () => send("updates") },
-        { label: "Switch Workspace\u2026", accelerator: "CommandOrControl+Shift+,", click: () => send("connection") },
+        { label: "Workspaces\u2026", accelerator: "CommandOrControl+Shift+,", click: () => send("connection") },
         { type: "separator" },
         { role: "services" },
         { type: "separator" },
@@ -134,6 +134,65 @@ export function appMenuTemplate({ name, send, open, devTools = false }) {
 
 /** Actions the app itself asks of the page, with no menu item: a link opened a browser tab, so show the panel. */
 export const APP_ACTIONS = ["browser-show"];
+
+/** Runs in the web document. Older workspace servers expose Settings and Profile but no workspace switcher. */
+export function installLegacyWorkspaceMenu(origin) {
+  const bridge = window.heinzelDesktop?.workspaces;
+  if (location.origin !== origin || !bridge) return;
+  const menuSelector = '[role="menu"]';
+  function update(menu) {
+    const settings = menu.querySelector('a[role="menuitem"][href*="?settings="]');
+    if (!settings || !menu.querySelector('a[role="menuitem"][href="/profile"]')) return;
+    const fallback = menu.querySelector("[data-hz-legacy-workspaces]");
+    const modern = Array.from(menu.querySelectorAll('[role="menuitem"][aria-haspopup="dialog"]:not([data-hz-legacy-workspaces])'))
+      .find(action => /^Workspaces…(?:\s|$)/.test((action.getAttribute("aria-label") ?? action.textContent).trim()));
+    if (modern) {
+      if (fallback && document.activeElement === fallback) modern.focus({ preventScroll: true });
+      fallback?.remove();
+      return;
+    }
+    if (fallback) return;
+    const item = document.createElement("button");
+    item.type = "button";
+    item.dataset.hzLegacyWorkspaces = "";
+    item.className = settings.className;
+    item.setAttribute("role", "menuitem");
+    item.setAttribute("aria-haspopup", "dialog");
+    item.setAttribute("aria-label", "Workspaces…");
+    const icon = document.createElement("span");
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = "↔";
+    const name = document.createElement("span");
+    name.className = "ml-auto min-w-0 truncate text-right text-ui-sm text-muted-foreground";
+    item.append(icon, document.createTextNode("Workspaces…"), name);
+    settings.after(item);
+    void bridge.currentName().then(value => {
+      if (item.isConnected && typeof value === "string" && value.trim()) {
+        name.textContent = value.trim();
+        item.setAttribute("aria-label", "Workspaces… " + name.textContent);
+      }
+    }).catch(() => {});
+    item.onclick = async () => {
+      if (item.disabled) return;
+      item.disabled = true;
+      try {
+        if (await bridge.open() && item.isConnected) window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      } catch { /* Leave the profile open for another attempt. */ }
+      finally { item.disabled = false; }
+    };
+  }
+  document.querySelectorAll(menuSelector).forEach(update);
+  new MutationObserver(records => {
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        if (!(node instanceof Element)) continue;
+        const menu = node.closest(menuSelector);
+        if (menu) update(menu);
+        else node.querySelectorAll(menuSelector).forEach(update);
+      }
+    }
+  }).observe(document.body, { childList: true, subtree: true });
+}
 export const ACTIONS = [
   "about", "settings", "updates", "changelog", "doctor", "copy", "daemon",
   "search", "sidebar", "terminal", "browser", "chat", "new-chat", "new-tab", "close-tab", "notifications", "help",

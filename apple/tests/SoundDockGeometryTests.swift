@@ -17,6 +17,12 @@ import Foundation
         precondition(SoundDockGeometry.aspect(CGSize(width: 1080, height: 1920)) == 0.5625)
         precondition(SoundDockGeometry.aspect(CGSize(width: 0, height: 0)) == 16 / 9)
         precondition(SoundDockGeometry.aspect(CGSize(width: 1920, height: 1080)) == 16 / 9)
+        let portrait = SoundDockGeometry.videoSize(width: 448, height: 600, aspect: 9 / 16)
+        precondition(portrait.width == 168.75 && portrait.height == 300)
+        let wide = SoundDockGeometry.videoSize(width: 448, height: 600, aspect: 16 / 9)
+        precondition(wide.width == 448 && wide.height == 252)
+        let resized = SoundDockGeometry.videoSize(width: 224, height: 400, aspect: 9 / 16)
+        precondition(resized.width == 112.5 && resized.height == 200)
         print("PASS: dock measurement, stale viewport, bounds and selected aspect")
     }
 }

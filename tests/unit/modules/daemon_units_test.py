@@ -48,6 +48,20 @@ def test_paths_with_spaces_are_quoted_for_systemd():
     )
 
 
+@pytest.mark.parametrize(
+    ("home", "directory"),
+    [
+        ("/home/ada", "/home/ada/."),
+        ("/home/ada lovelace 100%", "/home/ada lovelace 100%%/."),
+        ("/home/ada ", "/home/ada /."),
+        ("/home/ada\\", "/home/ada\\/."),
+    ],
+)
+def test_systemd_working_directory_uses_path_syntax(home, directory):
+    unit = systemd_service(Path("/usr/bin/hz"), {"HOME": home})
+    assert f"WorkingDirectory={directory}" in unit.splitlines()
+
+
 @pytest.mark.parametrize("minutes", [0, 7, 45, 90])
 def test_intervals_must_divide_an_hour(minutes):
     with pytest.raises(ValueError, match="divide an hour"):

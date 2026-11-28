@@ -24,17 +24,20 @@ def test_webview_auth_context_is_immutable_and_main_frame_scoped() -> None:
     response = navigation.split("decidePolicyFor response:", 1)[1].split("func webView(", 1)[0]
     assert "webView === workspace" in response
     assert "response.isForMainFrame" in response
-    assert "http.statusCode == 401 || http.statusCode == 403" in response
-    assert "WidgetCredentialStore.invalidateShared(widgetActivation)" in response
-    assert "ActivityWidgetData.currentActivation()" not in response
+    assert "navigationFailed(problem, in: webView)" in response
+    failed_navigation = navigation.split("private func navigationFailed", 1)[1].split("func webView(", 1)[0]
+    assert "await WorkspaceWebSession.issue(in: view" in failed_navigation
+    assert "revision == documentRevision" in failed_navigation
+    assert "if issue.revokesAccess, let widgetActivation" in failed_navigation
+    assert "WidgetCredentialStore.invalidateShared(widgetActivation)" in failed_navigation
+    assert "ActivityWidgetData.currentActivation()" not in failed_navigation
     finished = navigation.split("didFinish navigation:", 1)[1].split("private func resolveWorkspaceName", 1)[0]
     assert "currentNavigation === navigation" in finished
     assert "revision == documentRevision" in finished
     assert "if needsSignIn == true" in finished
     assert "WidgetCredentialStore.invalidateShared(widgetActivation)" in finished
     failed = navigation.split("private func pageFailed", 1)[1]
-    assert "failure.code == NSURLErrorUserAuthenticationRequired" in failed
-    assert "WidgetCredentialStore.invalidateShared(widgetActivation)" in failed
+    assert "navigationFailed(WorkspaceProblem(navigationError: error), in: view)" in failed
 
 
 def test_widget_rotation_recreates_only_the_current_workspace_view() -> None:

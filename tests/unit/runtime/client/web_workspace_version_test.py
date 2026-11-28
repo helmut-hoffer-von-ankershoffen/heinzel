@@ -1,16 +1,54 @@
 """Workspace version observations distinguish loaded, installed and historical daemon code."""
 
 from datetime import UTC, datetime, timedelta
+from ipaddress import IPv4Address
 from types import SimpleNamespace
 
+import psutil
 import pytest
 from fastapi.testclient import TestClient
 
 from heinzel import HeinzelError, __version__
 from heinzel.heads import web
+from heinzel.heads.web._workspace_version import _backend_ip
 from heinzel.modules.system.client import _workspace_version as subject
 
 pytestmark = pytest.mark.unit
+
+
+def test_web_process_start_is_distinct_from_instance_initialization(monkeypatch):
+    started = datetime.now(UTC) - timedelta(hours=2)
+    initialized = started + timedelta(hours=1)
+    monkeypatch.setattr(psutil, "Process", lambda: SimpleNamespace(create_time=started.timestamp))
+    monkeypatch.setattr(subject, "_installed", lambda _kernel: subject.WorkspaceInstalledVersion())
+    monkeypatch.setattr(subject, "_daemon", lambda _kernel, _now: subject.WorkspaceDaemonVersion())
+    result = subject.observe(FakeKernel(), initialized)
+    assert result.web.running_since == started
+    assert result.web.observed_since == initialized
+    assert result.web.backend_ip is None
+    assert result.daemon.running_since is None
+    assert result.installed.updated_at is None
+
+
+@pytest.mark.parametrize("timestamp", [0, -1, True, float("nan"), float("inf"), 1e100, None, "unknown"])
+def test_invalid_process_start_is_unknown(monkeypatch, timestamp):
+    monkeypatch.setattr(psutil, "Process", lambda: SimpleNamespace(create_time=lambda: timestamp))
+    assert subject._process_started(datetime.now(UTC)) is None
+
+
+def test_future_process_start_is_unknown_after_wall_clock_change(monkeypatch):
+    now = datetime.now(UTC)
+    monkeypatch.setattr(psutil, "Process", lambda: SimpleNamespace(create_time=(now + timedelta(seconds=1)).timestamp))
+    assert subject._process_started(now) is None
+
+
+@pytest.mark.parametrize("error", [psutil.AccessDenied(), psutil.NoSuchProcess(123), OSError("unavailable")])
+def test_process_inspection_failure_is_unknown(monkeypatch, error):
+    def inaccessible():
+        raise error
+
+    monkeypatch.setattr(psutil, "Process", inaccessible)
+    assert subject._process_started(datetime.now(UTC)) is None
 
 
 class FakeKernel:
@@ -160,7 +198,9 @@ def test_workspace_version_is_authenticated_and_never_cached(make_kernel, monkey
     result = response.json()
     assert result["web"]["version"] == __version__
     assert result["web"]["observed_since"] is not None
-    assert result["web"]["running_since"] is None
+    actual_start = datetime.fromtimestamp(psutil.Process().create_time(), UTC)
+    assert datetime.fromisoformat(result["web"]["running_since"]) == actual_start
+    assert actual_start <= datetime.fromisoformat(result["web"]["observed_since"])
     assert result["installed"] == {"version": "0.9.49", "updated_at": None}
     assert result["daemon"]["running_version"] is None
     assert result["daemon"]["status_observed_at"] is None
@@ -168,3 +208,82 @@ def test_workspace_version_is_authenticated_and_never_cached(make_kernel, monkey
     refreshed = client.get("/api/workspace-version", headers={"Authorization": f"Bearer {token}"})
     assert refreshed.json()["installed"]["version"] == "0.9.50"
     assert refreshed.json()["web"]["observed_since"] == result["web"]["observed_since"]
+    assert refreshed.json()["web"]["running_since"] == result["web"]["running_since"]
+
+    def unavailable():
+        raise psutil.AccessDenied
+
+    monkeypatch.setattr(psutil, "Process", unavailable)
+    unavailable_response = client.get("/api/workspace-version", headers={"Authorization": f"Bearer {token}"})
+    assert unavailable_response.status_code == 200
+    assert unavailable_response.json()["web"]["running_since"] is None
+    assert unavailable_response.json()["web"]["observed_since"] == result["web"]["observed_since"]
+
+
+@pytest.mark.parametrize(
+    "server",
+    [
+        None,
+        (),
+        ("192.0.2.1",),
+        "192.0.2.1",
+        (123, 8000),
+        ("192.0.2.1", None),
+        ("192.0.2.1", True),
+        ("192.0.2.1", 0),
+        ("backend.example", 8000),
+        (str(IPv4Address(0)), 8000),
+        ("::", 8000),
+        ("192.168.001.1", 8000),
+        ("[::1]", 8000),
+        ("fe80::1%en0", 8000),
+        (" 192.0.2.1", 8000),
+    ],
+)
+def test_backend_ip_rejects_missing_wildcard_or_nonliteral_addresses(server):
+    assert _backend_ip(server) is None
+
+
+@pytest.mark.parametrize(
+    ("server", "expected"),
+    [
+        (("192.0.2.10", 8000), "192.0.2.10"),
+        (("2001:db8:0:0::1", 8000), "2001:db8::1"),
+        (None, None),
+        ((str(IPv4Address(0)), 8000), None),
+    ],
+)
+def test_authenticated_route_reports_local_backend_not_proxy_or_forwarded_headers(
+    make_kernel, monkeypatch, server, expected
+):
+    monkeypatch.setattr(subject, "_installed", lambda _kernel: subject.WorkspaceInstalledVersion())
+    monkeypatch.setattr(subject, "_daemon", lambda _kernel, _now: subject.WorkspaceDaemonVersion())
+    token = "t" * 43
+    app = web.build(make_kernel(builtins=True), port=8000, token=token, static=None)
+
+    async def behind_proxy(scope, receive, send):
+        scope = dict(scope)
+        scope["client"] = ("198.51.100.25", 45678)
+        if server is None:
+            scope.pop("server", None)
+        else:
+            scope["server"] = server
+        await app(scope, receive, send)
+
+    client = TestClient(behind_proxy, base_url="http://127.0.0.1:8000")
+    headers = {
+        "Forwarded": "for=203.0.113.10;host=203.0.113.11",
+        "X-Forwarded-For": "203.0.113.12",
+        "X-Forwarded-Host": "203.0.113.13",
+        "X-Real-IP": "203.0.113.14",
+    }
+    assert client.get("/api/workspace-version", headers=headers).status_code == 401
+    response = client.get("/api/workspace-version", headers={**headers, "Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json()["web"]["backend_ip"] == expected
+
+
+def test_old_web_version_payload_keeps_backend_ip_unknown():
+    old_payload = {"version": "0.9.57", "observed_since": datetime.now(UTC).isoformat()}
+    assert subject.WorkspaceWebVersion.model_validate(old_payload).backend_ip is None

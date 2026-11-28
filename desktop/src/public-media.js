@@ -1,11 +1,12 @@
 import { isOwnedUiNavigation } from "./ui-navigation.js";
 
-/** Only canonical public raster captures and explicit YouTube watch identities can leave the shell. */
+/** Only canonical captures, YouTube watch identities and the album credit can leave through this handoff. */
 export function publicMediaUrl(target) {
   if (typeof target !== "string" || target.length > 1024) return null;
   try {
     const url = new URL(target);
     if (url.href !== target || url.protocol !== "https:" || url.username || url.password || url.port || url.hash) return null;
+    if (target === "https://latentheinzels.heinzel.team/") return target;
     const video = /^\?v=([A-Za-z0-9_-]{11})$/.exec(url.search);
     if (url.hostname === "www.youtube.com" && url.pathname === "/watch" && video) {
       const watch = new URL("https://www.youtube.com/watch");

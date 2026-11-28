@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 import tarfile
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -20,15 +21,6 @@ apps = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(apps)
 
 TAG, TAG_COMMIT, TREE, BUILT = "v1.2.3", "a" * 40, "b" * 40, "c" * 40
-RUN = {
-    "id": 7,
-    "head_branch": "release/v1.2.3",
-    "conclusion": "success",
-    "event": "workflow_dispatch",
-    "head_repository": {"full_name": apps.REPOSITORY},
-    "path": ".github/workflows/ci.yml",
-    "created_at": "2026-01-01T00:00:00Z",
-}
 
 
 def write_desktop(directory, *, version="1.2.3", commit=BUILT, corrupt=False):
@@ -50,16 +42,13 @@ def write_notifier(directory, member=apps.NOTIFIER_EXECUTABLE):
         tar.addfile(info, io.BytesIO(b"#!"))
 
 
-def fake(tmp_path, *, runs=(RUN,), tree=TREE, **desktop):
+def fake(tmp_path, *, tree=TREE, **desktop):
     def get(path):
-        if path.startswith("actions/workflows/ci.yml/runs"):
-            assert "branch=release/v1.2.3" in path
-            assert "status=success" in path
-            return {"workflow_runs": list(runs)}
         assert path == f"git/commits/{BUILT}"
         return {"tree": {"sha": tree}}
 
-    def download(_run_id, name, dest):
+    def download(run_id, name, dest):
+        assert run_id == 7
         if name == apps.DESKTOP:
             write_desktop(dest, **desktop)
         else:
@@ -70,7 +59,9 @@ def fake(tmp_path, *, runs=(RUN,), tree=TREE, **desktop):
 
 def test_the_candidate_apps_are_promoted_and_rebound_to_the_tag(tmp_path):
     get, download = fake(tmp_path)
-    facts = apps.promote(TAG, tmp_path / "out", TAG_COMMIT, TREE, get=get, download=download)
+    facts = apps.promote(
+        TAG, tmp_path / "out", TAG_COMMIT, TREE, approved_run=7, approved_checkout=BUILT, get=get, download=download
+    )
     assert facts == {"run": 7, "built_commit": BUILT, "tree": TREE}
     for name in apps.MANIFESTS:
         manifest = json.loads((tmp_path / "out/desktop" / name).read_text())
@@ -86,43 +77,91 @@ def test_the_candidate_apps_are_promoted_and_rebound_to_the_tag(tmp_path):
         ({"tree": "d" * 40}, "tree is not the tag's"),
         ({"version": "1.2.4"}, "does not describe darwin arm64 1.2.3"),
         ({"corrupt": True}, "differs in size"),
-        ({"runs": ()}, "No successful CI run"),
-        ({"runs": ({**RUN, "head_repository": {"full_name": "someone/fork"}},)}, "No successful CI run"),
-        ({"runs": ({**RUN, "head_branch": "release/v1.2.3-x"},)}, "No successful CI run"),
     ],
 )
 def test_anything_unproven_is_not_promoted(tmp_path, change, reason):
     get, download = fake(tmp_path, **change)
     with pytest.raises(apps.NotPromotedError, match=reason):
-        apps.promote(TAG, tmp_path / "out", TAG_COMMIT, TREE, get=get, download=download)
+        apps.promote(
+            TAG, tmp_path / "out", TAG_COMMIT, TREE, approved_run=7, approved_checkout=BUILT, get=get, download=download
+        )
     assert not (tmp_path / "out/desktop").exists()
 
 
 def test_a_notifier_without_its_executable_is_not_promoted(tmp_path):
     get, _ = fake(tmp_path)
 
-    def download(_run_id, name, dest):
+    def download(run_id, name, dest):
+        assert run_id == 7
         if name == apps.DESKTOP:
             write_desktop(dest)
         else:
             write_notifier(dest, member="Other.app/Contents/MacOS/other")
 
     with pytest.raises(apps.NotPromotedError, match="lacks the app's executable"):
-        apps.promote(TAG, tmp_path / "out", TAG_COMMIT, TREE, get=get, download=download)
+        apps.promote(
+            TAG, tmp_path / "out", TAG_COMMIT, TREE, approved_run=7, approved_checkout=BUILT, get=get, download=download
+        )
 
 
-def test_a_later_run_that_fails_falls_back_to_an_earlier_good_one(tmp_path):
-    newer = {**RUN, "id": 8, "created_at": "2026-01-02T00:00:00Z"}
-    get, good = fake(tmp_path, runs=(RUN, newer))
+@pytest.mark.parametrize(
+    "archive_name", ["../heinzel-desktop-1.2.3-darwin-arm64.tar.gz", "heinzel-desktop-swift-1.2.3-darwin-arm64.tar.gz"]
+)
+def test_a_desktop_manifest_must_select_its_own_exact_archive(tmp_path, archive_name):
+    dest = tmp_path / "desktop"
+    write_desktop(dest)
+    manifest = dest / "desktop-artifact-manifest.json"
+    record = json.loads(manifest.read_text())
+    record["archive"]["name"] = archive_name
+    manifest.write_text(json.dumps(record))
+    with pytest.raises(apps.NotPromotedError, match="unexpected archive"):
+        apps.check_desktop(dest, TAG[1:])
 
-    def download(run_id, name, dest):
-        if run_id == 8:
-            message = "artifact expired"
-            raise OSError(message)
-        good(run_id, name, dest)
 
-    facts = apps.promote(TAG, tmp_path / "out", TAG_COMMIT, TREE, get=get, download=download)
-    assert facts["run"] == 7
+def test_a_different_manifested_commit_with_the_same_tree_is_not_reused(tmp_path):
+    get, download = fake(tmp_path)
+    with pytest.raises(apps.NotPromotedError, match="approved tested checkout"):
+        apps.promote(
+            TAG,
+            tmp_path / "out",
+            TAG_COMMIT,
+            TREE,
+            approved_run=7,
+            approved_checkout="d" * 40,
+            get=get,
+            download=download,
+        )
+
+
+@pytest.mark.parametrize("defect", ["", "digest", "foreign-file", "producer", "head", "expired"])
+def test_notifier_is_bound_to_the_approved_run_and_github_archive_digest(tmp_path, monkeypatch, defect):
+    archive = tmp_path / "artifact.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("foreign" if defect == "foreign-file" else "notifier.tar.gz", b"notifier")
+    row = {
+        "id": 55,
+        "name": apps.NOTIFIER,
+        "expired": defect == "expired",
+        "digest": "sha256:" + ("0" * 64 if defect == "digest" else apps.file_sha256(archive)),
+        "workflow_run": {"id": 8 if defect == "producer" else 7, "head_sha": "a" * 40 if defect == "head" else BUILT},
+    }
+    monkeypatch.setattr(apps, "gh_json", lambda path: {"total_count": 1, "artifacts": [row]})
+    monkeypatch.setenv("APPROVED_HEAD", BUILT)
+    monkeypatch.setenv("TAG", TAG)
+
+    def downloaded(argv, *, stdout, **_kwargs):
+        assert argv == ["gh", "api", f"repos/{apps.REPOSITORY}/actions/artifacts/55/zip"]
+        stdout.write(archive.read_bytes())
+
+    monkeypatch.setattr(apps.subprocess, "run", downloaded)
+    dest = tmp_path / "notifier"
+    if defect:
+        with pytest.raises(apps.NotPromotedError):
+            apps.gh_download(7, apps.NOTIFIER, dest)
+        assert not (dest / "notifier.tar.gz").exists()
+    else:
+        apps.gh_download(7, apps.NOTIFIER, dest)
+        assert (dest / "notifier.tar.gz").read_bytes() == b"notifier"
 
 
 def test_the_main_entry_reports_a_refusal_as_output_never_as_failure(tmp_path, monkeypatch, capsys):
@@ -137,12 +176,17 @@ def test_publish_builds_on_macos_only_when_promotion_did_not_prove_the_bytes():
     jobs = yaml.safe_load((ROOT / ".github/workflows/publish.yml").read_text())["jobs"]
     promote = jobs["promote"]
     assert promote["runs-on"] == "ubuntu-24.04"
-    assert promote["permissions"] == {"contents": "read", "actions": "read"}
+    assert promote["permissions"] == {
+        "contents": "read",
+        "actions": "read",
+        "pull-requests": "read",
+        "statuses": "read",
+    }
     for name in ("notifier", "desktop"):
         assert jobs[name]["needs"] == "promote"
         assert "needs.promote.outputs.promoted != 'true'" in jobs[name]["if"]
     publish = jobs["publish"]
-    assert publish["needs"] == ["promote", "notifier", "desktop"]
+    assert publish["needs"] == ["promote", "notifier", "desktop", "swift-developer-id"]
     assert "needs.promote.outputs.promoted == 'true'" in publish["if"]
     names = [step.get("with", {}).get("name", "") for step in publish["steps"]]
     assert "${{ needs.promote.outputs.promoted == 'true' && 'promoted-notifier' || 'notifier' }}" in names

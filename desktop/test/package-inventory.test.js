@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rename, rm, stat, symlink, writeFile } from "
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { createPackage, getRawHeader, uncacheAll } from "@electron/asar";
 import { captureRuntime, RUNTIME_FILES, verifyRuntime } from "../ci/runtime-inventory.mjs";
 
@@ -46,6 +47,12 @@ async function archiveFlushed(file) {
   }
   assert.fail(`ASAR archive was not fully written: expected ${expected} bytes`);
 }
+
+test("the production Electron source fits the closed package inventory", async () => {
+  const desktop = fileURLToPath(new URL("../", import.meta.url));
+  const runtime = await captureRuntime(desktop);
+  assert.deepEqual(runtime.files.get("src/album-scheme.js"), await readFile(path.join(desktop, "src/album-scheme.js")));
+});
 
 test("accepts only the exact source and generated package metadata", async (t) => {
   const { root, project, stage } = await setup(t);

@@ -226,6 +226,37 @@ test("a probe that fails and then answers again resets the count: a restart blip
   assert.equal(owned.isRunning(), true);
 });
 
+test("a background window skips probes and a failed probe for an old epoch cannot detach", async () => {
+  const child = makeChild();
+  let tick;
+  let context = null;
+  let rejectProbe;
+  const owned = createOwnedCli({
+    spawn: () => child,
+    probe: () => new Promise((_, reject) => { rejectProbe = reject; }),
+    probeContext: () => context,
+    lostAfter: 1,
+    setInterval: (callback) => { tick = callback; return 1; },
+    clearInterval: () => {},
+  });
+  const started = owned.start();
+  child.finish(`${url}\n`);
+  await started;
+  await tick();
+  assert.equal(rejectProbe, undefined);
+  context = 1;
+  const stale = tick();
+  context = 2;
+  rejectProbe(new Error("old connection failed"));
+  await stale;
+  assert.equal(owned.isRunning(), true);
+
+  const current = tick();
+  rejectProbe(new Error("current connection failed"));
+  await current;
+  assert.deepEqual(await owned.exited(), { code: null, signal: null, serviceLost: true });
+});
+
 test("a dev run takes only an absolute HZ_DESKTOP_DEV_CLI, else hz on PATH", () => {
   assert.equal(developmentCli({}), "hz");
   assert.equal(developmentCli({ HZ_DESKTOP_DEV_CLI: "/tmp/isolated/hz" }), "/tmp/isolated/hz");

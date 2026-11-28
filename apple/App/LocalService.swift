@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import Foundation
+import Combine
 import Synchronization
 
 /// Attach to this Mac's one owned web service (the launchd job) through `hz ui attach`; never serve.
@@ -9,64 +10,80 @@ import Synchronization
 /// hz process of its own, so quitting, crashing or updating the app leaves the service running, and a second server
 /// with its own auto-updater on old code can't exist.
 @MainActor
-final class LocalService: NSObject, NSApplicationDelegate {
+final class LocalService: NSObject, NSApplicationDelegate, ObservableObject {
     private var installation: ManagedInstallation?
     private var attached: (executable: String, environment: [String: String])?
+    // Keep only the owned loopback session in memory when the client leaves its workspace.
+    @Published private(set) var localSession: Endpoint?
     private var pending: Task<Endpoint, Error>?
-    private var monitor: Task<Void, Never>?
-    /// Called when the attached service stops answering this endpoint (a crash restart has a new session token);
-    /// the app then attaches again.
-    var onLost: (() -> Void)?
-    /// How often the app asks the attached service whether it still answers.
-    var probeInterval: Duration = .seconds(5)
-    /// Consecutive failed probes before the service counts as lost: one slow answer during a restart is no loss.
-    var lostAfter = 3
-    /// The waits between attempts to attach again after a loss (bounded backoff).
-    static let reattachDelays: [Duration] = [.seconds(5), .seconds(10), .seconds(20), .seconds(40)]
 
-    /// Try `attempt` now, then after each delay; true at the first success, false when all failed or `cancelled`.
-    ///
-    /// `attempt` answers nil when it could not try (another start is running): that is neither a success nor a
-    /// failure, so it is asked again after `busyWait` without using up a backoff step, up to `busyLimit` times.
-    static func retrying(
-        delays: [Duration] = reattachDelays,
-        wait: (Duration) async -> Void = { try? await Task.sleep(for: $0) },
-        busyWait: Duration = .milliseconds(250),
-        busyLimit: Int = 240,
-        cancelled: () -> Bool = { false },
-        attempt: () async -> Bool?
-    ) async -> Bool {
-        var index = 0
-        var busy = 0
-        while index <= delays.count {
-            if Task.isCancelled || cancelled() { return false }
-            switch await attempt() {
-            case true?:
-                return true
-            case nil where busy < busyLimit:
-                busy += 1
-                await wait(busyWait)
-                continue
-            default:
-                break
+    func runningBackend() async -> Endpoint.Lifecycle? {
+        guard let localSession else { return nil }
+        return try? await localSession.readLifecycle()
+    }
+    private var monitor: Task<Void, Never>?
+    enum Recovery: Equatable {
+        case reconnecting, unavailable, paused, stopped, signIn, denied
+
+        var retries: Bool { self == .reconnecting || self == .unavailable }
+
+        var detail: String {
+            switch self {
+            case .reconnecting: "Reconnecting…"
+            case .unavailable: "Temporarily unavailable · Reconnecting…"
+            case .paused: "Paused"
+            case .stopped: "Stopped · Start local workspace"
+            case .signIn: "Sign in"
+            case .denied: "Access denied"
             }
-            if cancelled() { return false }
-            if index < delays.count { await wait(delays[index]) }
-            index += 1
         }
-        return false
+    }
+
+    @Published private(set) var recovery: Recovery?
+    // A selected tab can remain signed in after the service rotates its launch token.
+    @Published private var pageAuthenticatedSession: Endpoint?
+    private enum SessionAuthority { case launch, page }
+    private var selected: Endpoint?
+    private var foreground = true
+    private var sleeping = false
+    var onLost: (() -> Void)?
+    var verifyRecoveredPage: ((Endpoint) async throws -> Void)?
+    var onRecovered: ((Endpoint) -> Void)?
+    var probeInterval: Duration = .seconds(5)
+    var lostAfter = 3
+    var probe: (Endpoint) async throws -> Endpoint.Lifecycle = { try await $0.readLifecycle() }
+    var wait: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    var retryDelay: (Int) -> Duration = { attempt in
+        let seconds = [5.0, 10.0, 20.0, 40.0][min(attempt, 3)]
+        return .seconds(min(40, seconds * Double.random(in: 0.9...1.1)))
     }
 
     /// The exact arguments: the app only ever attaches. Tests check that `serve` never appears.
     static let attachArguments = ["ui", "attach"]
 
     /// Attach, or wait for the attach already running (a re-attach and the person's click share one).
-    func start() async throws -> Endpoint {
-        if let pending { return try await pending.value }
-        let task = Task { try await self.attach() }
-        pending = task
-        defer { pending = nil }
-        return try await task.value
+    func start(monitoring: Bool = true) async throws -> Endpoint {
+        let endpoint: Endpoint
+        if let pending {
+            endpoint = try await pending.value
+        } else {
+            let task = Task {
+                if let localSession, localSession != pageAuthenticatedSession, await runningBackend() != nil {
+                    return localSession
+                }
+                // Explicit reattachment obtains a verified native token when only the tab is signed in.
+                let endpoint = try await attach()
+                localSession = endpoint
+                pageAuthenticatedSession = nil
+                return endpoint
+            }
+            pending = task
+            defer { pending = nil }
+            endpoint = try await task.value
+        }
+        // A staged page starts its monitor when the chooser selects it.
+        if monitoring { selectWorkspace(endpoint) }
+        return endpoint
     }
 
     private func attach() async throws -> Endpoint {
@@ -129,7 +146,6 @@ final class LocalService: NSObject, NSApplicationDelegate {
                 return endpoint
             }
             attached = (executable, environment)
-            watch(endpoint)
             return endpoint
         } catch {
             // Only the one-shot attach command is ours to end; the service it reached keeps running.
@@ -138,28 +154,126 @@ final class LocalService: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func watch(_ endpoint: Endpoint) {
+    private func verifyPage(_ endpoint: Endpoint) async throws {
+        guard let verifyRecoveredPage else { throw ConnectionError.unverifiedWorkspace }
+        try await verifyRecoveredPage(endpoint)
+    }
+
+    private func verifySelectedSession(_ endpoint: Endpoint) async throws -> (authority: SessionAuthority, version: String?) {
+        if pageAuthenticatedSession == endpoint && recovery == nil {
+            try await verifyPage(endpoint)
+            return (.page, nil)
+        }
+        // During an outage the native request can distinguish a stopped loopback listener.
+        // Its 401 only rejects the launch token. WebKit verifies its own credentials in place.
+        let version: String
+        do {
+            version = try await probe(endpoint).version
+        } catch ConnectionError.authentication {
+            try Task.checkCancellation()
+            try await verifyPage(endpoint)
+            return (.page, nil)
+        }
+        try Task.checkCancellation()
+        if recovery != nil { try await verifyPage(endpoint) }
+        return (.launch, version)
+    }
+
+    /// One task owns both observation and recovery. Each change of selection, user intent or
+    /// activity cancels that task. A late HTTP or clock completion can never publish a result.
+    private func watch(checkNow: Bool = false) {
         monitor?.cancel()
-        let interval = probeInterval
-        let threshold = max(1, lostAfter)
-        monitor = Task { [weak self] in
-            var failures = 0
+        monitor = nil
+        guard let endpoint = selected, foreground, !sleeping, recovery == nil || recovery?.retries == true else { return }
+        monitor = Task {
+            var misses = 0
+            var retry = 0
+            var immediate = checkNow || recovery != nil
             while !Task.isCancelled {
-                try? await Task.sleep(for: interval)
-                if Task.isCancelled { return }
+                if !immediate {
+                    let delay = recovery == nil ? probeInterval : retryDelay(retry)
+                    if recovery != nil { retry += 1 }
+                    do { try await wait(delay) } catch { return }
+                }
+                immediate = false
+                guard !Task.isCancelled else { return }
                 do {
-                    ClientIdentity.backendVersion = try await endpoint.readLifecycle().version
-                    failures = 0
+                    let (authority, version) = try await verifySelectedSession(endpoint)
+                    guard !Task.isCancelled else { return }
+                    if let version { ClientIdentity.backendVersion = version }
+                    let adoptedPage = authority == .page && pageAuthenticatedSession != endpoint
+                    if adoptedPage { pageAuthenticatedSession = endpoint }
+                    if authority == .launch && pageAuthenticatedSession == endpoint { pageAuthenticatedSession = nil }
+                    misses = 0
+                    if recovery != nil || adoptedPage {
+                        recovery = nil
+                        onRecovered?(endpoint)
+                    }
                 } catch {
-                    failures += 1
-                    if Task.isCancelled { return }
-                    if failures < threshold { continue }
-                    self?.monitor = nil
-                    self?.onLost?()
-                    return
+                    guard !Task.isCancelled else { return }
+                    misses += 1
+                    if recovery == nil {
+                        guard misses >= max(1, lostAfter) else { continue }
+                        recovery = .reconnecting
+                        onLost?()
+                        guard !Task.isCancelled else { return }
+                        immediate = true
+                        retry = 0
+                    }
+                    switch error {
+                    case ConnectionError.authentication: recovery = .signIn; return
+                    case ConnectionError.accessDenied: recovery = .denied; return
+                    case ConnectionError.unverifiedWorkspace: recovery = .unavailable
+                    default: recovery = .reconnecting
+                    }
+                    if retry >= 4, let failure = error as? URLError, failure.code == .cannotConnectToHost {
+                        recovery = .stopped
+                        return
+                    }
                 }
             }
         }
+    }
+
+    var publishingSession: Endpoint? { recovery == nil && pageAuthenticatedSession != localSession ? localSession : nil }
+
+    /// The local row and both menus share this decision before starting an attach.
+    func shouldAttachOnSelection() -> Bool {
+        if recovery == .paused { resumeRecovery(); return false }
+        return recovery == nil || recovery == .stopped || recovery == .signIn
+    }
+
+    /// The native monitor confirms transport failures. WebKit can also lose its own
+    /// credentials while the launch credential used by the native monitor still works.
+    func reportPageIssue(_ issue: WorkspaceProblem, for endpoint: Endpoint) {
+        guard selected == endpoint, recovery == nil, issue.revokesAccess else { return }
+        recovery = issue == .signIn ? .signIn : .denied
+        monitor?.cancel()
+        onLost?()
+    }
+
+    func pauseRecovery() {
+        guard recovery?.retries == true else { return }
+        recovery = .paused
+        watch()
+    }
+
+    func resumeRecovery() {
+        guard recovery == .paused else { return }
+        recovery = .reconnecting
+        watch(checkNow: true)
+    }
+
+    func setForeground(_ active: Bool) {
+        guard active != foreground else { return }
+        foreground = active
+        watch(checkNow: active)
+    }
+
+    func setSleeping(_ asleep: Bool) {
+        guard asleep != sleeping else { return }
+        sleeping = asleep
+        watch(checkNow: !asleep)
     }
 
     private func startupLine(from handle: FileHandle) -> AsyncStream<Data> {
@@ -208,12 +322,12 @@ final class LocalService: NSObject, NSApplicationDelegate {
         return executable
     }
 
-    /// Leave the local workspace. The owned service is not the app's to stop, so nothing ends; always true.
-    @discardableResult
-    func stop() async -> Bool {
-        monitor?.cancel()
-        monitor = nil
-        return true
+    /// Only the selected local workspace needs automatic client reattachment.
+    /// Leaving or selecting a remote workspace keeps the backend and its loopback session alive.
+    func selectWorkspace(_ selected: Endpoint?) {
+        self.selected = selected == localSession ? selected : nil
+        recovery = nil
+        watch()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

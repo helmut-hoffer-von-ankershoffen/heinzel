@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from heinzel.testing import scaled
 from tests import conftest
 
 pytestmark = pytest.mark.integration
@@ -25,7 +26,7 @@ def _collect_all() -> dict[int, list[str]]:
     }
     collected = {}
     for half, process in runs.items():
-        out, err = process.communicate(timeout=50)
+        out, err = process.communicate(timeout=scaled(50))
         assert process.returncode == 0, out[-2000:] + err[-2000:]
         collected[half] = [line for line in out.splitlines() if "::" in line]
     return collected

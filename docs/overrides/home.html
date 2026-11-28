@@ -3,10 +3,12 @@
   {{ super() }}
   <link rel="stylesheet" href="{{ 'assets/website/album-ticket.css' | url }}">
 {% endblock %}
-{% block tabs %}{{ super() }}{% endblock %}
+{% block tabs %}
+  {{ super() }}
+  {% include "partials/album-ticket.html" %}
+{% endblock %}
 {% block content %}
   <div class="hz-home">
-    {% include "partials/album-ticket.html" %}
     {{ page.content }}
   </div>
 {% endblock %}

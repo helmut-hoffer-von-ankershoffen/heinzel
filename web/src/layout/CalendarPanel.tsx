@@ -16,10 +16,12 @@ import {
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { useNavigate } from "react-router";
 import { stream } from "@/api/stream";
 import { token } from "@/api/token";
 import { OperationDialog } from "@/components/OperationDialog";
 import { PaneAction, PaneActions, PaneTitle } from "@/components/PaneActions";
+import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { isLocalServer } from "@/lib/browser";
 import { conferenceLink, conferenceProvider } from "@/lib/conferenceLink";
@@ -101,6 +103,7 @@ function showToday(node: HTMLElement | null) {
 }
 
 export function CalendarPanel({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate();
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [selection, setSelection] = useState<CalendarSelection>(() => savedSelection());
@@ -207,7 +210,7 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
         </PaneTitle>
       </header>
       <ReminderBand reminders={reminders} />
-      {week.data?.calendars && week.data.adapter && (
+      {week.data?.calendars?.length && week.data.adapter ? (
         <details
           open={showCalendars}
           onToggle={(event) => setShowCalendars(event.currentTarget.open)}
@@ -231,6 +234,27 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
             ))}
           </fieldset>
         </details>
+      ) : (
+        !week.isPending && (
+          <div className="flex flex-wrap items-center justify-between gap-x-3 border-b border-border px-3 py-1 text-sm">
+            <p className="text-muted-foreground">
+              {t(week.data?.calendars?.length === 0 ? "calendar.noReadableSources" : "calendar.sourcesUnavailable")}
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="pointer-coarse:min-h-11"
+              onClick={() => {
+                onClose();
+                void navigate(`?settings=${CONNECTORS}`);
+              }}
+            >
+              <Plug aria-hidden />
+              {t(week.data?.fix ? "calendar.connect" : "calendar.connectorSettings")}
+            </Button>
+          </div>
+        )
       )}
       {!week.isPlaceholderData && !!week.data?.warnings?.length && (
         <div role="status" className="border-b border-border px-3 py-2 text-sm">
@@ -302,11 +326,6 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
         <PaneAction key="next" icon={ChevronRight} disabled={offset >= 52} onClick={() => setOffset(offset + 1)}>
           {t("calendar.nextWeek")}
         </PaneAction>
-        {week.data?.problem && week.data.fix && (
-          <PaneAction key="connect" icon={Plug} to={`?settings=${CONNECTORS}`}>
-            {t("calendar.connect")}
-          </PaneAction>
-        )}
         {reminders.data && isLocalServer() && reminders.data.service !== "not installed" && (
           <PaneAction key="remove" icon={Trash2} destructive onClick={() => workerAction(false)}>
             {t("calendar.removeWorker")}

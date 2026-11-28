@@ -82,9 +82,9 @@ export const readUpdateStatus = (signal: AbortSignal) => read<UpdateStatus>("/up
  * Update the desktop app to this server's release: the server runs `hz app install --restart` on its own, which
  * quits the app, replaces it and opens it again. Its answer comes before the app quits.
  */
-export async function updateDesktopApp(signal: AbortSignal): Promise<void> {
+export async function updateDesktopApp(signal: AbortSignal, automatic = false): Promise<void> {
   const response = await fetch(
-    new Request(new URL("/api/update-status/desktop", window.location.origin), {
+    new Request(new URL(`/api/update-status/desktop${automatic ? "?automatic=true" : ""}`, window.location.origin), {
       method: "POST",
       cache: "no-store",
       signal,

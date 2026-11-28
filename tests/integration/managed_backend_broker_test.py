@@ -19,6 +19,8 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
+from heinzel.testing import scaled
+
 pytestmark = pytest.mark.integration
 BROKER = Path(__file__).parents[2] / "desktop" / "managed" / "runtime" / "broker.py"
 HTML = (
@@ -291,19 +293,19 @@ def test_foreign_listeners_are_never_overlapped_or_adopted(tmp_path, address, re
 
 
 def test_killed_controller_broker_does_not_leave_its_worker_listening(tmp_path):
-    process = launch(tmp_path)
+    worker = WORKER.replace("    os._exit(0)", '    os.write(2, b"Broker lease closed\\n")\n    os._exit(0)')
+    process = launch(tmp_path, worker=worker)
     try:
         ready = event(process)
         before = identity(ready)
         with process_exited(before["pid"]) as exited:
             process.kill()
             process.wait(timeout=3)
-            # EOF alone is insufficient: descriptors close before exit, and a dead PID can remain a zombie.
-            with selectors.DefaultSelector() as selector:
-                selector.register(process.stderr, selectors.EVENT_READ)
-                assert selector.select(5), "Worker retained broker stderr after its lease was lost"
-                assert process.stderr.read(1) == b""
-            assert exited(5), "Worker stayed alive after losing its broker lease"
+            # Drain through EOF even when the worker writes diagnostics as its lease closes.
+            _, diagnostics = process.communicate(timeout=scaled(5))
+            assert b"Broker lease closed\n" in diagnostics
+            # Closed descriptors do not prove the exact worker has exited.
+            assert exited(5), f"Worker stayed alive after losing its broker lease: {diagnostics!r}"
         with socket.socket() as connection:
             connection.settimeout(2)
             with pytest.raises(ConnectionRefusedError):

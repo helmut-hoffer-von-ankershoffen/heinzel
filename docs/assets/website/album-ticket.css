@@ -10,7 +10,6 @@
   width: 100%;
   min-height: 318px;
   overflow: hidden;
-  border-radius: 9px;
   background: #271615;
   color: var(--ink);
   font-family: system-ui, sans-serif;
@@ -23,12 +22,24 @@
   min-width: 0;
 }
 .hz-album-film {
+  position: relative;
   justify-content: flex-end;
   gap: 12px;
   padding: clamp(16px, 3.4cqw, 35px);
   background: linear-gradient(90deg, #120c0bed, #120c0b63 54%, transparent),
     linear-gradient(0deg, #120c0b85, transparent 70%),
     url("album/singularity.webp") 66% 52% / cover;
+}
+.hz-album-ad-label {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-end: 8px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #261612;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
 }
 .hz-album-panel {
   gap: 13px;

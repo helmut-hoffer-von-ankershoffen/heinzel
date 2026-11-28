@@ -68,7 +68,8 @@ def test_theme_list_shows_the_default_and_each_plugins_theme_with_every_token(ac
     code, listed = hz(acme("heinzel_acme"), "system", "theme", "list")
     assert code == 0, listed
     assert listed["selected"] == "default"
-    default, company = listed["themes"]
+    default, company, paper = listed["themes"]
+    assert (paper["name"], paper["title"], paper["selected"]) == ("paper", "Paper", False)
     assert (default["name"], default["module"], default["plugin"], default["selected"]) == (
         "default",
         None,
@@ -117,7 +118,7 @@ def test_theme_use_writes_the_user_setting_and_the_list_follows(acme):
 def test_theme_use_refuses_a_theme_nobody_offers_and_writes_nothing(acme):
     code, output = hz(acme("heinzel_acme"), "system", "theme", "use", "nope", json_output=False)
     assert code != 0
-    assert "No theme is called 'nope'; available: default, acme" in " ".join(str(output).split())
+    assert "No theme is called 'nope'; available: default, acme, paper" in " ".join(str(output).split())
     assert not (user_config_dir() / "config.toml").exists()
 
 
@@ -217,6 +218,7 @@ def test_the_web_head_lists_the_themes_and_the_pick_round_trips(acme):
         "spacing",
         "fonts",
         "logo",
+        "show_branding_bar",
         "variant",
         "shadows",
         "heinzel",
@@ -245,7 +247,7 @@ def web_client(kernel: Kernel) -> TestClient:
 
 def test_the_list_carries_the_type_scale_density_icon_colours_and_fonts(acme):
     listed = web_client(acme("heinzel_acme")).get("/api/system/theme/list", headers=AUTH).json()
-    default, company = listed["themes"]
+    default, company, _paper = listed["themes"]
     assert {key: default[key] for key in ("radius", "radius_control", "font_size", "font_size_small")} == {
         "radius": "0.75rem",
         "radius_control": "0.5rem",
@@ -372,7 +374,7 @@ LOGO_HEADERS = {
 def test_the_list_carries_each_themes_logo_and_main_tint(acme):
     code, listed = hz(acme("heinzel_acme"), "system", "theme", "list")
     assert code == 0, listed
-    default, company = listed["themes"]
+    default, company, _paper = listed["themes"]
     assert set(default["logo"]) == {"light", "dark", "mark", "alt", "height"}
     assert (default["logo"]["alt"], default["logo"]["height"]) == ("Heinzelmännchen", "24px")
     for name in ("light", "dark", "mark"):
@@ -704,7 +706,8 @@ def test_original_avatar_layers_have_owned_urls_and_safe_fallback(acme, tmp_path
     listed = next(value for value in listing["themes"] if value["name"] == "winter")
     url = listed["heinzel_assets"]["hat-grown"]
     assert listed["heinzel"]["assets"] == {}
-    assert client.get("/api/system/theme/list", headers=AUTH).json()["themes"][-1]["heinzel_assets"] == {
+    web_listing = client.get("/api/system/theme/list", headers=AUTH).json()
+    assert next(value for value in web_listing["themes"] if value["name"] == "winter")["heinzel_assets"] == {
         "hat-grown": url
     }
     image = client.get(url)

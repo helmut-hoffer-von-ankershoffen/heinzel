@@ -4,9 +4,30 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from heinzel.kernel import ReleaseCache, ReleaseSource
+from heinzel.kernel.install import _release as published_release
+from heinzel.services.install import _release as release_service
 from heinzel.testing import scaled
 
 pytestmark = pytest.mark.unit
+
+
+def test_release_service_keeps_published_class_paths():
+    """The kernel facade and the original module resolve the same injectable types."""
+    classes = (
+        "EdgeRelease",
+        "ReleaseFacts",
+        "PluginRelease",
+        "PluginNews",
+        "PluginReleases",
+        "ReleaseSource",
+        "ReleaseCache",
+    )
+    for name in classes:
+        exported = getattr(published_release, name)
+        assert exported is getattr(release_service, name)
+        assert exported.__module__ == "heinzel.kernel.install._release"
+    assert ReleaseSource is release_service.ReleaseSource
+    assert ReleaseCache is release_service.ReleaseCache
 
 
 @pytest.fixture

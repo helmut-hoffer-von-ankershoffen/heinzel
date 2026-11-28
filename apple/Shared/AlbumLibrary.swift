@@ -228,6 +228,18 @@ final class AlbumLibrary {
         return size == object.bytes && digest.finalize().map { String(format: "%02x", $0) }.joined() == object.sha256
     }
 
+    func approvedSavedCover() -> URL? {
+        guard let cover = journal?.album.cover,
+              cover.sha256 == "bb465f44cecd01f1f84b3353704ca9fa7b2bdc995ff495a8879b1dcaf570d84c" else { return nil }
+        return available(cover)
+    }
+
+    func approvedSavedPoster(for id: String?) -> URL? {
+        guard let id, let track = journal?.album.tracks.first(where: { $0.id == id }),
+              Self.approvedPosters[id] == track.poster.sha256 else { return nil }
+        return available(track.poster)
+    }
+
     func savedPoster(for id: String?) -> URL? {
         guard let track = journal?.album.tracks.first(where: { $0.id == id }) else { return nil }
         return available(track.poster)
@@ -498,4 +510,114 @@ final class AlbumLibrary {
                 "verifiedBytes": verifiedBytes, "receivedBytes": min(totalBytes, verifiedBytes + partialBytes), "totalBytes": totalBytes,
                 "error": errorText as Any? ?? NSNull()]
     }
+
+    static let approvedFilmHash = "306c4b7f00c9f89aa80b624f7dcaeace22c52a14ece3b3f7a1e9b107d6c0f126"
+    // Owner-approved artwork identity, independent of the mutable catalogue.
+    private static let approvedPosters: [String: String] = [
+        "berlin-morning": "763a964cc4c38c240d3bfabce097cd44ebaa695484e7f41a682b06bbfb453003",
+        "berlin-morning-to-lunch": "81318ff897b886d388923de0d9ebfc9c0d4d4c762356d4ff1a3f0512abb507a9",
+        "berlin-lunch": "7ebd70158e2cbe0683aca0c50fe7abc4e48db4db2fcf0a98a1535da3723215a8",
+        "berlin-lunch-to-afternoon": "c48ba40358a0da807e901035a07635240c6a5071d8b48dca7b4799ac11ffd73e",
+        "berlin-afternoon": "dee805ba6ca7b94c5bfb95d3256f110dae6dcda618979d4ee4bb62444f3a90a8",
+        "berlin-afternoon-to-evening": "48931a8b4600171dc40645f95e85a2af3412ed17808f4fa11ce778beb2a6b563",
+        "berlin-evening": "87d8cf437c37e1f55d35022031df2e2519c78dc96fc46bd5f7ed267ac38bf1af",
+        "berlin-evening-to-night": "04fb7562010cfb021b0b9214bd92b75f31397cac4011fd58ff7eb8df1225407f",
+        "berlin-night": "530686fad27106b58fb3b41ea9b0cdb85650c0cdbdcb9c71ca152834bb6327ab",
+        "paris-morning": "103f9481b1173a0337a630e9909a40a59aae22b5e4b6ad6f4bc532e306b5b35a",
+        "paris-morning-to-lunch": "a6c004830a9f5bdee497aeb9a37ffd96bb6e134c14635282226da85540c39e7d",
+        "paris-lunch": "94427927713e2171b2636f1779852a584f473a403ee040989ab73320087471a9",
+        "paris-lunch-to-afternoon": "c9a3648deb83bf069d5ced888f30213b187aed6ad6e8b0ca9fc13aa669a90a4c",
+        "paris-afternoon": "35dbe174890f0945fbb3386ca6c109b2ab02f1b6dbc2cf20f344cc2c95242350",
+        "paris-afternoon-to-evening": "87e829792c340d4bb82882126b255028994164fa6ae3ee7034d80d950e1ccb0c",
+        "paris-evening": "c1f093f198bbf7c831e966ba032e56be255d3bc08e76b786188ff0d66084a409",
+        "paris-evening-to-night": "853d6aaabe54502278ea28e1298b3efca55f2208d481459740cdbdf314e3e5cc",
+        "paris-night": "7838f64760efa9fd6938693869522f2f979e521bd8da3a21f9ba866c108c654e",
+        "san-francisco-morning": "97d21864bbc52ab9413a904fe06914fdacc2019eb9799fa8b3339a0004ae89b0",
+        "san-francisco-morning-to-lunch": "592fe6991fb07603f20ba005cfe7970cd683c9ec142ce991d799dfd9d9f5e7b8",
+        "san-francisco-lunch": "ca35ddbfcefc75110c29f89b14d927dbe2f754219bbfabb7d7b9c6079cb2f4e4",
+        "san-francisco-lunch-to-afternoon": "3012738645c1f4674aaac1b4b30178f9175980331b926eb46c14448f302b578f",
+        "san-francisco-afternoon": "9176233de641eaa8e69f77aedf615618106102fff7dcee6e9e850d2f4655c644",
+        "san-francisco-afternoon-to-evening": "4c0eb70cce17c5d3d691470ab4cd70f3a46ffcc1782ca653906e11a44bc4462f",
+        "san-francisco-evening": "20afdea76065f9b2d0d8bc85f2944c3dfaf13c65bd1119104320c3d56fd3d330",
+        "san-francisco-evening-to-night": "d9c7b5964d98a48212ce5213dae05beb99ee67317eef45c1cecf259dc015ef43",
+        "san-francisco-night": "daf79e91a4f6e6b653f61433305273eb2d24f7b85a1fa29f1642522e592694b9",
+        "shenzhen-morning": "f1fc601ebbbcd37dd704ad596b91dd5670f957f39859be7ec7f5bee84ee9430e",
+        "shenzhen-morning-to-lunch": "02caeb3c6d092024245a7b1a8d9b95690ff43d33712dc630fc5c7f7f65ad4f62",
+        "shenzhen-lunch": "b9ede73c18cbd8eb821445db03dae61ffde555efdbe70aa7ba059b8510e9fb06",
+        "shenzhen-lunch-to-afternoon": "4e6afceb36a156d8c56c27907650a3e4f4e1ef6919211406007ba59d473d583c",
+        "shenzhen-afternoon": "fc7c6e7ae84295099d69a2a9b4a7c236732352d3bffd732444fcd65419842ccb",
+        "shenzhen-afternoon-to-evening": "4169c51b1d5dec55a06dd65d2e212c1c57529671470f8629905a71cd07a31f25",
+        "shenzhen-evening": "641e851af8d35b10357c8e8a8ff29a461c71ed4c380fc711c0ae36e2fb27b3f3",
+        "shenzhen-evening-to-night": "f25af4e995206af1bd6c37f286a2e8ee6fef83ed83de81f187d1f0f7407745dd",
+        "shenzhen-night": "caacf566f916d60e8a8947bdb5b955fa1f3da71e8b4e3f9d9d1dbcd3c7a34654",
+        "berlin-evening-extended": "57f977d38e0a9aefa81ad0a5559ac9559a6dadee62c0363045d3716203a08802",
+    ]
+
+    func approvedFilm(for id: String?) -> Bool {
+        guard id == "berlin-evening-extended",
+              let track = journal?.album.tracks.first(where: { $0.id == id }) else { return false }
+        return track.media.sha256 == Self.approvedFilmHash
+    }
+
+    static var approvedFilmWebURL: URL {
+        URL(string: "heinzel-album://film/\(approvedFilmHash).mp4")!
+    }
+
+    static var approvedFilmStreamURL: URL {
+        URL(string: "https://latentheinzels.heinzel.team/media/sha256/\(approvedFilmHash).mp4")!
+    }
+
+    // Never resolve a path supplied by a web document.
+    func availableApprovedFilm() -> URL? {
+        guard approvedFilm(for: "berlin-evening-extended"),
+              let track = journal?.album.tracks.first(where: { $0.id == "berlin-evening-extended" }),
+              track.media.sha256 == Self.approvedFilmHash else { return nil }
+        return available(track.media)
+    }
+
+    func mediaSnapshot(selectedID: String?) -> [String: Any] {
+        let album = journal?.album
+        let selected = album?.tracks.first { $0.id == selectedID }
+        let film = approvedFilm(for: selectedID)
+        // Expose only catalogue-derived HTTPS URLs, never native filesystem paths.
+        func publicURL(_ object: AlbumObject?) -> Any {
+            guard let object else { return NSNull() }
+            let url = remote(object)
+            guard url.scheme == "https", url.host == "latentheinzels.heinzel.team" else { return NSNull() }
+            return url.absoluteString
+        }
+        let still = selected.flatMap { Self.approvedPosters[$0.id] == $0.poster.sha256 ? $0.poster : nil }
+        let cover = album?.cover.sha256 == "bb465f44cecd01f1f84b3353704ca9fa7b2bdc995ff495a8879b1dcaf570d84c" ? album?.cover : nil
+        return ["albumID": album?.id as Any? ?? NSNull(),
+                "selectedTrackID": selected?.id as Any? ?? NSNull(),
+                "tracks": album?.tracks.map { ["id": $0.id, "title": $0.title] } ?? [],
+                "standardMediaID": selected?.media.sha256 as Any? ?? NSNull(),
+                "extendedMediaID": film ? Self.approvedFilmHash as Any : NSNull(),
+                "cover": publicURL(cover), "still": publicURL(still),
+                "extendedVideo": film ? ["url": (availableApprovedFilm() != nil ? Self.approvedFilmWebURL : Self.approvedFilmStreamURL).absoluteString,
+                    "sha256": Self.approvedFilmHash, "trackID": "berlin-evening-extended",
+                    "admission": availableApprovedFilm() != nil ? "local" : "remote"] as Any : NSNull(),
+                "visualApproval": film ? "approved" : (still != nil ? "still" : "unavailable")]
+    }
+    static func byteRange(_ value: String?, count: Int) -> Range<Int>? {
+        guard count > 0 else { return nil }
+        guard let value else { return 0..<count }
+        guard value.hasPrefix("bytes=") else { return nil }
+        let parts = value.dropFirst(6).split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return nil }
+        func number(_ text: Substring) -> Int? {
+            guard !text.isEmpty, text.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+            return Int(text)
+        }
+        if parts[0].isEmpty {
+            guard let suffix = number(parts[1]), suffix > 0 else { return nil }
+            return max(0, count - suffix)..<count
+        }
+        guard let start = number(parts[0]), start < count else { return nil }
+        if parts[1].isEmpty { return start..<count }
+        guard let end = number(parts[1]), end >= start else { return nil }
+        return start..<(min(end, count - 1) + 1)
+    }
+
+
 }

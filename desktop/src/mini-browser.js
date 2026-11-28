@@ -1,3 +1,4 @@
+import { siblingStack } from "./sibling-stack.js";
 import { randomBytes } from "node:crypto";
 import { createGuestNetwork } from "./mini-browser-network.js";
 import { builtInBrowserLink, classifyUiLink, createUserActivation, grantOnNativeInput } from "./ui-navigation.js";
@@ -361,7 +362,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
       try { if (guest.view.webContents.debugger?.isAttached?.()) guest.view.webContents.debugger.detach(); } catch { /* gone */ }
       tell("closed", guest);
     }
-    if (!window.isDestroyed()) window.contentView.removeChildView(guest.view);
+    siblingStack(window).release(guest.view);
     if (!guest.view.webContents.isDestroyed()) guest.view.webContents.close({ waitForBeforeUnload: false });
   };
   const closeTab = (window, id) => {
@@ -559,7 +560,7 @@ export function createMiniBrowser({ windows, fromWebContents, connection, create
         surfaceOf(window).revision += 1;
         view.setVisible(false);
       });
-      window.contentView.addChildView(view);
+      siblingStack(window).attach(view, "browser");
       view.setVisible(false);
       const surface = surfaceOf(window);
       surface.tabs.set(guest.id, guest);

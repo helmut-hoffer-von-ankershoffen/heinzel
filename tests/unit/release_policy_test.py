@@ -221,6 +221,7 @@ def _ci_inputs() -> list[str]:
         "tests/integration/",
         "web/e2e/",
         "desktop/",
+        "src/heinzel/testing/",
     )
     inputs = [path for path in _tracked() if path.startswith(roots) or name.search(path) or "/" not in path]
     gates = [path for path in _tracked() if re.fullmatch(r"tests/unit/[^/]+_test\.py", path)]

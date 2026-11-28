@@ -1,6 +1,7 @@
 """Authenticated, explicitly observed workspace versions; never infer a running daemon from its registration."""
 
 from datetime import UTC, datetime, timedelta
+from math import isfinite
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -16,7 +17,12 @@ class WorkspaceWebVersion(BaseModel):
 
     version: str = Field(description="Core version loaded by the answering web server.")
     observed_since: datetime = Field(description="When this server instance was initialized; not process start time.")
-    running_since: datetime | None = Field(default=None, description="Unknown without a verified process start time.")
+    running_since: datetime | None = Field(
+        default=None, description="OS-reported start time of the answering process; null when unavailable or invalid."
+    )
+    backend_ip: str | None = Field(
+        default=None, description="Local HTTP server socket IP, not a proxy or client address; null when unavailable."
+    )
 
 
 class WorkspaceInstalledVersion(BaseModel):
@@ -76,6 +82,19 @@ def _past(value: object, now: datetime) -> datetime | None:
     return value if value <= now else None
 
 
+def _process_started(now: datetime) -> datetime | None:
+    """Inspect this answering process, never a registered daemon or another installed backend."""
+    import psutil  # noqa: PLC0415 - inspect the process only when workspace facts are requested
+
+    try:
+        timestamp = psutil.Process().create_time()
+        if isinstance(timestamp, bool) or not isfinite(timestamp) or timestamp <= 0:
+            return None
+        return _past(datetime.fromtimestamp(timestamp, UTC), now)
+    except (psutil.Error, OSError, OverflowError, TypeError, ValueError):
+        return None
+
+
 def _daemon(kernel: Kernel, now: datetime) -> WorkspaceDaemonVersion:
     try:
         operation = next(
@@ -129,7 +148,7 @@ def observe(kernel: Kernel, initialized: datetime) -> WorkspaceVersion:
     now = datetime.now(UTC)
     return WorkspaceVersion(
         observed_at=now,
-        web=WorkspaceWebVersion(version=__version__, observed_since=initialized),
+        web=WorkspaceWebVersion(version=__version__, observed_since=initialized, running_since=_process_started(now)),
         installed=_installed(kernel),
         daemon=_daemon(kernel, now),
     )

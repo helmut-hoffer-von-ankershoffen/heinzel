@@ -430,8 +430,10 @@ try {
       () =>
         document.documentElement.classList.contains("dark") &&
         getComputedStyle(document.body).color === "rgb(233, 237, 229)" &&
-        Number(getComputedStyle(document.querySelector('[data-testid="heinzel-wordmark"]')).color.match(/\d+/)?.[0]) >
-          200,
+        // The sidebar buttons transition their own ink after the page has changed mode.
+        !document
+          .getAnimations()
+          .some((motion) => motion instanceof CSSTransition && motion.transitionProperty === "color"),
     );
     const dark = await audit();
     await page.evaluate(() => {

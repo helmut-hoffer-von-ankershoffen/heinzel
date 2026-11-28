@@ -61,6 +61,7 @@ export const settings = {
   "settings.preview.weather.heat": "Hot",
   "settings.preview.weather.cold": "Cold",
   "account.help": "Get help",
+  "account.workspaces": "Workspaces…",
   "account.changelog": "View changelog",
   "account.learn": "Learn more",
   "account.setup": "Set up hz",

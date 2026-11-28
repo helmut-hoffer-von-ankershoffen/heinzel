@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.mark.timeout(75)
 def test_prompt_sheet_and_suspended_send_lifecycle(tmp_path):
     app = (ROOT / "apple/App/HeinzelApp.swift").read_text()
-    sheet = app.split("private struct NativePromptSheet:", 1)[1].split("private struct ConnectionHelp:", 1)[0]
+    sheet = app.split("private struct NativePromptSheet:", 1)[1].split("\nprivate struct ", 1)[0]
     assert ".interactiveDismissDisabled(composer.sending)" not in sheet
     assert 'Button("Check Chat")' in sheet
     assert "if let request = composer.pending {" in sheet

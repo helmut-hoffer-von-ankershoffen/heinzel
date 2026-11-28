@@ -18,6 +18,7 @@ func emit(_ event: String, _ library: AlbumLibrary) throws {
     @MainActor static func run() async throws {
         let args = CommandLine.arguments
         try require(args.count == 4, "usage: fixture MODE ROOT CATALOG_URL")
+        try testApprovedAlbumFilmRanges()
         let config = URLSessionConfiguration.ephemeral
         config.urlCache = nil
         config.httpCookieStorage = nil
@@ -44,6 +45,10 @@ func emit(_ event: String, _ library: AlbumLibrary) throws {
             throw ProofFailure(description: "saved count did not reach \(count)")
         }
         switch args[1] {
+        case "volume":
+            try await waitCount(2)
+            try await SoundscapeVolumeTests.run(library: library, defaults: defaults)
+            try emit("verified-queue-volume-and-seek", library)
         case "download":
             let playback = SoundscapePlayback(library: library, defaults: defaults, publish: { states.append($0) })
             playback.player.isMuted = true

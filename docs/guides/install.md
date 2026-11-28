@@ -95,7 +95,9 @@ the row says so with a warning.
 | `--no-daemon` | Do not restart the daemon or the web server; the row says which version they still run. |
 | `--keep-pins` | Leave pinned plugins where they are. |
 
-`--yes` is still accepted and does nothing. The app's own service never quits the app that runs it.
+`--yes` is still accepted and does nothing. With automatic updates enabled, the local Mac app offers a
+30-second countdown after the backend updates. The app then quits, updates and reopens. Cancel to keep it open,
+then choose **Restart to update** from the footer when you're ready.
 
 ## Stable by default, edge if you ask
 

@@ -1,4 +1,4 @@
-"""The daemon's offline removal: the guard that holds an owned daemon's files and units while Heinzel is removed."""
+"""Guard daemon uninstall and offline package removal using the owned service files."""
 
 import os
 from collections.abc import Callable, Generator
@@ -12,6 +12,8 @@ from heinzel.kernel.install._tool_uninstall import OwnedFile, owned_file, remove
 from heinzel.modules.system.daemon._handover_files import safely_absent as _safely_absent
 from heinzel.modules.system.daemon._mutation_scope import DaemonRemoval
 from heinzel.modules.system.daemon._ownership import ManagerState, tick_environment
+from heinzel.modules.system.daemon._runtime import fsync_dir
+from heinzel.modules.system.daemon._uninstall_history import UninstallHistory
 from heinzel.modules.system.daemon._units import LABEL, SYSTEMD_NAME
 
 if TYPE_CHECKING:
@@ -19,7 +21,7 @@ if TYPE_CHECKING:
 
 
 class OfflineRemoval:
-    """Offline removal of DaemonService; its state lives on the service."""
+    """Removal operations for DaemonService; its state lives on the service."""
 
     if TYPE_CHECKING:
         _platform: str
@@ -28,7 +30,11 @@ class OfflineRemoval:
         _uid: Callable[[], int]
         state_dir: Path
 
+        def _capture_install_files(self) -> dict[Path, bytes | None]: ...
+        def _handover_marker_valid(self, recorded: dict[str, str | int]) -> bool: ...
         def _handover_pending(self) -> bool: ...
+        def _mutation_token_matches(self, token: str, name: str = "mutation-pending.json") -> bool: ...
+        def _read_state(self, name: str) -> dict[str, str | int]: ...
         def _quiescent_snapshot(
             self,
             binary: Path,
@@ -41,6 +47,40 @@ class OfflineRemoval:
         def owned_manager_command(self, command: list[str]) -> subprocess.CompletedProcess[str]: ...
         def owned_manager_state(self, binary: Path) -> ManagerState: ...
         def owned_unit_state(self, binary: Path, *, allow_absent: bool = False) -> bool: ...
+
+    def _capture_uninstall_history(self, before: dict[Path, bytes | None]) -> UninstallHistory | None:
+        history = None
+        if not _safely_absent(self.state_dir / "handover-request.json"):
+            history = UninstallHistory.capture(self.state_dir, before)
+        if not self._handover_marker_valid(self._read_state("install.json")):
+            msg = "The previous handover cannot be verified; its files were retained before uninstalling."
+            raise HeinzelError(msg)
+        return history
+
+    def _archive_uninstall_history(self, history: UninstallHistory | None, token: str) -> None:
+        if not self._mutation_token_matches(token, "handover-pending.json"):
+            msg = "The daemon removal writer changed; its files and pending gate were retained."
+            raise HeinzelError(msg)
+        if history is not None:
+            history.archive(self.state_dir / f"uninstall-{token}")
+        elif not _safely_absent(self.state_dir / "handover-request.json"):
+            msg = "A handover appeared during uninstall; its files and pending gate were retained."
+            raise HeinzelError(msg)
+
+    def _remove_install_files(self, before: dict[Path, bytes | None]) -> list[Path]:
+        removed: list[Path] = []
+        expected = dict(before)
+        for path, payload in before.items():
+            if self._capture_install_files() != expected:
+                msg = "The owned daemon files changed during removal; explicit recovery is required."
+                raise HeinzelError(msg)
+            if payload is not None:
+                path.unlink()
+                fsync_dir(path.parent)
+                if path.name != "install.json":
+                    removed.append(path)
+            expected[path] = None
+        return removed
 
     def _offline_probe(self, command: list[str]) -> str | None:
         result = self.owned_manager_command(command)

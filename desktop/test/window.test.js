@@ -3,6 +3,8 @@ import { EventEmitter } from "node:events";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
+import { registerAlbumScheme } from "../src/album-scheme.js";
+import { createAlbumTransport } from "../src/album-transport.js";
 import { hideWindows, quitLogLine, shouldRefresh, showWindows, stopWithReport } from "../src/shutdown.js";
 import { createPublicMediaHandler } from "../src/public-media.js";
 import { installSignalQuit } from "../src/signal-quit.js";
@@ -32,13 +34,30 @@ test("Electron readiness starts the CLI and retains the picker after startup err
   assert.match(main, /void app\.whenReady\(\)\.then\(\(\) => \{/);
   const startup = sourceOf("main-startup.js");
   assert.ok(startup.indexOf("acquireDesktopGate()") < startup.indexOf("return ctx.ownedCli.start()"));
-  assert.match(main, /ctx\.workspaceController\?\.failed\(failedConnection, new Error\(message\)\);\n    showConnection\(\)/);
+  assert.match(startup, /workspaceController\?\.failed\(failedConnection,/);
+  assert.match(startup, /showConnection\(\)/);
+});
+
+test("a controller-gated start can reuse the album scheme registered before readiness", () => {
+  let ready = false;
+  const registrations = [];
+  const protocol = { registerSchemesAsPrivileged(schemes) {
+    assert.equal(ready, false);
+    registrations.push(...schemes);
+  } };
+  registerAlbumScheme(protocol);
+  ready = true;
+  registerAlbumScheme(protocol);
+  assert.deepEqual(registrations, [{
+    scheme: "heinzel-album",
+    privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true },
+  }]);
 });
 
 test("Quit stops the owned CLI without adding background integration", () => {
   assert.match(main, /app\.on\("before-quit", \(event\) =>/);
   assert.match(main, /stopWithReport\(ctx\.ownedCli,/);
-  assert.doesNotMatch(main, /setLoginItemSettings|systemPreferences|Notification/);
+  assert.doesNotMatch(main, /setLoginItemSettings|systemPreferences|new Notification/);
 });
 
 
@@ -47,6 +66,7 @@ function quitHarness(result, rejects = false) {
   const proc = Object.assign(new EventEmitter(), { argv: ["node", "fixture"], env: {}, platform: "darwin" });
   const app = Object.assign(new EventEmitter(), {
     isPackaged: false,
+    getPath: () => "/fixture",
     whenReady: () => new Promise(() => {}),
     quit: () => {
       let prevented = false;
@@ -55,7 +75,7 @@ function quitHarness(result, rejects = false) {
     },
     exit: (code) => exits.push(code),
   });
-  const exits = [], dialogs = [], events = [], warnings = [];
+  const exits = [], dialogs = [], events = [], warnings = [], schemes = [];
   let stops = 0;
   const window = {
     visible: true,
@@ -76,6 +96,9 @@ function quitHarness(result, rejects = false) {
   runInNewContext(mainScript(), {
     moduleUrl: new URL("../src/main.js", import.meta.url).href, URL,
     process: proc, app,
+    protocol: { registerSchemesAsPrivileged: (registered) => schemes.push(...registered) },
+    registerAlbumScheme,
+    createAlbumTransport,
     console: { ...console, warn: (line) => warnings.push(line) },
     BrowserWindow: { getAllWindows: () => [window] },
     dialog: { showErrorBox: (...args) => dialogs.push(args) },
@@ -90,6 +113,7 @@ function quitHarness(result, rejects = false) {
     createPublicMediaHandler, stopWithReport, shouldRefresh, hideWindows, showWindows, quitLogLine,
     installSignalQuit: (options) => installSignalQuit({ ...options, setTimer: () => ({ unref() {} }) }),
   });
+  assert.deepEqual(schemes.map(({ scheme }) => scheme), ["heinzel-album"]);
   return { proc, app, exits, dialogs, events, warnings, stops: () => stops };
 }
 

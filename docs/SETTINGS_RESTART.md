@@ -132,6 +132,7 @@ set of modules truly needs a restart.
 | `system.sound.duck_while_typing` | no | Read again with every sound request. Own controls, so it is not listed. |
 | `system.state.personal` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
 | `system.theme.name` | no | Read again with every theme request. Own picker, so it is not listed. |
+| `system.theme.show_team_name` | no | Read again with every theme request to decide whether the sidebar uses the configured team name. |
 | `system.ui.contributions` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
 | `system.ui.audio_visualizer` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
 | `team.name` | yes | Read once into the service when the server starts. Rereading it is a follow-up. |
