@@ -103,9 +103,13 @@ function Player({
   const surface = useRef<HTMLDivElement>(null);
   // In the desktop the YouTube player is a guest on the website session, so a sign-in in the browser counts here.
   const guest = desktop && stream.provider === "youtube" ? guestBridge() : undefined;
-  const subscribe = (window as Window & { heinzelDesktop?: {
-    onPlayerIntent?: (callback: (intent: ChromeIntent) => void) => () => void;
-  } }).heinzelDesktop?.onPlayerIntent;
+  const subscribe = (
+    window as Window & {
+      heinzelDesktop?: {
+        onPlayerIntent?: (callback: (intent: ChromeIntent) => void) => () => void;
+      };
+    }
+  ).heinzelDesktop?.onPlayerIntent;
   intentHandler.current = (intent) => {
     if (intent.action === "play") resume(soundscape.name);
     else if (intent.action === "pause") pause();
@@ -116,11 +120,14 @@ function Player({
     if (!guest || !subscribe) return;
     return subscribe((intent) => intentHandler.current(intent));
   }, [guest, subscribe]);
-  const chromeBridge = useCallback(async (request: Record<string, unknown>) => {
-    if (!guest) return;
-    if (request.action === "layout") return guest({ ...request, action: "chromeLayout" });
-    if (request.action === "hide") return guest({ action: "chromeHide" });
-  }, [guest]);
+  const chromeBridge = useCallback(
+    async (request: Record<string, unknown>) => {
+      if (!guest) return;
+      if (request.action === "layout") return guest({ ...request, action: "chromeLayout" });
+      if (request.action === "hide") return guest({ action: "chromeHide" });
+    },
+    [guest],
+  );
   useNativeSurface(chromeSurface, Boolean(guest && subscribe), guest && subscribe ? chromeBridge : undefined);
   const [ready, setReady] = useState(false);
   const [blocked, setBlocked] = useState(false);
@@ -407,7 +414,7 @@ function Player({
         )}
         {!guest && helpPane}
       </div>
-      {guest && subscribe && <div ref={chromeSurface} style={{ height: 140 }} aria-label="Player controls" />}
+      {guest && subscribe && <div ref={chromeSurface} style={{ height: 140 }} />}
       {guestUnavailable && (
         <div role="alert" className="flex items-center gap-2 p-2 text-ui-sm">
           <span>{t("sound.desktopUnavailable")}</span>
